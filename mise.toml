@@ -1,0 +1,8 @@
+[tools]
+"cargo:diesel_cli" = { version = "2.3.6", features = "sqlite,sqlite-bundled", default-features = false }
+"cargo:cargo-audit" = "0.22.1"
+"cargo:cargo-vet" = "0.10.2"
+
+flutter = "3.38.9-stable"
+protoc = "29.6"
+rust = "1.93.0"

@@ -1,0 +1,40 @@
+[[tools."cargo:cargo-audit"]]
+version = "0.22.1"
+backend = "cargo:cargo-audit"
+
+[[tools."cargo:cargo-vet"]]
+version = "0.10.2"
+backend = "cargo:cargo-vet"
+
+[[tools."cargo:diesel-cli"]]
+version = "2.3.6"
+backend = "cargo:diesel-cli"
+
+[tools."cargo:diesel-cli".options]
+default-features = "false"
+features = "sqlite,sqlite-bundled"
+
+[[tools."cargo:diesel_cli"]]
+version = "2.3.6"
+backend = "cargo:diesel_cli"
+
+[tools."cargo:diesel_cli".options]
+default-features = "false"
+features = "sqlite,sqlite-bundled"
+
+[[tools.flutter]]
+version = "3.38.9-stable"
+backend = "asdf:flutter"
+
+[[tools.protoc]]
+version = "29.6"
+backend = "aqua:protocolbuffers/protobuf/protoc"
+"platforms.linux-arm64" = { checksum = "sha256:2594ff4fcae8cb57310d394d0961b236190ad9c5efbfdf1f597ea471d424fe79", url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-linux-aarch_64.zip"}
+"platforms.linux-x64" = { checksum = "sha256:48785a926e73ffa3f68e2f22b14e7b849620c7a1d36809ac9249a5495e280323", url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-linux-x86_64.zip"}
+"platforms.macos-arm64" = { checksum = "sha256:b9576b5fa1a1ef3fe13a8c91d9d8204b46545759bea5ae155cd6ba2ea4cdaeed", url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-osx-aarch_64.zip"}
+"platforms.macos-x64" = { checksum = "sha256:312f04713946921cc0187ef34df80241ddca1bab6f564c636885fd2cc90d3f88", url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-osx-x86_64.zip"}
+"platforms.windows-x64" = { checksum = "sha256:1ebd7c87baffb9f1c47169b640872bf5fb1e4408079c691af527be9561d8f6f7", url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-win64.zip"}
+
+[[tools.rust]]
+version = "1.93.0"
+backend = "core:rust"
