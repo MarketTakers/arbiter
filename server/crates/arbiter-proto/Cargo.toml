@@ -6,6 +6,9 @@ edition = "2024"
 [dependencies]
 tonic.workspace = true
 prost.workspace = true
+bytes = "1.11.1"
+prost-derive = "0.14.3"
+prost-types = { version = "0.14.3", features = ["chrono"] }
 
 [build-dependencies]
 tonic-prost-build = "0.14.3"

@@ -1,4 +1,9 @@
+use tonic_prost_build::configure;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // tonic_prost_build::compile_protos("../../protobufs/")?;
+    configure()
+        .proto_path("../../../protobufs")
+        .compile_protos(&["../../../protobufs/auth.proto"], &["../../../protobufs"])
+        .unwrap();
     Ok(())
 }
