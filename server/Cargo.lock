@@ -40,9 +40,12 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "prost",
+ "prost-build",
  "prost-derive",
  "prost-types",
+ "serde_json",
  "tonic",
+ "tonic-prost",
  "tonic-prost-build",
 ]
 
@@ -1387,6 +1390,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "tonic-prost"
+version = "0.14.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6c55a2d6a14174563de34409c9f92ff981d006f56da9c6ecd40d9d4a31500b0"
+dependencies = [
+ "bytes",
+ "prost",
+ "tonic",
 ]
 
 [[package]]

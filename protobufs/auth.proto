@@ -11,22 +11,17 @@ message AuthChallengeRequest {
 message AuthChallenge {
     bytes pubkey = 1;
     bytes nonce = 2;
-    google.protobuf.Timestamp minted = 3; 
+    google.protobuf.Timestamp minted = 3 ; 
 }
 
 message AuthChallengeSolution {
-    AuthChallenge challenge = 1;
+    AuthChallenge challenge = 1 ;
     bytes signature = 2;
 }
 
 message AuthResponse {
     string token = 1;
     string refresh_token = 2;
-    google.protobuf.Timestamp expires_at = 3;
-    google.protobuf.Timestamp refresh_expires_at = 4;
-}
-
-service AuthService {
-    rpc GetChallenge(AuthChallengeRequest) returns (AuthChallenge);
-    rpc SubmitSolution(AuthChallengeSolution) returns (AuthResponse);
+    google.protobuf.Timestamp expires_at = 3 ;
+    google.protobuf.Timestamp refresh_expires_at = 4 ;
 }

@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package arbiter;
+
+import "auth.proto";
+
+message ClientMessage {
+    oneof payload {
+        arbiter.auth.AuthChallengeRequest auth_challenge_request = 1;
+        arbiter.auth.AuthChallengeSolution auth_challenge_solution = 2;
+    }
+}
+
+message ServerMessage {
+    oneof payload {
+        arbiter.auth.AuthChallenge auth_challenge = 1;
+        arbiter.auth.AuthResponse auth_response = 2;
+    }
+}
+
+service Server {
+    rpc Communicate(stream ClientMessage) returns (stream ServerMessage);
+}
