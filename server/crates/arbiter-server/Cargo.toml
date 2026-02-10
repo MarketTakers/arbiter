@@ -2,10 +2,19 @@
 name = "arbiter-server"
 version = "0.1.0"
 edition = "2024"
+repository = "https://git.markettakers.org/MarketTakers/arbiter"
 
 [dependencies]
 diesel = { version = "2.3.6", features = ["sqlite", "uuid", "time", "chrono", "serde_json"] }
 diesel-async = { version = "0.7.4", features = ["sqlite", "tokio", "migrations", "pool", "deadpool"] }
+ed25519.workspace = true
+ed25519-dalek.workspace = true
+arbiter-proto.path = "../arbiter-proto"
 tracing.workspace = true
 tonic.workspace = true
 tokio.workspace = true
+rustls.workspace = true
+smlang.workspace = true
+miette.workspace = true
+thiserror.workspace = true
+diesel_migrations = { version = "2.3.1", features = ["sqlite"] }

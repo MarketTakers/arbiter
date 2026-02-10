@@ -4,20 +4,35 @@ package arbiter;
 
 import "auth.proto";
 
-message ClientMessage {
-    oneof payload {
-        arbiter.auth.AuthChallengeRequest auth_challenge_request = 1;
-        arbiter.auth.AuthChallengeSolution auth_challenge_solution = 2;
-    }
+message ClientRequest {
+  oneof payload {
+    arbiter.auth.ClientMessage auth_message = 1;
+  }
 }
 
-message ServerMessage {
-    oneof payload {
-        arbiter.auth.AuthChallenge auth_challenge = 1;
-        arbiter.auth.AuthResponse auth_response = 2;
-    }
+message ClientResponse {
+  oneof payload {
+    arbiter.auth.ServerMessage auth_message = 1;
+  }
 }
 
-service Server {
-    rpc Communicate(stream ClientMessage) returns (stream ServerMessage);
+message UserAgentRequest {
+  oneof payload {
+    arbiter.auth.ClientMessage auth_message = 1;
+  }
+}
+message UserAgentResponse {
+  oneof payload {
+    arbiter.auth.ServerMessage auth_message = 1;
+  }
+}
+
+message ServerInfo {
+  string version = 1;
+  bytes cert_public_key = 2;
+}
+
+service ArbiterService {
+  rpc Client(stream ClientRequest) returns (stream ClientResponse);
+  rpc UserAgent(stream UserAgentRequest) returns (stream UserAgentResponse);
 }

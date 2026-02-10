@@ -2,6 +2,14 @@
 version = "0.22.1"
 backend = "cargo:cargo-audit"
 
+[[tools."cargo:cargo-features"]]
+version = "1.0.0"
+backend = "cargo:cargo-features"
+
+[[tools."cargo:cargo-features-manager"]]
+version = "0.11.1"
+backend = "cargo:cargo-features-manager"
+
 [[tools."cargo:cargo-vet"]]
 version = "0.10.2"
 backend = "cargo:cargo-vet"

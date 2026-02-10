@@ -6,3 +6,4 @@
 flutter = "3.38.9-stable"
 protoc = "29.6"
 rust = "1.93.0"
+"cargo:cargo-features-manager" = "0.11.1"

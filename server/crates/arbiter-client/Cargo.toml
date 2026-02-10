@@ -2,5 +2,6 @@
 name = "arbiter-client"
 version = "0.1.0"
 edition = "2024"
+repository = "https://git.markettakers.org/MarketTakers/arbiter"
 
 [dependencies]

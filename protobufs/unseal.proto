@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package arbiter.auth;
+
+message UserAgentKeyRequest {}
+
+message ServerKeyResponse {
+  bytes pubkey = 1;
+}
+message UserAgentSealedKey {
+  bytes sealed_key = 1;
+  bytes pubkey = 2;
+  bytes nonce = 3;
+}

@@ -1,5 +1,5 @@
+mod db;
 
-#[tokio::main]
-pub async fn main() {
-
+pub struct Server {
+    pub db: db::Database,
 }
