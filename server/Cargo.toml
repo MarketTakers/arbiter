@@ -10,7 +10,7 @@ resolver = "3"
 
 [workspace.dependencies]
 prost = "0.14.3"
-tonic = { version = "0.14.3", features = ["tls-connect-info"] }
+tonic = { version = "0.14.3", features = ["deflate", "gzip", "tls-connect-info", "zstd"] }
 tracing = "0.1.44"
 tokio = { version = "1.49.0", features = ["full"] }
 ed25519 = "3.0.0-rc.4"
@@ -22,3 +22,6 @@ rustls = "0.23.36"
 smlang = "0.8.0"
 miette = { version = "7.6.0", features = ["fancy", "serde"] }
 thiserror = "2.0.18"
+async-trait = "0.1.89"
+futures = "0.3.31"
+tokio-stream = { version = "0.1.18", features = ["full"] }

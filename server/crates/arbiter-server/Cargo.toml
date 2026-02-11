@@ -6,7 +6,7 @@ repository = "https://git.markettakers.org/MarketTakers/arbiter"
 
 [dependencies]
 diesel = { version = "2.3.6", features = ["sqlite", "uuid", "time", "chrono", "serde_json"] }
-diesel-async = { version = "0.7.4", features = ["sqlite", "tokio", "migrations", "pool", "deadpool"] }
+diesel-async = { version = "0.7.4", features = ["bb8", "migrations", "sqlite", "tokio"] }
 ed25519.workspace = true
 ed25519-dalek.workspace = true
 arbiter-proto.path = "../arbiter-proto"
@@ -18,3 +18,17 @@ smlang.workspace = true
 miette.workspace = true
 thiserror.workspace = true
 diesel_migrations = { version = "2.3.1", features = ["sqlite"] }
+async-trait.workspace = true
+statig = { version = "0.4.1", features = ["async"] }
+secrecy = "0.10.3"
+futures.workspace = true
+tokio-stream.workspace = true
+dashmap = "6.1.0"
+rand.workspace = true
+rcgen = { version = "0.14.7", features = ["aws_lc_rs", "pem", "x509-parser", "zeroize"], default-features = false }
+rkyv = { version = "0.8.15", features = ["aligned", "little_endian", "pointer_width_64"] }
+restructed = "0.2.2"
+chrono.workspace = true
+bytes = "1.11.1"
+memsafe = "0.4.0"
+chacha20poly1305 = { version = "0.10.1", features = ["std"] }
