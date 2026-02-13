@@ -11,6 +11,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     context::{
+        bootstrap::generate_token,
         lease::LeaseHandler,
         tls::{TlsDataRaw, TlsManager},
     },
@@ -21,11 +22,9 @@ use crate::{
     },
 };
 
+pub(crate) mod bootstrap;
 pub(crate) mod lease;
 pub(crate) mod tls;
-pub(crate) mod bootstrap {
-    
-}
 
 #[derive(Error, Debug, Diagnostic)]
 pub enum InitError {
@@ -44,6 +43,10 @@ pub enum InitError {
     #[error("TLS initialization failed: {0}")]
     #[diagnostic(code(arbiter_server::init::tls_init))]
     Tls(#[from] tls::TlsInitError),
+
+    #[error("I/O Error: {0}")]
+    #[diagnostic(code(arbiter_server::init::io))]
+    Io(#[from] std::io::Error),
 }
 
 // TODO: Placeholder for secure root key cell implementation
@@ -52,7 +55,7 @@ pub struct KeyStorage;
 statemachine! {
     name: Server,
     transitions: {
-        *NotBootstrapped + Bootstrapped = Sealed,
+        *NotBootstrapped(String) + Bootstrapped = Sealed,
         Sealed + Unsealed(KeyStorage) / move_key = Ready(KeyStorage),
         Ready(KeyStorage) + Sealed / dispose_key = Sealed,
     }
@@ -135,7 +138,9 @@ impl ServerContext {
 
         drop(conn);
 
-        let mut state = ServerStateMachine::new(_Context);
+        let bootstrap_token = generate_token().await?;
+
+        let mut state = ServerStateMachine::new(_Context, bootstrap_token);
 
         if let Some(settings) = &settings
             && settings.root_key_id.is_some()
@@ -144,7 +149,6 @@ impl ServerContext {
             let _ = state.process_event(ServerEvents::Bootstrapped);
         }
 
-        
         Ok(Self(Arc::new(_ServerContextInner {
             db,
             rng,

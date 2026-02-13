@@ -4,6 +4,7 @@ static PROTOBUF_DIR: &str = "../../../protobufs";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     configure()
+        .message_attribute(".", "#[derive(::kameo::Reply)]")
         .compile_protos(
             &[
                 format!("{}/arbiter.proto", PROTOBUF_DIR),
@@ -11,6 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],
             &[PROTOBUF_DIR.to_string()],
         )
+        
         .unwrap();
     Ok(())
 }
