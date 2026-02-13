@@ -5,10 +5,8 @@ package arbiter.auth;
 import "google/protobuf/timestamp.proto";
 
 message AuthChallengeRequest {
-  oneof payload {
-    bytes pubkey = 1;
-    string bootstrap_token = 2;
-  }
+  bytes pubkey = 1;
+  optional string bootstrap_token = 2;
 }
 
 message AuthChallenge {

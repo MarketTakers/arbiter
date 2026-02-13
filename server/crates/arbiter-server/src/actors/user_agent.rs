@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arbiter_proto::{
     proto::{
         UserAgentRequest, UserAgentResponse,
@@ -8,10 +10,12 @@ use arbiter_proto::{
     },
     transport::Bi,
 };
+use ed25519_dalek::VerifyingKey;
 use futures::StreamExt;
 use kameo::{Actor, message::StreamMessage, messages, prelude::Context};
 use secrecy::{ExposeSecret, SecretBox};
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::Sender;
 use tonic::{Status, transport::Server};
 use tracing::error;
 
@@ -59,78 +63,64 @@ impl UserAgentStateMachineContext for ServerContext {
 pub struct UserAgentActor {
     context: ServerContext,
     state: UserAgentStateMachine<ServerContext>,
-    tx: mpsc::Sender<Result<UserAgentResponse, tonic::Status>>,
+    rx: Sender<Result<UserAgentResponse, Status>>,
 }
 
 impl UserAgentActor {
     pub(crate) fn new(
         context: ServerContext,
-        tx: mpsc::Sender<Result<UserAgentResponse, tonic::Status>>,
+        rx: Sender<Result<UserAgentResponse, Status>>,
     ) -> Self {
         Self {
             context: context.clone(),
             state: UserAgentStateMachine::new(context),
-            tx,
+            rx,
         }
     }
 
-    async fn handle_grpc(
+    async fn auth_with_bootstrap_token(
         &mut self,
-        msg: UserAgentRequest,
-        ctx: &mut Context<Self, ()>,
-    ) -> Result<UserAgentResponse, tonic::Status> {
-        let Some(msg) = msg.payload else {
-            error!(actor = "useragent", "Received message with no payload");
-            ctx.stop();
-            return Err(tonic::Status::invalid_argument(
-                "Message payload is required",
-            ));
-        };
-
-        let UserAgentRequestPayload::AuthMessage(ClientMessage {
-            payload: Some(client_message),
-        }) = msg
-        else {
-            error!(
-                actor = "useragent",
-                "Received unexpected message type during authentication"
-            );
-            ctx.stop();
-            return Err(tonic::Status::invalid_argument(
-                "Unexpected message type during authentication",
-            ));
-        };
-
-        match client_message {
-            ClientAuthPayload::AuthChallengeRequest(AuthChallengeRequest {
-                payload: Some(payload),
-            }) => match payload {
-                auth::auth_challenge_request::Payload::Pubkey(items) => todo!(),
-                auth::auth_challenge_request::Payload::BootstrapToken(_) => todo!(),
-            },
-            ClientAuthPayload::AuthChallengeSolution(_auth_challenge_solution) => todo!(),
-            _ => {
-                error!(
-                    actor = "useragent",
-                    "Received unexpected message type during authentication"
-                );
-                ctx.stop();
-                return Err(tonic::Status::invalid_argument(
-                    "Unexpected message type during authentication",
-                ));
-            }
-        }
+        pubkey: ed25519_dalek::VerifyingKey,
+        token: String,
+    ) -> Result<UserAgentResponse, Status> {
+        todo!()
     }
 }
+
+type Output = Result<UserAgentResponse, Status>;
 
 #[messages]
 impl UserAgentActor {
     #[message(ctx)]
-    pub async fn grpc(&mut self, msg: UserAgentRequest, ctx: &mut Context<Self, ()>) {
-        let result = self.handle_grpc(msg, ctx).await;
-        self.tx.send(result).await.unwrap_or_else(|e| {
-            error!(handler = "useragent", "Failed to send response: {}", e);
-            ctx.stop();
-        });
+    async fn handle_auth_challenge_request(
+        &mut self,
+        req: AuthChallengeRequest,
+        ctx: &mut Context<Self, Output>,
+    ) -> Output {
+        let pubkey = req.pubkey.as_array().ok_or(Status::invalid_argument(
+            "Expected pubkey to have specific length",
+        ))?;
+        let pubkey = VerifyingKey::from_bytes(pubkey).map_err(|err| {
+            error!(?pubkey, "Failed to convert to VerifyingKey");
+            Status::invalid_argument("Failed to convert pubkey to VerifyingKey")
+        })?;
+
+        if let Some(token) = req.bootstrap_token {
+            return self
+                .auth_with_bootstrap_token(pubkey, token)
+                .await
+                .map_err(|_| Status::internal("Failed to authenticate with bootstrap token"));
+        }
+
+        todo!()
+    }
+
+    #[message(ctx)]
+    async fn handle_auth_challenge_solution(
+        &mut self,
+        _solution: auth::AuthChallengeSolution,
+        ctx: &mut Context<Self, Output>,
+    ) -> Output {
+        todo!()
     }
 }
