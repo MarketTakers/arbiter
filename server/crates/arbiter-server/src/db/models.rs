@@ -29,20 +29,11 @@ pub struct ArbiterSetting {
 }
 
 #[derive(Queryable, Debug)]
-#[diesel(table_name = schema::key_identity, check_for_backend(Sqlite))]
-pub struct KeyIdentity {
-    pub id: i32,
-    pub name: String,
-    pub public_key: String,
-    pub created_at: i32,
-    pub updated_at: i32,
-}
-
-#[derive(Queryable, Debug)]
 #[diesel(table_name = schema::program_client, check_for_backend(Sqlite))]
 pub struct ProgramClient {
     pub id: i32,
-    pub key_identity_id: i32,
+    pub public_key: Vec<u8>,
+    pub nonce: i32,
     pub created_at: i32,
     pub updated_at: i32,
 }
@@ -51,7 +42,8 @@ pub struct ProgramClient {
 #[diesel(table_name = schema::useragent_client, check_for_backend(Sqlite))]
 pub struct UseragentClient {
     pub id: i32,
-    pub key_identity_id: i32,
+    pub public_key: Vec<u8>,
+    pub nonce: i32,
     pub created_at: i32,
     pub updated_at: i32,
 }

@@ -14,24 +14,18 @@ create table if not exists arbiter_settings (
     cert blob not null
 ) STRICT;
 
-create table if not exists key_identity (
-    id integer not null primary key,
-    name text not null,
-    public_key text not null,
-    created_at integer not null default(unixepoch ('now')),
-    updated_at integer not null default(unixepoch ('now'))
-) STRICT;
-
 create table if not exists useragent_client (
     id integer not null primary key,
-    key_identity_id integer not null references key_identity (id) on delete cascade,
+    nonce integer not null default (1), -- used for auth challenge
+    public_key blob not null,
     created_at integer not null default(unixepoch ('now')),
     updated_at integer not null default(unixepoch ('now'))
 ) STRICT;
 
 create table if not exists program_client (
     id integer not null primary key,
-    key_identity_id integer not null references key_identity (id) on delete cascade,
+    nonce integer not null default (1), -- used for auth challenge
+    public_key blob not null,
     created_at integer not null default(unixepoch ('now')),
     updated_at integer not null default(unixepoch ('now'))
 ) STRICT;

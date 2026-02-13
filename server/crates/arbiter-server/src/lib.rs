@@ -2,32 +2,18 @@
 
 use std::sync::Arc;
 
-use tracing::error;
-
 use arbiter_proto::{
-    proto::{
-        ClientRequest, ClientResponse, UserAgentRequest, UserAgentResponse,
-        auth::{
-            self, AuthChallengeRequest, ClientMessage, client_message::Payload as ClientAuthPayload,
-        },
-        user_agent_request::Payload as UserAgentRequestPayload,
-        user_agent_request::*,
-    },
+    proto::{ClientRequest, ClientResponse, UserAgentRequest, UserAgentResponse},
     transport::BiStream,
 };
 use async_trait::async_trait;
-use futures::StreamExt;
-use kameo::actor::Spawn;
 use tokio_stream::wrappers::ReceiverStream;
 
 use tokio::sync::mpsc;
 use tonic::{Request, Response, Status};
 
 use crate::{
-    actors::{
-        client::handle_client,
-        user_agent::{self, UserAgentActor},
-    },
+    actors::{client::handle_client, user_agent::handle_user_agent},
     context::ServerContext,
 };
 
@@ -67,58 +53,9 @@ impl arbiter_proto::proto::arbiter_service_server::ArbiterService for Server {
         &self,
         request: Request<tonic::Streaming<UserAgentRequest>>,
     ) -> Result<Response<Self::UserAgentStream>, Status> {
-        let mut req_stream = request.into_inner();
+        let req_stream = request.into_inner();
         let (tx, rx) = mpsc::channel(DEFAULT_CHANNEL_SIZE);
-
-        let actor = UserAgentActor::spawn(UserAgentActor::new(self.context.clone(), tx.clone()));
-
-        tokio::task::spawn(async move {
-            while let Some(Ok(req)) = req_stream.next().await
-                && actor.is_alive()
-            {
-                let Some(msg) = req.payload else {
-                    error!(actor = "useragent", "Received message with no payload");
-                    actor.kill();
-                    tx.send(Err(Status::invalid_argument(
-                        "Expected message with payload",
-                    )))
-                    .await;
-                    return;
-                };
-
-                let UserAgentRequestPayload::AuthMessage(ClientMessage {
-                    payload: Some(client_message),
-                }) = msg
-                else {
-                    error!(
-                        actor = "useragent",
-                        "Received unexpected message type during authentication"
-                    );
-                    actor.kill();
-                    tx.send(Err(Status::invalid_argument(
-                        "Expected AuthMessage with ClientMessage payload",
-                    )))
-                    .await;
-                    return;
-                };
-
-                match client_message {
-                    ClientAuthPayload::AuthChallengeRequest(req) => {}
-                    ClientAuthPayload::AuthChallengeSolution(_auth_challenge_solution) => todo!(),
-                    _ => {
-                        error!(actor = "useragent", "Received unexpected message type");
-                        actor.kill();
-                        tx.send(Err(Status::invalid_argument(
-                            "Expected AuthMessage with ClientMessage payload",
-                        )))
-                        .await;
-                        return;
-                    }
-                }
-                todo!()
-            }
-        });
-
+        tokio::spawn(handle_user_agent(self.context.clone(), req_stream, tx));
         Ok(Response::new(ReceiverStream::new(rx)))
     }
 }

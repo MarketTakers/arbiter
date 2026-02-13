@@ -3,6 +3,7 @@ use std::sync::Arc;
 use diesel::OptionalExtension as _;
 use diesel_async::RunQueryDsl as _;
 use ed25519_dalek::VerifyingKey;
+use kameo::actor::{ActorRef, Spawn};
 use miette::Diagnostic;
 use rand::rngs::StdRng;
 use smlang::statemachine;
@@ -11,7 +12,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     context::{
-        bootstrap::generate_token,
+        bootstrap::{BootstrapActor, generate_token},
         lease::LeaseHandler,
         tls::{TlsDataRaw, TlsManager},
     },
@@ -44,6 +45,10 @@ pub enum InitError {
     #[diagnostic(code(arbiter_server::init::tls_init))]
     Tls(#[from] tls::TlsInitError),
 
+    #[error("Bootstrap token generation failed: {0}")]
+    #[diagnostic(code(arbiter_server::init::bootstrap_token))]
+    BootstrapToken(#[from] bootstrap::BootstrapError),
+
     #[error("I/O Error: {0}")]
     #[diagnostic(code(arbiter_server::init::io))]
     Io(#[from] std::io::Error),
@@ -55,7 +60,7 @@ pub struct KeyStorage;
 statemachine! {
     name: Server,
     transitions: {
-        *NotBootstrapped(String) + Bootstrapped = Sealed,
+        *NotBootstrapped + Bootstrapped = Sealed,
         Sealed + Unsealed(KeyStorage) / move_key = Ready(KeyStorage),
         Ready(KeyStorage) + Sealed / dispose_key = Sealed,
     }
@@ -78,8 +83,7 @@ pub(crate) struct _ServerContextInner {
     pub state: RwLock<ServerStateMachine<_Context>>,
     pub rng: StdRng,
     pub tls: TlsManager,
-    pub user_agent_leases: LeaseHandler<VerifyingKey>,
-    pub client_leases: LeaseHandler<VerifyingKey>,
+    pub bootstrapper: ActorRef<BootstrapActor>,
 }
 #[derive(Clone)]
 pub(crate) struct ServerContext(Arc<_ServerContextInner>);
@@ -138,9 +142,7 @@ impl ServerContext {
 
         drop(conn);
 
-        let bootstrap_token = generate_token().await?;
-
-        let mut state = ServerStateMachine::new(_Context, bootstrap_token);
+        let mut state = ServerStateMachine::new(_Context);
 
         if let Some(settings) = &settings
             && settings.root_key_id.is_some()
@@ -150,12 +152,11 @@ impl ServerContext {
         }
 
         Ok(Self(Arc::new(_ServerContextInner {
+            bootstrapper: BootstrapActor::spawn(BootstrapActor::new(&db).await?),
             db,
             rng,
             tls,
             state: RwLock::new(state),
-            user_agent_leases: Default::default(),
-            client_leases: Default::default(),
         })))
     }
 }

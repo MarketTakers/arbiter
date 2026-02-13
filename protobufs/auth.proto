@@ -20,12 +20,7 @@ message AuthChallengeSolution {
   bytes signature = 2;
 }
 
-message AuthResponse {
-  string token = 1;
-  string refresh_token = 2;
-  google.protobuf.Timestamp expires_at = 3;
-  google.protobuf.Timestamp refresh_expires_at = 4;
-}
+message AuthOk {}
 
 message ClientMessage {
   oneof payload {
@@ -37,6 +32,6 @@ message ClientMessage {
 message ServerMessage {
   oneof payload {
     AuthChallenge auth_challenge = 1;
-    AuthResponse auth_response = 2;
+    AuthOk auth_ok = 2;
   }
 }
