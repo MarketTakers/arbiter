@@ -11,21 +11,15 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 
 use crate::{
-    context::{
-        bootstrap::{BootstrapActor, generate_token},
-        lease::LeaseHandler,
-        tls::{TlsDataRaw, TlsManager},
-    },
-    db::{
+    actors::bootstrap::{self, BootstrapActor}, context::tls::{TlsDataRaw, TlsManager}, db::{
         self,
         models::ArbiterSetting,
         schema::{self, arbiter_settings},
-    },
+    }
 };
 
-pub(crate) mod bootstrap;
-pub(crate) mod lease;
-pub(crate) mod tls;
+
+pub mod tls;
 
 #[derive(Error, Debug, Diagnostic)]
 pub enum InitError {
@@ -78,7 +72,7 @@ impl ServerStateMachineContext for _Context {
     }
 }
 
-pub(crate) struct _ServerContextInner {
+pub struct _ServerContextInner {
     pub db: db::DatabasePool,
     pub state: RwLock<ServerStateMachine<_Context>>,
     pub rng: StdRng,
@@ -86,7 +80,7 @@ pub(crate) struct _ServerContextInner {
     pub bootstrapper: ActorRef<BootstrapActor>,
 }
 #[derive(Clone)]
-pub(crate) struct ServerContext(Arc<_ServerContextInner>);
+pub struct ServerContext(Arc<_ServerContextInner>);
 
 impl std::ops::Deref for ServerContext {
     type Target = _ServerContextInner;

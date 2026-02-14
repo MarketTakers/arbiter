@@ -15,14 +15,20 @@ use crate::{
 };
 
 pub mod actors;
-mod context;
-mod db;
+pub mod context;
+pub mod db;
 mod errors;
 
 const DEFAULT_CHANNEL_SIZE: usize = 1000;
 
 pub struct Server {
     context: ServerContext,
+}
+
+impl Server {
+    pub fn new(context: ServerContext) -> Self {
+        Self { context }
+    }
 }
 
 #[async_trait]
