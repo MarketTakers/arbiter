@@ -3,29 +3,8 @@ syntax = "proto3";
 package arbiter;
 
 import "auth.proto";
-
-message ClientRequest {
-  oneof payload {
-    arbiter.auth.ClientMessage auth_message = 1;
-  }
-}
-
-message ClientResponse {
-  oneof payload {
-    arbiter.auth.ServerMessage auth_message = 1;
-  }
-}
-
-message UserAgentRequest {
-  oneof payload {
-    arbiter.auth.ClientMessage auth_message = 1;
-  }
-}
-message UserAgentResponse {
-  oneof payload {
-    arbiter.auth.ServerMessage auth_message = 1;
-  }
-}
+import "client.proto";
+import "user_agent.proto";
 
 message ServerInfo {
   string version = 1;

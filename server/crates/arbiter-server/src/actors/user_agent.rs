@@ -1,5 +1,5 @@
 use arbiter_proto::proto::{
-    UserAgentRequest, UserAgentResponse,
+    UserAgentResponse,
     auth::{
         self, AuthChallenge, AuthChallengeRequest, AuthOk, ClientMessage,
         ServerMessage as AuthServerMessage, client_message::Payload as ClientAuthPayload,
@@ -11,22 +11,19 @@ use arbiter_proto::proto::{
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, dsl::update};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use ed25519_dalek::VerifyingKey;
-use futures::StreamExt;
 use kameo::{
     Actor,
     actor::{ActorRef, Spawn},
-    error::SendError,
     messages,
     prelude::Context,
 };
-use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tonic::Status;
 use tracing::{error, info};
 
 use crate::{
     ServerContext,
-    context::bootstrap::{BootstrapActor, ConsumeToken},
+    actors::bootstrap::{BootstrapActor, ConsumeToken},
     db::{self, schema},
     errors::GrpcStatusExt,
 };
@@ -54,12 +51,15 @@ smlang::statemachine!(
     custom_error: false,
     transitions: {
         *Init + AuthRequest(AuthRequestContext) / auth_request_context =  ReceivedAuthRequest(AuthRequestContext),
-        ReceivedAuthRequest(AuthRequestContext) + ReceivedBootstrapToken = Authenticated,
+        ReceivedAuthRequest(AuthRequestContext) + ReceivedBootstrapToken = Idle,
 
         ReceivedAuthRequest(AuthRequestContext) + SentChallenge(ChallengeContext) / move_challenge = WaitingForChallengeSolution(ChallengeContext),
 
-        WaitingForChallengeSolution(ChallengeContext) + ReceivedGoodSolution = Authenticated,
+        WaitingForChallengeSolution(ChallengeContext) + ReceivedGoodSolution = Idle,
         WaitingForChallengeSolution(ChallengeContext) + ReceivedBadSolution = AuthError, // block further transitions, but connection should close anyway
+
+        Idle + UnsealRequest / generate_temp_keypair = UnsealStarted(ed25519_dalek::SigningKey),
+        UnsealStarted(ed25519_dalek::SigningKey) + SentTempKeypair / move_keypair = WaitingForUnsealKey(ed25519_dalek::SigningKey),
     }
 );
 
@@ -69,7 +69,7 @@ impl UserAgentStateMachineContext for DummyContext {
     #[allow(clippy::unused_unit)]
     fn move_challenge(
         &mut self,
-        state_data: &AuthRequestContext,
+        _state_data: &AuthRequestContext,
         event_data: ChallengeContext,
     ) -> Result<ChallengeContext, ()> {
         Ok(event_data)
@@ -83,6 +83,21 @@ impl UserAgentStateMachineContext for DummyContext {
     ) -> Result<AuthRequestContext, ()> {
         Ok(event_data)
     }
+
+    #[allow(missing_docs)]
+    #[allow(clippy::unused_unit)]
+    fn move_keypair(
+        &mut self,
+        state_data: &ed25519_dalek::SigningKey,
+    ) -> Result<ed25519_dalek::SigningKey, ()> {
+        Ok(state_data.clone())
+    }
+
+    #[allow(missing_docs)]
+    #[allow(clippy::unused_unit)]
+    fn generate_temp_keypair(&mut self) -> Result<ed25519_dalek::SigningKey, ()> {
+        Ok(ed25519_dalek::SigningKey::generate(&mut rand::rng()))
+    }
 }
 
 #[derive(Actor)]
@@ -90,7 +105,8 @@ pub struct UserAgentActor {
     db: db::DatabasePool,
     bootstapper: ActorRef<BootstrapActor>,
     state: UserAgentStateMachine<DummyContext>,
-    tx: Sender<Result<UserAgentResponse, Status>>,
+    // will be used in future
+    _tx: Sender<Result<UserAgentResponse, Status>>,
 }
 
 impl UserAgentActor {
@@ -102,10 +118,11 @@ impl UserAgentActor {
             db: context.db.clone(),
             bootstapper: context.bootstrapper.clone(),
             state: UserAgentStateMachine::new(DummyContext),
-            tx,
+            _tx: tx,
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn new_manual(
         db: db::DatabasePool,
         bootstapper: ActorRef<BootstrapActor>,
@@ -115,7 +132,7 @@ impl UserAgentActor {
             db,
             bootstapper,
             state: UserAgentStateMachine::new(DummyContext),
-            tx,
+            _tx: tx,
         }
     }
 
@@ -319,8 +336,10 @@ mod tests {
     use kameo::actor::Spawn;
 
     use crate::{
-        actors::user_agent::{HandleAuthChallengeRequest, HandleAuthChallengeSolution},
-        context::bootstrap::BootstrapActor,
+        actors::{
+            bootstrap::BootstrapActor,
+            user_agent::{HandleAuthChallengeRequest, HandleAuthChallengeSolution},
+        },
         db::{self, schema},
     };
 
@@ -449,7 +468,7 @@ mod tests {
         {
             let mut conn = db.get().await.unwrap();
             insert_into(schema::useragent_client::table)
-                .values((schema::useragent_client::public_key.eq(pubkey_bytes.clone())))
+                .values(schema::useragent_client::public_key.eq(pubkey_bytes.clone()))
                 .execute(&mut conn)
                 .await
                 .unwrap();
