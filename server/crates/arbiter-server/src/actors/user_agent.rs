@@ -308,15 +308,20 @@ impl UserAgentActor {
 #[cfg(test)]
 mod tests {
     use arbiter_proto::proto::{
-        UserAgentResponse, auth::{AuthChallengeRequest, AuthOk},
+        UserAgentResponse,
+        auth::{self, AuthChallengeRequest, AuthOk},
         user_agent_response::Payload as UserAgentResponsePayload,
     };
-    use diesel::QueryDsl;
+    use chrono::format;
+    use diesel::{ExpressionMethods as _, QueryDsl, insert_into};
     use diesel_async::RunQueryDsl;
+    use ed25519_dalek::Signer as _;
     use kameo::actor::Spawn;
 
     use crate::{
-        actors::user_agent::HandleAuthChallengeRequest, context::bootstrap::BootstrapActor, db::{self, schema},
+        actors::user_agent::{HandleAuthChallengeRequest, HandleAuthChallengeSolution},
+        context::bootstrap::BootstrapActor,
+        db::{self, schema},
     };
 
     use super::UserAgentActor;
@@ -350,7 +355,7 @@ mod tests {
             })
             .await
             .expect("Shouldn't fail to send message");
-        
+
         // auth succeeded
         assert_eq!(
             result,
@@ -401,8 +406,7 @@ mod tests {
                     bootstrap_token: Some("invalid_token".to_string()),
                 },
             })
-            .await
-            ;
+            .await;
 
         match result {
             Err(kameo::error::SendError::HandlerError(status)) => {
@@ -414,16 +418,93 @@ mod tests {
                     source: None,
                 }
                 "#);
-            },
+            }
             Err(other) => {
                 panic!("Expected SendError::HandlerError, got {other:?}");
-            },
+            }
             Ok(_) => {
                 panic!("Expected error due to invalid bootstrap token, but got success");
             }
         }
-        
-       
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    pub async fn test_challenge_auth() {
+        let db = db::create_test_pool().await;
+
+        let bootstrapper_ref = BootstrapActor::spawn(BootstrapActor::new(&db).await.unwrap());
+        let user_agent = UserAgentActor::new_manual(
+            db.clone(),
+            bootstrapper_ref,
+            tokio::sync::mpsc::channel(1).0, // dummy channel, we won't actually send responses in this test
+        );
+        let user_agent_ref = UserAgentActor::spawn(user_agent);
+
+        // simulate client sending auth request with bootstrap token
+        let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
+        let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
+
+        // insert pubkey into database to trigger challenge-response auth flow
+        {
+            let mut conn = db.get().await.unwrap();
+            insert_into(schema::useragent_client::table)
+                .values((schema::useragent_client::public_key.eq(pubkey_bytes.clone())))
+                .execute(&mut conn)
+                .await
+                .unwrap();
+        }
+
+        let result = user_agent_ref
+            .ask(HandleAuthChallengeRequest {
+                req: AuthChallengeRequest {
+                    pubkey: pubkey_bytes,
+                    bootstrap_token: None,
+                },
+            })
+            .await
+            .expect("Shouldn't fail to send message");
+
+        // auth challenge succeeded
+        let UserAgentResponse {
+            payload:
+                Some(UserAgentResponsePayload::AuthMessage(arbiter_proto::proto::auth::ServerMessage {
+                    payload:
+                        Some(arbiter_proto::proto::auth::server_message::Payload::AuthChallenge(
+                            challenge,
+                        )),
+                })),
+        } = result
+        else {
+            panic!("Expected auth challenge response, got {result:?}");
+        };
+
+        let formatted_challenge = arbiter_proto::format_challenge(&challenge);
+        let signature = new_key.sign(&formatted_challenge);
+        let serialized_signature = signature.to_bytes().to_vec();
+
+        let result = user_agent_ref
+            .ask(HandleAuthChallengeSolution {
+                solution: auth::AuthChallengeSolution {
+                    signature: serialized_signature,
+                },
+            })
+            .await
+            .expect("Shouldn't fail to send message");
+
+        // auth succeeded
+        assert_eq!(
+            result,
+            UserAgentResponse {
+                payload: Some(UserAgentResponsePayload::AuthMessage(
+                    arbiter_proto::proto::auth::ServerMessage {
+                        payload: Some(arbiter_proto::proto::auth::server_message::Payload::AuthOk(
+                            AuthOk {},
+                        )),
+                    },
+                )),
+            }
+        );
     }
 }
 
