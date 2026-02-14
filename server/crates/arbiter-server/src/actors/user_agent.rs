@@ -311,10 +311,12 @@ mod tests {
         UserAgentResponse, auth::{AuthChallengeRequest, AuthOk},
         user_agent_response::Payload as UserAgentResponsePayload,
     };
+    use diesel::QueryDsl;
+    use diesel_async::RunQueryDsl;
     use kameo::actor::Spawn;
 
     use crate::{
-        actors::user_agent::HandleAuthChallengeRequest, context::bootstrap::BootstrapActor, db,
+        actors::user_agent::HandleAuthChallengeRequest, context::bootstrap::BootstrapActor, db::{self, schema},
     };
 
     use super::UserAgentActor;
@@ -362,6 +364,66 @@ mod tests {
                 )),
             }
         );
+
+        // key is succesfully recorded in database
+        let mut conn = db.get().await.unwrap();
+        let stored_pubkey: Vec<u8> = schema::useragent_client::table
+            .select(schema::useragent_client::public_key)
+            .first::<Vec<u8>>(&mut conn)
+            .await
+            .unwrap();
+        assert_eq!(stored_pubkey, new_key.verifying_key().to_bytes().to_vec());
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    pub async fn test_bootstrap_invalid_token_auth() {
+        let db = db::create_test_pool().await;
+        // explicitly not installing any user_agent pubkeys
+        let bootstrapper = BootstrapActor::new(&db).await.unwrap(); // this will create bootstrap token
+
+        let bootstrapper_ref = BootstrapActor::spawn(bootstrapper);
+        let user_agent = UserAgentActor::new_manual(
+            db.clone(),
+            bootstrapper_ref,
+            tokio::sync::mpsc::channel(1).0, // dummy channel, we won't actually send responses in this test
+        );
+        let user_agent_ref = UserAgentActor::spawn(user_agent);
+
+        // simulate client sending auth request with bootstrap token
+        let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
+        let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
+
+        let result = user_agent_ref
+            .ask(HandleAuthChallengeRequest {
+                req: AuthChallengeRequest {
+                    pubkey: pubkey_bytes,
+                    bootstrap_token: Some("invalid_token".to_string()),
+                },
+            })
+            .await
+            ;
+
+        match result {
+            Err(kameo::error::SendError::HandlerError(status)) => {
+                assert_eq!(status.code(), tonic::Code::InvalidArgument);
+                insta::assert_debug_snapshot!(status, @r#"
+                Status {
+                    code: InvalidArgument,
+                    message: "Invalid bootstrap token",
+                    source: None,
+                }
+                "#);
+            },
+            Err(other) => {
+                panic!("Expected SendError::HandlerError, got {other:?}");
+            },
+            Ok(_) => {
+                panic!("Expected error due to invalid bootstrap token, but got success");
+            }
+        }
+        
+       
     }
 }
 

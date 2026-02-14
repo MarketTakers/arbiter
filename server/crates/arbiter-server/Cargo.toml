@@ -46,4 +46,5 @@ zeroize = { version = "1.8.2", features = ["std", "simd"] }
 kameo.workspace = true
 
 [dev-dependencies]
+insta = "1.46.3"
 test-log = { version = "0.2", default-features = false, features = ["trace"] }
