@@ -322,9 +322,7 @@ mod tests {
     #[tokio::test]
     #[test_log::test]
     pub async fn test_bootstrap_token_auth() {
-        let db = db::create_pool(Some("sqlite://:memory:"))
-            .await
-            .expect("Failed to create database pool");
+        let db = db::create_test_pool().await;
         // explicitly not installing any user_agent pubkeys
         let bootstrapper = BootstrapActor::new(&db).await.unwrap(); // this will create bootstrap token
         let token = bootstrapper.get_token().unwrap();

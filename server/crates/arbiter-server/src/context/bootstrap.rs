@@ -1,9 +1,5 @@
 use arbiter_proto::{BOOTSTRAP_TOKEN_PATH, home_path};
-use diesel::{
-    ExpressionMethods, QueryDsl,
-    dsl::{count, exists},
-    select,
-};
+use diesel::{ExpressionMethods, QueryDsl};
 use diesel_async::RunQueryDsl;
 use kameo::{Actor, messages};
 use memsafe::MemSafe;
@@ -61,16 +57,14 @@ impl BootstrapActor {
     pub async fn new(db: &DatabasePool) -> Result<Self, BootstrapError> {
         let mut conn = db.get().await?;
 
-        let needs_token: bool = select(exists(
-            schema::useragent_client::table
-                .filter(schema::useragent_client::id.eq(schema::useragent_client::id)), // Just check if the table is empty
-        ))
-        .first(&mut conn)
-        .await?;
+        let row_count: i64 = schema::useragent_client::table
+            .count()
+            .get_result(&mut conn)
+            .await?;
 
         drop(conn);
 
-        let token = if needs_token {
+        let token = if row_count == 0 {
             let token = generate_token().await?;
             info!(%token, "Generated bootstrap token");
             tokio::fs::write(home_path()?.join(BOOTSTRAP_TOKEN_PATH), token.as_str()).await?;

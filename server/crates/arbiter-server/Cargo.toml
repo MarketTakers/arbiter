@@ -58,3 +58,4 @@ prost-types.workspace = true
 
 [dev-dependencies]
 test-log = { version = "0.2", default-features = false, features = ["trace"] }
+tempfile = "3.25.0"
