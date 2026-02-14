@@ -12,6 +12,7 @@ use diesel_async::{
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use miette::Diagnostic;
 use thiserror::Error;
+use tracing::info;
 
 pub mod models;
 pub mod schema;
@@ -23,7 +24,7 @@ pub type PoolError = diesel_async::pooled_connection::bb8::RunError;
 
 static DB_FILE: &'static str = "arbiter.sqlite";
 
-const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
+const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
 #[derive(Error, Diagnostic, Debug)]
 pub enum DatabaseSetupError {
@@ -48,6 +49,7 @@ pub enum DatabaseSetupError {
     Pool(#[from] PoolInitError),
 }
 
+#[tracing::instrument(level = "info")]
 fn database_path() -> Result<std::path::PathBuf, DatabaseSetupError> {
     let arbiter_home = arbiter_proto::home_path().map_err(DatabaseSetupError::HomeDir)?;
 
@@ -56,6 +58,7 @@ fn database_path() -> Result<std::path::PathBuf, DatabaseSetupError> {
     Ok(db_path)
 }
 
+#[tracing::instrument(level = "info", skip(conn))]
 fn db_config(conn: &mut SqliteConnection) -> Result<(), diesel::result::Error> {
     // fsync only in critical moments
     conn.batch_execute("PRAGMA synchronous = NORMAL;")?;
@@ -77,6 +80,7 @@ fn db_config(conn: &mut SqliteConnection) -> Result<(), diesel::result::Error> {
     Ok(())
 }
 
+#[tracing::instrument(level = "info", skip(url))]
 fn initialize_database(url: &str) -> Result<(), DatabaseSetupError> {
     let mut conn = SqliteConnection::establish(url).map_err(DatabaseSetupError::Connection)?;
 
@@ -85,16 +89,19 @@ fn initialize_database(url: &str) -> Result<(), DatabaseSetupError> {
     conn.run_pending_migrations(MIGRATIONS)
         .map_err(DatabaseSetupError::Migration)?;
 
+    info!(%url, "Database initialized successfully");
+
     Ok(())
 }
 
-pub async fn create_pool() -> Result<DatabasePool, DatabaseSetupError> {
-    let database_url = format!(
+#[tracing::instrument(level = "info")]
+pub async fn create_pool(url: Option<&str>) -> Result<DatabasePool, DatabaseSetupError> {
+    let database_url = url.map(String::from).unwrap_or(format!(
         "{}?mode=rwc",
-        database_path()?
+        (database_path()?
             .to_str()
-            .expect("database path is not valid UTF-8")
-    );
+            .expect("database path is not valid UTF-8"))
+    ));
 
     initialize_database(&database_url)?;
 

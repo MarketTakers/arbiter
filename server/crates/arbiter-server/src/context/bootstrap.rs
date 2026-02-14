@@ -81,6 +81,11 @@ impl BootstrapActor {
 
         Ok(Self { token })
     }
+
+    #[cfg(test)]
+    pub fn get_token(&self) -> Option<String> {
+        self.token.clone()
+    }
 }
 
 #[messages]

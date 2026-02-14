@@ -63,7 +63,8 @@ smlang::statemachine!(
     }
 );
 
-impl UserAgentStateMachineContext for ServerContext {
+pub struct DummyContext;
+impl UserAgentStateMachineContext for DummyContext {
     #[allow(missing_docs)]
     #[allow(clippy::unused_unit)]
     fn move_challenge(
@@ -88,7 +89,7 @@ impl UserAgentStateMachineContext for ServerContext {
 pub struct UserAgentActor {
     db: db::DatabasePool,
     bootstapper: ActorRef<BootstrapActor>,
-    state: UserAgentStateMachine<ServerContext>,
+    state: UserAgentStateMachine<DummyContext>,
     tx: Sender<Result<UserAgentResponse, Status>>,
 }
 
@@ -100,7 +101,7 @@ impl UserAgentActor {
         Self {
             db: context.db.clone(),
             bootstapper: context.bootstrapper.clone(),
-            state: UserAgentStateMachine::new(context),
+            state: UserAgentStateMachine::new(DummyContext),
             tx,
         }
     }
@@ -108,13 +109,12 @@ impl UserAgentActor {
     pub(crate) fn new_manual(
         db: db::DatabasePool,
         bootstapper: ActorRef<BootstrapActor>,
-        state: UserAgentStateMachine<ServerContext>,
         tx: Sender<Result<UserAgentResponse, Status>>,
     ) -> Self {
         Self {
             db,
             bootstapper,
-            state,
+            state: UserAgentStateMachine::new(DummyContext),
             tx,
         }
     }
@@ -302,6 +302,68 @@ impl UserAgentActor {
             self.transition(UserAgentEvents::ReceivedBadSolution)?;
             Err(Status::unauthenticated("Invalid challenge solution"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use arbiter_proto::proto::{
+        UserAgentResponse, auth::{AuthChallengeRequest, AuthOk},
+        user_agent_response::Payload as UserAgentResponsePayload,
+    };
+    use kameo::actor::Spawn;
+
+    use crate::{
+        actors::user_agent::HandleAuthChallengeRequest, context::bootstrap::BootstrapActor, db,
+    };
+
+    use super::UserAgentActor;
+
+    #[tokio::test]
+    #[test_log::test]
+    pub async fn test_bootstrap_token_auth() {
+        let db = db::create_pool(Some("sqlite://:memory:"))
+            .await
+            .expect("Failed to create database pool");
+        // explicitly not installing any user_agent pubkeys
+        let bootstrapper = BootstrapActor::new(&db).await.unwrap(); // this will create bootstrap token
+        let token = bootstrapper.get_token().unwrap();
+
+        let bootstrapper_ref = BootstrapActor::spawn(bootstrapper);
+        let user_agent = UserAgentActor::new_manual(
+            db.clone(),
+            bootstrapper_ref,
+            tokio::sync::mpsc::channel(1).0, // dummy channel, we won't actually send responses in this test
+        );
+        let user_agent_ref = UserAgentActor::spawn(user_agent);
+
+        // simulate client sending auth request with bootstrap token
+        let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
+        let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
+
+        let result = user_agent_ref
+            .ask(HandleAuthChallengeRequest {
+                req: AuthChallengeRequest {
+                    pubkey: pubkey_bytes,
+                    bootstrap_token: Some(token),
+                },
+            })
+            .await
+            .expect("Shouldn't fail to send message");
+        
+        // auth succeeded
+        assert_eq!(
+            result,
+            UserAgentResponse {
+                payload: Some(UserAgentResponsePayload::AuthMessage(
+                    arbiter_proto::proto::auth::ServerMessage {
+                        payload: Some(arbiter_proto::proto::auth::server_message::Payload::AuthOk(
+                            AuthOk {},
+                        )),
+                    },
+                )),
+            }
+        );
     }
 }
 
