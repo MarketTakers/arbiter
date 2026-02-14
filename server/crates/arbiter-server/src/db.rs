@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
-use diesel::{Connection as _, SqliteConnection, connection::SimpleConnection as _};
+use diesel::{
+    Connection as _, SqliteConnection,
+    connection::{SimpleConnection as _, TransactionManager},
+};
 use diesel_async::{
-    AsyncConnection, SimpleAsyncConnection as _,
+    AsyncConnection, SimpleAsyncConnection,
     pooled_connection::{AsyncDieselConnectionManager, ManagerConfig, RecyclingMethod},
     sync_connection_wrapper::SyncConnectionWrapper,
 };
@@ -52,7 +55,6 @@ fn database_path() -> Result<std::path::PathBuf, DatabaseSetupError> {
 
     Ok(db_path)
 }
-
 
 fn db_config(conn: &mut SqliteConnection) -> Result<(), diesel::result::Error> {
     // fsync only in critical moments
@@ -115,10 +117,12 @@ pub async fn create_pool() -> Result<DatabasePool, DatabaseSetupError> {
         })
     });
 
-    let pool = DatabasePool::builder().build(AsyncDieselConnectionManager::new_with_config(
-        database_url,
-        config,
-    )).await?;
+    let pool = DatabasePool::builder()
+        .build(AsyncDieselConnectionManager::new_with_config(
+            database_url,
+            config,
+        ))
+        .await?;
 
     Ok(pool)
 }

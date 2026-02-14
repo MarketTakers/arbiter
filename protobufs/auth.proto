@@ -11,13 +11,11 @@ message AuthChallengeRequest {
 
 message AuthChallenge {
   bytes pubkey = 1;
-  bytes nonce = 2;
-  google.protobuf.Timestamp minted = 3;
+  int32 nonce = 2;
 }
 
 message AuthChallengeSolution {
-  AuthChallenge challenge = 1;
-  bytes signature = 2;
+  bytes signature = 1;
 }
 
 message AuthOk {}

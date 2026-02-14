@@ -1,74 +1,81 @@
-use std::sync::Arc;
-
-use arbiter_proto::{
-    proto::{
-        UserAgentRequest, UserAgentResponse,
-        auth::{
-            self, AuthChallengeRequest, ClientMessage, ServerMessage as AuthServerMessage,
-            client_message::Payload as ClientAuthPayload,
-            server_message::Payload as ServerAuthPayload,
-        },
-        user_agent_request::Payload as UserAgentRequestPayload,
-        user_agent_response::Payload as UserAgentResponsePayload,
+use arbiter_proto::proto::{
+    UserAgentRequest, UserAgentResponse,
+    auth::{
+        self, AuthChallenge, AuthChallengeRequest, AuthOk, ClientMessage,
+        ServerMessage as AuthServerMessage, client_message::Payload as ClientAuthPayload,
+        server_message::Payload as ServerAuthPayload,
     },
-    transport::Bi,
+    user_agent_request::Payload as UserAgentRequestPayload,
+    user_agent_response::Payload as UserAgentResponsePayload,
 };
-use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl};
+use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, dsl::update};
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use ed25519_dalek::{SigningKey, VerifyingKey};
+use ed25519_dalek::VerifyingKey;
 use futures::StreamExt;
 use kameo::{
     Actor,
     actor::{ActorRef, Spawn},
     error::SendError,
-    message::StreamMessage,
     messages,
     prelude::Context,
 };
-use secrecy::{ExposeSecret, SecretBox};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
-use tonic::{Status, transport::Server};
-use tracing::error;
+use tonic::Status;
+use tracing::{error, info};
 
-use crate::{ServerContext, context::bootstrap::ConsumeToken, db::schema};
+use crate::{ServerContext, context::bootstrap::ConsumeToken, db::schema, errors::GrpcStatusExt};
 
-#[derive(Debug)]
+/// Context for state machine with validated key and sent challenge
+/// Challenge is then transformed to bytes using shared function and verified
+#[derive(Clone, Debug)]
 pub struct ChallengeContext {
-    challenge: auth::AuthChallenge,
-    key: SigningKey,
+    challenge: AuthChallenge,
+    key: VerifyingKey,
+}
+
+// Request context with deserialized public key for state machine.
+// This intermediate struct is needed because the state machine branches depending on presence of bootstrap token,
+// but we want to have the deserialized key in both branches.
+#[derive(Clone, Debug)]
+pub struct AuthRequestContext {
+    pubkey: VerifyingKey,
     bootstrap_token: Option<String>,
 }
 
 smlang::statemachine!(
     name: UserAgent,
     derive_states: [Debug],
+    custom_error: false,
     transitions: {
-        *Init + ReceivedRequest(ed25519_dalek::VerifyingKey) [async check_key_existence] / provide_challenge = WaitingForChallengeSolution(ChallengeContext),
-        Init + ReceivedBootstrapToken(String) = Authenticated,
+        *Init + AuthRequest(AuthRequestContext) / auth_request_context =  ReceivedAuthRequest(AuthRequestContext),
+        ReceivedAuthRequest(AuthRequestContext) + ReceivedBootstrapToken = Authenticated,
+
+        ReceivedAuthRequest(AuthRequestContext) + SentChallenge(ChallengeContext) / move_challenge = WaitingForChallengeSolution(ChallengeContext),
 
         WaitingForChallengeSolution(ChallengeContext) + ReceivedGoodSolution = Authenticated,
-        WaitingForChallengeSolution(ChallengeContext) + ReceivedBadSolution = Error,
+        WaitingForChallengeSolution(ChallengeContext) + ReceivedBadSolution = AuthError, // block further transitions, but connection should close anyway
     }
 );
 
 impl UserAgentStateMachineContext for ServerContext {
     #[allow(missing_docs)]
     #[allow(clippy::unused_unit)]
-    fn provide_challenge(
+    fn move_challenge(
         &mut self,
-        event_data: ed25519_dalek::VerifyingKey,
+        state_data: &AuthRequestContext,
+        event_data: ChallengeContext,
     ) -> Result<ChallengeContext, ()> {
-        todo!()
+        Ok(event_data)
     }
 
     #[allow(missing_docs)]
-    #[allow(clippy::result_unit_err)]
-    async fn check_key_existence(
-        &self,
-        event_data: &ed25519_dalek::VerifyingKey,
-    ) -> Result<bool, ()> {
-        todo!()
+    #[allow(clippy::unused_unit)]
+    fn auth_request_context(
+        &mut self,
+        event_data: AuthRequestContext,
+    ) -> Result<AuthRequestContext, ()> {
+        Ok(event_data)
     }
 }
 
@@ -76,19 +83,27 @@ impl UserAgentStateMachineContext for ServerContext {
 pub struct UserAgentActor {
     context: ServerContext,
     state: UserAgentStateMachine<ServerContext>,
-    rx: Sender<Result<UserAgentResponse, Status>>,
+    tx: Sender<Result<UserAgentResponse, Status>>,
 }
 
 impl UserAgentActor {
     pub(crate) fn new(
         context: ServerContext,
-        rx: Sender<Result<UserAgentResponse, Status>>,
+        tx: Sender<Result<UserAgentResponse, Status>>,
     ) -> Self {
         Self {
             context: context.clone(),
             state: UserAgentStateMachine::new(context),
-            rx,
+            tx,
         }
+    }
+
+    fn transition(&mut self, event: UserAgentEvents) -> Result<(), Status> {
+        self.state.process_event(event).map_err(|e| {
+            error!(?e, "State transition failed");
+            Status::internal("State machine error")
+        })?;
+        Ok(())
     }
 
     async fn auth_with_bootstrap_token(
@@ -106,11 +121,13 @@ impl UserAgentActor {
                 Status::internal("Bootstrap token consumption failed")
             })?;
 
-        if token_ok {
-            let mut conn = self.context.db.get().await.map_err(|e| {
-                error!(?pubkey, "Failed to get DB connection: {e}");
-                Status::internal("Database connection error")
-            })?;
+        if !token_ok {
+            error!(?pubkey, "Invalid bootstrap token provided");
+            return Err(Status::invalid_argument("Invalid bootstrap token"));
+        }
+
+        {
+            let mut conn = self.context.db.get().await.to_status()?;
 
             diesel::insert_into(schema::useragent_client::table)
                 .values((
@@ -119,23 +136,104 @@ impl UserAgentActor {
                 ))
                 .execute(&mut conn)
                 .await
-                .map_err(|e| {
-                    error!(?pubkey, "Failed to insert new user agent client: {e}");
-                    Status::internal("Database error")
-                })?;
-
-            return Ok(UserAgentResponse {
-                payload: Some(UserAgentResponsePayload::AuthMessage(AuthServerMessage {
-                    payload: Some(ServerAuthPayload::Auth),
-                })),
-            });
+                .to_status()?;
         }
 
-        todo!()
+        self.transition(UserAgentEvents::ReceivedBootstrapToken)?;
+
+        Ok(auth_response(ServerAuthPayload::AuthOk(AuthOk {})))
+    }
+
+    async fn auth_with_challenge(&mut self, pubkey: VerifyingKey, pubkey_bytes: Vec<u8>) -> Output {
+        let nonce: Option<i32> = {
+            let mut db_conn = self.context.db.get().await.to_status()?;
+            db_conn
+                .transaction(|conn| {
+                    Box::pin(async move {
+                        let current_nonce = schema::useragent_client::table
+                            .filter(
+                                schema::useragent_client::public_key.eq(pubkey.as_bytes().to_vec()),
+                            )
+                            .select(schema::useragent_client::nonce)
+                            .first::<i32>(conn)
+                            .await?;
+
+                        update(schema::useragent_client::table)
+                            .filter(
+                                schema::useragent_client::public_key.eq(pubkey.as_bytes().to_vec()),
+                            )
+                            .set(schema::useragent_client::nonce.eq(current_nonce + 1))
+                            .execute(conn)
+                            .await?;
+
+                        Result::<_, diesel::result::Error>::Ok(current_nonce)
+                    })
+                })
+                .await
+                .optional()
+                .to_status()?
+        };
+
+        let Some(nonce) = nonce else {
+            error!(?pubkey, "Public key not found in database");
+            return Err(Status::unauthenticated("Public key not registered"));
+        };
+
+        let challenge = auth::AuthChallenge {
+            pubkey: pubkey_bytes,
+            nonce: nonce,
+        };
+
+        self.transition(UserAgentEvents::SentChallenge(ChallengeContext {
+            challenge: challenge.clone(),
+            key: pubkey,
+        }))?;
+
+        info!(
+            ?pubkey,
+            ?challenge,
+            "Sent authentication challenge to client"
+        );
+
+        Ok(auth_response(ServerAuthPayload::AuthChallenge(challenge)))
+    }
+
+    fn verify_challenge_solution(
+        &self,
+        solution: &auth::AuthChallengeSolution,
+    ) -> Result<(bool, &ChallengeContext), Status> {
+        let UserAgentStates::WaitingForChallengeSolution(challenge_context) = self.state.state()
+        else {
+            error!("Received challenge solution in invalid state");
+            return Err(Status::invalid_argument(
+                "Invalid state for challenge solution",
+            ));
+        };
+        let formatted_challenge = arbiter_proto::format_challenge(&challenge_context.challenge);
+
+        let signature = solution.signature.as_slice().try_into().map_err(|_| {
+            error!(?solution, "Invalid signature length");
+            Status::invalid_argument("Invalid signature length")
+        })?;
+
+        let valid = challenge_context
+            .key
+            .verify_strict(&formatted_challenge, &signature)
+            .is_ok();
+
+        Ok((valid, challenge_context))
     }
 }
 
 type Output = Result<UserAgentResponse, Status>;
+
+fn auth_response(payload: ServerAuthPayload) -> UserAgentResponse {
+    UserAgentResponse {
+        payload: Some(UserAgentResponsePayload::AuthMessage(AuthServerMessage {
+            payload: Some(payload),
+        })),
+    }
+}
 
 #[messages]
 impl UserAgentActor {
@@ -153,32 +251,15 @@ impl UserAgentActor {
             Status::invalid_argument("Failed to convert pubkey to VerifyingKey")
         })?;
 
-        if let Some(token) = req.bootstrap_token {
-            return self.auth_with_bootstrap_token(pubkey, token).await;
+        self.transition(UserAgentEvents::AuthRequest(AuthRequestContext {
+            pubkey,
+            bootstrap_token: req.bootstrap_token.clone(),
+        }))?;
+
+        match req.bootstrap_token {
+            Some(token) => self.auth_with_bootstrap_token(pubkey, token).await,
+            None => self.auth_with_challenge(pubkey, req.pubkey).await,
         }
-
-        let mut db_conn = self.context.db.get().await.map_err(|err| {
-            error!(?pubkey, "Failed to get DB connection: {err}");
-            Status::internal("Database connection error")
-        })?;
-
-        let nonce = db_conn
-            .transaction(|mut conn| {
-                Box::pin(async move {
-                    let current_nonce = schema::useragent_client::table
-                        .filter(schema::useragent_client::public_key.eq(pubkey.as_bytes().to_vec()))
-                        .select(schema::useragent_client::nonce)
-                        .first::<i32>(&mut db_conn)
-                        .await?;
-
-                    Ok(())
-                })
-            })
-            .await;
-
-        // let nonce = match last_used_nonce
-
-        todo!()
     }
 
     #[message(ctx)]
@@ -187,7 +268,20 @@ impl UserAgentActor {
         solution: auth::AuthChallengeSolution,
         ctx: &mut Context<Self, Output>,
     ) -> Output {
-        todo!()
+        let (valid, challenge_context) = self.verify_challenge_solution(&solution)?;
+
+        if valid {
+            info!(
+                ?challenge_context,
+                "Client provided valid solution to authentication challenge"
+            );
+            self.transition(UserAgentEvents::ReceivedGoodSolution)?;
+            Ok(auth_response(ServerAuthPayload::AuthOk(AuthOk {})))
+        } else {
+            error!("Client provided invalid solution to authentication challenge");
+            self.transition(UserAgentEvents::ReceivedBadSolution)?;
+            Err(Status::unauthenticated("Invalid challenge solution"))
+        }
     }
 }
 
@@ -240,7 +334,7 @@ async fn process_message(
         ));
     };
 
-    let result = match client_message {
+    match client_message {
         ClientAuthPayload::AuthChallengeRequest(req) => actor
             .ask(HandleAuthChallengeRequest { req })
             .await
@@ -249,9 +343,7 @@ async fn process_message(
             .ask(HandleAuthChallengeSolution { solution })
             .await
             .map_err(into_status),
-    };
-
-    result
+    }
 }
 
 fn into_status<M>(e: SendError<M, Status>) -> Status {

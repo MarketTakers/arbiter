@@ -1,3 +1,5 @@
+use crate::proto::auth::AuthChallenge;
+
 pub mod proto {
     tonic::include_proto!("arbiter");
 
@@ -21,4 +23,9 @@ pub fn home_path() -> Result<std::path::PathBuf, std::io::Error> {
     std::fs::create_dir_all(&arbiter_home)?;
 
     Ok(arbiter_home)
+}
+
+pub fn format_challenge(challenge: &AuthChallenge) -> Vec<u8> {
+    let concat_form = format!("{}:{}", challenge.nonce, hex::encode(&challenge.pubkey));
+    concat_form.into_bytes().to_vec()
 }
