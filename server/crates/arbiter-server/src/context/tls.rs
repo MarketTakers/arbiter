@@ -60,7 +60,7 @@ fn generate_cert(key: &KeyPair) -> Result<Certificate, rcgen::Error> {
 }
 
 // TODO: Implement cert rotation
-pub(crate) struct TlsManager {
+pub struct TlsManager {
     data: TlsData,
 }
 
