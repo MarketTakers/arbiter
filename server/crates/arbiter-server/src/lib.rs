@@ -1,7 +1,4 @@
-#![allow(unused)]
-
-use std::sync::Arc;
-
+#![forbid(unsafe_code)]
 use arbiter_proto::{
     proto::{ClientRequest, ClientResponse, UserAgentRequest, UserAgentResponse},
     transport::BiStream,
