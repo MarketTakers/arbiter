@@ -1,0 +1,24 @@
+when:
+  - event: pull_request
+    path:
+      include: ['.woodpecker/server-*.yaml', 'server/**']
+  - event: push
+    branch: main
+    path:
+      include: ['.woodpecker/server-*.yaml', 'server/**']
+
+steps:
+  - name: test
+    image: jdxcode/mise:latest
+    directory: server
+    environment:
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_DIR: /usr/local/cargo/target
+      CARGO_HOME: /usr/local/cargo/registry
+    volumes:
+      - cargo-target:/usr/local/cargo/target
+      - cargo-registry:/usr/local/cargo/registry
+    commands:
+      - apt-get update && apt-get install -y pkg-config
+      - mise install rust 
+      - mise exec rust -- cargo clippy --all-targets --all-features -- -D warnings
