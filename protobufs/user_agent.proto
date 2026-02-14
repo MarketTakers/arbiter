@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package arbiter;
+
+import "auth.proto";
+import "unseal.proto";
+
+message UserAgentRequest {
+  oneof payload {
+    arbiter.auth.ClientMessage auth_message = 1;
+    arbiter.unseal.UnsealStart unseal_start = 2;
+    arbiter.unseal.UnsealEncryptedKey unseal_encrypted_key = 3;
+  }
+}
+message UserAgentResponse {
+  oneof payload {
+    arbiter.auth.ServerMessage auth_message = 1;
+    arbiter.unseal.UnsealStartResponse unseal_start_response = 2;
+    arbiter.unseal.UnsealResult unseal_result = 3;
+  }
+}
