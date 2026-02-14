@@ -9,7 +9,7 @@ when:
 
 steps:
   - name: test
-    image: mise:latest
+    image: jdxcode/mise:latest
     directory: server
     environment:
       CARGO_TERM_COLOR: always
