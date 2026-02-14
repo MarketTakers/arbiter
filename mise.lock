@@ -14,6 +14,10 @@ backend = "cargo:cargo-features-manager"
 version = "0.9.126"
 backend = "cargo:cargo-nextest"
 
+[[tools."cargo:cargo-shear"]]
+version = "1.9.1"
+backend = "cargo:cargo-shear"
+
 [[tools."cargo:cargo-vet"]]
 version = "0.10.2"
 backend = "cargo:cargo-vet"
