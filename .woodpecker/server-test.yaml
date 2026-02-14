@@ -22,5 +22,6 @@ steps:
       - apt-get update && apt-get install -y pkg-config
       # Install only the necessary Rust toolchain and test runner to speed up the CI
       - mise install rust 
+      - mise install protoc
       - mise install cargo:cargo-nextest
       - mise exec cargo:cargo-nextest -- cargo nextest run --no-fail-fast
