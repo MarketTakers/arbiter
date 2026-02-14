@@ -18,7 +18,6 @@ diesel-async = { version = "0.7.4", features = [
     "sqlite",
     "tokio",
 ] }
-ed25519.workspace = true
 ed25519-dalek.workspace = true
 arbiter-proto.path = "../arbiter-proto"
 tracing.workspace = true
@@ -30,7 +29,6 @@ miette.workspace = true
 thiserror.workspace = true
 diesel_migrations = { version = "2.3.1", features = ["sqlite"] }
 async-trait.workspace = true
-statig = { version = "0.4.1", features = ["async"] }
 secrecy = "0.10.3"
 futures.workspace = true
 tokio-stream.workspace = true
@@ -42,20 +40,10 @@ rcgen = { version = "0.14.7", features = [
     "x509-parser",
     "zeroize",
 ], default-features = false }
-rkyv = { version = "0.8.15", features = [
-    "aligned",
-    "little_endian",
-    "pointer_width_64",
-] }
-restructed = "0.2.2"
 chrono.workspace = true
-bytes = "1.11.1"
 memsafe = "0.4.0"
-chacha20poly1305 = { version = "0.10.1", features = ["std"] }
 zeroize = { version = "1.8.2", features = ["std", "simd"] }
 kameo.workspace = true
-prost-types.workspace = true
 
 [dev-dependencies]
 test-log = { version = "0.2", default-features = false, features = ["trace"] }
-tempfile = "3.25.0"
