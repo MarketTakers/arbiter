@@ -4,13 +4,17 @@ package arbiter.unseal;
 
 import "google/protobuf/empty.proto";
 
-message UnsealStart {}
+message UnsealStart {
+  bytes client_pubkey = 1;
+}
 
 message UnsealStartResponse {
-  bytes pubkey = 1;
+  bytes server_pubkey = 1;
 }
 message UnsealEncryptedKey {
-  bytes key = 1;
+  bytes nonce = 1;
+  bytes ciphertext = 2;
+  bytes associated_data = 3;
 }
 
 enum UnsealResult {

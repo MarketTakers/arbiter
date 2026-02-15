@@ -1,12 +1,11 @@
-use std::sync::Arc;
 
 use diesel::{
     Connection as _, SqliteConnection,
-    connection::{SimpleConnection as _, TransactionManager},
+    connection::SimpleConnection as _,
 };
 use diesel_async::{
     AsyncConnection, SimpleAsyncConnection,
-    pooled_connection::{AsyncDieselConnectionManager, ManagerConfig, RecyclingMethod},
+    pooled_connection::{AsyncDieselConnectionManager, ManagerConfig},
     sync_connection_wrapper::SyncConnectionWrapper,
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};

@@ -5,13 +5,7 @@ edition = "2024"
 repository = "https://git.markettakers.org/MarketTakers/arbiter"
 
 [dependencies]
-diesel = { version = "2.3.6", features = [
-    "sqlite",
-    "uuid",
-    "time",
-    "chrono",
-    "serde_json",
-] }
+diesel = { version = "2.3.6", features = ["chrono", "returning_clauses_for_sqlite_3_35", "serde_json", "time", "uuid"] }
 diesel-async = { version = "0.7.4", features = [
     "bb8",
     "migrations",
@@ -45,6 +39,12 @@ chrono.workspace = true
 memsafe = "0.4.0"
 zeroize = { version = "1.8.2", features = ["std", "simd"] }
 kameo.workspace = true
+x25519-dalek = { version = "2.0.1", features = ["getrandom"] }
+chacha20poly1305 = { version = "0.10.1", features = ["std"] }
+statig = { version = "0.4.1", features = ["async"] }
+argon2 = { version = "0.5.3", features = ["zeroize"] }
+restructed = "0.2.2"
+strum = { version = "0.27.2", features = ["derive"] }
 
 [dev-dependencies]
 insta = "1.46.3"

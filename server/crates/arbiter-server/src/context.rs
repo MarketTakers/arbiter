@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use diesel::OptionalExtension as _;
 use diesel_async::RunQueryDsl as _;
-use ed25519_dalek::VerifyingKey;
 use kameo::actor::{ActorRef, Spawn};
 use miette::Diagnostic;
 use rand::rngs::StdRng;
@@ -14,7 +13,7 @@ use crate::{
     actors::bootstrap::{self, BootstrapActor}, context::tls::{TlsDataRaw, TlsManager}, db::{
         self,
         models::ArbiterSetting,
-        schema::{self, arbiter_settings},
+        schema::arbiter_settings,
     }
 };
 
