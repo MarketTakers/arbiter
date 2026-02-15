@@ -2,12 +2,9 @@ use super::UserAgentActor;
 use arbiter_proto::proto::{
     UserAgentRequest, UserAgentResponse,
     auth::{
-        self, AuthChallenge, AuthChallengeRequest, AuthOk, ClientMessage,
-        ServerMessage as AuthServerMessage, client_message::Payload as ClientAuthPayload,
-        server_message::Payload as ServerAuthPayload,
+        ClientMessage as ClientAuthMessage, client_message::Payload as ClientAuthPayload,
     },
     user_agent_request::Payload as UserAgentRequestPayload,
-    user_agent_response::Payload as UserAgentResponsePayload,
 };
 use futures::StreamExt;
 use kameo::{
@@ -19,7 +16,10 @@ use tonic::Status;
 use tracing::error;
 
 use crate::{
-    actors::user_agent::{HandleAuthChallengeRequest, HandleAuthChallengeSolution},
+    actors::user_agent::{
+        HandleAuthChallengeRequest, HandleAuthChallengeSolution, HandleUnsealEncryptedKey,
+        HandleUnsealRequest,
+    },
     context::ServerContext,
 };
 
@@ -59,28 +59,30 @@ async fn process_message(
         Status::invalid_argument("Expected message with payload")
     })?;
 
-    let UserAgentRequestPayload::AuthMessage(ClientMessage {
-        payload: Some(client_message),
-    }) = msg
-    else {
-        error!(
-            actor = "useragent",
-            "Received unexpected message type during authentication"
-        );
-        return Err(Status::invalid_argument(
-            "Expected AuthMessage with ClientMessage payload",
-        ));
-    };
-
-    match client_message {
-        ClientAuthPayload::AuthChallengeRequest(req) => actor
+    match msg {
+        UserAgentRequestPayload::AuthMessage(ClientAuthMessage {
+            payload: Some(ClientAuthPayload::AuthChallengeRequest(req)),
+        }) => actor
             .ask(HandleAuthChallengeRequest { req })
             .await
             .map_err(into_status),
-        ClientAuthPayload::AuthChallengeSolution(solution) => actor
+        UserAgentRequestPayload::AuthMessage(ClientAuthMessage {
+            payload: Some(ClientAuthPayload::AuthChallengeSolution(solution)),
+        }) => actor
             .ask(HandleAuthChallengeSolution { solution })
             .await
             .map_err(into_status),
+        UserAgentRequestPayload::UnsealStart(unseal_start) => actor
+            .ask(HandleUnsealRequest { req: unseal_start })
+            .await
+            .map_err(into_status),
+        UserAgentRequestPayload::UnsealEncryptedKey(unseal_encrypted_key) => actor
+            .ask(HandleUnsealEncryptedKey {
+                req: unseal_encrypted_key,
+            })
+            .await
+            .map_err(into_status),
+        _ => Err(Status::invalid_argument("Expected message with payload")),
     }
 }
 

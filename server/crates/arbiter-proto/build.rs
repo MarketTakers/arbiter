@@ -3,6 +3,9 @@ use tonic_prost_build::configure;
 static PROTOBUF_DIR: &str = "../../../protobufs";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+    println!("cargo::rerun-if-changed={PROTOBUF_DIR}");
+
     configure()
         .message_attribute(".", "#[derive(::kameo::Reply)]")
         .compile_protos(

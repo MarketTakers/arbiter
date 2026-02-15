@@ -1,104 +1,50 @@
+use std::{
+    ops::DerefMut,
+    sync::Mutex,
+};
+
 use arbiter_proto::proto::{
     UserAgentResponse,
     auth::{
-        self, AuthChallenge, AuthChallengeRequest, AuthOk, ClientMessage,
-        ServerMessage as AuthServerMessage, client_message::Payload as ClientAuthPayload,
+        self, AuthChallengeRequest, AuthOk, ServerMessage as AuthServerMessage,
         server_message::Payload as ServerAuthPayload,
     },
-    user_agent_request::Payload as UserAgentRequestPayload,
+    unseal::{UnsealEncryptedKey, UnsealResult, UnsealStart, UnsealStartResponse},
     user_agent_response::Payload as UserAgentResponsePayload,
+};
+use chacha20poly1305::{
+    AeadInPlace, XChaCha20Poly1305, XNonce,
+    aead::KeyInit,
 };
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, dsl::update};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use ed25519_dalek::VerifyingKey;
-use kameo::{
-    Actor,
-    actor::{ActorRef, Spawn},
-    messages,
-    prelude::Context,
-};
+use kameo::{Actor, actor::ActorRef, messages};
+use memsafe::MemSafe;
 use tokio::sync::mpsc::Sender;
 use tonic::Status;
 use tracing::{error, info};
+use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
     ServerContext,
-    actors::bootstrap::{BootstrapActor, ConsumeToken},
+    actors::{
+        bootstrap::{BootstrapActor, ConsumeToken},
+        user_agent::state::{
+            AuthRequestContext, ChallengeContext, DummyContext, UnsealContext, UserAgentEvents,
+            UserAgentStateMachine, UserAgentStates,
+        },
+    },
     db::{self, schema},
     errors::GrpcStatusExt,
 };
 
-/// Context for state machine with validated key and sent challenge
-/// Challenge is then transformed to bytes using shared function and verified
-#[derive(Clone, Debug)]
-pub struct ChallengeContext {
-    challenge: AuthChallenge,
-    key: VerifyingKey,
-}
+mod state;
+#[cfg(test)]
+mod tests;
 
-// Request context with deserialized public key for state machine.
-// This intermediate struct is needed because the state machine branches depending on presence of bootstrap token,
-// but we want to have the deserialized key in both branches.
-#[derive(Clone, Debug)]
-pub struct AuthRequestContext {
-    pubkey: VerifyingKey,
-    bootstrap_token: Option<String>,
-}
-
-smlang::statemachine!(
-    name: UserAgent,
-    derive_states: [Debug],
-    custom_error: false,
-    transitions: {
-        *Init + AuthRequest(AuthRequestContext) / auth_request_context =  ReceivedAuthRequest(AuthRequestContext),
-        ReceivedAuthRequest(AuthRequestContext) + ReceivedBootstrapToken = Idle,
-
-        ReceivedAuthRequest(AuthRequestContext) + SentChallenge(ChallengeContext) / move_challenge = WaitingForChallengeSolution(ChallengeContext),
-
-        WaitingForChallengeSolution(ChallengeContext) + ReceivedGoodSolution = Idle,
-        WaitingForChallengeSolution(ChallengeContext) + ReceivedBadSolution = AuthError, // block further transitions, but connection should close anyway
-
-        Idle + UnsealRequest / generate_temp_keypair = UnsealStarted(ed25519_dalek::SigningKey),
-        UnsealStarted(ed25519_dalek::SigningKey) + SentTempKeypair / move_keypair = WaitingForUnsealKey(ed25519_dalek::SigningKey),
-    }
-);
-
-pub struct DummyContext;
-impl UserAgentStateMachineContext for DummyContext {
-    #[allow(missing_docs)]
-    #[allow(clippy::unused_unit)]
-    fn move_challenge(
-        &mut self,
-        _state_data: &AuthRequestContext,
-        event_data: ChallengeContext,
-    ) -> Result<ChallengeContext, ()> {
-        Ok(event_data)
-    }
-
-    #[allow(missing_docs)]
-    #[allow(clippy::unused_unit)]
-    fn auth_request_context(
-        &mut self,
-        event_data: AuthRequestContext,
-    ) -> Result<AuthRequestContext, ()> {
-        Ok(event_data)
-    }
-
-    #[allow(missing_docs)]
-    #[allow(clippy::unused_unit)]
-    fn move_keypair(
-        &mut self,
-        state_data: &ed25519_dalek::SigningKey,
-    ) -> Result<ed25519_dalek::SigningKey, ()> {
-        Ok(state_data.clone())
-    }
-
-    #[allow(missing_docs)]
-    #[allow(clippy::unused_unit)]
-    fn generate_temp_keypair(&mut self) -> Result<ed25519_dalek::SigningKey, ()> {
-        Ok(ed25519_dalek::SigningKey::generate(&mut rand::rng()))
-    }
-}
+mod transport;
+pub(crate) use transport::handle_user_agent;
 
 #[derive(Actor)]
 pub struct UserAgentActor {
@@ -272,18 +218,93 @@ fn auth_response(payload: ServerAuthPayload) -> UserAgentResponse {
     }
 }
 
+fn unseal_response(payload: UserAgentResponsePayload) -> UserAgentResponse {
+    UserAgentResponse {
+        payload: Some(payload),
+    }
+}
+
 #[messages]
 impl UserAgentActor {
-    #[message(ctx)]
-    pub async fn handle_auth_challenge_request(
-        &mut self,
-        req: AuthChallengeRequest,
-        ctx: &mut Context<Self, Output>,
-    ) -> Output {
+    #[message]
+    pub async fn handle_unseal_request(&mut self, req: UnsealStart) -> Output {
+        let secret = EphemeralSecret::random();
+        let public_key = PublicKey::from(&secret);
+
+        let client_pubkey_bytes: [u8; 32] = req
+            .client_pubkey
+            .try_into()
+            .map_err(|_| Status::invalid_argument("client_pubkey must be 32 bytes"))?;
+
+        let client_public_key = PublicKey::from(client_pubkey_bytes);
+
+        self.transition(UserAgentEvents::UnsealRequest(UnsealContext {
+            server_public_key: public_key,
+            secret: Mutex::new(Some(secret)),
+            client_public_key,
+        }))?;
+
+        Ok(unseal_response(
+            UserAgentResponsePayload::UnsealStartResponse(UnsealStartResponse {
+                server_pubkey: public_key.as_bytes().to_vec(),
+            }),
+        ))
+    }
+
+    #[message]
+    pub async fn handle_unseal_encrypted_key(&mut self, req: UnsealEncryptedKey) -> Output {
+        let UserAgentStates::WaitingForUnsealKey(unseal_context) = self.state.state() else {
+            error!("Received unseal encrypted key in invalid state");
+            return Err(Status::failed_precondition(
+                "Invalid state for unseal encrypted key",
+            ));
+        };
+        let ephemeral_secret = {
+            let mut secret_lock = unseal_context.secret.lock().unwrap();
+            let secret = secret_lock.take();
+            match secret {
+                Some(secret) => secret,
+                None => {
+                    drop(secret_lock);
+                    error!("Ephemeral secret already taken");
+                    self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                    return Ok(unseal_response(UserAgentResponsePayload::UnsealResult(
+                        UnsealResult::InvalidKey.into(),
+                    )));
+                }
+            }
+        };
+
+        let nonce = XNonce::from_slice(&req.nonce);
+
+        let shared_secret = ephemeral_secret.diffie_hellman(&unseal_context.client_public_key);
+        let cipher = XChaCha20Poly1305::new(shared_secret.as_bytes().into());
+
+        let mut root_key_buffer = MemSafe::new(req.ciphertext.clone()).unwrap();
+        let mut write_handle = root_key_buffer.write().unwrap();
+        let write_handle = write_handle.deref_mut();
+
+        let decryption_result = cipher
+            .decrypt_in_place(nonce, &req.associated_data, write_handle);
+
+        match decryption_result {
+            Ok(_) => todo!("Send key to the keyguarding"),
+            Err(err) => {
+                error!(?err, "Failed to decrypt unseal key");
+                self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                return Ok(unseal_response(UserAgentResponsePayload::UnsealResult(
+                    UnsealResult::InvalidKey.into(),
+                )));
+            },
+        }
+    }
+
+    #[message]
+    pub async fn handle_auth_challenge_request(&mut self, req: AuthChallengeRequest) -> Output {
         let pubkey = req.pubkey.as_array().ok_or(Status::invalid_argument(
             "Expected pubkey to have specific length",
         ))?;
-        let pubkey = VerifyingKey::from_bytes(pubkey).map_err(|err| {
+        let pubkey = VerifyingKey::from_bytes(pubkey).map_err(|_err| {
             error!(?pubkey, "Failed to convert to VerifyingKey");
             Status::invalid_argument("Failed to convert pubkey to VerifyingKey")
         })?;
@@ -299,11 +320,10 @@ impl UserAgentActor {
         }
     }
 
-    #[message(ctx)]
+    #[message]
     pub async fn handle_auth_challenge_solution(
         &mut self,
         solution: auth::AuthChallengeSolution,
-        ctx: &mut Context<Self, Output>,
     ) -> Output {
         let (valid, challenge_context) = self.verify_challenge_solution(&solution)?;
 
@@ -321,211 +341,3 @@ impl UserAgentActor {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use arbiter_proto::proto::{
-        UserAgentResponse,
-        auth::{self, AuthChallengeRequest, AuthOk},
-        user_agent_response::Payload as UserAgentResponsePayload,
-    };
-    use chrono::format;
-    use diesel::{ExpressionMethods as _, QueryDsl, insert_into};
-    use diesel_async::RunQueryDsl;
-    use ed25519_dalek::Signer as _;
-    use kameo::actor::Spawn;
-
-    use crate::{
-        actors::{
-            bootstrap::BootstrapActor,
-            user_agent::{HandleAuthChallengeRequest, HandleAuthChallengeSolution},
-        },
-        db::{self, schema},
-    };
-
-    use super::UserAgentActor;
-
-    #[tokio::test]
-    #[test_log::test]
-    pub async fn test_bootstrap_token_auth() {
-        let db = db::create_test_pool().await;
-        // explicitly not installing any user_agent pubkeys
-        let bootstrapper = BootstrapActor::new(&db).await.unwrap(); // this will create bootstrap token
-        let token = bootstrapper.get_token().unwrap();
-
-        let bootstrapper_ref = BootstrapActor::spawn(bootstrapper);
-        let user_agent = UserAgentActor::new_manual(
-            db.clone(),
-            bootstrapper_ref,
-            tokio::sync::mpsc::channel(1).0, // dummy channel, we won't actually send responses in this test
-        );
-        let user_agent_ref = UserAgentActor::spawn(user_agent);
-
-        // simulate client sending auth request with bootstrap token
-        let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
-        let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
-
-        let result = user_agent_ref
-            .ask(HandleAuthChallengeRequest {
-                req: AuthChallengeRequest {
-                    pubkey: pubkey_bytes,
-                    bootstrap_token: Some(token),
-                },
-            })
-            .await
-            .expect("Shouldn't fail to send message");
-
-        // auth succeeded
-        assert_eq!(
-            result,
-            UserAgentResponse {
-                payload: Some(UserAgentResponsePayload::AuthMessage(
-                    arbiter_proto::proto::auth::ServerMessage {
-                        payload: Some(arbiter_proto::proto::auth::server_message::Payload::AuthOk(
-                            AuthOk {},
-                        )),
-                    },
-                )),
-            }
-        );
-
-        // key is succesfully recorded in database
-        let mut conn = db.get().await.unwrap();
-        let stored_pubkey: Vec<u8> = schema::useragent_client::table
-            .select(schema::useragent_client::public_key)
-            .first::<Vec<u8>>(&mut conn)
-            .await
-            .unwrap();
-        assert_eq!(stored_pubkey, new_key.verifying_key().to_bytes().to_vec());
-    }
-
-    #[tokio::test]
-    #[test_log::test]
-    pub async fn test_bootstrap_invalid_token_auth() {
-        let db = db::create_test_pool().await;
-        // explicitly not installing any user_agent pubkeys
-        let bootstrapper = BootstrapActor::new(&db).await.unwrap(); // this will create bootstrap token
-
-        let bootstrapper_ref = BootstrapActor::spawn(bootstrapper);
-        let user_agent = UserAgentActor::new_manual(
-            db.clone(),
-            bootstrapper_ref,
-            tokio::sync::mpsc::channel(1).0, // dummy channel, we won't actually send responses in this test
-        );
-        let user_agent_ref = UserAgentActor::spawn(user_agent);
-
-        // simulate client sending auth request with bootstrap token
-        let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
-        let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
-
-        let result = user_agent_ref
-            .ask(HandleAuthChallengeRequest {
-                req: AuthChallengeRequest {
-                    pubkey: pubkey_bytes,
-                    bootstrap_token: Some("invalid_token".to_string()),
-                },
-            })
-            .await;
-
-        match result {
-            Err(kameo::error::SendError::HandlerError(status)) => {
-                assert_eq!(status.code(), tonic::Code::InvalidArgument);
-                insta::assert_debug_snapshot!(status, @r#"
-                Status {
-                    code: InvalidArgument,
-                    message: "Invalid bootstrap token",
-                    source: None,
-                }
-                "#);
-            }
-            Err(other) => {
-                panic!("Expected SendError::HandlerError, got {other:?}");
-            }
-            Ok(_) => {
-                panic!("Expected error due to invalid bootstrap token, but got success");
-            }
-        }
-    }
-
-    #[tokio::test]
-    #[test_log::test]
-    pub async fn test_challenge_auth() {
-        let db = db::create_test_pool().await;
-
-        let bootstrapper_ref = BootstrapActor::spawn(BootstrapActor::new(&db).await.unwrap());
-        let user_agent = UserAgentActor::new_manual(
-            db.clone(),
-            bootstrapper_ref,
-            tokio::sync::mpsc::channel(1).0, // dummy channel, we won't actually send responses in this test
-        );
-        let user_agent_ref = UserAgentActor::spawn(user_agent);
-
-        // simulate client sending auth request with bootstrap token
-        let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
-        let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
-
-        // insert pubkey into database to trigger challenge-response auth flow
-        {
-            let mut conn = db.get().await.unwrap();
-            insert_into(schema::useragent_client::table)
-                .values(schema::useragent_client::public_key.eq(pubkey_bytes.clone()))
-                .execute(&mut conn)
-                .await
-                .unwrap();
-        }
-
-        let result = user_agent_ref
-            .ask(HandleAuthChallengeRequest {
-                req: AuthChallengeRequest {
-                    pubkey: pubkey_bytes,
-                    bootstrap_token: None,
-                },
-            })
-            .await
-            .expect("Shouldn't fail to send message");
-
-        // auth challenge succeeded
-        let UserAgentResponse {
-            payload:
-                Some(UserAgentResponsePayload::AuthMessage(arbiter_proto::proto::auth::ServerMessage {
-                    payload:
-                        Some(arbiter_proto::proto::auth::server_message::Payload::AuthChallenge(
-                            challenge,
-                        )),
-                })),
-        } = result
-        else {
-            panic!("Expected auth challenge response, got {result:?}");
-        };
-
-        let formatted_challenge = arbiter_proto::format_challenge(&challenge);
-        let signature = new_key.sign(&formatted_challenge);
-        let serialized_signature = signature.to_bytes().to_vec();
-
-        let result = user_agent_ref
-            .ask(HandleAuthChallengeSolution {
-                solution: auth::AuthChallengeSolution {
-                    signature: serialized_signature,
-                },
-            })
-            .await
-            .expect("Shouldn't fail to send message");
-
-        // auth succeeded
-        assert_eq!(
-            result,
-            UserAgentResponse {
-                payload: Some(UserAgentResponsePayload::AuthMessage(
-                    arbiter_proto::proto::auth::ServerMessage {
-                        payload: Some(arbiter_proto::proto::auth::server_message::Payload::AuthOk(
-                            AuthOk {},
-                        )),
-                    },
-                )),
-            }
-        );
-    }
-}
-
-mod transport;
-pub(crate) use transport::handle_user_agent;

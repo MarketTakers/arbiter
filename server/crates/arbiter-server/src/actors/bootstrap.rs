@@ -1,19 +1,13 @@
 use arbiter_proto::{BOOTSTRAP_TOKEN_PATH, home_path};
-use diesel::{ExpressionMethods, QueryDsl};
+use diesel::QueryDsl;
 use diesel_async::RunQueryDsl;
 use kameo::{Actor, messages};
-use memsafe::MemSafe;
 use miette::Diagnostic;
 use rand::{RngExt, distr::StandardUniform, make_rng, rngs::StdRng};
-use secrecy::SecretString;
 use thiserror::Error;
 use tracing::info;
-use zeroize::{Zeroize, Zeroizing};
 
-use crate::{
-    context::{self, ServerContext},
-    db::{self, DatabasePool, schema},
-};
+use crate::db::{self, DatabasePool, schema};
 
 const TOKEN_LENGTH: usize = 64;
 
