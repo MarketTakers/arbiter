@@ -28,7 +28,7 @@ pub async fn generate_token() -> Result<String, std::io::Error> {
 }
 
 #[derive(Error, Debug, Diagnostic)]
-pub enum BootstrapError {
+pub enum Error {
     #[error("Database error: {0}")]
     #[diagnostic(code(arbiter_server::bootstrap::database))]
     Database(#[from] db::PoolError),
@@ -48,7 +48,7 @@ pub struct Bootstrapper {
 }
 
 impl Bootstrapper {
-    pub async fn new(db: &DatabasePool) -> Result<Self, BootstrapError> {
+    pub async fn new(db: &DatabasePool) -> Result<Self, Error> {
         let mut conn = db.get().await?;
 
         let row_count: i64 = schema::useragent_client::table
@@ -68,11 +68,6 @@ impl Bootstrapper {
         };
 
         Ok(Self { token })
-    }
-
-    #[cfg(test)]
-    pub fn get_token(&self) -> Option<String> {
-        self.token.clone()
     }
 }
 
@@ -94,5 +89,14 @@ impl Bootstrapper {
         } else {
             false
         }
+    }
+}
+
+#[cfg(test)]
+#[messages]
+impl Bootstrapper {
+    #[message]
+    pub fn get_token(&self) -> Option<String> {
+        self.token.clone()
     }
 }

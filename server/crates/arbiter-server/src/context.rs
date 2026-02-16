@@ -2,15 +2,11 @@ use std::sync::Arc;
 
 use diesel::OptionalExtension as _;
 use diesel_async::RunQueryDsl as _;
-use kameo::actor::{ActorRef, Spawn};
 use miette::Diagnostic;
 use thiserror::Error;
 
 use crate::{
-    actors::{
-        bootstrap::{self, Bootstrapper},
-        keyholder::KeyHolder,
-    },
+    actors::GlobalActors,
     context::tls::{TlsDataRaw, TlsManager},
     db::{self, models::ArbiterSetting, schema::arbiter_settings},
 };
@@ -35,13 +31,9 @@ pub enum InitError {
     #[diagnostic(code(arbiter_server::init::tls_init))]
     Tls(#[from] tls::TlsInitError),
 
-    #[error("Bootstrap token generation failed: {0}")]
-    #[diagnostic(code(arbiter_server::init::bootstrap_token))]
-    BootstrapToken(#[from] bootstrap::BootstrapError),
-
-    #[error("KeyHolder initialization failed: {0}")]
-    #[diagnostic(code(arbiter_server::init::keyholder_init))]
-    KeyHolder(#[from] crate::actors::keyholder::Error),
+    #[error("Actor spawn failed: {0}")]
+    #[diagnostic(code(arbiter_server::init::actor_spawn))]
+    ActorSpawn(#[from] crate::actors::SpawnError),
 
     #[error("I/O Error: {0}")]
     #[diagnostic(code(arbiter_server::init::io))]
@@ -51,8 +43,7 @@ pub enum InitError {
 pub struct _ServerContextInner {
     pub db: db::DatabasePool,
     pub tls: TlsManager,
-    pub bootstrapper: ActorRef<Bootstrapper>,
-    pub keyholder: ActorRef<KeyHolder>,
+    pub actors: GlobalActors,
 }
 #[derive(Clone)]
 pub struct ServerContext(Arc<_ServerContextInner>);
@@ -111,8 +102,7 @@ impl ServerContext {
         drop(conn);
 
         Ok(Self(Arc::new(_ServerContextInner {
-            bootstrapper: Bootstrapper::spawn(Bootstrapper::new(&db).await?),
-            keyholder: KeyHolder::spawn(KeyHolder::new(db.clone()).await?),
+            actors: GlobalActors::spawn(db.clone()).await?,
             db,
             tls,
         })))
