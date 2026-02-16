@@ -213,8 +213,8 @@ impl KeyHolder {
             let mut conn = self.db.get().await?;
             schema::root_key_history::table
                 .filter(schema::root_key_history::id.eq(*root_key_history_id))
-                .select(schema::root_key_history::data_encryption_nonce )
-                .select(RootKeyHistory::as_select() )
+                .select(schema::root_key_history::data_encryption_nonce)
+                .select(RootKeyHistory::as_select())
                 .first(&mut conn)
                 .await?
         };
@@ -326,6 +326,21 @@ impl KeyHolder {
     #[message]
     pub fn get_state(&self) -> StateDiscriminants {
         self.state.discriminant()
+    }
+
+    #[message]
+    pub fn seal(&mut self) -> Result<(), Error> {
+        let State::Unsealed {
+            root_key_history_id,
+            ..
+        } = &self.state
+        else {
+            return Err(Error::NotBootstrapped);
+        };
+        self.state = State::Sealed {
+            root_key_history_id: *root_key_history_id,
+        };
+        Ok(())
     }
 }
 
