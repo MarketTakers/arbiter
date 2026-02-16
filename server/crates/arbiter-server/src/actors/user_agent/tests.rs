@@ -11,6 +11,7 @@ use kameo::actor::Spawn;
 use crate::{
     actors::{
         bootstrap::Bootstrapper,
+        keyholder::{self, KeyHolder},
         user_agent::{HandleAuthChallengeRequest, HandleAuthChallengeSolution},
     },
     db::{self, schema},
@@ -24,12 +25,15 @@ pub async fn test_bootstrap_token_auth() {
     let db = db::create_test_pool().await;
     // explicitly not installing any user_agent pubkeys
     let bootstrapper = Bootstrapper::new(&db).await.unwrap(); // this will create bootstrap token
+    let keyholder = KeyHolder::new(db.clone()).await.unwrap();
     let token = bootstrapper.get_token().unwrap();
 
     let bootstrapper_ref = Bootstrapper::spawn(bootstrapper);
+    let keyholder_ref = KeyHolder::spawn(keyholder);
     let user_agent = UserAgentActor::new_manual(
         db.clone(),
         bootstrapper_ref,
+        keyholder_ref,
         tokio::sync::mpsc::channel(1).0, // dummy channel, we won't actually send responses in this test
     );
     let user_agent_ref = UserAgentActor::spawn(user_agent);
@@ -78,11 +82,15 @@ pub async fn test_bootstrap_invalid_token_auth() {
     let db = db::create_test_pool().await;
     // explicitly not installing any user_agent pubkeys
     let bootstrapper = Bootstrapper::new(&db).await.unwrap(); // this will create bootstrap token
+    let keyholder = KeyHolder::new(db.clone()).await.unwrap();
 
     let bootstrapper_ref = Bootstrapper::spawn(bootstrapper);
+    let keyholder_ref = KeyHolder::spawn(keyholder);
+
     let user_agent = UserAgentActor::new_manual(
         db.clone(),
         bootstrapper_ref,
+        keyholder_ref,
         tokio::sync::mpsc::channel(1).0, // dummy channel, we won't actually send responses in this test
     );
     let user_agent_ref = UserAgentActor::spawn(user_agent);
@@ -126,9 +134,11 @@ pub async fn test_challenge_auth() {
     let db = db::create_test_pool().await;
 
     let bootstrapper_ref = Bootstrapper::spawn(Bootstrapper::new(&db).await.unwrap());
+    let keyholder_ref = KeyHolder::spawn(KeyHolder::new(db.clone()).await.unwrap());
     let user_agent = UserAgentActor::new_manual(
         db.clone(),
         bootstrapper_ref,
+        keyholder_ref,
         tokio::sync::mpsc::channel(1).0, // dummy channel, we won't actually send responses in this test
     );
     let user_agent_ref = UserAgentActor::spawn(user_agent);
