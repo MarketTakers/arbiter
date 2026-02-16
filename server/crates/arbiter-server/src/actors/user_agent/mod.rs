@@ -10,9 +10,9 @@ use arbiter_proto::proto::{
 };
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, dsl::update};
-use diesel_async::{RunQueryDsl};
+use diesel_async::RunQueryDsl;
 use ed25519_dalek::VerifyingKey;
-use kameo::{Actor, actor::ActorRef, error::SendError, messages};
+use kameo::{Actor, error::SendError, messages};
 use memsafe::MemSafe;
 use tokio::sync::mpsc::Sender;
 use tonic::Status;
@@ -22,11 +22,12 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::{
     ServerContext,
     actors::{
-        bootstrap::{Bootstrapper, ConsumeToken},
-        keyholder::{self, KeyHolder, TryUnseal},
+        GlobalActors,
+        bootstrap::ConsumeToken,
+        keyholder::{self, TryUnseal},
         user_agent::state::{
-            ChallengeContext, DummyContext, UnsealContext, UserAgentEvents,
-            UserAgentStateMachine, UserAgentStates,
+            ChallengeContext, DummyContext, UnsealContext, UserAgentEvents, UserAgentStateMachine,
+            UserAgentStates,
         },
     },
     db::{self, schema},
@@ -43,8 +44,7 @@ pub(crate) use transport::handle_user_agent;
 #[derive(Actor)]
 pub struct UserAgentActor {
     db: db::DatabasePool,
-    bootstapper: ActorRef<Bootstrapper>,
-    keyholder: ActorRef<KeyHolder>,
+    actors: GlobalActors,
     state: UserAgentStateMachine<DummyContext>,
     // will be used in future
     _tx: Sender<Result<UserAgentResponse, Status>>,
@@ -57,8 +57,7 @@ impl UserAgentActor {
     ) -> Self {
         Self {
             db: context.db.clone(),
-            bootstapper: context.bootstrapper.clone(),
-            keyholder: context.keyholder.clone(),
+            actors: context.actors.clone(),
             state: UserAgentStateMachine::new(DummyContext),
             _tx: tx,
         }
@@ -67,14 +66,12 @@ impl UserAgentActor {
     #[cfg(test)]
     pub(crate) fn new_manual(
         db: db::DatabasePool,
-        bootstapper: ActorRef<Bootstrapper>,
-        keyholder: ActorRef<KeyHolder>,
+        actors: GlobalActors,
         tx: Sender<Result<UserAgentResponse, Status>>,
     ) -> Self {
         Self {
             db,
-            bootstapper,
-            keyholder,
+            actors,
             state: UserAgentStateMachine::new(DummyContext),
             _tx: tx,
         }
@@ -94,7 +91,8 @@ impl UserAgentActor {
         token: String,
     ) -> Result<UserAgentResponse, Status> {
         let token_ok: bool = self
-            .bootstapper
+            .actors
+            .bootstrapper
             .ask(ConsumeToken { token })
             .await
             .map_err(|e| {
@@ -288,7 +286,8 @@ impl UserAgentActor {
         match decryption_result {
             Ok(_) => {
                 match self
-                    .keyholder
+                    .actors
+                    .key_holder
                     .ask(TryUnseal {
                         seal_key_raw: seal_key_buffer,
                     })

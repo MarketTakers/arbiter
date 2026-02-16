@@ -13,8 +13,9 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
     actors::{
-        bootstrap::Bootstrapper,
-        keyholder::KeyHolder,
+        GlobalActors,
+        bootstrap::GetToken,
+        keyholder::{Bootstrap, Seal},
         user_agent::{
             HandleAuthChallengeRequest, HandleAuthChallengeSolution, HandleUnsealEncryptedKey,
             HandleUnsealRequest,
@@ -47,25 +48,23 @@ async fn setup_authenticated_user_agent(
     let db = db::create_test_pool().await;
     seed_settings(&db).await;
 
-    let mut keyholder = KeyHolder::new(db.clone()).await.unwrap();
-    keyholder
-        .bootstrap(MemSafe::new(seal_key.to_vec()).unwrap())
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors
+        .key_holder
+        .ask(Bootstrap {
+            seal_key_raw: MemSafe::new(seal_key.to_vec()).unwrap(),
+        })
         .await
         .unwrap();
-    keyholder.seal().unwrap();
-    let keyholder_ref = KeyHolder::spawn(keyholder);
-   
-    let bootstrapper = Bootstrapper::new(&db).await.unwrap();
-    let token = bootstrapper.get_token().unwrap();
-    let bootstrapper_ref = Bootstrapper::spawn(bootstrapper);
+    actors.key_holder.ask(Seal).await.unwrap();
 
     let user_agent = UserAgentActor::new_manual(
         db.clone(),
-        bootstrapper_ref,
-        keyholder_ref,
+        actors.clone(),
         tokio::sync::mpsc::channel(1).0,
     );
     let user_agent_ref = UserAgentActor::spawn(user_agent);
+    let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
 
     let auth_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     user_agent_ref
@@ -128,17 +127,11 @@ async fn client_dh_encrypt(
 pub async fn test_bootstrap_token_auth() {
     let db = db::create_test_pool().await;
     seed_settings(&db).await;
-    // explicitly not installing any user_agent pubkeys
-    let bootstrapper = Bootstrapper::new(&db).await.unwrap(); // this will create bootstrap token
-    let keyholder = KeyHolder::new(db.clone()).await.unwrap();
-    let token = bootstrapper.get_token().unwrap();
-
-    let bootstrapper_ref = Bootstrapper::spawn(bootstrapper);
-    let keyholder_ref = KeyHolder::spawn(keyholder);
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
     let user_agent = UserAgentActor::new_manual(
         db.clone(),
-        bootstrapper_ref,
-        keyholder_ref,
+        actors.clone(),
         tokio::sync::mpsc::channel(1).0, // dummy channel, we won't actually send responses in this test
     );
     let user_agent_ref = UserAgentActor::spawn(user_agent);
@@ -186,17 +179,11 @@ pub async fn test_bootstrap_token_auth() {
 pub async fn test_bootstrap_invalid_token_auth() {
     let db = db::create_test_pool().await;
     seed_settings(&db).await;
-    // explicitly not installing any user_agent pubkeys
-    let bootstrapper = Bootstrapper::new(&db).await.unwrap(); // this will create bootstrap token
-    let keyholder = KeyHolder::new(db.clone()).await.unwrap();
-
-    let bootstrapper_ref = Bootstrapper::spawn(bootstrapper);
-    let keyholder_ref = KeyHolder::spawn(keyholder);
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
     let user_agent = UserAgentActor::new_manual(
         db.clone(),
-        bootstrapper_ref,
-        keyholder_ref,
+        actors,
         tokio::sync::mpsc::channel(1).0, // dummy channel, we won't actually send responses in this test
     );
     let user_agent_ref = UserAgentActor::spawn(user_agent);
@@ -240,12 +227,10 @@ pub async fn test_challenge_auth() {
     let db = db::create_test_pool().await;
     seed_settings(&db).await;
 
-    let bootstrapper_ref = Bootstrapper::spawn(Bootstrapper::new(&db).await.unwrap());
-    let keyholder_ref = KeyHolder::spawn(KeyHolder::new(db.clone()).await.unwrap());
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     let user_agent = UserAgentActor::new_manual(
         db.clone(),
-        bootstrapper_ref,
-        keyholder_ref,
+        actors,
         tokio::sync::mpsc::channel(1).0, // dummy channel, we won't actually send responses in this test
     );
     let user_agent_ref = UserAgentActor::spawn(user_agent);
@@ -394,13 +379,11 @@ pub async fn test_unseal_start_without_auth_fails() {
     let db = db::create_test_pool().await;
     seed_settings(&db).await;
 
-    let keyholder_ref = KeyHolder::spawn( KeyHolder::new(db.clone()).await.unwrap());
-    let bootstrapper_ref = Bootstrapper::spawn(Bootstrapper::new(&db).await.unwrap());
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
     let user_agent = UserAgentActor::new_manual(
         db.clone(),
-        bootstrapper_ref,
-        keyholder_ref,
+        actors,
         tokio::sync::mpsc::channel(1).0,
     );
     let user_agent_ref = UserAgentActor::spawn(user_agent);
