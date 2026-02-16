@@ -8,7 +8,7 @@ when:
       include: ['.woodpecker/server-*.yaml', 'server/**']
 
 steps:
-  - name: test
+  - name: audit
     image: jdxcode/mise:latest
     directory: server
     environment:
