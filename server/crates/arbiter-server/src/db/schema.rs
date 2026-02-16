@@ -7,6 +7,7 @@ diesel::table! {
         ciphertext -> Binary,
         tag -> Binary,
         schema_version -> Integer,
+        associated_root_key_id -> Integer,
         created_at -> Integer,
     }
 }
@@ -52,6 +53,7 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(aead_encrypted -> root_key_history (associated_root_key_id));
 diesel::joinable!(arbiter_settings -> root_key_history (root_key_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
