@@ -3,7 +3,6 @@ use arbiter_proto::proto::{
     auth::{self, AuthChallengeRequest, AuthOk},
     user_agent_response::Payload as UserAgentResponsePayload,
 };
-use chrono::format;
 use diesel::{ExpressionMethods as _, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
 use ed25519_dalek::Signer as _;

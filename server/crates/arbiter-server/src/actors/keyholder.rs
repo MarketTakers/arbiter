@@ -332,14 +332,11 @@ impl KeyHolder {
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
-    use std::sync::Arc;
 
     use diesel::dsl::{insert_into, sql_query, update};
     use diesel_async::RunQueryDsl;
-    use futures::stream::TryUnfold;
     use kameo::actor::{ActorRef, Spawn as _};
     use memsafe::MemSafe;
-    use tokio::sync::Mutex;
     use tokio::task::JoinSet;
 
     use crate::db::{self, models::ArbiterSetting};
