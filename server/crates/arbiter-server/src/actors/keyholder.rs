@@ -3,8 +3,9 @@ use diesel::{
     dsl::{insert_into, update},
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use kameo::{Actor, messages};
+use kameo::{Actor, Reply, messages};
 use memsafe::MemSafe;
+use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
 
 use crate::{
@@ -18,7 +19,8 @@ use crate::{
 
 pub mod v1;
 
-#[derive(Default)]
+#[derive(Default, EnumDiscriminants)]
+#[strum_discriminants(derive(Reply), vis(pub))]
 enum State {
     #[default]
     Unbootstrapped,
@@ -318,6 +320,11 @@ impl KeyHolder {
             .await?;
 
         Ok(aead_id)
+    }
+
+    #[message]
+    pub fn get_state(&self) -> StateDiscriminants {
+        self.state.discriminant()
     }
 }
 
