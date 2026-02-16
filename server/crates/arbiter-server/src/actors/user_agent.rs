@@ -29,7 +29,7 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::{
     ServerContext,
     actors::{
-        bootstrap::{BootstrapActor, ConsumeToken},
+        bootstrap::{Bootstrapper, ConsumeToken},
         user_agent::state::{
             AuthRequestContext, ChallengeContext, DummyContext, UnsealContext, UserAgentEvents,
             UserAgentStateMachine, UserAgentStates,
@@ -49,7 +49,7 @@ pub(crate) use transport::handle_user_agent;
 #[derive(Actor)]
 pub struct UserAgentActor {
     db: db::DatabasePool,
-    bootstapper: ActorRef<BootstrapActor>,
+    bootstapper: ActorRef<Bootstrapper>,
     state: UserAgentStateMachine<DummyContext>,
     // will be used in future
     _tx: Sender<Result<UserAgentResponse, Status>>,
@@ -71,7 +71,7 @@ impl UserAgentActor {
     #[cfg(test)]
     pub(crate) fn new_manual(
         db: db::DatabasePool,
-        bootstapper: ActorRef<BootstrapActor>,
+        bootstapper: ActorRef<Bootstrapper>,
         tx: Sender<Result<UserAgentResponse, Status>>,
     ) -> Self {
         Self {

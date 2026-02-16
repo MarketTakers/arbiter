@@ -11,7 +11,7 @@ use kameo::actor::Spawn;
 
 use crate::{
     actors::{
-        bootstrap::BootstrapActor,
+        bootstrap::Bootstrapper,
         user_agent::{HandleAuthChallengeRequest, HandleAuthChallengeSolution},
     },
     db::{self, schema},
@@ -24,10 +24,10 @@ use super::UserAgentActor;
 pub async fn test_bootstrap_token_auth() {
     let db = db::create_test_pool().await;
     // explicitly not installing any user_agent pubkeys
-    let bootstrapper = BootstrapActor::new(&db).await.unwrap(); // this will create bootstrap token
+    let bootstrapper = Bootstrapper::new(&db).await.unwrap(); // this will create bootstrap token
     let token = bootstrapper.get_token().unwrap();
 
-    let bootstrapper_ref = BootstrapActor::spawn(bootstrapper);
+    let bootstrapper_ref = Bootstrapper::spawn(bootstrapper);
     let user_agent = UserAgentActor::new_manual(
         db.clone(),
         bootstrapper_ref,
@@ -78,9 +78,9 @@ pub async fn test_bootstrap_token_auth() {
 pub async fn test_bootstrap_invalid_token_auth() {
     let db = db::create_test_pool().await;
     // explicitly not installing any user_agent pubkeys
-    let bootstrapper = BootstrapActor::new(&db).await.unwrap(); // this will create bootstrap token
+    let bootstrapper = Bootstrapper::new(&db).await.unwrap(); // this will create bootstrap token
 
-    let bootstrapper_ref = BootstrapActor::spawn(bootstrapper);
+    let bootstrapper_ref = Bootstrapper::spawn(bootstrapper);
     let user_agent = UserAgentActor::new_manual(
         db.clone(),
         bootstrapper_ref,
@@ -126,7 +126,7 @@ pub async fn test_bootstrap_invalid_token_auth() {
 pub async fn test_challenge_auth() {
     let db = db::create_test_pool().await;
 
-    let bootstrapper_ref = BootstrapActor::spawn(BootstrapActor::new(&db).await.unwrap());
+    let bootstrapper_ref = Bootstrapper::spawn(Bootstrapper::new(&db).await.unwrap());
     let user_agent = UserAgentActor::new_manual(
         db.clone(),
         bootstrapper_ref,

@@ -4,19 +4,16 @@ use diesel::OptionalExtension as _;
 use diesel_async::RunQueryDsl as _;
 use kameo::actor::{ActorRef, Spawn};
 use miette::Diagnostic;
-use rand::rngs::StdRng;
-use smlang::statemachine;
 use thiserror::Error;
-use tokio::sync::RwLock;
 
 use crate::{
-    actors::bootstrap::{self, BootstrapActor}, context::tls::{TlsDataRaw, TlsManager}, db::{
-        self,
-        models::ArbiterSetting,
-        schema::arbiter_settings,
-    }
+    actors::{
+        bootstrap::{self, Bootstrapper},
+        keyholder::KeyHolder,
+    },
+    context::tls::{TlsDataRaw, TlsManager},
+    db::{self, models::ArbiterSetting, schema::arbiter_settings},
 };
-
 
 pub mod tls;
 
@@ -42,41 +39,20 @@ pub enum InitError {
     #[diagnostic(code(arbiter_server::init::bootstrap_token))]
     BootstrapToken(#[from] bootstrap::BootstrapError),
 
+    #[error("KeyHolder initialization failed: {0}")]
+    #[diagnostic(code(arbiter_server::init::keyholder_init))]
+    KeyHolder(#[from] crate::actors::keyholder::Error),
+
     #[error("I/O Error: {0}")]
     #[diagnostic(code(arbiter_server::init::io))]
     Io(#[from] std::io::Error),
 }
 
-// TODO: Placeholder for secure root key cell implementation
-pub struct KeyStorage;
-
-statemachine! {
-    name: Server,
-    transitions: {
-        *NotBootstrapped + Bootstrapped = Sealed,
-        Sealed + Unsealed(KeyStorage) / move_key = Ready(KeyStorage),
-        Ready(KeyStorage) + Sealed / dispose_key = Sealed,
-    }
-}
-pub struct _Context;
-impl ServerStateMachineContext for _Context {
-    fn move_key(&mut self, _event_data: KeyStorage) -> Result<KeyStorage, ()> {
-        todo!()
-    }
-
-    #[allow(missing_docs)]
-    #[allow(clippy::unused_unit)]
-    fn dispose_key(&mut self, _state_data: &KeyStorage) -> Result<(), ()> {
-        todo!()
-    }
-}
-
 pub struct _ServerContextInner {
     pub db: db::DatabasePool,
-    pub state: RwLock<ServerStateMachine<_Context>>,
-    pub rng: StdRng,
     pub tls: TlsManager,
-    pub bootstrapper: ActorRef<BootstrapActor>,
+    pub bootstrapper: ActorRef<Bootstrapper>,
+    pub keyholder: ActorRef<KeyHolder>,
 }
 #[derive(Clone)]
 pub struct ServerContext(Arc<_ServerContextInner>);
@@ -124,7 +100,6 @@ impl ServerContext {
 
     pub async fn new(db: db::DatabasePool) -> Result<Self, InitError> {
         let mut conn = db.get().await?;
-        let rng = rand::make_rng();
 
         let settings = arbiter_settings::table
             .first::<ArbiterSetting>(&mut conn)
@@ -135,21 +110,11 @@ impl ServerContext {
 
         drop(conn);
 
-        let mut state = ServerStateMachine::new(_Context);
-
-        if let Some(settings) = &settings
-            && settings.root_key_id.is_some()
-        {
-            // TODO: pass the encrypted root key to the state machine and let it handle decryption and transition to Sealed
-            let _ = state.process_event(ServerEvents::Bootstrapped);
-        }
-
         Ok(Self(Arc::new(_ServerContextInner {
-            bootstrapper: BootstrapActor::spawn(BootstrapActor::new(&db).await?),
+            bootstrapper: Bootstrapper::spawn(Bootstrapper::new(&db).await?),
+            keyholder: KeyHolder::spawn(KeyHolder::new(db.clone()).await?),
             db,
-            rng,
             tls,
-            state: RwLock::new(state),
         })))
     }
 }
