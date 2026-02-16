@@ -13,6 +13,7 @@ use rand::{
 
 pub const ROOT_KEY_TAG: &[u8] = "arbiter/seal/v1".as_bytes();
 pub const TAG: &[u8] = "arbiter/private-key/v1".as_bytes();
+
 pub const NONCE_LENGTH: usize = 24;
 
 #[derive(Default)]

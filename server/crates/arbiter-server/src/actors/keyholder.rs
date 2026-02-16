@@ -23,14 +23,11 @@ enum State {
     #[default]
     Unbootstrapped,
     Sealed {
-        encrypted_root_key: RootKeyHistory,
-        data_encryption_nonce: v1::Nonce,
-        root_key_encryption_nonce: v1::Nonce,
+        root_key_history_id: i32,
     },
     Unsealed {
         root_key_history_id: i32,
         root_key: KeyCell,
-        nonce: v1::Nonce,
     },
 }
 
@@ -90,27 +87,51 @@ impl KeyHolderActor {
 
             match root_key_history {
                 Some(root_key_history) => State::Sealed {
-                    data_encryption_nonce: Nonce::try_from(
-                        root_key_history.data_encryption_nonce.as_slice(),
-                    )
-                    .map_err(|_| {
-                        error!("Broken database: invalid data encryption nonce");
-                        Error::BrokenDatabase
-                    })?,
-                    root_key_encryption_nonce: Nonce::try_from(
-                        root_key_history.root_key_encryption_nonce.as_slice(),
-                    )
-                    .map_err(|_| {
-                        error!("Broken database: invalid root key encryption nonce");
-                        Error::BrokenDatabase
-                    })?,
-                    encrypted_root_key: root_key_history,
+                    root_key_history_id: root_key_history.id,
                 },
                 None => State::Unbootstrapped,
             }
         };
 
         Ok(Self { db, state })
+    }
+
+    // Exclusive transaction to avoid race condtions if multiple keyholders write
+    // additional layer of protection against nonce-reuse
+    async fn get_new_nonce(pool: &db::DatabasePool, root_key_id: i32) -> Result<Nonce, Error> {
+        let mut conn = pool.get().await?;
+
+        let nonce = conn
+            .exclusive_transaction(|conn| {
+                Box::pin(async move {
+                    let current_nonce: Vec<u8> = schema::root_key_history::table
+                        .filter(schema::root_key_history::id.eq(root_key_id))
+                        .select(schema::root_key_history::data_encryption_nonce)
+                        .first(conn)
+                        .await?;
+
+                    let mut nonce =
+                        v1::Nonce::try_from(current_nonce.as_slice()).map_err(|_| {
+                            error!(
+                                "Broken database: invalid nonce for root key history id={}",
+                                root_key_id
+                            );
+                            Error::BrokenDatabase
+                        })?;
+                    nonce.increment();
+
+                    update(schema::root_key_history::table)
+                        .filter(schema::root_key_history::id.eq(root_key_id))
+                        .set(schema::root_key_history::data_encryption_nonce.eq(nonce.to_vec()))
+                        .execute(conn)
+                        .await?;
+
+                    Result::<_, Error>::Ok(nonce)
+                })
+            })
+            .await?;
+
+        Ok(nonce)
     }
 
     #[message]
@@ -122,6 +143,7 @@ impl KeyHolderActor {
         let mut seal_key = v1::derive_seal_key(seal_key_raw, &salt);
         let mut root_key = KeyCell::new_secure_random();
 
+        // Zero nonces are fine because they are one-time
         let root_key_nonce = v1::Nonce::default();
         let data_encryption_nonce = v1::Nonce::default();
 
@@ -168,7 +190,6 @@ impl KeyHolderActor {
         self.state = State::Unsealed {
             root_key,
             root_key_history_id,
-            nonce: data_encryption_nonce,
         };
 
         info!("Keyholder bootstrapped successfully");
@@ -179,36 +200,50 @@ impl KeyHolderActor {
     #[message]
     pub async fn try_unseal(&mut self, seal_key_raw: MemSafe<Vec<u8>>) -> Result<(), Error> {
         let State::Sealed {
-            encrypted_root_key,
-            data_encryption_nonce,
-            root_key_encryption_nonce,
-        } = &mut self.state
+            root_key_history_id,
+        } = &self.state
         else {
             return Err(Error::NotBootstrapped);
         };
 
-        let salt = &encrypted_root_key.salt;
+        let mut conn = self.db.get().await?;
+
+        let current_key = schema::root_key_history::table
+            .filter(schema::root_key_history::id.eq(*root_key_history_id))
+            .select((schema::root_key_history::data_encryption_nonce))
+            .select((RootKeyHistory::as_select()))
+            .first(&mut conn)
+            .await?;
+
+        let salt = &current_key.salt;
         let salt = v1::Salt::try_from(salt.as_slice()).map_err(|_| {
             error!("Broken database: invalid salt for root key");
             Error::BrokenDatabase
         })?;
         let mut seal_key = v1::derive_seal_key(seal_key_raw, &salt);
 
-        let mut root_key = MemSafe::new(encrypted_root_key.ciphertext.clone()).unwrap();
+        let mut root_key = MemSafe::new(current_key.ciphertext.clone()).unwrap();
+
+        let nonce = v1::Nonce::try_from(current_key.root_key_encryption_nonce.as_slice()).map_err(
+            |_| {
+                error!("Broken database: invalid nonce for root key");
+                Error::BrokenDatabase
+            },
+        )?;
+
         seal_key
-            .decrypt_in_place(root_key_encryption_nonce, v1::ROOT_KEY_TAG, &mut root_key)
+            .decrypt_in_place(&nonce, v1::ROOT_KEY_TAG, &mut root_key)
             .map_err(|err| {
                 error!(?err, "Failed to unseal root key: invalid seal key");
                 Error::InvalidKey
             })?;
 
         self.state = State::Unsealed {
-            root_key_history_id: encrypted_root_key.id,
+            root_key_history_id: current_key.id,
             root_key: v1::KeyCell::try_from(root_key).map_err(|err| {
                 error!(?err, "Broken database: invalid encryption key size");
                 Error::BrokenDatabase
             })?,
-            nonce: std::mem::take(data_encryption_nonce), // we are replacing state, so it's safe to take the nonce out of it
         };
 
         info!("Keyholder unsealed successfully");
@@ -249,14 +284,16 @@ impl KeyHolderActor {
         let State::Unsealed {
             root_key,
             root_key_history_id,
-            nonce,
         } = &mut self.state
         else {
             return Err(Error::NotBootstrapped);
         };
 
+        // Order matters here - `get_new_nonce` acquires connection, so we need to call it before next acquire
+        // Borrow checker note: &mut borrow a few lines above is disjoint from this field
+        let nonce = Self::get_new_nonce(&self.db, *root_key_history_id).await?;
+
         let mut conn = self.db.get().await?;
-        nonce.increment();
 
         let mut ciphertext_buffer = plaintext.write().unwrap();
         let ciphertext_buffer: &mut Vec<u8> = ciphertext_buffer.as_mut();
@@ -264,30 +301,16 @@ impl KeyHolderActor {
 
         let ciphertext = std::mem::take(ciphertext_buffer);
 
-        let aead_id: i32 = conn
-            .transaction(|conn| {
-                Box::pin(async move {
-                    let aead_id: i32 = insert_into(schema::aead_encrypted::table)
-                        .values(&models::NewAeadEncrypted {
-                            ciphertext,
-                            tag: v1::TAG.to_vec(),
-                            current_nonce: nonce.to_vec(),
-                            schema_version: 1,
-                            created_at: chrono::Utc::now().timestamp() as i32,
-                        })
-                        .returning(schema::aead_encrypted::id)
-                        .get_result(conn)
-                        .await?;
-
-                    update(schema::root_key_history::table)
-                        .filter(schema::root_key_history::id.eq(*root_key_history_id))
-                        .set(schema::root_key_history::data_encryption_nonce.eq(nonce.to_vec()))
-                        .execute(conn)
-                        .await?;
-
-                    Result::<_, diesel::result::Error>::Ok(aead_id)
-                })
+        let aead_id: i32 = insert_into(schema::aead_encrypted::table)
+            .values(&models::NewAeadEncrypted {
+                ciphertext,
+                tag: v1::TAG.to_vec(),
+                current_nonce: nonce.to_vec(),
+                schema_version: 1,
+                created_at: chrono::Utc::now().timestamp() as i32,
             })
+            .returning(schema::aead_encrypted::id)
+            .get_result(&mut conn)
             .await?;
 
         Ok(aead_id)
