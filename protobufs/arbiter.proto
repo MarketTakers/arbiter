@@ -22,12 +22,14 @@ message UserAgentRequest {
   oneof payload {
     arbiter.auth.ClientMessage auth_message = 1;
     CertRotationAck cert_rotation_ack = 2;
+    UnsealRequest unseal_request = 3;
   }
 }
 message UserAgentResponse {
   oneof payload {
     arbiter.auth.ServerMessage auth_message = 1;
     CertRotationNotification cert_rotation_notification = 2;
+    UnsealResponse unseal_response = 3;
   }
 }
 
@@ -60,6 +62,50 @@ message CertRotationAck {
 
   // Confirmation that client saved the new certificate
   bool cert_saved = 3;
+}
+
+// Vault Unseal Protocol (X25519 ECDH + ChaCha20Poly1305)
+message UnsealRequest {
+  oneof payload {
+    EphemeralKeyRequest ephemeral_key_request = 1;
+    SealedPassword sealed_password = 2;
+  }
+}
+
+message UnsealResponse {
+  oneof payload {
+    EphemeralKeyResponse ephemeral_key_response = 1;
+    UnsealResult unseal_result = 2;
+  }
+}
+
+message EphemeralKeyRequest {}
+
+message EphemeralKeyResponse {
+  // Server's X25519 ephemeral public key (32 bytes)
+  bytes server_pubkey = 1;
+
+  // Unix timestamp when this key expires (60 seconds from generation)
+  int64 expires_at = 2;
+}
+
+message SealedPassword {
+  // Client's X25519 ephemeral public key (32 bytes)
+  bytes client_pubkey = 1;
+
+  // ChaCha20Poly1305 encrypted password (ciphertext + tag)
+  bytes encrypted_password = 2;
+
+  // 12-byte nonce for ChaCha20Poly1305
+  bytes nonce = 3;
+}
+
+message UnsealResult {
+  // Whether unseal was successful
+  bool success = 1;
+
+  // Error message if unseal failed
+  optional string error_message = 2;
 }
 
 service ArbiterService {

@@ -30,6 +30,7 @@ use crate::{
 pub(crate) mod bootstrap;
 pub(crate) mod lease;
 pub(crate) mod tls;
+pub(crate) mod unseal;
 
 #[derive(Error, Debug, Diagnostic)]
 pub enum InitError {
