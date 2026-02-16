@@ -5,7 +5,6 @@ use rcgen::{Certificate, KeyPair};
 use rustls::pki_types::CertificateDer;
 use thiserror::Error;
 
-
 #[derive(Error, Debug, Diagnostic)]
 pub enum TlsInitError {
     #[error("Key generation error during TLS initialization: {0}")]
@@ -41,8 +40,7 @@ impl TlsDataRaw {
     pub fn deserialize(&self) -> Result<TlsData, TlsInitError> {
         let cert = CertificateDer::from_slice(&self.cert).into_owned();
 
-        let key =
-            String::from_utf8(self.key.clone()).map_err(TlsInitError::KeyInvalidFormat)?;
+        let key = String::from_utf8(self.key.clone()).map_err(TlsInitError::KeyInvalidFormat)?;
 
         let keypair = KeyPair::from_pem(&key).map_err(TlsInitError::KeyDeserializationError)?;
 
@@ -51,10 +49,8 @@ impl TlsDataRaw {
 }
 
 fn generate_cert(key: &KeyPair) -> Result<Certificate, rcgen::Error> {
-    let params = rcgen::CertificateParams::new(vec![
-        "arbiter.local".to_string(),
-        "localhost".to_string(),
-    ])?;
+    let params =
+        rcgen::CertificateParams::new(vec!["arbiter.local".to_string(), "localhost".to_string()])?;
 
     params.self_signed(key)
 }

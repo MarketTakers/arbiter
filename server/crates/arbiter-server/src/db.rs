@@ -1,8 +1,4 @@
-
-use diesel::{
-    Connection as _, SqliteConnection,
-    connection::SimpleConnection as _,
-};
+use diesel::{Connection as _, SqliteConnection, connection::SimpleConnection as _};
 use diesel_async::{
     AsyncConnection, SimpleAsyncConnection,
     pooled_connection::{AsyncDieselConnectionManager, ManagerConfig},
@@ -133,7 +129,6 @@ pub async fn create_pool(url: Option<&str>) -> Result<DatabasePool, DatabaseSetu
     Ok(pool)
 }
 
-#[cfg(test)]
 pub async fn create_test_pool() -> DatabasePool {
     use rand::distr::{Alphanumeric, SampleString as _};
 

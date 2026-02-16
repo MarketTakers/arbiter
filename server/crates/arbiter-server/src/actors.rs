@@ -7,9 +7,9 @@ use crate::{
     db,
 };
 
-pub(crate) mod bootstrap;
+pub mod bootstrap;
 pub mod client;
-pub(crate) mod keyholder;
+pub mod keyholder;
 pub mod user_agent;
 
 #[derive(Error, Debug, Diagnostic)]

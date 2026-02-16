@@ -12,14 +12,10 @@ pub struct ChallengeContext {
     pub key: VerifyingKey,
 }
 
-
-
 pub struct UnsealContext {
     pub client_public_key: PublicKey,
     pub secret: Mutex<Option<EphemeralSecret>>,
 }
-
-
 
 smlang::statemachine!(
     name: UserAgent,
@@ -46,10 +42,10 @@ impl UserAgentStateMachineContext for DummyContext {
     fn generate_temp_keypair(&mut self, event_data: UnsealContext) -> Result<UnsealContext, ()> {
         Ok(event_data)
     }
-    
+
     #[allow(missing_docs)]
     #[allow(clippy::unused_unit)]
-    fn move_challenge< >(&mut self,event_data:ChallengeContext) -> Result<ChallengeContext,()>  {
+    fn move_challenge(&mut self, event_data: ChallengeContext) -> Result<ChallengeContext, ()> {
         Ok(event_data)
     }
 }

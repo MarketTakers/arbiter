@@ -1,9 +1,7 @@
 use super::UserAgentActor;
 use arbiter_proto::proto::{
     UserAgentRequest, UserAgentResponse,
-    auth::{
-        ClientMessage as ClientAuthMessage, client_message::Payload as ClientAuthPayload,
-    },
+    auth::{ClientMessage as ClientAuthMessage, client_message::Payload as ClientAuthPayload},
     user_agent_request::Payload as UserAgentRequestPayload,
 };
 use futures::StreamExt;
