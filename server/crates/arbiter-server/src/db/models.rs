@@ -26,6 +26,7 @@ pub struct ArbiterSetting {
     pub root_key_id: Option<i32>, // references aead_encrypted.id
     pub cert_key: Vec<u8>,
     pub cert: Vec<u8>,
+    pub current_cert_id: Option<i32>, // references tls_certificates.id
 }
 
 #[derive(Queryable, Debug)]
@@ -46,4 +47,71 @@ pub struct UseragentClient {
     pub nonce: i32,
     pub created_at: i32,
     pub updated_at: i32,
+}
+
+// TLS Certificate Rotation Models
+
+#[derive(Queryable, Debug, Insertable)]
+#[diesel(table_name = schema::tls_certificates, check_for_backend(Sqlite))]
+pub struct TlsCertificate {
+    pub id: i32,
+    pub cert: Vec<u8>,
+    pub cert_key: Vec<u8>,
+    pub not_before: i32,
+    pub not_after: i32,
+    pub created_at: i32,
+    pub is_active: bool,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = schema::tls_certificates)]
+pub struct NewTlsCertificate {
+    pub cert: Vec<u8>,
+    pub cert_key: Vec<u8>,
+    pub not_before: i32,
+    pub not_after: i32,
+    pub is_active: bool,
+}
+
+#[derive(Queryable, Debug, Insertable)]
+#[diesel(table_name = schema::tls_rotation_state, check_for_backend(Sqlite))]
+pub struct TlsRotationState {
+    pub id: i32,
+    pub state: String,
+    pub new_cert_id: Option<i32>,
+    pub initiated_at: Option<i32>,
+    pub timeout_at: Option<i32>,
+}
+
+#[derive(Queryable, Debug, Insertable)]
+#[diesel(table_name = schema::rotation_client_acks, check_for_backend(Sqlite))]
+pub struct RotationClientAck {
+    pub rotation_id: i32,
+    pub client_key: String,
+    pub ack_received_at: i32,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = schema::rotation_client_acks)]
+pub struct NewRotationClientAck {
+    pub rotation_id: i32,
+    pub client_key: String,
+}
+
+#[derive(Queryable, Debug, Insertable)]
+#[diesel(table_name = schema::tls_rotation_history, check_for_backend(Sqlite))]
+pub struct TlsRotationHistory {
+    pub id: i32,
+    pub cert_id: i32,
+    pub event_type: String,
+    pub timestamp: i32,
+    pub details: Option<String>,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = schema::tls_rotation_history)]
+pub struct NewTlsRotationHistory {
+    pub cert_id: i32,
+    pub event_type: String,
+    pub details: Option<String>,
 }

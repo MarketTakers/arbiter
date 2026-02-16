@@ -1,12 +1,17 @@
-use arbiter_proto::proto::{
-    UserAgentRequest, UserAgentResponse,
-    auth::{
-        self, AuthChallenge, AuthChallengeRequest, AuthOk, ClientMessage,
-        ServerMessage as AuthServerMessage, client_message::Payload as ClientAuthPayload,
-        server_message::Payload as ServerAuthPayload,
+use std::sync::Arc;
+
+use arbiter_proto::{
+    proto::{
+        UserAgentRequest, UserAgentResponse,
+        auth::{
+            self, AuthChallengeRequest, ClientMessage, ServerMessage as AuthServerMessage,
+            client_message::Payload as ClientAuthPayload,
+            server_message::Payload as ServerAuthPayload,
+        },
+        user_agent_request::Payload as UserAgentRequestPayload,
+        user_agent_response::Payload as UserAgentResponsePayload,
     },
-    user_agent_request::Payload as UserAgentRequestPayload,
-    user_agent_response::Payload as UserAgentResponsePayload,
+    transport::Bi,
 };
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, dsl::update};
 use diesel_async::{AsyncConnection, RunQueryDsl};
@@ -21,19 +26,18 @@ use kameo::{
 };
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
-use tonic::Status;
-use tracing::{error, info};
+use tonic::{Status, transport::Server};
+use tracing::{debug, error, info};
 
 use crate::{
     ServerContext,
+    actors::user_agent::auth::AuthChallenge,
     context::bootstrap::{BootstrapActor, ConsumeToken},
     db::{self, schema},
     errors::GrpcStatusExt,
 };
 
-/// Context for state machine with validated key and sent challenge
-/// Challenge is then transformed to bytes using shared function and verified
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ChallengeContext {
     challenge: AuthChallenge,
     key: VerifyingKey,
@@ -161,7 +165,7 @@ impl UserAgentActor {
 
         self.transition(UserAgentEvents::ReceivedBootstrapToken)?;
 
-        Ok(auth_response(ServerAuthPayload::AuthOk(AuthOk {})))
+        Ok(auth_response(ServerAuthPayload::AuthOk(auth::AuthOk {})))
     }
 
     async fn auth_with_challenge(&mut self, pubkey: VerifyingKey, pubkey_bytes: Vec<u8>) -> Output {
@@ -201,7 +205,7 @@ impl UserAgentActor {
 
         let challenge = auth::AuthChallenge {
             pubkey: pubkey_bytes,
-            nonce: nonce,
+            nonce,
         };
 
         self.transition(UserAgentEvents::SentChallenge(ChallengeContext {
@@ -296,7 +300,7 @@ impl UserAgentActor {
                 "Client provided valid solution to authentication challenge"
             );
             self.transition(UserAgentEvents::ReceivedGoodSolution)?;
-            Ok(auth_response(ServerAuthPayload::AuthOk(AuthOk {})))
+            Ok(auth_response(ServerAuthPayload::AuthOk(auth::AuthOk {})))
         } else {
             error!("Client provided invalid solution to authentication challenge");
             self.transition(UserAgentEvents::ReceivedBadSolution)?;
@@ -308,7 +312,8 @@ impl UserAgentActor {
 #[cfg(test)]
 mod tests {
     use arbiter_proto::proto::{
-        UserAgentResponse, auth::{AuthChallengeRequest, AuthOk},
+        UserAgentResponse,
+        auth::{AuthChallengeRequest, AuthOk},
         user_agent_response::Payload as UserAgentResponsePayload,
     };
     use kameo::actor::Spawn;
@@ -348,7 +353,7 @@ mod tests {
             })
             .await
             .expect("Shouldn't fail to send message");
-        
+
         // auth succeeded
         assert_eq!(
             result,

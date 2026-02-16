@@ -38,4 +38,9 @@ impl<T: Clone + std::hash::Hash + Eq> LeaseHandler<T> {
             Err(())
         }
     }
+
+    /// Get all currently leased items
+    pub fn get_all(&self) -> Vec<T> {
+        self.storage.0.iter().map(|entry| entry.clone()).collect()
+    }
 }

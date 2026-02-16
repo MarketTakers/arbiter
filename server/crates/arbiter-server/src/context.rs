@@ -1,4 +1,6 @@
+use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use diesel::OptionalExtension as _;
 use diesel_async::RunQueryDsl as _;
@@ -8,13 +10,13 @@ use miette::Diagnostic;
 use rand::rngs::StdRng;
 use smlang::statemachine;
 use thiserror::Error;
-use tokio::sync::RwLock;
+use tokio::sync::{watch, RwLock};
 
 use crate::{
     context::{
         bootstrap::{BootstrapActor, generate_token},
         lease::LeaseHandler,
-        tls::{TlsDataRaw, TlsManager},
+        tls::{RotationState, RotationTask, TlsDataRaw, TlsManager},
     },
     db::{
         self,
@@ -82,8 +84,12 @@ pub(crate) struct _ServerContextInner {
     pub db: db::DatabasePool,
     pub state: RwLock<ServerStateMachine<_Context>>,
     pub rng: StdRng,
-    pub tls: TlsManager,
+    pub tls: Arc<TlsManager>,
     pub bootstrapper: ActorRef<BootstrapActor>,
+    pub rotation_state: RwLock<RotationState>,
+    pub rotation_acks: Arc<RwLock<HashSet<VerifyingKey>>>,
+    pub user_agent_leases: LeaseHandler<VerifyingKey>,
+    pub client_leases: LeaseHandler<VerifyingKey>,
 }
 #[derive(Clone)]
 pub(crate) struct ServerContext(Arc<_ServerContextInner>);
@@ -97,34 +103,49 @@ impl std::ops::Deref for ServerContext {
 }
 
 impl ServerContext {
+    /// Check if all active clients have acknowledged the rotation
+    pub async fn check_rotation_ready(&self) -> bool {
+        // TODO: Implement proper rotation readiness check
+        // For now, return false as placeholder
+        false
+    }
+
     async fn load_tls(
-        db: &mut db::DatabaseConnection,
+        db: &db::DatabasePool,
         settings: Option<&ArbiterSetting>,
     ) -> Result<TlsManager, InitError> {
-        match &settings {
-            Some(settings) => {
+        match settings {
+            Some(s) if s.current_cert_id.is_some() => {
+                // Load active certificate from tls_certificates table
+                Ok(TlsManager::load_from_db(
+                    db.clone(),
+                    s.current_cert_id.unwrap(),
+                )
+                .await?)
+            }
+            Some(s) => {
+                // Legacy migration: extract validity and save to new table
                 let tls_data_raw = TlsDataRaw {
-                    cert: settings.cert.clone(),
-                    key: settings.cert_key.clone(),
+                    cert: s.cert.clone(),
+                    key: s.cert_key.clone(),
                 };
 
-                Ok(TlsManager::new(Some(tls_data_raw)).await?)
+                // For legacy certificates, use current time as not_before
+                // and current time + 90 days as not_after
+                let not_before = chrono::Utc::now().timestamp();
+                let not_after = not_before + (90 * 24 * 60 * 60); // 90 days
+
+                Ok(TlsManager::new_from_legacy(
+                    db.clone(),
+                    tls_data_raw,
+                    not_before,
+                    not_after,
+                )
+                .await?)
             }
             None => {
-                let tls = TlsManager::new(None).await?;
-                let tls_data_raw = tls.bytes();
-
-                diesel::insert_into(arbiter_settings::table)
-                    .values(&ArbiterSetting {
-                        id: 1,
-                        root_key_id: None,
-                        cert_key: tls_data_raw.key,
-                        cert: tls_data_raw.cert,
-                    })
-                    .execute(db)
-                    .await?;
-
-                Ok(tls)
+                // First startup - generate new certificate
+                Ok(TlsManager::new(db.clone()).await?)
             }
         }
     }
@@ -138,9 +159,17 @@ impl ServerContext {
             .await
             .optional()?;
 
-        let tls = Self::load_tls(&mut conn, settings.as_ref()).await?;
-
         drop(conn);
+
+        // Load TLS manager
+        let tls = Self::load_tls(&db, settings.as_ref()).await?;
+
+        // Load rotation state from database
+        let rotation_state = RotationState::load_from_db(&db)
+            .await
+            .unwrap_or(RotationState::Normal);
+
+        let bootstrap_token = generate_token().await?;
 
         let mut state = ServerStateMachine::new(_Context);
 
@@ -151,12 +180,24 @@ impl ServerContext {
             let _ = state.process_event(ServerEvents::Bootstrapped);
         }
 
-        Ok(Self(Arc::new(_ServerContextInner {
-            bootstrapper: BootstrapActor::spawn(BootstrapActor::new(&db).await?),
-            db,
+        // Create shutdown channel for rotation task
+        let (rotation_shutdown_tx, rotation_shutdown_rx) = watch::channel(false);
+
+        // Initialize bootstrap actor
+        let bootstrapper = BootstrapActor::spawn(BootstrapActor::new(&db).await?);
+
+        let context = Arc::new(_ServerContextInner {
+            db: db.clone(),
             rng,
-            tls,
+            tls: Arc::new(tls),
             state: RwLock::new(state),
-        })))
+            bootstrapper,
+            rotation_state: RwLock::new(rotation_state),
+            rotation_acks: Arc::new(RwLock::new(HashSet::new())),
+            user_agent_leases: Default::default(),
+            client_leases: Default::default(),
+        });
+
+        Ok(Self(context))
     }
 }
