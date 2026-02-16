@@ -24,6 +24,7 @@ pub struct AeadEncrypted {
     pub tag: Vec<u8>,
     pub current_nonce: Vec<u8>,
     pub schema_version: i32,
+    pub associated_root_key_id: i32, // references root_key_history.id
     pub created_at: i32,
 }
 
