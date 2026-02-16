@@ -9,15 +9,16 @@ use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
 
 use crate::{
-    actors::keyholder::v1::{KeyCell, Nonce},
     db::{
         self,
         models::{self, RootKeyHistory},
         schema::{self},
     },
 };
+use encryption::v1::{self, KeyCell, Nonce};
 
-pub mod v1;
+pub mod encryption;
+
 
 #[derive(Default, EnumDiscriminants)]
 #[strum_discriminants(derive(Reply), vis(pub))]

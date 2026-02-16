@@ -42,12 +42,12 @@ impl<'a> TryFrom<&'a [u8]> for Nonce {
             return Err(());
         }
         let mut nonce = [0u8; NONCE_LENGTH];
-        nonce.copy_from_slice(&value);
+        nonce.copy_from_slice(value);
         Ok(Self(nonce))
     }
 }
 
-pub struct KeyCell(pub(super) MemSafe<Key>);
+pub struct KeyCell(pub MemSafe<Key>);
 impl From<MemSafe<Key>> for KeyCell {
     fn from(value: MemSafe<Key>) -> Self {
         Self(value)
@@ -83,10 +83,6 @@ impl KeyCell {
         }
 
         key.into()
-    }
-
-    pub fn into_inner(self) -> MemSafe<Key> {
-        self.0
     }
 
     pub fn encrypt_in_place(
@@ -130,7 +126,7 @@ impl KeyCell {
 
 
         let ciphertext = cipher.encrypt(
-            &nonce,
+            nonce,
             Payload {
                 msg: plaintext.as_ref(),
                 aad: associated_data,
@@ -142,7 +138,7 @@ impl KeyCell {
 
 pub type Salt = [u8; ArgonSalt::RECOMMENDED_LENGTH];
 
-pub(super) fn generate_salt() -> Salt {
+pub fn generate_salt() -> Salt {
     let mut salt = Salt::default();
     let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
     rng.fill_bytes(&mut salt);
@@ -151,7 +147,7 @@ pub(super) fn generate_salt() -> Salt {
 
 /// User password might be of different length, have not enough entropy, etc...
 /// Derive a fixed-length key from the password using Argon2id, which is designed for password hashing and key derivation.
-pub(super) fn derive_seal_key(mut password: MemSafe<Vec<u8>>, salt: &Salt) -> KeyCell {
+pub fn derive_seal_key(mut password: MemSafe<Vec<u8>>, salt: &Salt) -> KeyCell {
     let params = argon2::Params::new(262_144, 3, 4, None).unwrap();
     let hasher = Argon2::new(Algorithm::Argon2id, argon2::Version::V0x13, params);
     let mut key = MemSafe::new(Key::default()).unwrap();
