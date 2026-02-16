@@ -7,6 +7,7 @@ diesel::table! {
         ciphertext -> Binary,
         tag -> Binary,
         schema_version -> Integer,
+        argon2_salt -> Nullable<Text>,
     }
 }
 

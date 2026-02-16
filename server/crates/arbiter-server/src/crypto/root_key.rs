@@ -39,6 +39,7 @@ pub fn encrypt_root_key(
         ciphertext,
         tag,
         schema_version: 1, // Current version
+        argon2_salt: Some(salt.clone()),
     };
 
     Ok((aead_encrypted, salt))

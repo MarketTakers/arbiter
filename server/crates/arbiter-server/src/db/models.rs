@@ -9,14 +9,15 @@ pub mod types {
     pub struct SqliteTimestamp(DateTime<Utc>);
 }
 
-#[derive(Queryable, Debug, Insertable)]
+#[derive(Queryable, Selectable, Debug, Insertable)]
 #[diesel(table_name = aead_encrypted, check_for_backend(Sqlite))]
 pub struct AeadEncrypted {
     pub id: i32,
+    pub current_nonce: i32,
     pub ciphertext: Vec<u8>,
     pub tag: Vec<u8>,
-    pub current_nonce: i32,
     pub schema_version: i32,
+    pub argon2_salt: Option<String>,
 }
 
 #[derive(Queryable, Debug, Insertable)]
