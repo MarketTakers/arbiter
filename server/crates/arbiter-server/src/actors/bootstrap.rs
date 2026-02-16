@@ -92,7 +92,6 @@ impl Bootstrapper {
     }
 }
 
-#[cfg(test)]
 #[messages]
 impl Bootstrapper {
     #[message]

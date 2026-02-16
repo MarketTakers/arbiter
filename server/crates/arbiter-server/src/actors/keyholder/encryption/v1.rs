@@ -124,7 +124,6 @@ impl KeyCell {
         let mut cipher = XChaCha20Poly1305::new(key_ref);
         let nonce = XNonce::from_slice(nonce.0.as_ref());
 
-
         let ciphertext = cipher.encrypt(
             nonce,
             Payload {

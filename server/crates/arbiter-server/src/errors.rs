@@ -7,7 +7,7 @@ pub trait GrpcStatusExt<T> {
 
 impl<T> GrpcStatusExt<T> for Result<T, diesel::result::Error> {
     fn to_status(self) -> Result<T, Status> {
-         self.map_err(|e| {
+        self.map_err(|e| {
             error!(error = ?e, "Database error");
             Status::internal("Database error")
         })

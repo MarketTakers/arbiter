@@ -35,8 +35,6 @@ use crate::{
 };
 
 mod state;
-#[cfg(test)]
-mod tests;
 
 mod transport;
 pub(crate) use transport::handle_user_agent;
@@ -63,8 +61,7 @@ impl UserAgentActor {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn new_manual(
+    pub fn new_manual(
         db: db::DatabasePool,
         actors: GlobalActors,
         tx: Sender<Result<UserAgentResponse, Status>>,
