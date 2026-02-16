@@ -43,7 +43,10 @@ rcgen = { version = "0.14.7", features = [
 chrono.workspace = true
 memsafe = "0.4.0"
 zeroize = { version = "1.8.2", features = ["std", "simd"] }
+argon2 = { version = "0.5", features = ["std"] }
 kameo.workspace = true
+hex = "0.4.3"
+chacha20poly1305 = "0.10.1"
 
 [dev-dependencies]
 test-log = { version = "0.2", default-features = false, features = ["trace"] }

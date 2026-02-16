@@ -7,29 +7,59 @@ import "auth.proto";
 message ClientRequest {
   oneof payload {
     arbiter.auth.ClientMessage auth_message = 1;
+    CertRotationAck cert_rotation_ack = 2;
   }
 }
 
 message ClientResponse {
   oneof payload {
     arbiter.auth.ServerMessage auth_message = 1;
+    CertRotationNotification cert_rotation_notification = 2;
   }
 }
 
 message UserAgentRequest {
   oneof payload {
     arbiter.auth.ClientMessage auth_message = 1;
+    CertRotationAck cert_rotation_ack = 2;
   }
 }
 message UserAgentResponse {
   oneof payload {
     arbiter.auth.ServerMessage auth_message = 1;
+    CertRotationNotification cert_rotation_notification = 2;
   }
 }
 
 message ServerInfo {
   string version = 1;
   bytes cert_public_key = 2;
+}
+
+// TLS Certificate Rotation Protocol
+message CertRotationNotification {
+  // New public certificate (DER-encoded)
+  bytes new_cert = 1;
+
+  // Unix timestamp when rotation will be executed (if all ACKs received)
+  int64 rotation_scheduled_at = 2;
+
+  // Unix timestamp deadline for ACK (7 days from now)
+  int64 ack_deadline = 3;
+
+  // Rotation ID for tracking
+  int32 rotation_id = 4;
+}
+
+message CertRotationAck {
+  // Rotation ID (from CertRotationNotification)
+  int32 rotation_id = 1;
+
+  // Client public key for identification
+  bytes client_public_key = 2;
+
+  // Confirmation that client saved the new certificate
+  bool cert_saved = 3;
 }
 
 service ArbiterService {

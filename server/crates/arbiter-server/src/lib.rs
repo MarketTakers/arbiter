@@ -19,6 +19,7 @@ use crate::{
 
 pub mod actors;
 mod context;
+mod crypto;
 mod db;
 mod errors;
 
