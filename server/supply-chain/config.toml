@@ -13,6 +13,9 @@ url = "https://raw.githubusercontent.com/google/supply-chain/main/audits.toml"
 [imports.mozilla]
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 
+[imports.zcash]
+url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/audits.toml"
+
 [[exemptions.addr2line]]
 version = "0.25.1"
 criteria = "safe-to-deploy"
@@ -39,10 +42,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.async-trait]]
 version = "0.1.89"
-criteria = "safe-to-deploy"
-
-[[exemptions.autocfg]]
-version = "1.5.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.aws-lc-rs]]
@@ -193,10 +192,6 @@ criteria = "safe-to-deploy"
 version = "0.2.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.dunce]]
-version = "1.0.5"
-criteria = "safe-to-deploy"
-
 [[exemptions.dyn-clone]]
 version = "1.0.20"
 criteria = "safe-to-deploy"
@@ -207,10 +202,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.ed25519-dalek]]
 version = "3.0.0-pre.6"
-criteria = "safe-to-deploy"
-
-[[exemptions.errno]]
-version = "0.3.14"
 criteria = "safe-to-deploy"
 
 [[exemptions.fiat-crypto]]
@@ -259,10 +250,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.http]]
 version = "1.4.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.http-body]]
-version = "1.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.http-body-util]]
@@ -327,10 +314,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.kameo_macros]]
 version = "0.19.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.libc]]
-version = "0.2.181"
 criteria = "safe-to-deploy"
 
 [[exemptions.libsqlite3-sys]]
@@ -525,10 +508,6 @@ criteria = "safe-to-deploy"
 version = "0.1.27"
 criteria = "safe-to-deploy"
 
-[[exemptions.rustc_version]]
-version = "0.4.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.rusticata-macros]]
 version = "4.1.0"
 criteria = "safe-to-deploy"
@@ -543,10 +522,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.rustls-webpki]]
 version = "0.103.9"
-criteria = "safe-to-deploy"
-
-[[exemptions.rustversion]]
-version = "1.0.22"
 criteria = "safe-to-deploy"
 
 [[exemptions.scoped-futures]]
@@ -653,10 +628,6 @@ criteria = "safe-to-deploy"
 version = "2.0.18"
 criteria = "safe-to-deploy"
 
-[[exemptions.thread_local]]
-version = "1.1.9"
-criteria = "safe-to-run"
-
 [[exemptions.time]]
 version = "0.3.47"
 criteria = "safe-to-deploy"
@@ -687,14 +658,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.tokio-util]]
 version = "0.7.18"
-criteria = "safe-to-deploy"
-
-[[exemptions.toml]]
-version = "0.9.11+spec-1.1.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.toml_parser]]
-version = "1.0.6+spec-1.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.tonic]]
@@ -741,10 +704,6 @@ criteria = "safe-to-deploy"
 version = "0.3.22"
 criteria = "safe-to-run"
 
-[[exemptions.try-lock]]
-version = "0.2.5"
-criteria = "safe-to-deploy"
-
 [[exemptions.typenum]]
 version = "1.19.0"
 criteria = "safe-to-deploy"
@@ -767,10 +726,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.uuid]]
 version = "1.20.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.want]]
-version = "0.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasi]]
@@ -817,28 +772,12 @@ criteria = "safe-to-deploy"
 version = "0.59.3"
 criteria = "safe-to-deploy"
 
-[[exemptions.windows-link]]
-version = "0.2.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.windows-result]]
 version = "0.4.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.windows-strings]]
 version = "0.5.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.windows-sys]]
-version = "0.52.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.windows-sys]]
-version = "0.60.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.windows-sys]]
-version = "0.61.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.windows-targets]]
@@ -923,10 +862,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.yasna]]
 version = "0.5.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.zeroize]]
-version = "1.8.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.zmij]]

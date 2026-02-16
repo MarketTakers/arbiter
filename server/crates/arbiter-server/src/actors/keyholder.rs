@@ -213,8 +213,8 @@ impl KeyHolder {
             let mut conn = self.db.get().await?;
             schema::root_key_history::table
                 .filter(schema::root_key_history::id.eq(*root_key_history_id))
-                .select((schema::root_key_history::data_encryption_nonce))
-                .select((RootKeyHistory::as_select()))
+                .select(schema::root_key_history::data_encryption_nonce )
+                .select(RootKeyHistory::as_select() )
                 .first(&mut conn)
                 .await?
         };
