@@ -101,7 +101,7 @@ mod tests {
             .unwrap()
             .as_secs();
         let time_until_expiry = keypair.expires_at() - now;
-        assert!(time_until_expiry >= 59 && time_until_expiry <= 61);
+        assert!((59..=61).contains(&time_until_expiry));
     }
 
     #[test]
