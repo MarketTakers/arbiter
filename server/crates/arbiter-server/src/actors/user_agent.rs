@@ -95,6 +95,8 @@ pub struct UserAgentActor {
     bootstapper: ActorRef<BootstrapActor>,
     state: UserAgentStateMachine<DummyContext>,
     tx: Sender<Result<UserAgentResponse, Status>>,
+    context: ServerContext,
+    ephemeral_key: Option<crate::context::unseal::EphemeralKeyPair>,
 }
 
 impl UserAgentActor {
@@ -107,12 +109,15 @@ impl UserAgentActor {
             bootstapper: context.bootstrapper.clone(),
             state: UserAgentStateMachine::new(DummyContext),
             tx,
+            context,
+            ephemeral_key: None,
         }
     }
 
     pub(crate) fn new_manual(
         db: db::DatabasePool,
         bootstapper: ActorRef<BootstrapActor>,
+        context: ServerContext,
         tx: Sender<Result<UserAgentResponse, Status>>,
     ) -> Self {
         Self {
@@ -120,6 +125,8 @@ impl UserAgentActor {
             bootstapper,
             state: UserAgentStateMachine::new(DummyContext),
             tx,
+            context,
+            ephemeral_key: None,
         }
     }
 
@@ -307,6 +314,121 @@ impl UserAgentActor {
             Err(Status::unauthenticated("Invalid challenge solution"))
         }
     }
+
+    #[message(ctx)]
+    pub async fn handle_unseal_request(
+        &mut self,
+        request: arbiter_proto::proto::UnsealRequest,
+        ctx: &mut Context<Self, Output>,
+    ) -> Output {
+        use arbiter_proto::proto::{
+            EphemeralKeyResponse, SealedPassword, UnsealResponse, UnsealResult,
+            unseal_request::Payload as ReqPayload,
+            unseal_response::Payload as RespPayload,
+        };
+
+        match request.payload {
+            Some(ReqPayload::EphemeralKeyRequest(_)) => {
+                // Generate new ephemeral keypair
+                let keypair = crate::context::unseal::EphemeralKeyPair::generate();
+                let expires_at = keypair.expires_at() as i64;
+                let public_bytes = keypair.public_bytes();
+
+                // Store for later use
+                self.ephemeral_key = Some(keypair);
+
+                info!("Generated ephemeral X25519 keypair for unseal, expires at {}", expires_at);
+
+                Ok(UserAgentResponse {
+                    payload: Some(UserAgentResponsePayload::UnsealResponse(UnsealResponse {
+                        payload: Some(RespPayload::EphemeralKeyResponse(EphemeralKeyResponse {
+                            server_pubkey: public_bytes,
+                            expires_at,
+                        })),
+                    })),
+                })
+            }
+
+            Some(ReqPayload::SealedPassword(sealed)) => {
+                // Get and consume ephemeral key
+                let keypair = self
+                    .ephemeral_key
+                    .take()
+                    .ok_or_else(|| Status::failed_precondition("No ephemeral key generated"))?;
+
+                // Check expiration
+                if keypair.is_expired() {
+                    error!("Ephemeral key expired before sealed password was received");
+                    return Err(Status::deadline_exceeded("Ephemeral key expired"));
+                }
+
+                // Perform ECDH
+                let shared_secret = keypair
+                    .perform_dh(&sealed.client_pubkey)
+                    .map_err(|e| Status::invalid_argument(format!("Invalid client pubkey: {}", e)))?;
+
+                // Decrypt password
+                let nonce: [u8; 12] = sealed
+                    .nonce
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| Status::invalid_argument("Nonce must be 12 bytes"))?;
+
+                let password_bytes = crate::crypto::aead::decrypt(
+                    &sealed.encrypted_password,
+                    &shared_secret,
+                    &nonce,
+                )
+                .map_err(|e| {
+                    error!("Failed to decrypt password: {}", e);
+                    Status::internal(format!("Decryption failed: {}", e))
+                })?;
+
+                let password = String::from_utf8(password_bytes).map_err(|_| {
+                    error!("Password is not valid UTF-8");
+                    Status::invalid_argument("Password must be UTF-8")
+                })?;
+
+                // Call unseal on context
+                info!("Attempting to unseal vault with decrypted password");
+                let result = self.context.unseal(&password).await;
+
+                match result {
+                    Ok(()) => {
+                        info!("Vault unsealed successfully");
+                        Ok(UserAgentResponse {
+                            payload: Some(UserAgentResponsePayload::UnsealResponse(
+                                UnsealResponse {
+                                    payload: Some(RespPayload::UnsealResult(UnsealResult {
+                                        success: true,
+                                        error_message: None,
+                                    })),
+                                },
+                            )),
+                        })
+                    }
+                    Err(e) => {
+                        error!("Unseal failed: {}", e);
+                        Ok(UserAgentResponse {
+                            payload: Some(UserAgentResponsePayload::UnsealResponse(
+                                UnsealResponse {
+                                    payload: Some(RespPayload::UnsealResult(UnsealResult {
+                                        success: false,
+                                        error_message: Some(e.to_string()),
+                                    })),
+                                },
+                            )),
+                        })
+                    }
+                }
+            }
+
+            None => {
+                error!("Received empty unseal request");
+                Err(Status::invalid_argument("Empty unseal request"))
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -333,9 +455,11 @@ mod tests {
         let token = bootstrapper.get_token().unwrap();
 
         let bootstrapper_ref = BootstrapActor::spawn(bootstrapper);
+        let context = crate::ServerContext::new(db.clone()).await.unwrap();
         let user_agent = UserAgentActor::new_manual(
             db.clone(),
             bootstrapper_ref,
+            context,
             tokio::sync::mpsc::channel(1).0, // dummy channel, we won't actually send responses in this test
         );
         let user_agent_ref = UserAgentActor::spawn(user_agent);
