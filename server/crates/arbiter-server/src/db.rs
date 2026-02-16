@@ -21,7 +21,7 @@ pub type DatabasePool = diesel_async::pooled_connection::bb8::Pool<DatabaseConne
 pub type PoolInitError = diesel_async::pooled_connection::PoolError;
 pub type PoolError = diesel_async::pooled_connection::bb8::RunError;
 
-static DB_FILE: &'static str = "arbiter.sqlite";
+static DB_FILE: &str = "arbiter.sqlite";
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 

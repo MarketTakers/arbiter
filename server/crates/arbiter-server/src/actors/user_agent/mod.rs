@@ -10,7 +10,7 @@ use arbiter_proto::proto::{
 };
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, dsl::update};
-use diesel_async::{AsyncConnection, RunQueryDsl};
+use diesel_async::{RunQueryDsl};
 use ed25519_dalek::VerifyingKey;
 use kameo::{Actor, actor::ActorRef, error::SendError, messages};
 use memsafe::MemSafe;
@@ -25,7 +25,7 @@ use crate::{
         bootstrap::{Bootstrapper, ConsumeToken},
         keyholder::{self, KeyHolder, TryUnseal},
         user_agent::state::{
-            AuthRequestContext, ChallengeContext, DummyContext, UnsealContext, UserAgentEvents,
+            ChallengeContext, DummyContext, UnsealContext, UserAgentEvents,
             UserAgentStateMachine, UserAgentStates,
         },
     },
@@ -129,7 +129,7 @@ impl UserAgentActor {
         let nonce: Option<i32> = {
             let mut db_conn = self.db.get().await.to_status()?;
             db_conn
-                .transaction(|conn| {
+                .exclusive_transaction(|conn| {
                     Box::pin(async move {
                         let current_nonce = schema::useragent_client::table
                             .filter(
@@ -162,7 +162,7 @@ impl UserAgentActor {
 
         let challenge = auth::AuthChallenge {
             pubkey: pubkey_bytes,
-            nonce: nonce,
+            nonce,
         };
 
         self.transition(UserAgentEvents::SentChallenge(ChallengeContext {
@@ -237,7 +237,6 @@ impl UserAgentActor {
         let client_public_key = PublicKey::from(client_pubkey_bytes);
 
         self.transition(UserAgentEvents::UnsealRequest(UnsealContext {
-            server_public_key: public_key,
             secret: Mutex::new(Some(secret)),
             client_public_key,
         }))?;
@@ -325,9 +324,9 @@ impl UserAgentActor {
             Err(err) => {
                 error!(?err, "Failed to decrypt unseal key");
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                return Ok(unseal_response(UserAgentResponsePayload::UnsealResult(
+                Ok(unseal_response(UserAgentResponsePayload::UnsealResult(
                     UnsealResult::InvalidKey.into(),
-                )));
+                )))
             }
         }
     }
@@ -342,10 +341,7 @@ impl UserAgentActor {
             Status::invalid_argument("Failed to convert pubkey to VerifyingKey")
         })?;
 
-        self.transition(UserAgentEvents::AuthRequest(AuthRequestContext {
-            pubkey,
-            bootstrap_token: req.bootstrap_token.clone(),
-        }))?;
+        self.transition(UserAgentEvents::AuthRequest)?;
 
         match req.bootstrap_token {
             Some(token) => self.auth_with_bootstrap_token(pubkey, token).await,

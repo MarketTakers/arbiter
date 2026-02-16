@@ -10,10 +10,10 @@ pub mod proto {
 
 pub mod transport;
 
-pub static BOOTSTRAP_TOKEN_PATH: &'static str = "bootstrap_token";
+pub static BOOTSTRAP_TOKEN_PATH: &str = "bootstrap_token";
 
 pub fn home_path() -> Result<std::path::PathBuf, std::io::Error> {
-    static ARBITER_HOME: &'static str = ".arbiter";
+    static ARBITER_HOME: &str = ".arbiter";
     let home_dir = std::env::home_dir().ok_or(std::io::Error::new(
         std::io::ErrorKind::PermissionDenied,
         "can not get home directory",
