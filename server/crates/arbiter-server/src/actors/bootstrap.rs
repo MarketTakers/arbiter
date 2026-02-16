@@ -43,11 +43,11 @@ pub enum BootstrapError {
 }
 
 #[derive(Actor)]
-pub struct BootstrapActor {
+pub struct Bootstrapper {
     token: Option<String>,
 }
 
-impl BootstrapActor {
+impl Bootstrapper {
     pub async fn new(db: &DatabasePool) -> Result<Self, BootstrapError> {
         let mut conn = db.get().await?;
 
@@ -77,7 +77,7 @@ impl BootstrapActor {
 }
 
 #[messages]
-impl BootstrapActor {
+impl Bootstrapper {
     #[message]
     pub fn is_correct_token(&self, token: String) -> bool {
         match &self.token {
