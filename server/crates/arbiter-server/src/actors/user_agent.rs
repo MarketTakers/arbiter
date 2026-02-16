@@ -1,25 +1,18 @@
-use std::{
-    ops::DerefMut,
-    sync::Mutex,
-};
+use std::{ops::DerefMut, sync::Mutex};
 
 use arbiter_proto::proto::{
-    UserAgentResponse,
+    UnsealEncryptedKey, UnsealResult, UnsealStart, UnsealStartResponse, UserAgentResponse,
     auth::{
         self, AuthChallengeRequest, AuthOk, ServerMessage as AuthServerMessage,
         server_message::Payload as ServerAuthPayload,
     },
-    unseal::{UnsealEncryptedKey, UnsealResult, UnsealStart, UnsealStartResponse},
     user_agent_response::Payload as UserAgentResponsePayload,
 };
-use chacha20poly1305::{
-    AeadInPlace, XChaCha20Poly1305, XNonce,
-    aead::KeyInit,
-};
+use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, dsl::update};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use ed25519_dalek::VerifyingKey;
-use kameo::{Actor, actor::ActorRef, messages};
+use kameo::{Actor, actor::ActorRef, error::SendError, messages};
 use memsafe::MemSafe;
 use tokio::sync::mpsc::Sender;
 use tonic::Status;
@@ -30,6 +23,7 @@ use crate::{
     ServerContext,
     actors::{
         bootstrap::{Bootstrapper, ConsumeToken},
+        keyholder::{self, KeyHolder, TryUnseal},
         user_agent::state::{
             AuthRequestContext, ChallengeContext, DummyContext, UnsealContext, UserAgentEvents,
             UserAgentStateMachine, UserAgentStates,
@@ -50,6 +44,7 @@ pub(crate) use transport::handle_user_agent;
 pub struct UserAgentActor {
     db: db::DatabasePool,
     bootstapper: ActorRef<Bootstrapper>,
+    keyholder: ActorRef<KeyHolder>,
     state: UserAgentStateMachine<DummyContext>,
     // will be used in future
     _tx: Sender<Result<UserAgentResponse, Status>>,
@@ -63,6 +58,7 @@ impl UserAgentActor {
         Self {
             db: context.db.clone(),
             bootstapper: context.bootstrapper.clone(),
+            keyholder: context.keyholder.clone(),
             state: UserAgentStateMachine::new(DummyContext),
             _tx: tx,
         }
@@ -72,11 +68,13 @@ impl UserAgentActor {
     pub(crate) fn new_manual(
         db: db::DatabasePool,
         bootstapper: ActorRef<Bootstrapper>,
+        keyholder: ActorRef<KeyHolder>,
         tx: Sender<Result<UserAgentResponse, Status>>,
     ) -> Self {
         Self {
             db,
             bootstapper,
+            keyholder,
             state: UserAgentStateMachine::new(DummyContext),
             _tx: tx,
         }
@@ -280,22 +278,57 @@ impl UserAgentActor {
         let shared_secret = ephemeral_secret.diffie_hellman(&unseal_context.client_public_key);
         let cipher = XChaCha20Poly1305::new(shared_secret.as_bytes().into());
 
-        let mut root_key_buffer = MemSafe::new(req.ciphertext.clone()).unwrap();
-        let mut write_handle = root_key_buffer.write().unwrap();
-        let write_handle = write_handle.deref_mut();
+        let mut seal_key_buffer = MemSafe::new(req.ciphertext.clone()).unwrap();
 
-        let decryption_result = cipher
-            .decrypt_in_place(nonce, &req.associated_data, write_handle);
+        let decryption_result = {
+            let mut write_handle = seal_key_buffer.write().unwrap();
+            let write_handle = write_handle.deref_mut();
+            cipher.decrypt_in_place(nonce, &req.associated_data, write_handle)
+        };
 
         match decryption_result {
-            Ok(_) => todo!("Send key to the keyguarding"),
+            Ok(_) => {
+                match self
+                    .keyholder
+                    .ask(TryUnseal {
+                        seal_key_raw: seal_key_buffer,
+                    })
+                    .await
+                {
+                    Ok(_) => {
+                        info!("Successfully unsealed key with client-provided key");
+                        self.transition(UserAgentEvents::ReceivedValidKey)?;
+                        Ok(unseal_response(UserAgentResponsePayload::UnsealResult(
+                            UnsealResult::Success.into(),
+                        )))
+                    }
+                    Err(SendError::HandlerError(keyholder::Error::InvalidKey)) => {
+                        self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                        Ok(unseal_response(UserAgentResponsePayload::UnsealResult(
+                            UnsealResult::InvalidKey.into(),
+                        )))
+                    }
+                    Err(SendError::HandlerError(err)) => {
+                        error!(?err, "Keyholder failed to unseal key");
+                        self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                        Ok(unseal_response(UserAgentResponsePayload::UnsealResult(
+                            UnsealResult::InvalidKey.into(),
+                        )))
+                    }
+                    Err(err) => {
+                        error!(?err, "Failed to send unseal request to keyholder");
+                        self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                        Err(Status::internal("Vault is not available"))
+                    }
+                }
+            }
             Err(err) => {
                 error!(?err, "Failed to decrypt unseal key");
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
                 return Ok(unseal_response(UserAgentResponsePayload::UnsealResult(
                     UnsealResult::InvalidKey.into(),
                 )));
-            },
+            }
         }
     }
 

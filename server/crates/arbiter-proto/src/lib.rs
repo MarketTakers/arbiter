@@ -6,9 +6,6 @@ pub mod proto {
     pub mod auth {
         tonic::include_proto!("arbiter.auth");
     }
-    pub mod unseal {
-        tonic::include_proto!("arbiter.unseal");
-    }
 }
 
 pub mod transport;
