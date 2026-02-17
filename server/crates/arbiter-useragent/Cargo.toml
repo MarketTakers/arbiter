@@ -5,3 +5,11 @@ edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
+arbiter-proto.path = "../arbiter-proto"
+kameo.workspace = true
+tokio = {workspace = true, features = ["net"]}
+tonic.workspace = true
+tracing.workspace = true
+ed25519-dalek.workspace = true
+smlang.workspace = true
+x25519-dalek.workspace = true

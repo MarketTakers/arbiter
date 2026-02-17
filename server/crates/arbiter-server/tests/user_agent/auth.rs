@@ -20,7 +20,6 @@ use kameo::actor::Spawn;
 #[test_log::test]
 pub async fn test_bootstrap_token_auth() {
     let db =db::create_test_pool().await;
-    crate::common::seed_settings(&db).await;
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
@@ -67,7 +66,6 @@ pub async fn test_bootstrap_token_auth() {
 #[test_log::test]
 pub async fn test_bootstrap_invalid_token_auth() {
     let db = db::create_test_pool().await;
-    crate::common::seed_settings(&db).await;
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     let user_agent =
@@ -110,7 +108,6 @@ pub async fn test_bootstrap_invalid_token_auth() {
 #[test_log::test]
 pub async fn test_challenge_auth() {
     let db = db::create_test_pool().await;
-    crate::common::seed_settings(&db).await;
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     let user_agent =

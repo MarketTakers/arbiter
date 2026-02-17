@@ -345,30 +345,15 @@ impl KeyHolder {
 #[cfg(test)]
 mod tests {
     use diesel::SelectableHelper;
-    use diesel::dsl::insert_into;
+    
     use diesel_async::RunQueryDsl;
     use memsafe::MemSafe;
 
-    use crate::db::{self, models::ArbiterSetting};
+    use crate::db::{self};
 
     use super::*;
 
-    async fn seed_settings(pool: &db::DatabasePool) {
-        let mut conn = pool.get().await.unwrap();
-        insert_into(schema::arbiter_settings::table)
-            .values(&ArbiterSetting {
-                id: 1,
-                root_key_id: None,
-                cert_key: vec![],
-                cert: vec![],
-            })
-            .execute(&mut conn)
-            .await
-            .unwrap();
-    }
-
     async fn bootstrapped_actor(db: &db::DatabasePool) -> KeyHolder {
-        seed_settings(db).await;
         let mut actor = KeyHolder::new(db.clone()).await.unwrap();
         let seal_key = MemSafe::new(b"test-seal-key".to_vec()).unwrap();
         actor.bootstrap(seal_key).await.unwrap();

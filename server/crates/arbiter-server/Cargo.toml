@@ -18,6 +18,7 @@ arbiter-proto.path = "../arbiter-proto"
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tonic.workspace = true
+tonic.features = ["tls-aws-lc"]
 tokio.workspace = true
 rustls.workspace = true
 smlang.workspace = true
@@ -30,21 +31,17 @@ futures.workspace = true
 tokio-stream.workspace = true
 dashmap = "6.1.0"
 rand.workspace = true
-rcgen = { version = "0.14.7", features = [
-    "aws_lc_rs",
-    "pem",
-    "x509-parser",
-    "zeroize",
-], default-features = false }
+rcgen.workspace = true
 chrono.workspace = true
 memsafe = "0.4.0"
 zeroize = { version = "1.8.2", features = ["std", "simd"] }
 kameo.workspace = true
-x25519-dalek = { version = "2.0.1", features = ["getrandom"] }
+x25519-dalek.workspace = true
 chacha20poly1305 = { version = "0.10.1", features = ["std"] }
 argon2 = { version = "0.5.3", features = ["zeroize"] }
 restructed = "0.2.2"
 strum = { version = "0.27.2", features = ["derive"] }
+pem = "3.0.6"
 
 [dev-dependencies]
 insta = "1.46.3"

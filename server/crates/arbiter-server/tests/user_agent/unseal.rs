@@ -23,7 +23,6 @@ async fn setup_authenticated_user_agent(
     seal_key: &[u8],
 ) -> (arbiter_server::db::DatabasePool, ActorRef<UserAgentActor>) {
     let db = db::create_test_pool().await;
-    crate::common::seed_settings(&db).await;
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
@@ -167,7 +166,6 @@ pub async fn test_unseal_corrupted_ciphertext() {
 #[test_log::test]
 pub async fn test_unseal_start_without_auth_fails() {
     let db = db::create_test_pool().await;
-    crate::common::seed_settings(&db).await;
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     let user_agent =
