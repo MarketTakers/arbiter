@@ -3,6 +3,7 @@ name = "arbiter-proto"
 version = "0.1.0"
 edition = "2024"
 repository = "https://git.markettakers.org/MarketTakers/arbiter"
+license = "Apache-2.0"
 
 [dependencies]
 tonic.workspace = true

@@ -3,6 +3,7 @@ name = "arbiter-server"
 version = "0.1.0"
 edition = "2024"
 repository = "https://git.markettakers.org/MarketTakers/arbiter"
+license = "Apache-2.0"
 
 [dependencies]
 diesel = { version = "2.3.6", features = ["chrono", "returning_clauses_for_sqlite_3_35", "serde_json", "time", "uuid"] }
