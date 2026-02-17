@@ -3,7 +3,6 @@
 Arbiter is a permissioned signing service for cryptocurrency wallets. It runs as a background service on the user's machine with an optional client application for vault management.
 
 **Core principle:** The vault NEVER exposes key material. It only produces signatures when a request satisfies the configured policies.
-
 ---
 
 ## 1. Peer Types
