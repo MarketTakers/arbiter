@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
-use diesel::OptionalExtension as _;
-use diesel_async::RunQueryDsl as _;
 use miette::Diagnostic;
 use thiserror::Error;
 
 use crate::{
     actors::GlobalActors,
-    context::tls::{TlsDataRaw, TlsManager},
-    db::{self, models::ArbiterSetting, schema::arbiter_settings},
+    context::tls::TlsManager,
+    db::{self},
 };
 
 pub mod tls;
@@ -29,7 +27,7 @@ pub enum InitError {
 
     #[error("TLS initialization failed: {0}")]
     #[diagnostic(code(arbiter_server::init::tls_init))]
-    Tls(#[from] tls::TlsInitError),
+    Tls(#[from] tls::InitError),
 
     #[error("Actor spawn failed: {0}")]
     #[diagnostic(code(arbiter_server::init::actor_spawn))]
@@ -57,54 +55,11 @@ impl std::ops::Deref for ServerContext {
 }
 
 impl ServerContext {
-    async fn load_tls(
-        db: &mut db::DatabaseConnection,
-        settings: Option<&ArbiterSetting>,
-    ) -> Result<TlsManager, InitError> {
-        match &settings {
-            Some(settings) => {
-                let tls_data_raw = TlsDataRaw {
-                    cert: settings.cert.clone(),
-                    key: settings.cert_key.clone(),
-                };
-
-                Ok(TlsManager::new(Some(tls_data_raw)).await?)
-            }
-            None => {
-                let tls = TlsManager::new(None).await?;
-                let tls_data_raw = tls.bytes();
-
-                diesel::insert_into(arbiter_settings::table)
-                    .values(&ArbiterSetting {
-                        id: 1,
-                        root_key_id: None,
-                        cert_key: tls_data_raw.key,
-                        cert: tls_data_raw.cert,
-                    })
-                    .execute(db)
-                    .await?;
-
-                Ok(tls)
-            }
-        }
-    }
-
     pub async fn new(db: db::DatabasePool) -> Result<Self, InitError> {
-        let mut conn = db.get().await?;
-
-        let settings = arbiter_settings::table
-            .first::<ArbiterSetting>(&mut conn)
-            .await
-            .optional()?;
-
-        let tls = Self::load_tls(&mut conn, settings.as_ref()).await?;
-
-        drop(conn);
-
         Ok(Self(Arc::new(_ServerContextInner {
             actors: GlobalActors::spawn(db.clone()).await?,
+            tls: TlsManager::new(db.clone()).await?,
             db,
-            tls,
         })))
     }
 }

@@ -1,28 +1,31 @@
-use arbiter_proto::{BOOTSTRAP_TOKEN_PATH, home_path};
+use arbiter_proto::{BOOTSTRAP_PATH, home_path};
 use diesel::QueryDsl;
 use diesel_async::RunQueryDsl;
 use kameo::{Actor, messages};
 use miette::Diagnostic;
-use rand::{RngExt, distr::StandardUniform, make_rng, rngs::StdRng};
+use rand::{
+    RngExt,
+    distr::{Alphanumeric},
+    make_rng,
+    rngs::StdRng,
+};
 use thiserror::Error;
-use tracing::info;
 
 use crate::db::{self, DatabasePool, schema};
-
 const TOKEN_LENGTH: usize = 64;
 
 pub async fn generate_token() -> Result<String, std::io::Error> {
     let rng: StdRng = make_rng();
 
-    let token: String = rng
-        .sample_iter::<char, _>(StandardUniform)
-        .take(TOKEN_LENGTH)
-        .fold(Default::default(), |mut accum, char| {
+    let token: String = rng.sample_iter(Alphanumeric).take(TOKEN_LENGTH).fold(
+        Default::default(),
+        |mut accum, char| {
             accum += char.to_string().as_str();
             accum
-        });
+        },
+    );
 
-    tokio::fs::write(home_path()?.join(BOOTSTRAP_TOKEN_PATH), token.as_str()).await?;
+    tokio::fs::write(home_path()?.join(BOOTSTRAP_PATH), token.as_str()).await?;
 
     Ok(token)
 }
@@ -58,10 +61,9 @@ impl Bootstrapper {
 
         drop(conn);
 
+
         let token = if row_count == 0 {
             let token = generate_token().await?;
-            info!(%token, "Generated bootstrap token");
-            tokio::fs::write(home_path()?.join(BOOTSTRAP_TOKEN_PATH), token.as_str()).await?;
             Some(token)
         } else {
             None

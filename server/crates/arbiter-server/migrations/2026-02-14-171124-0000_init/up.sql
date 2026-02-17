@@ -24,13 +24,23 @@ create unique index if not exists uniq_nonce_per_root_key on aead_encrypted (
     associated_root_key_id
 );
 
+create table if not exists tls_history (
+    id INTEGER not null PRIMARY KEY,
+    cert text not null,
+    cert_key text not null, -- PEM Encoded private key
+    ca_cert text not null, 
+    ca_key text not null, -- PEM Encoded private key
+    created_at integer not null default(unixepoch ('now'))
+) STRICT;
+
 -- This is a singleton
 create table if not exists arbiter_settings (
     id INTEGER not null PRIMARY KEY CHECK (id = 1), -- singleton row, id must be 1
     root_key_id integer references root_key_history (id) on delete RESTRICT, -- if null, means wasn't bootstrapped yet
-    cert_key blob not null,
-    cert blob not null
+    tls_id integer references tls_history (id) on delete RESTRICT
 ) STRICT;
+
+insert into arbiter_settings (id) values (1) on conflict do nothing; -- ensure singleton row exists
 
 create table if not exists useragent_client (
     id integer not null primary key,

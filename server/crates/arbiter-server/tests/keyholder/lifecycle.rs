@@ -12,7 +12,6 @@ use crate::common;
 #[test_log::test]
 async fn test_bootstrap() {
     let db = db::create_test_pool().await;
-    common::seed_settings(&db).await;
     let mut actor = KeyHolder::new(db.clone()).await.unwrap();
 
     let seal_key = MemSafe::new(b"test-seal-key".to_vec()).unwrap();
@@ -53,7 +52,6 @@ async fn test_bootstrap_rejects_double() {
 #[test_log::test]
 async fn test_create_new_before_bootstrap_fails() {
     let db = db::create_test_pool().await;
-    common::seed_settings(&db).await;
     let mut actor = KeyHolder::new(db).await.unwrap();
 
     let err = actor
@@ -67,7 +65,6 @@ async fn test_create_new_before_bootstrap_fails() {
 #[test_log::test]
 async fn test_decrypt_before_bootstrap_fails() {
     let db = db::create_test_pool().await;
-    common::seed_settings(&db).await;
     let mut actor = KeyHolder::new(db).await.unwrap();
 
     let err = actor.decrypt(1).await.unwrap_err();

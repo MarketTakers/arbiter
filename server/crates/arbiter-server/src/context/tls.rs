@@ -1,12 +1,36 @@
 use std::string::FromUtf8Error;
 
+use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper as _};
+use diesel_async::{AsyncConnection, RunQueryDsl};
 use miette::Diagnostic;
-use rcgen::{Certificate, KeyPair};
-use rustls::pki_types::CertificateDer;
+use pem::Pem;
+use rcgen::{
+    BasicConstraints, Certificate, CertificateParams, CertifiedIssuer, DistinguishedName, DnType,
+    IsCa, Issuer, KeyPair, KeyUsagePurpose,
+};
+use rustls::pki_types::{pem::PemObject};
 use thiserror::Error;
+use tonic::transport::CertificateDer;
+
+use crate::db::{
+    self,
+    models::{NewTlsHistory, TlsHistory},
+    schema::{
+        arbiter_settings,
+        tls_history::{self},
+    },
+};
+
+const ENCODE_CONFIG: pem::EncodeConfig = {
+    let line_ending = match cfg!(target_family = "windows") {
+        true => pem::LineEnding::CRLF,
+        false => pem::LineEnding::LF,
+    };
+    pem::EncodeConfig::new().set_line_ending(line_ending)
+};
 
 #[derive(Error, Debug, Diagnostic)]
-pub enum TlsInitError {
+pub enum InitError {
     #[error("Key generation error during TLS initialization: {0}")]
     #[diagnostic(code(arbiter_server::tls_init::key_generation))]
     KeyGeneration(#[from] rcgen::Error),
@@ -18,68 +42,211 @@ pub enum TlsInitError {
     #[error("Key deserialization error: {0}")]
     #[diagnostic(code(arbiter_server::tls_init::key_deserialization))]
     KeyDeserializationError(rcgen::Error),
+
+    #[error("Database error during TLS initialization: {0}")]
+    #[diagnostic(code(arbiter_server::tls_init::database_error))]
+    DatabaseError(#[from] diesel::result::Error),
+
+    #[error("Pem deserialization error during TLS initialization: {0}")]
+    #[diagnostic(code(arbiter_server::tls_init::pem_deserialization))]
+    PemDeserializationError(#[from] rustls::pki_types::pem::Error),
+
+    #[error("Database pool acquire error during TLS initialization: {0}")]
+    #[diagnostic(code(arbiter_server::tls_init::database_pool_acquire))]
+    DatabasePoolAcquire(#[from] db::PoolError),
 }
 
-pub struct TlsData {
-    pub cert: CertificateDer<'static>,
-    pub keypair: KeyPair,
+pub type PemCert = String;
+
+pub fn encode_cert_to_pem(cert: &CertificateDer) -> PemCert {
+    pem::encode_config(
+        &Pem::new("CERTIFICATE", cert.to_vec()),
+        ENCODE_CONFIG,
+    )
 }
 
-pub struct TlsDataRaw {
-    pub cert: Vec<u8>,
-    pub key: Vec<u8>,
+#[allow(unused)]
+struct SerializedTls {
+    cert_pem: PemCert,
+    cert_key_pem: String,
 }
-impl TlsDataRaw {
-    pub fn serialize(cert: &TlsData) -> Self {
-        Self {
-            cert: cert.cert.as_ref().to_vec(),
-            key: cert.keypair.serialize_pem().as_bytes().to_vec(),
-        }
+
+struct TlsCa {
+    issuer: Issuer<'static, KeyPair>,
+    cert: CertificateDer<'static>,
+}
+
+impl TlsCa {
+    fn generate() -> Result<Self, InitError> {
+        let keypair = KeyPair::generate()?;
+        let mut params = CertificateParams::new(["Arbiter Instance CA".into()])?;
+        params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        params.key_usages = vec![
+            KeyUsagePurpose::KeyCertSign,
+            KeyUsagePurpose::CrlSign,
+            KeyUsagePurpose::DigitalSignature,
+        ];
+
+        let mut dn = DistinguishedName::new();
+        dn.push(DnType::CommonName, "Arbiter Instance CA");
+        params.distinguished_name = dn;
+        let certified_issuer = CertifiedIssuer::self_signed(params, keypair)?;
+
+        let cert_key_pem = certified_issuer.key().serialize_pem();
+
+        let issuer = Issuer::from_ca_cert_pem(
+            &certified_issuer.pem(),
+            KeyPair::from_pem(cert_key_pem.as_ref()).unwrap(),
+        )
+        .unwrap();
+
+        Ok(Self {
+            issuer,
+            cert: certified_issuer.der().clone(),
+        })
+    }
+    fn generate_leaf(&self) -> Result<TlsCert, InitError> {
+        let cert_key = KeyPair::generate()?;
+        let mut params = CertificateParams::new(["Arbiter Instance Leaf".into()])?;
+        params.is_ca = IsCa::NoCa;
+        params.key_usages = vec![
+            KeyUsagePurpose::DigitalSignature,
+            KeyUsagePurpose::KeyEncipherment,
+        ];
+
+        let mut dn = DistinguishedName::new();
+        dn.push(DnType::CommonName, "Arbiter Instance Leaf");
+        params.distinguished_name = dn;
+
+        let new_cert = params.signed_by(&cert_key, &self.issuer)?;
+
+        Ok(TlsCert {
+            cert: new_cert,
+            cert_key,
+        })
     }
 
-    pub fn deserialize(&self) -> Result<TlsData, TlsInitError> {
-        let cert = CertificateDer::from_slice(&self.cert).into_owned();
+    #[allow(unused)]
+    fn serialize(&self) -> Result<SerializedTls, InitError> {
+        let cert_key_pem = self.issuer.key().serialize_pem();
+        Ok(SerializedTls {
+            cert_pem: encode_cert_to_pem(&self.cert),
+            cert_key_pem,
+        })
+    }
 
-        let key = String::from_utf8(self.key.clone()).map_err(TlsInitError::KeyInvalidFormat)?;
-
-        let keypair = KeyPair::from_pem(&key).map_err(TlsInitError::KeyDeserializationError)?;
-
-        Ok(TlsData { cert, keypair })
+    #[allow(unused)]
+    fn try_deserialize(cert_pem: &str, cert_key_pem: &str) -> Result<Self, InitError> {
+        let keypair =
+            KeyPair::from_pem(cert_key_pem).map_err(InitError::KeyDeserializationError)?;
+        let issuer = Issuer::from_ca_cert_pem(cert_pem, keypair)?;
+        Ok(Self {
+            issuer,
+            cert: CertificateDer::from_pem_slice(cert_pem.as_bytes())?,
+        })
     }
 }
 
-fn generate_cert(key: &KeyPair) -> Result<Certificate, rcgen::Error> {
-    let params =
-        rcgen::CertificateParams::new(vec!["arbiter.local".to_string(), "localhost".to_string()])?;
-
-    params.self_signed(key)
+struct TlsCert {
+    cert: Certificate,
+    cert_key: KeyPair,
 }
 
 // TODO: Implement cert rotation
 pub struct TlsManager {
-    data: TlsData,
+    cert: CertificateDer<'static>,
+    keypair: KeyPair,
+    ca_cert: CertificateDer<'static>,
+    _db: db::DatabasePool,
 }
 
 impl TlsManager {
-    pub async fn new(data: Option<TlsDataRaw>) -> Result<Self, TlsInitError> {
-        match data {
-            Some(raw) => {
-                let tls_data = raw.deserialize()?;
-                Ok(Self { data: tls_data })
-            }
-            None => {
-                let keypair = KeyPair::generate()?;
-                let cert = generate_cert(&keypair)?;
-                let tls_data = TlsData {
-                    cert: cert.der().clone(),
-                    keypair,
+    pub async fn generate_new(db: &db::DatabasePool) -> Result<Self, InitError> {
+        let ca = TlsCa::generate()?;
+        let new_cert = ca.generate_leaf()?;
+
+        {
+            let mut conn = db.get().await?;
+            conn.transaction(|conn| {
+                Box::pin(async {
+                    let new_tls_history = NewTlsHistory {
+                        cert: new_cert.cert.pem(),
+                        cert_key: new_cert.cert_key.serialize_pem(),
+                        ca_cert: encode_cert_to_pem(&ca.cert),
+                        ca_key: ca.issuer.key().serialize_pem(),
+                    };
+
+                    let inserted_tls_history: i32 = diesel::insert_into(tls_history::table)
+                        .values(&new_tls_history)
+                        .returning(tls_history::id)
+                        .get_result(conn)
+                        .await?;
+
+                    diesel::update(arbiter_settings::table)
+                        .set(arbiter_settings::tls_id.eq(inserted_tls_history))
+                        .execute(conn)
+                        .await?;
+
+                    Result::<_, diesel::result::Error>::Ok(())
+                })
+            })
+            .await?;
+        }
+
+        Ok(Self {
+            cert: new_cert.cert.der().clone(),
+            keypair: new_cert.cert_key,
+            ca_cert: ca.cert,
+            _db: db.clone(),
+        })
+    }
+
+    pub async fn new(db: db::DatabasePool) -> Result<Self, InitError> {
+        let cert_data: Option<TlsHistory> = {
+            let mut conn = db.get().await?;
+            arbiter_settings::table
+                .left_join(tls_history::table)
+                .select(Option::<TlsHistory>::as_select())
+                .first(&mut conn)
+                .await?
+        };
+
+        match cert_data {
+            Some(data) => {
+                let try_load = || -> Result<_, Box<dyn std::error::Error>> {
+                    let keypair = KeyPair::from_pem(&data.cert_key)?;
+                    let cert = CertificateDer::from_pem_slice(data.cert.as_bytes())?;
+                    let ca_cert = CertificateDer::from_pem_slice(data.ca_cert.as_bytes())?;
+                    Ok(Self {
+                        cert,
+                        keypair,
+                        ca_cert,
+                        _db: db.clone(),
+                    })
                 };
-                Ok(Self { data: tls_data })
+                match try_load() {
+                    Ok(manager) => Ok(manager),
+                    Err(e) => {
+                        eprintln!("Failed to load existing TLS certs: {e}. Generating new ones.");
+                        Self::generate_new(&db).await
+                    }
+                }
             }
+            None => Self::generate_new(&db).await,
         }
     }
 
-    pub fn bytes(&self) -> TlsDataRaw {
-        TlsDataRaw::serialize(&self.data)
+    pub fn cert(&self) -> &CertificateDer<'static> {
+        &self.cert
+    }
+    pub fn ca_cert(&self) -> &CertificateDer<'static> {
+        &self.ca_cert
+    }
+
+    pub fn cert_pem(&self) -> PemCert {
+        encode_cert_to_pem(&self.cert)
+    }
+    pub fn key_pem(&self) -> String {
+        self.keypair.serialize_pem()
     }
 }

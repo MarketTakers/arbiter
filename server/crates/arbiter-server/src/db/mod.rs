@@ -24,23 +24,23 @@ const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 #[derive(Error, Diagnostic, Debug)]
 pub enum DatabaseSetupError {
     #[error("Failed to determine home directory")]
-    #[diagnostic(code(arbiter::db::home_dir_error))]
+    #[diagnostic(code(arbiter::db::home_dir))]
     HomeDir(std::io::Error),
 
     #[error(transparent)]
-    #[diagnostic(code(arbiter::db::connection_error))]
+    #[diagnostic(code(arbiter::db::connection))]
     Connection(diesel::ConnectionError),
 
     #[error(transparent)]
-    #[diagnostic(code(arbiter::db::concurrency_error))]
+    #[diagnostic(code(arbiter::db::concurrency))]
     ConcurrencySetup(diesel::result::Error),
 
     #[error(transparent)]
-    #[diagnostic(code(arbiter::db::migration_error))]
+    #[diagnostic(code(arbiter::db::migration))]
     Migration(Box<dyn std::error::Error + Send + Sync>),
 
     #[error(transparent)]
-    #[diagnostic(code(arbiter::db::pool_error))]
+    #[diagnostic(code(arbiter::db::pool))]
     Pool(#[from] PoolInitError),
 }
 
@@ -91,12 +91,12 @@ fn initialize_database(url: &str) -> Result<(), DatabaseSetupError> {
 
 #[tracing::instrument(level = "info")]
 pub async fn create_pool(url: Option<&str>) -> Result<DatabasePool, DatabaseSetupError> {
-    let database_url = url.map(String::from).unwrap_or(format!(
-        "{}?mode=rwc",
-        (database_path()?
+    let database_url = url.map(String::from).unwrap_or(
+        database_path()?
             .to_str()
-            .expect("database path is not valid UTF-8"))
-    ));
+            .expect("database path is not valid UTF-8")
+            .to_string(),
+    );
 
     initialize_database(&database_url)?;
 

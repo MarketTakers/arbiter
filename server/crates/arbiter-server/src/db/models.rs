@@ -1,7 +1,7 @@
 #![allow(unused)]
 #![allow(clippy::all)]
 
-use crate::db::schema::{self, aead_encrypted, arbiter_settings, root_key_history};
+use crate::db::schema::{self, aead_encrypted, arbiter_settings, root_key_history, tls_history};
 use diesel::{prelude::*, sqlite::Sqlite};
 use restructed::Models;
 
@@ -46,13 +46,29 @@ pub struct RootKeyHistory {
     pub salt: Vec<u8>,
 }
 
-#[derive(Queryable, Debug, Insertable)]
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = tls_history, check_for_backend(Sqlite))]
+#[view(
+    NewTlsHistory,
+    derive(Insertable),
+    omit(id, created_at),
+    attributes_with = "deriveless"
+)]
+pub struct TlsHistory {
+    pub id: i32,
+    pub cert: String,
+    pub cert_key: String, // PEM Encoded private key
+    pub ca_cert: String, // PEM Encoded certificate for cert signing
+    pub ca_key: String, // PEM Encoded public key for cert signing
+    pub created_at: i32,
+}
+
+#[derive(Queryable, Debug, Insertable, Selectable)]
 #[diesel(table_name = arbiter_settings, check_for_backend(Sqlite))]
-pub struct ArbiterSetting {
+pub struct ArbiterSettings {
     pub id: i32,
     pub root_key_id: Option<i32>, // references root_key_history.id
-    pub cert_key: Vec<u8>,
-    pub cert: Vec<u8>,
+    pub tls_id: Option<i32>, // references tls_history.id
 }
 
 #[derive(Queryable, Debug)]

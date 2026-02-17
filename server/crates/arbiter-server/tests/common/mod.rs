@@ -1,28 +1,13 @@
 use arbiter_server::{
     actors::keyholder::KeyHolder,
-    db::{self, models::ArbiterSetting, schema},
+    db::{self, schema},
 };
-use diesel::{QueryDsl, insert_into};
+use diesel::QueryDsl;
 use diesel_async::RunQueryDsl;
 use memsafe::MemSafe;
 
-pub async fn seed_settings(pool: &db::DatabasePool) {
-    let mut conn = pool.get().await.unwrap();
-    insert_into(schema::arbiter_settings::table)
-        .values(&ArbiterSetting {
-            id: 1,
-            root_key_id: None,
-            cert_key: vec![],
-            cert: vec![],
-        })
-        .execute(&mut conn)
-        .await
-        .unwrap();
-}
-
 #[allow(dead_code)]
 pub async fn bootstrapped_keyholder(db: &db::DatabasePool) -> KeyHolder {
-    seed_settings(db).await;
     let mut actor = KeyHolder::new(db.clone()).await.unwrap();
     actor
         .bootstrap(MemSafe::new(b"test-seal-key".to_vec()).unwrap())
