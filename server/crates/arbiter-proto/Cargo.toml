@@ -27,4 +27,7 @@ rstest.workspace = true
 rand.workspace = true
 rcgen.workspace = true
 
+[package.metadata.cargo-shear]
+ignored = ["tonic-prost", "prost", "kameo"]
+
 
