@@ -17,6 +17,7 @@ miette.workspace = true
 thiserror.workspace = true
 rustls-pki-types.workspace = true
 base64 = "0.22.1"
+tracing.workspace = true
 
 
 [build-dependencies]
