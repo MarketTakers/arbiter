@@ -1,23 +1,26 @@
 #![forbid(unsafe_code)]
 use arbiter_proto::{
     proto::{ClientRequest, ClientResponse, UserAgentRequest, UserAgentResponse},
-    transport::BiStream,
+    transport::{BiStream, GrpcTransportActor, wire},
 };
 use async_trait::async_trait;
+use kameo::actor::PreparedActor;
 use tokio_stream::wrappers::ReceiverStream;
 
 use tokio::sync::mpsc;
 use tonic::{Request, Response, Status};
 
 use crate::{
-    actors::{client::handle_client, user_agent::handle_user_agent},
+    actors::{
+        client::handle_client,
+        user_agent::UserAgentActor,
+    },
     context::ServerContext,
 };
 
 pub mod actors;
 pub mod context;
 pub mod db;
-mod errors;
 
 const DEFAULT_CHANNEL_SIZE: usize = 1000;
 
@@ -59,7 +62,22 @@ impl arbiter_proto::proto::arbiter_service_server::ArbiterService for Server {
     ) -> Result<Response<Self::UserAgentStream>, Status> {
         let req_stream = request.into_inner();
         let (tx, rx) = mpsc::channel(DEFAULT_CHANNEL_SIZE);
-        tokio::spawn(handle_user_agent(self.context.clone(), req_stream, tx));
+        let context = self.context.clone();
+
+        wire(
+            |prepared: PreparedActor<UserAgentActor>, recipient| {
+                prepared.spawn(UserAgentActor::new(context, recipient));
+            },
+            |prepared: PreparedActor<GrpcTransportActor<_, _, _>>, business_recipient| {
+                prepared.spawn(GrpcTransportActor::new(
+                    tx,
+                    req_stream,
+                    business_recipient,
+                ));
+            },
+        )
+        .await;
+
         Ok(Response::new(ReceiverStream::new(rx)))
     }
 }

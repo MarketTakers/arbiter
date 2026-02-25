@@ -1,21 +1,23 @@
 use std::{ops::DerefMut, sync::Mutex};
 
 use arbiter_proto::proto::{
-    UnsealEncryptedKey, UnsealResult, UnsealStart, UnsealStartResponse, UserAgentResponse,
+    UnsealEncryptedKey, UnsealResult, UnsealStart, UnsealStartResponse, UserAgentRequest,
+    UserAgentResponse,
     auth::{
-        self, AuthChallengeRequest, AuthOk, ServerMessage as AuthServerMessage,
+        self, AuthChallengeRequest, AuthOk, ClientMessage as ClientAuthMessage,
+        ServerMessage as AuthServerMessage,
+        client_message::Payload as ClientAuthPayload,
         server_message::Payload as ServerAuthPayload,
     },
+    user_agent_request::Payload as UserAgentRequestPayload,
     user_agent_response::Payload as UserAgentResponsePayload,
 };
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, dsl::update};
 use diesel_async::RunQueryDsl;
 use ed25519_dalek::VerifyingKey;
-use kameo::{Actor, error::SendError, messages};
+use kameo::{Actor, actor::Recipient, error::SendError, messages, prelude::Message};
 use memsafe::MemSafe;
-use tokio::sync::mpsc::Sender;
-use tonic::Status;
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
@@ -31,53 +33,74 @@ use crate::{
         },
     },
     db::{self, schema},
-    errors::GrpcStatusExt,
 };
 
+mod error;
 mod state;
 
-mod transport;
-pub(crate) use transport::handle_user_agent;
+pub use error::UserAgentError;
 
 #[derive(Actor)]
 pub struct UserAgentActor {
     db: db::DatabasePool,
     actors: GlobalActors,
     state: UserAgentStateMachine<DummyContext>,
-    // will be used in future
-    _tx: Sender<Result<UserAgentResponse, Status>>,
+    transport: Recipient<Result<UserAgentResponse, UserAgentError>>,
 }
 
 impl UserAgentActor {
     pub(crate) fn new(
         context: ServerContext,
-        tx: Sender<Result<UserAgentResponse, Status>>,
+        transport: Recipient<Result<UserAgentResponse, UserAgentError>>,
     ) -> Self {
         Self {
             db: context.db.clone(),
             actors: context.actors.clone(),
             state: UserAgentStateMachine::new(DummyContext),
-            _tx: tx,
+            transport,
         }
     }
 
     pub fn new_manual(
         db: db::DatabasePool,
         actors: GlobalActors,
-        tx: Sender<Result<UserAgentResponse, Status>>,
+        transport: Recipient<Result<UserAgentResponse, UserAgentError>>,
     ) -> Self {
         Self {
             db,
             actors,
             state: UserAgentStateMachine::new(DummyContext),
-            _tx: tx,
+            transport,
         }
     }
 
-    fn transition(&mut self, event: UserAgentEvents) -> Result<(), Status> {
+    async fn process_request(&mut self, req: UserAgentRequest) -> Output {
+        let msg = req.payload.ok_or_else(|| {
+            error!(actor = "useragent", "Received message with no payload");
+            UserAgentError::MissingPayload
+        })?;
+
+        match msg {
+            UserAgentRequestPayload::AuthMessage(ClientAuthMessage {
+                payload: Some(ClientAuthPayload::AuthChallengeRequest(req)),
+            }) => self.handle_auth_challenge_request(req).await,
+            UserAgentRequestPayload::AuthMessage(ClientAuthMessage {
+                payload: Some(ClientAuthPayload::AuthChallengeSolution(solution)),
+            }) => self.handle_auth_challenge_solution(solution).await,
+            UserAgentRequestPayload::UnsealStart(unseal_start) => {
+                self.handle_unseal_request(unseal_start).await
+            }
+            UserAgentRequestPayload::UnsealEncryptedKey(unseal_encrypted_key) => {
+                self.handle_unseal_encrypted_key(unseal_encrypted_key).await
+            }
+            _ => Err(UserAgentError::MissingPayload),
+        }
+    }
+
+    fn transition(&mut self, event: UserAgentEvents) -> Result<(), UserAgentError> {
         self.state.process_event(event).map_err(|e| {
             error!(?e, "State transition failed");
-            Status::internal("State machine error")
+            UserAgentError::InvalidState
         })?;
         Ok(())
     }
@@ -86,7 +109,7 @@ impl UserAgentActor {
         &mut self,
         pubkey: ed25519_dalek::VerifyingKey,
         token: String,
-    ) -> Result<UserAgentResponse, Status> {
+    ) -> Output {
         let token_ok: bool = self
             .actors
             .bootstrapper
@@ -94,16 +117,16 @@ impl UserAgentActor {
             .await
             .map_err(|e| {
                 error!(?pubkey, "Failed to consume bootstrap token: {e}");
-                Status::internal("Bootstrap token consumption failed")
+                UserAgentError::ActorUnavailable
             })?;
 
         if !token_ok {
             error!(?pubkey, "Invalid bootstrap token provided");
-            return Err(Status::invalid_argument("Invalid bootstrap token"));
+            return Err(UserAgentError::InvalidBootstrapToken);
         }
 
         {
-            let mut conn = self.db.get().await.to_status()?;
+            let mut conn = self.db.get().await?;
 
             diesel::insert_into(schema::useragent_client::table)
                 .values((
@@ -111,8 +134,7 @@ impl UserAgentActor {
                     schema::useragent_client::nonce.eq(1),
                 ))
                 .execute(&mut conn)
-                .await
-                .to_status()?;
+                .await?;
         }
 
         self.transition(UserAgentEvents::ReceivedBootstrapToken)?;
@@ -122,7 +144,7 @@ impl UserAgentActor {
 
     async fn auth_with_challenge(&mut self, pubkey: VerifyingKey, pubkey_bytes: Vec<u8>) -> Output {
         let nonce: Option<i32> = {
-            let mut db_conn = self.db.get().await.to_status()?;
+            let mut db_conn = self.db.get().await?;
             db_conn
                 .exclusive_transaction(|conn| {
                     Box::pin(async move {
@@ -146,13 +168,12 @@ impl UserAgentActor {
                     })
                 })
                 .await
-                .optional()
-                .to_status()?
+                .optional()?
         };
 
         let Some(nonce) = nonce else {
             error!(?pubkey, "Public key not found in database");
-            return Err(Status::unauthenticated("Public key not registered"));
+            return Err(UserAgentError::PubkeyNotRegistered);
         };
 
         let challenge = auth::AuthChallenge {
@@ -177,19 +198,17 @@ impl UserAgentActor {
     fn verify_challenge_solution(
         &self,
         solution: &auth::AuthChallengeSolution,
-    ) -> Result<(bool, &ChallengeContext), Status> {
+    ) -> Result<(bool, &ChallengeContext), UserAgentError> {
         let UserAgentStates::WaitingForChallengeSolution(challenge_context) = self.state.state()
         else {
             error!("Received challenge solution in invalid state");
-            return Err(Status::invalid_argument(
-                "Invalid state for challenge solution",
-            ));
+            return Err(UserAgentError::InvalidState);
         };
         let formatted_challenge = arbiter_proto::format_challenge(&challenge_context.challenge);
 
         let signature = solution.signature.as_slice().try_into().map_err(|_| {
             error!(?solution, "Invalid signature length");
-            Status::invalid_argument("Invalid signature length")
+            UserAgentError::InvalidSignatureLength
         })?;
 
         let valid = challenge_context
@@ -201,7 +220,7 @@ impl UserAgentActor {
     }
 }
 
-type Output = Result<UserAgentResponse, Status>;
+type Output = Result<UserAgentResponse, UserAgentError>;
 
 fn auth_response(payload: ServerAuthPayload) -> UserAgentResponse {
     UserAgentResponse {
@@ -227,7 +246,7 @@ impl UserAgentActor {
         let client_pubkey_bytes: [u8; 32] = req
             .client_pubkey
             .try_into()
-            .map_err(|_| Status::invalid_argument("client_pubkey must be 32 bytes"))?;
+            .map_err(|_| UserAgentError::InvalidPubkey)?;
 
         let client_public_key = PublicKey::from(client_pubkey_bytes);
 
@@ -247,9 +266,7 @@ impl UserAgentActor {
     pub async fn handle_unseal_encrypted_key(&mut self, req: UnsealEncryptedKey) -> Output {
         let UserAgentStates::WaitingForUnsealKey(unseal_context) = self.state.state() else {
             error!("Received unseal encrypted key in invalid state");
-            return Err(Status::failed_precondition(
-                "Invalid state for unseal encrypted key",
-            ));
+            return Err(UserAgentError::InvalidState);
         };
         let ephemeral_secret = {
             let mut secret_lock = unseal_context.secret.lock().unwrap();
@@ -313,7 +330,7 @@ impl UserAgentActor {
                     Err(err) => {
                         error!(?err, "Failed to send unseal request to keyholder");
                         self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                        Err(Status::internal("Vault is not available"))
+                        Err(UserAgentError::ActorUnavailable)
                     }
                 }
             }
@@ -329,12 +346,13 @@ impl UserAgentActor {
 
     #[message]
     pub async fn handle_auth_challenge_request(&mut self, req: AuthChallengeRequest) -> Output {
-        let pubkey = req.pubkey.as_array().ok_or(Status::invalid_argument(
-            "Expected pubkey to have specific length",
-        ))?;
+        let pubkey = req
+            .pubkey
+            .as_array()
+            .ok_or(UserAgentError::InvalidPubkey)?;
         let pubkey = VerifyingKey::from_bytes(pubkey).map_err(|_err| {
             error!(?pubkey, "Failed to convert to VerifyingKey");
-            Status::invalid_argument("Failed to convert pubkey to VerifyingKey")
+            UserAgentError::InvalidPubkey
         })?;
 
         self.transition(UserAgentEvents::AuthRequest)?;
@@ -362,7 +380,22 @@ impl UserAgentActor {
         } else {
             error!("Client provided invalid solution to authentication challenge");
             self.transition(UserAgentEvents::ReceivedBadSolution)?;
-            Err(Status::unauthenticated("Invalid challenge solution"))
+            Err(UserAgentError::InvalidChallengeSolution)
+        }
+    }
+}
+
+impl Message<UserAgentRequest> for UserAgentActor {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        msg: UserAgentRequest,
+        _ctx: &mut kameo::prelude::Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        let result = self.process_request(msg).await;
+        if let Err(e) = self.transport.tell(result).await {
+            error!(actor = "useragent", "Failed to send response to transport: {}", e);
         }
     }
 }

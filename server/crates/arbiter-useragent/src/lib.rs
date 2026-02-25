@@ -1,4 +1,4 @@
-use arbiter_proto::proto::UserAgentRequest;
+use arbiter_proto::{proto::UserAgentRequest, transport::TransportActor};
 use ed25519_dalek::SigningKey;
 use kameo::{
     Actor, Reply,
@@ -6,7 +6,6 @@ use kameo::{
     prelude::Message,
 };
 use smlang::statemachine;
-use tokio::sync::mpsc;
 use tonic::transport::CertificateDer;
 use tracing::{debug, error};
 

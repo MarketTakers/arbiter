@@ -35,7 +35,7 @@ async fn setup_authenticated_user_agent(
     actors.key_holder.ask(Seal).await.unwrap();
 
     let user_agent =
-        UserAgentActor::new_manual(db.clone(), actors.clone(), tokio::sync::mpsc::channel(1).0);
+        UserAgentActor::new_manual(db.clone(), actors.clone(), super::null_recipient());
     let user_agent_ref = UserAgentActor::spawn(user_agent);
 
     let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
@@ -169,7 +169,7 @@ pub async fn test_unseal_start_without_auth_fails() {
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     let user_agent =
-        UserAgentActor::new_manual(db.clone(), actors, tokio::sync::mpsc::channel(1).0);
+        UserAgentActor::new_manual(db.clone(), actors, super::null_recipient());
     let user_agent_ref = UserAgentActor::spawn(user_agent);
 
     let client_secret = EphemeralSecret::random();
@@ -184,8 +184,11 @@ pub async fn test_unseal_start_without_auth_fails() {
         .await;
 
     match result {
-        Err(kameo::error::SendError::HandlerError(status)) => {
-            assert_eq!(status.code(), tonic::Code::Internal);
+        Err(kameo::error::SendError::HandlerError(err)) => {
+            assert!(
+                matches!(err, arbiter_server::actors::user_agent::UserAgentError::InvalidState),
+                "Expected InvalidState, got {err:?}"
+            );
         }
         other => panic!("Expected state machine error, got {other:?}"),
     }

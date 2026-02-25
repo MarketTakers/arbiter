@@ -24,7 +24,7 @@ pub async fn test_bootstrap_token_auth() {
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
     let user_agent =
-        UserAgentActor::new_manual(db.clone(), actors, tokio::sync::mpsc::channel(1).0);
+        UserAgentActor::new_manual(db.clone(), actors, super::null_recipient());
     let user_agent_ref = UserAgentActor::spawn(user_agent);
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
@@ -69,7 +69,7 @@ pub async fn test_bootstrap_invalid_token_auth() {
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     let user_agent =
-        UserAgentActor::new_manual(db.clone(), actors, tokio::sync::mpsc::channel(1).0);
+        UserAgentActor::new_manual(db.clone(), actors, super::null_recipient());
     let user_agent_ref = UserAgentActor::spawn(user_agent);
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
@@ -85,15 +85,11 @@ pub async fn test_bootstrap_invalid_token_auth() {
         .await;
 
     match result {
-        Err(kameo::error::SendError::HandlerError(status)) => {
-            assert_eq!(status.code(), tonic::Code::InvalidArgument);
-            insta::assert_debug_snapshot!(status, @r#"
-                Status {
-                    code: InvalidArgument,
-                    message: "Invalid bootstrap token",
-                    source: None,
-                }
-                "#);
+        Err(kameo::error::SendError::HandlerError(err)) => {
+            assert!(
+                matches!(err, arbiter_server::actors::user_agent::UserAgentError::InvalidBootstrapToken),
+                "Expected InvalidBootstrapToken, got {err:?}"
+            );
         }
         Err(other) => {
             panic!("Expected SendError::HandlerError, got {other:?}");
@@ -111,7 +107,7 @@ pub async fn test_challenge_auth() {
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     let user_agent =
-        UserAgentActor::new_manual(db.clone(), actors, tokio::sync::mpsc::channel(1).0);
+        UserAgentActor::new_manual(db.clone(), actors, super::null_recipient());
     let user_agent_ref = UserAgentActor::spawn(user_agent);
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
