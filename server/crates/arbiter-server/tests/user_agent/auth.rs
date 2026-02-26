@@ -1,20 +1,29 @@
 use arbiter_proto::proto::{
     UserAgentResponse,
-    auth::{self, AuthChallengeRequest, AuthOk},
+    UserAgentRequest,
+    auth::{self, AuthChallengeRequest, AuthOk, ClientMessage, client_message::Payload as ClientAuthPayload},
+    user_agent_request::Payload as UserAgentRequestPayload,
     user_agent_response::Payload as UserAgentResponsePayload,
 };
 use arbiter_server::{
     actors::{
         GlobalActors,
         bootstrap::GetToken,
-        user_agent::{HandleAuthChallengeRequest, HandleAuthChallengeSolution, UserAgentActor},
+        user_agent::{UserAgentActor, UserAgentError},
     },
     db::{self, schema},
 };
 use diesel::{ExpressionMethods as _, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
 use ed25519_dalek::Signer as _;
-use kameo::actor::Spawn;
+
+fn auth_request(payload: ClientAuthPayload) -> UserAgentRequest {
+    UserAgentRequest {
+        payload: Some(UserAgentRequestPayload::AuthMessage(ClientMessage {
+            payload: Some(payload),
+        })),
+    }
+}
 
 #[tokio::test]
 #[test_log::test]
@@ -23,22 +32,20 @@ pub async fn test_bootstrap_token_auth() {
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
-    let user_agent =
-        UserAgentActor::new_manual(db.clone(), actors, tokio::sync::mpsc::channel(1).0);
-    let user_agent_ref = UserAgentActor::spawn(user_agent);
+    let mut user_agent = UserAgentActor::new_manual(db.clone(), actors);
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
 
-    let result = user_agent_ref
-        .ask(HandleAuthChallengeRequest {
-            req: AuthChallengeRequest {
+    let result = user_agent
+        .process_transport_inbound(auth_request(ClientAuthPayload::AuthChallengeRequest(
+            AuthChallengeRequest {
                 pubkey: pubkey_bytes,
                 bootstrap_token: Some(token),
             },
-        })
+        )))
         .await
-        .expect("Shouldn't fail to send message");
+        .expect("Shouldn't fail to process message");
 
     assert_eq!(
         result,
@@ -68,35 +75,23 @@ pub async fn test_bootstrap_invalid_token_auth() {
     let db = db::create_test_pool().await;
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
-    let user_agent =
-        UserAgentActor::new_manual(db.clone(), actors, tokio::sync::mpsc::channel(1).0);
-    let user_agent_ref = UserAgentActor::spawn(user_agent);
+    let mut user_agent = UserAgentActor::new_manual(db.clone(), actors);
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
 
-    let result = user_agent_ref
-        .ask(HandleAuthChallengeRequest {
-            req: AuthChallengeRequest {
+    let result = user_agent
+        .process_transport_inbound(auth_request(ClientAuthPayload::AuthChallengeRequest(
+            AuthChallengeRequest {
                 pubkey: pubkey_bytes,
                 bootstrap_token: Some("invalid_token".to_string()),
             },
-        })
+        )))
         .await;
 
     match result {
-        Err(kameo::error::SendError::HandlerError(status)) => {
-            assert_eq!(status.code(), tonic::Code::InvalidArgument);
-            insta::assert_debug_snapshot!(status, @r#"
-                Status {
-                    code: InvalidArgument,
-                    message: "Invalid bootstrap token",
-                    source: None,
-                }
-                "#);
-        }
-        Err(other) => {
-            panic!("Expected SendError::HandlerError, got {other:?}");
+        Err(err) => {
+            assert_eq!(err, UserAgentError::InvalidBootstrapToken);
         }
         Ok(_) => {
             panic!("Expected error due to invalid bootstrap token, but got success");
@@ -110,9 +105,7 @@ pub async fn test_challenge_auth() {
     let db = db::create_test_pool().await;
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
-    let user_agent =
-        UserAgentActor::new_manual(db.clone(), actors, tokio::sync::mpsc::channel(1).0);
-    let user_agent_ref = UserAgentActor::spawn(user_agent);
+    let mut user_agent = UserAgentActor::new_manual(db.clone(), actors);
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
@@ -126,15 +119,15 @@ pub async fn test_challenge_auth() {
             .unwrap();
     }
 
-    let result = user_agent_ref
-        .ask(HandleAuthChallengeRequest {
-            req: AuthChallengeRequest {
+    let result = user_agent
+        .process_transport_inbound(auth_request(ClientAuthPayload::AuthChallengeRequest(
+            AuthChallengeRequest {
                 pubkey: pubkey_bytes,
                 bootstrap_token: None,
             },
-        })
+        )))
         .await
-        .expect("Shouldn't fail to send message");
+        .expect("Shouldn't fail to process message");
 
     let UserAgentResponse {
         payload:
@@ -151,14 +144,14 @@ pub async fn test_challenge_auth() {
     let signature = new_key.sign(&formatted_challenge);
     let serialized_signature = signature.to_bytes().to_vec();
 
-    let result = user_agent_ref
-        .ask(HandleAuthChallengeSolution {
-            solution: auth::AuthChallengeSolution {
+    let result = user_agent
+        .process_transport_inbound(auth_request(ClientAuthPayload::AuthChallengeSolution(
+            auth::AuthChallengeSolution {
                 signature: serialized_signature,
             },
-        })
+        )))
         .await
-        .expect("Shouldn't fail to send message");
+        .expect("Shouldn't fail to process message");
 
     assert_eq!(
         result,
