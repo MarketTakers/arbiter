@@ -188,20 +188,20 @@ pub mod grpc {
     /// Tonic receive errors are logged and treated as stream closure (`None`).
     /// The receive converter is only invoked for successful inbound transport
     /// items.
-    pub struct GrpcAdapter<InboundTransport, Inbound, InboundConverter, OutboundConverter>
+    pub struct GrpcAdapter<InboundConverter, OutboundConverter>
     where
-        InboundConverter: RecvConverter<Input = InboundTransport, Output = Inbound>,
+        InboundConverter: RecvConverter,
         OutboundConverter: SendConverter,
     {
         sender: mpsc::Sender<OutboundConverter::Output>,
-        receiver: Streaming<InboundTransport>,
+        receiver: Streaming<InboundConverter::Input>,
         inbound_converter: InboundConverter,
         outbound_converter: OutboundConverter,
     }
 
 
     impl<InboundTransport, Inbound, InboundConverter, OutboundConverter>
-        GrpcAdapter<InboundTransport, Inbound, InboundConverter, OutboundConverter>
+        GrpcAdapter<InboundConverter, OutboundConverter>
     where
         InboundConverter: RecvConverter<Input = InboundTransport, Output = Inbound>,
         OutboundConverter: SendConverter,
@@ -222,12 +222,10 @@ pub mod grpc {
     }
 
 
-    impl<InboundTransport, Inbound, InboundConverter, OutboundConverter> Bi<Inbound, OutboundConverter::Input>
-        for GrpcAdapter<InboundTransport, Inbound, InboundConverter, OutboundConverter>
+    impl< InboundConverter, OutboundConverter> Bi<InboundConverter::Output, OutboundConverter::Input>
+        for GrpcAdapter<InboundConverter, OutboundConverter>
     where
-        InboundTransport: Send + 'static,
-        Inbound: Send + 'static,
-        InboundConverter: RecvConverter<Input = InboundTransport, Output = Inbound>,
+        InboundConverter: RecvConverter,
         OutboundConverter: SendConverter,
         OutboundConverter::Input: Send + 'static,
         OutboundConverter::Output: Send + 'static,
@@ -242,7 +240,7 @@ pub mod grpc {
         }
 
         #[tracing::instrument(level = "trace", skip(self))]
-        async fn recv(&mut self) -> Option<Inbound> {
+        async fn recv(&mut self) -> Option<InboundConverter::Output> {
             match self.receiver.next().await {
                 Some(Ok(item)) => Some(self.inbound_converter.convert(item)),
                 Some(Err(error)) => {

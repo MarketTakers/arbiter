@@ -2,7 +2,7 @@ use arbiter_proto::{
     proto::{
         UserAgentRequest, UserAgentResponse, arbiter_service_client::ArbiterServiceClient,
     },
-    transport::{RecvConverter, IdentitySendConverter, grpc},
+    transport::{IdentityRecvConverter, IdentitySendConverter, RecvConverter, grpc},
     url::ArbiterUrl,
 };
 use ed25519_dalek::SigningKey;
@@ -15,7 +15,7 @@ use tonic::transport::ClientTlsConfig;
 
 
 #[derive(Debug, thiserror::Error)]
-pub enum InitError {
+pub enum ConnectError {
     #[error("Could establish connection")]
     Connection(#[from] tonic::transport::Error),
 
@@ -29,26 +29,12 @@ pub enum InitError {
     Grpc(#[from] tonic::Status),
 }
 
-pub struct InboundConverter;
-impl RecvConverter for InboundConverter {
-    type Input = UserAgentResponse;
-    type Output = Result<UserAgentResponse, InboundError>;
-
-    fn convert(&self, item: Self::Input) -> Self::Output {
-        Ok(item)
-    }
-}
-
-use crate::InboundError;
-
-use super::UserAgentActor;
+    use super::UserAgentActor;
 
 pub type UserAgentGrpc = ActorRef<
     UserAgentActor<
         grpc::GrpcAdapter<
-            UserAgentResponse,
-            Result<UserAgentResponse, InboundError>,
-            InboundConverter,
+            IdentityRecvConverter<UserAgentResponse>,
             IdentitySendConverter<UserAgentRequest>,
         >,
     >,
@@ -56,7 +42,7 @@ pub type UserAgentGrpc = ActorRef<
 pub async fn connect_grpc(
     url: ArbiterUrl,
     key: SigningKey,
-) -> Result<UserAgentGrpc, InitError> {
+) -> Result<UserAgentGrpc, ConnectError> {
     let bootstrap_token = url.bootstrap_token.clone();
     let anchor = webpki::anchor_from_trusted_cert(&url.ca_cert)?.to_owned();
     let tls = ClientTlsConfig::new().trust_anchor(anchor);
@@ -75,16 +61,11 @@ pub async fn connect_grpc(
     let adapter = grpc::GrpcAdapter::new(
         tx,
         bistream,
-        InboundConverter,
+        IdentityRecvConverter::new(),
         IdentitySendConverter::new(),
     );
 
-    let actor = UserAgentActor::spawn(UserAgentActor {
-        key,
-        bootstrap_token,
-        state: super::UserAgentStateMachine::new(super::DummyContext),
-        transport: adapter,
-    });
+    let actor = UserAgentActor::spawn(UserAgentActor::new(key, bootstrap_token, adapter));
 
     Ok(actor)
 }
