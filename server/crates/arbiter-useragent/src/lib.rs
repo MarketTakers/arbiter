@@ -1,13 +1,206 @@
-use ed25519_dalek::SigningKey;
-use kameo::Actor;
-use tonic::transport::CertificateDer;
+use arbiter_proto::{
+    format_challenge,
+    proto::{
+        UserAgentRequest, UserAgentResponse,
+        auth::{
+            self, AuthChallengeRequest, AuthOk, ClientMessage as AuthClientMessage,
+            ServerMessage as AuthServerMessage, client_message::Payload as ClientAuthPayload,
+            server_message::Payload as ServerAuthPayload,
+        },
+        user_agent_request::Payload as UserAgentRequestPayload,
+        user_agent_response::Payload as UserAgentResponsePayload,
+    },
+    transport::Bi,
+};
+use ed25519_dalek::{Signer, SigningKey};
+use kameo::{
+    Actor,
+    actor::{ActorRef, Spawn},
+    prelude::Message,
+};
+use smlang::statemachine;
+use tokio::select;
+use tracing::{error, info};
 
-struct Storage {
-    pub identity: SigningKey,
-    pub server_ca_cert: CertificateDer<'static>,
+#[derive(Debug, thiserror::Error)]
+pub enum InboundError {
+    #[error("Invalid user agent response")]
+    InvalidResponse,
+    #[error("Expected response payload")]
+    MissingResponsePayload,
+    #[error("Unexpected response payload")]
+    UnexpectedResponsePayload,
+    #[error("Invalid state for auth challenge")]
+    InvalidStateForAuthChallenge,
+    #[error("Invalid state for auth ok")]
+    InvalidStateForAuthOk,
+    #[error("State machine error")]
+    StateTransitionFailed,
+    #[error("Transport send failed")]
+    TransportSendFailed,
 }
 
-#[derive(Actor)]
-pub struct UserAgent {
-
+statemachine! {
+    name: UserAgent,
+    custom_error: false,
+    transitions: {
+        *Init + SentAuthChallengeRequest = WaitingForServerAuth,
+        WaitingForServerAuth + ReceivedAuthChallenge = WaitingForAuthOk,
+        WaitingForServerAuth + ReceivedAuthOk = Authenticated,
+        WaitingForAuthOk + ReceivedAuthOk = Authenticated,
+    }
 }
+
+pub struct DummyContext;
+impl UserAgentStateMachineContext for DummyContext {}
+
+pub struct UserAgentActor<Transport>
+where
+    Transport: Bi<Result<UserAgentResponse, InboundError>, UserAgentRequest>,
+{
+    key: SigningKey,
+    bootstrap_token: Option<String>,
+    state: UserAgentStateMachine<DummyContext>,
+    transport: Transport,
+}
+
+impl<Transport> UserAgentActor<Transport>
+where
+    Transport: Bi<Result<UserAgentResponse, InboundError>, UserAgentRequest>,
+{
+    fn transition(&mut self, event: UserAgentEvents) -> Result<(), InboundError> {
+        self.state.process_event(event).map_err(|e| {
+            error!(?e, "useragent state transition failed");
+            InboundError::StateTransitionFailed
+        })?;
+        Ok(())
+    }
+
+    fn auth_request(payload: ClientAuthPayload) -> UserAgentRequest {
+        UserAgentRequest {
+            payload: Some(UserAgentRequestPayload::AuthMessage(AuthClientMessage {
+                payload: Some(payload),
+            })),
+        }
+    }
+
+    async fn send_auth_challenge_request(&mut self) -> Result<(), InboundError> {
+        let req = AuthChallengeRequest {
+            pubkey: self.key.verifying_key().to_bytes().to_vec(),
+            bootstrap_token: self.bootstrap_token.take(),
+        };
+
+        self.transport
+            .send(Self::auth_request(ClientAuthPayload::AuthChallengeRequest(req)))
+            .await
+            .map_err(|_| InboundError::TransportSendFailed)?;
+        self.transition(UserAgentEvents::SentAuthChallengeRequest)?;
+        info!(actor = "useragent", "auth.request.sent");
+        Ok(())
+    }
+
+    async fn handle_auth_challenge(
+        &mut self,
+        challenge: auth::AuthChallenge,
+    ) -> Result<(), InboundError> {
+        if !matches!(self.state.state(), UserAgentStates::WaitingForServerAuth) {
+            return Err(InboundError::InvalidStateForAuthChallenge);
+        }
+
+        self.transition(UserAgentEvents::ReceivedAuthChallenge)?;
+
+        let formatted = format_challenge(&challenge);
+        let signature = self.key.sign(&formatted);
+        let solution = auth::AuthChallengeSolution {
+            signature: signature.to_bytes().to_vec(),
+        };
+
+        self.transport
+            .send(Self::auth_request(ClientAuthPayload::AuthChallengeSolution(
+                solution,
+            )))
+            .await
+            .map_err(|_| InboundError::TransportSendFailed)?;
+
+        info!(actor = "useragent", "auth.solution.sent");
+        Ok(())
+    }
+
+    fn handle_auth_ok(&mut self, _ok: AuthOk) -> Result<(), InboundError> {
+        match self.state.state() {
+            UserAgentStates::WaitingForServerAuth | UserAgentStates::WaitingForAuthOk => {
+                self.transition(UserAgentEvents::ReceivedAuthOk)?;
+                info!(actor = "useragent", "auth.ok");
+                Ok(())
+            }
+            _ => Err(InboundError::InvalidStateForAuthOk),
+        }
+    }
+
+    pub async fn process_inbound_transport(
+        &mut self,
+        inbound: Result<UserAgentResponse, InboundError>,
+    ) -> Result<(), InboundError> {
+        let response = inbound?;
+        let payload = response
+            .payload
+            .ok_or(InboundError::MissingResponsePayload)?;
+
+        match payload {
+            UserAgentResponsePayload::AuthMessage(AuthServerMessage {
+                payload: Some(ServerAuthPayload::AuthChallenge(challenge)),
+            }) => self.handle_auth_challenge(challenge).await,
+            UserAgentResponsePayload::AuthMessage(AuthServerMessage {
+                payload: Some(ServerAuthPayload::AuthOk(ok)),
+            }) => self.handle_auth_ok(ok),
+            _ => Err(InboundError::UnexpectedResponsePayload),
+        }
+    }
+}
+
+impl<Transport> Actor for UserAgentActor<Transport>
+where
+    Transport: Bi<Result<UserAgentResponse, InboundError>, UserAgentRequest>,
+{
+    type Args = Self;
+
+    type Error = ();
+
+    async fn on_start(mut args: Self::Args, _actor_ref: ActorRef<Self>) -> Result<Self, Self::Error> {
+        if let Err(err) = args.send_auth_challenge_request().await {
+            error!(?err, actor = "useragent", "auth.start.failed");
+            return Err(());
+        }
+        Ok(args)
+    }
+
+    async fn next(
+        &mut self,
+        _actor_ref: kameo::prelude::WeakActorRef<Self>,
+        mailbox_rx: &mut kameo::prelude::MailboxReceiver<Self>,
+    ) -> Option<kameo::mailbox::Signal<Self>> {
+        loop {
+            select! {
+                signal = mailbox_rx.recv() => {
+                    return signal;
+                }
+                inbound = self.transport.recv() => {
+                    match inbound {
+                        Some(inbound) => {
+                            if let Err(err) = self.process_inbound_transport(inbound).await {
+                                error!(?err, actor = "useragent", "transport.inbound.failed");
+                                return Some(kameo::mailbox::Signal::Stop);
+                            }
+                        }
+                        None => {
+                            info!(actor = "useragent", "transport.closed");
+                            return Some(kameo::mailbox::Signal::Stop);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+mod grpc;

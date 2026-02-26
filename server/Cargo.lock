@@ -123,9 +123,13 @@ version = "0.1.0"
 dependencies = [
  "arbiter-proto",
  "ed25519-dalek",
+ "http",
  "kameo",
+ "rustls-webpki",
  "smlang",
+ "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tracing",
  "x25519-dalek",

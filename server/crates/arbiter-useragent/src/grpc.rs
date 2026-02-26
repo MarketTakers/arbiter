@@ -1,0 +1,90 @@
+use arbiter_proto::{
+    proto::{
+        UserAgentRequest, UserAgentResponse, arbiter_service_client::ArbiterServiceClient,
+    },
+    transport::{RecvConverter, IdentitySendConverter, grpc},
+    url::ArbiterUrl,
+};
+use ed25519_dalek::SigningKey;
+use kameo::actor::{ActorRef, Spawn};
+
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
+
+use tonic::transport::ClientTlsConfig;
+
+
+#[derive(Debug, thiserror::Error)]
+pub enum InitError {
+    #[error("Could establish connection")]
+    Connection(#[from] tonic::transport::Error),
+
+    #[error("Invalid server URI")]
+    InvalidUri(#[from] http::uri::InvalidUri),
+
+    #[error("Invalid CA certificate")]
+    InvalidCaCert(#[from] webpki::Error),
+
+    #[error("gRPC error")]
+    Grpc(#[from] tonic::Status),
+}
+
+pub struct InboundConverter;
+impl RecvConverter for InboundConverter {
+    type Input = UserAgentResponse;
+    type Output = Result<UserAgentResponse, InboundError>;
+
+    fn convert(&self, item: Self::Input) -> Self::Output {
+        Ok(item)
+    }
+}
+
+use crate::InboundError;
+
+use super::UserAgentActor;
+
+pub type UserAgentGrpc = ActorRef<
+    UserAgentActor<
+        grpc::GrpcAdapter<
+            UserAgentResponse,
+            Result<UserAgentResponse, InboundError>,
+            InboundConverter,
+            IdentitySendConverter<UserAgentRequest>,
+        >,
+    >,
+>;
+pub async fn connect_grpc(
+    url: ArbiterUrl,
+    key: SigningKey,
+) -> Result<UserAgentGrpc, InitError> {
+    let bootstrap_token = url.bootstrap_token.clone();
+    let anchor = webpki::anchor_from_trusted_cert(&url.ca_cert)?.to_owned();
+    let tls = ClientTlsConfig::new().trust_anchor(anchor);
+
+    // TODO: if `host` is localhost, we need to verify server's process authenticity
+    let channel = tonic::transport::Channel::from_shared(format!("{}:{}", url.host, url.port))?
+        .tls_config(tls)?
+        .connect()
+        .await?;
+
+    let mut client = ArbiterServiceClient::new(channel);
+    let (tx, rx) = mpsc::channel(16);
+    let bistream = client.user_agent(ReceiverStream::new(rx)).await?;
+    let bistream = bistream.into_inner();
+
+    let adapter = grpc::GrpcAdapter::new(
+        tx,
+        bistream,
+        InboundConverter,
+        IdentitySendConverter::new(),
+    );
+
+    let actor = UserAgentActor::spawn(UserAgentActor {
+        key,
+        bootstrap_token,
+        state: super::UserAgentStateMachine::new(super::DummyContext),
+        transport: adapter,
+    });
+
+    Ok(actor)
+}

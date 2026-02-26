@@ -9,7 +9,12 @@ arbiter-proto.path = "../arbiter-proto"
 kameo.workspace = true
 tokio = {workspace = true, features = ["net"]}
 tonic.workspace = true
+tonic.features = ["tls-aws-lc"]
 tracing.workspace = true
 ed25519-dalek.workspace = true
 smlang.workspace = true
 x25519-dalek.workspace = true
+thiserror.workspace = true
+tokio-stream.workspace = true
+http = "1.4.0"
+rustls-webpki = { version = "0.103.9", features = ["aws-lc-rs"] }

@@ -22,18 +22,16 @@ pub mod db;
 
 const DEFAULT_CHANNEL_SIZE: usize = 1000;
 
-
 /// Converts User Agent domain outbounds into the tonic stream item emitted by
-/// the server.
+/// the server.§
 ///
 /// The conversion is defined at the server boundary so the actor module remains
 /// focused on domain semantics and does not depend on tonic status encoding.
 struct UserAgentGrpcSender;
 
-
 impl SendConverter for UserAgentGrpcSender {
-     type Input = Result<UserAgentResponse, UserAgentError>;
-     type Output = Result<UserAgentResponse, Status>;
+    type Input = Result<UserAgentResponse, UserAgentError>;
+    type Output = Result<UserAgentResponse, Status>;
 
     fn convert(&self, item: Self::Input) -> Self::Output {
         match item {
