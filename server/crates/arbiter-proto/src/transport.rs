@@ -3,9 +3,9 @@
 //! This module separates three concerns:
 //!
 //! - protocol/session logic wants a small duplex interface ([`Bi`])
-//! - transport adapters need to push concrete stream items to an underlying IO layer
-//! - server/client boundaries may need to translate domain outbounds into transport
-//!   framing (for example, a tonic stream item)
+//! - transport adapters push concrete stream items to an underlying IO layer
+//! - transport boundaries translate between protocol-facing and transport-facing
+//!   item types via direction-specific converters
 //!
 //! [`Bi`] is intentionally minimal and transport-agnostic:
 //! - [`Bi::recv`] yields inbound protocol messages
@@ -25,59 +25,56 @@
 //! inbound-related converter parameters are declared before outbound-related
 //! converter parameters.
 //!
-//! [`ProtocolConverter`] is the boundary object that converts a protocol/domain
-//! outbound item into the concrete outbound item expected by a transport sender.
-//! The conversion is infallible, so domain-level recoverable failures should be
-//! represented inside the domain outbound type itself (for example,
-//! `Result<Message, DomainError>`).
+//! [`RecvConverter`] and [`SendConverter`] are infallible conversion traits used
+//! by adapters to map between protocol-facing and transport-facing item types.
+//! The traits themselves are not result-aware; adapters decide how transport
+//! errors are handled before (or instead of) conversion.
 //!
-//! [`GrpcAdapter`] combines:
+//! [`grpc::GrpcAdapter`] combines:
 //! - a tonic inbound stream
 //! - a Tokio sender for outbound transport items
-//! - a [`ProtocolConverter`] for the receive path
-//! - a [`ProtocolConverter`] for the send path
+//! - a [`RecvConverter`] for the receive path
+//! - a [`SendConverter`] for the send path
 //!
 //! [`DummyTransport`] is a no-op implementation useful for tests and local actor
 //! execution where no real network stream exists.
 //!
 //! # Component Interaction
 //!
-//! The typical layering looks like this:
-//!
 //! ```text
 //! inbound (network -> protocol)
 //! ============================
 //!
-//!  tonic::Streaming<RecvTransport>  -> GrpcAdapter::recv()  -> Bi::recv()  -> protocol/session actor
-//!                                         |
-//!                                         +--> recv ProtocolConverter::convert(transport)
-//! 
+//! tonic::Streaming<RecvTransport>
+//!     -> grpc::GrpcAdapter::recv()
+//!          |
+//!          +--> on `Ok(item)`: RecvConverter::convert(RecvTransport) -> Inbound
+//!          +--> on `Err(status)`: log error and close stream (`None`)
+//!     -> Bi::recv()
+//!     -> protocol/session actor
+//!
 //! outbound (protocol -> network)
 //! ==============================
 //!
-//!  protocol/session actor  -> Bi::send(domain outbound item, e.g. Result<Message, DomainError>)
-//!                          -> GrpcAdapter::send()
-//!                               |
-//!                               +--> send ProtocolConverter::convert(domain)
-//!                          -> Tokio mpsc::Sender<SendTransport>  -> tonic response stream
+//! protocol/session actor
+//!     -> Bi::send(Outbound)
+//!     -> grpc::GrpcAdapter::send()
+//!          |
+//!          +--> SendConverter::convert(Outbound) -> SendTransport
+//!     -> Tokio mpsc::Sender<SendTransport>
+//!     -> tonic response stream
 //! ```
 //!
 //! # Design Notes
 //!
-//! - `recv()` collapses adapter-specific receive failures into `None`, which
-//!   lets protocol code treat stream termination and transport receive failure as
-//!   "no more inbound items" when no finer distinction is required.
-//! - `send()` returns [`Error`] only for transport delivery failures (for example,
-//!   when the outbound channel is closed).
-//! - Conversion policy lives outside protocol/session logic and can be defined at
-//!   the transport boundary (such as a server endpoint module). When domain and
-//!   transport types are identical, [`IdentityConverter`] can be used.
+//! - `send()` returns [`Error`] only for transport delivery failures (for
+//!   example, when the outbound channel is closed).
+//! - [`grpc::GrpcAdapter`] logs tonic receive errors and treats them as stream
+//!   closure (`None`).
+//! - When protocol-facing and transport-facing types are identical, use
+//!   [`IdentityRecvConverter`] / [`IdentitySendConverter`].
 
 use std::marker::PhantomData;
-
-use futures::StreamExt;
-use tokio::sync::mpsc;
-use tonic::Streaming;
 
 /// Errors returned by transport adapters implementing [`Bi`].
 pub enum Error {
@@ -90,62 +87,37 @@ pub enum Error {
 /// `Bi<Inbound, Outbound>` models a duplex channel with:
 /// - inbound items of type `Inbound` read via [`Bi::recv`]
 /// - outbound items of type `Outbound` written via [`Bi::send`]
-///
-/// The trait intentionally exposes only the operations the protocol layer needs,
-/// allowing it to work with gRPC streams and other transport implementations.
-///
-/// # Stream termination and errors
-///
-/// [`Bi::recv`] returns:
-/// - `Some(item)` when a new inbound message is available
-/// - `None` when the inbound stream ends or the underlying transport reports an error
-///
-/// Implementations may collapse transport-specific receive errors into `None`
-/// when the protocol does not need to distinguish them from normal stream
-/// termination.
 pub trait Bi<Inbound, Outbound>: Send + Sync + 'static {
-    /// Sends one outbound item to the peer.
     fn send(
         &mut self,
         item: Outbound,
     ) -> impl std::future::Future<Output = Result<(), Error>> + Send;
 
-    /// Receives the next inbound item.
-    ///
-    /// Returns `None` when the inbound stream is finished or can no longer
-    /// produce items.
     fn recv(&mut self) -> impl std::future::Future<Output = Option<Inbound>> + Send;
 }
 
-/// Converts protocol/domain outbound items into transport-layer outbound items.
-///
-/// This trait is used by transport adapters that need to emit a concrete stream
-/// item type (for example, tonic server streams) while protocol code prefers to
-/// work with domain-oriented outbound values.
-///
-/// `convert` is infallible by design. Any recoverable protocol failure should be
-/// represented in [`Self::Domain`] and mapped into the transport item in the
-/// converter implementation.
-pub trait ProtocolConverter: Send + Sync + 'static {
-    /// Outbound item produced by protocol/domain code.
-    type Domain;
+/// Converts transport-facing inbound items into protocol-facing inbound items.
+pub trait RecvConverter: Send + Sync + 'static {
+    type Input;
+    type Output;
 
-    /// Outbound item required by the transport sender.
-    type Transport;
-
-    /// Maps a protocol/domain outbound item into the transport sender item.
-    fn convert(&self, item: Self::Domain) -> Self::Transport;
+    fn convert(&self, item: Self::Input) -> Self::Output;
 }
 
-/// A [`ProtocolConverter`] that forwards values unchanged.
-///
-/// Useful when the protocol-facing and transport-facing item types are
-/// identical, but a converter is still required by an adapter API.
-pub struct IdentityConverter<T> {
+/// Converts protocol/domain outbound items into transport-facing outbound items.
+pub trait SendConverter: Send + Sync + 'static {
+    type Input;
+    type Output;
+
+    fn convert(&self, item: Self::Input) -> Self::Output;
+}
+
+/// A [`RecvConverter`] that forwards values unchanged.
+pub struct IdentityRecvConverter<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T> IdentityConverter<T> {
+impl<T> IdentityRecvConverter<T> {
     pub fn new() -> Self {
         Self {
             _marker: PhantomData,
@@ -153,93 +125,133 @@ impl<T> IdentityConverter<T> {
     }
 }
 
-impl<T> Default for IdentityConverter<T> {
+impl<T> Default for IdentityRecvConverter<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> ProtocolConverter for IdentityConverter<T>
+impl<T> RecvConverter for IdentityRecvConverter<T>
 where
     T: Send + Sync + 'static,
 {
-    type Domain = T;
-    type Transport = T;
+    type Input = T;
+    type Output = T;
 
-    fn convert(&self, item: Self::Domain) -> Self::Transport {
+    fn convert(&self, item: Self::Input) -> Self::Output {
         item
     }
 }
 
-/// [`Bi`] adapter backed by a tonic gRPC bidirectional stream.
-///
-/// The adapter owns converter instances for both directions:
-/// - receive converter: transport inbound -> protocol inbound
-/// - send converter: protocol outbound -> transport outbound
-///
-/// This keeps protocol actors decoupled from transport framing conventions in
-/// both directions.
-pub struct GrpcAdapter<InboundConverter: ProtocolConverter, OutboundConverter: ProtocolConverter> {
-    sender: mpsc::Sender<OutboundConverter::Transport>,
-    receiver: Streaming<InboundConverter::Domain>,
-    inbound_converter: InboundConverter,
-    outbound_converter: OutboundConverter,
+/// A [`SendConverter`] that forwards values unchanged.
+pub struct IdentitySendConverter<T> {
+    _marker: PhantomData<T>,
 }
 
-impl<InboundConverter, OutboundConverter> GrpcAdapter<InboundConverter, OutboundConverter>
-where
-    InboundConverter: ProtocolConverter,
-    OutboundConverter: ProtocolConverter,
-{
-    /// Creates a new gRPC-backed [`Bi`] adapter.
-    ///
-    /// The provided converters define:
-    /// - the protocol outbound item and corresponding transport outbound item
-    /// - the transport inbound item and corresponding protocol inbound item
-    pub fn new(
-        sender: mpsc::Sender<OutboundConverter::Transport>,
-        receiver: Streaming<InboundConverter::Domain>,
-        inbound_converter: InboundConverter,
-        outbound_converter: OutboundConverter,
-    ) -> Self {
+impl<T> IdentitySendConverter<T> {
+    pub fn new() -> Self {
         Self {
-            sender,
-            receiver,
-            inbound_converter,
-            outbound_converter,
+            _marker: PhantomData,
         }
     }
 }
 
-impl<InboundConverter, OutboundConverter>
-    Bi<InboundConverter::Transport, OutboundConverter::Domain>
-    for GrpcAdapter<InboundConverter, OutboundConverter>
+impl<T> Default for IdentitySendConverter<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> SendConverter for IdentitySendConverter<T>
 where
-    InboundConverter: ProtocolConverter,
-    OutboundConverter: ProtocolConverter,
-    OutboundConverter::Domain: Send + 'static,
-    OutboundConverter::Transport: Send + 'static,
-    InboundConverter::Transport: Send + 'static,
-    InboundConverter::Domain: Send + 'static,
+    T: Send + Sync + 'static,
 {
-    #[tracing::instrument(level = "trace", skip(self, item))]
-    async fn send(&mut self, item: OutboundConverter::Domain) -> Result<(), Error> {
-        let outbound: OutboundConverter::Transport = self.outbound_converter.convert(item);
-        self.sender
-            .send(outbound)
-            .await
-            .map_err(|_| Error::ChannelClosed)
+    type Input = T;
+    type Output = T;
+
+    fn convert(&self, item: Self::Input) -> Self::Output {
+        item
+    }
+}
+
+/// gRPC-specific transport adapters and helpers.
+pub mod grpc {
+    use futures::StreamExt;
+    use tokio::sync::mpsc;
+    use tonic::Streaming;
+
+    use super::{Bi, Error, RecvConverter, SendConverter};
+
+    /// [`Bi`] adapter backed by a tonic gRPC bidirectional stream.
+    ///
+
+    /// Tonic receive errors are logged and treated as stream closure (`None`).
+    /// The receive converter is only invoked for successful inbound transport
+    /// items.
+    pub struct GrpcAdapter<InboundTransport, Inbound, InboundConverter, OutboundConverter>
+    where
+        InboundConverter: RecvConverter<Input = InboundTransport, Output = Inbound>,
+        OutboundConverter: SendConverter,
+    {
+        sender: mpsc::Sender<OutboundConverter::Output>,
+        receiver: Streaming<InboundTransport>,
+        inbound_converter: InboundConverter,
+        outbound_converter: OutboundConverter,
     }
 
-    #[tracing::instrument(level = "trace", skip(self))]
-    async fn recv(&mut self) -> Option<InboundConverter::Transport> {
-        self.receiver
-            .next()
-            .await
-            .transpose()
-            .ok()
-            .flatten()
-            .map(|item| self.inbound_converter.convert(item))
+
+    impl<InboundTransport, Inbound, InboundConverter, OutboundConverter>
+        GrpcAdapter<InboundTransport, Inbound, InboundConverter, OutboundConverter>
+    where
+        InboundConverter: RecvConverter<Input = InboundTransport, Output = Inbound>,
+        OutboundConverter: SendConverter,
+    {
+        pub fn new(
+            sender: mpsc::Sender<OutboundConverter::Output>,
+            receiver: Streaming<InboundTransport>,
+            inbound_converter: InboundConverter,
+            outbound_converter: OutboundConverter,
+        ) -> Self {
+            Self {
+                sender,
+                receiver,
+                inbound_converter,
+                outbound_converter,
+            }
+        }
+    }
+
+
+    impl<InboundTransport, Inbound, InboundConverter, OutboundConverter> Bi<Inbound, OutboundConverter::Input>
+        for GrpcAdapter<InboundTransport, Inbound, InboundConverter, OutboundConverter>
+    where
+        InboundTransport: Send + 'static,
+        Inbound: Send + 'static,
+        InboundConverter: RecvConverter<Input = InboundTransport, Output = Inbound>,
+        OutboundConverter: SendConverter,
+        OutboundConverter::Input: Send + 'static,
+        OutboundConverter::Output: Send + 'static,
+    {
+        #[tracing::instrument(level = "trace", skip(self, item))]
+        async fn send(&mut self, item: OutboundConverter::Input) -> Result<(), Error> {
+            let outbound = self.outbound_converter.convert(item);
+            self.sender
+                .send(outbound)
+                .await
+                .map_err(|_| Error::ChannelClosed)
+        }
+
+        #[tracing::instrument(level = "trace", skip(self))]
+        async fn recv(&mut self) -> Option<Inbound> {
+            match self.receiver.next().await {
+                Some(Ok(item)) => Some(self.inbound_converter.convert(item)),
+                Some(Err(error)) => {
+                    tracing::error!(error = ?error, "grpc transport recv failed; closing stream");
+                    None
+                }
+                None => None,
+            }
+        }
     }
 }
 

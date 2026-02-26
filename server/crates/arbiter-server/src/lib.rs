@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 use arbiter_proto::{
     proto::{ClientRequest, ClientResponse, UserAgentRequest, UserAgentResponse},
-    transport::{GrpcAdapter, IdentityConverter, ProtocolConverter},
+    transport::{IdentityRecvConverter, SendConverter, grpc},
 };
 use async_trait::async_trait;
 use kameo::actor::Spawn;
@@ -28,13 +28,14 @@ const DEFAULT_CHANNEL_SIZE: usize = 1000;
 ///
 /// The conversion is defined at the server boundary so the actor module remains
 /// focused on domain semantics and does not depend on tonic status encoding.
-struct UserAgentGrpcConverter;
+struct UserAgentGrpcSender;
 
-impl ProtocolConverter for UserAgentGrpcConverter {
-    type Domain = Result<UserAgentResponse, UserAgentError>;
-    type Transport = Result<UserAgentResponse, Status>;
 
-    fn convert(&self, item: Self::Domain) -> Self::Transport {
+impl SendConverter for UserAgentGrpcSender {
+     type Input = Result<UserAgentResponse, UserAgentError>;
+     type Output = Result<UserAgentResponse, Status>;
+
+    fn convert(&self, item: Self::Input) -> Self::Output {
         match item {
             Ok(message) => Ok(message),
             Err(err) => Err(user_agent_error_status(err)),
@@ -116,11 +117,11 @@ impl arbiter_proto::proto::arbiter_service_server::ArbiterService for Server {
         let req_stream = request.into_inner();
         let (tx, rx) = mpsc::channel(DEFAULT_CHANNEL_SIZE);
 
-        let transport = GrpcAdapter::new(
+        let transport = grpc::GrpcAdapter::new(
             tx,
             req_stream,
-            IdentityConverter::<UserAgentRequest>::new(),
-            UserAgentGrpcConverter,
+            IdentityRecvConverter::<UserAgentRequest>::new(),
+            UserAgentGrpcSender,
         );
         UserAgentActor::spawn(UserAgentActor::new(self.context.clone(), transport));
 
