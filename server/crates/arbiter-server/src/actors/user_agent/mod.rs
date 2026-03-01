@@ -1,14 +1,9 @@
 use std::{ops::DerefMut, sync::Mutex};
 
 use arbiter_proto::{
-    proto::{
-        UnsealEncryptedKey, UnsealResult, UnsealStart, UnsealStartResponse, UserAgentRequest,
-        UserAgentResponse,
-        auth::{
-            self, AuthChallengeRequest, AuthOk, ClientMessage as ClientAuthMessage,
-            ServerMessage as AuthServerMessage, client_message::Payload as ClientAuthPayload,
-            server_message::Payload as ServerAuthPayload,
-        },
+    proto::user_agent::{
+        AuthChallenge, AuthChallengeRequest, AuthChallengeSolution, AuthOk, UnsealEncryptedKey,
+        UnsealResult, UnsealStart, UnsealStartResponse, UserAgentRequest, UserAgentResponse,
         user_agent_request::Payload as UserAgentRequestPayload,
         user_agent_response::Payload as UserAgentResponsePayload,
     },
@@ -114,12 +109,12 @@ where
         })?;
 
         match msg {
-            UserAgentRequestPayload::AuthMessage(ClientAuthMessage {
-                payload: Some(ClientAuthPayload::AuthChallengeRequest(req)),
-            }) => self.handle_auth_challenge_request(req).await,
-            UserAgentRequestPayload::AuthMessage(ClientAuthMessage {
-                payload: Some(ClientAuthPayload::AuthChallengeSolution(solution)),
-            }) => self.handle_auth_challenge_solution(solution).await,
+            UserAgentRequestPayload::AuthChallengeRequest(req) => {
+                self.handle_auth_challenge_request(req).await
+            }
+            UserAgentRequestPayload::AuthChallengeSolution(solution) => {
+                self.handle_auth_challenge_solution(solution).await
+            }
             UserAgentRequestPayload::UnsealStart(unseal_start) => {
                 self.handle_unseal_request(unseal_start).await
             }
@@ -171,7 +166,7 @@ where
 
         self.transition(UserAgentEvents::ReceivedBootstrapToken)?;
 
-        Ok(auth_response(ServerAuthPayload::AuthOk(AuthOk {})))
+        Ok(response(UserAgentResponsePayload::AuthOk(AuthOk {})))
     }
 
     async fn auth_with_challenge(&mut self, pubkey: VerifyingKey, pubkey_bytes: Vec<u8>) -> Output {
@@ -215,7 +210,7 @@ where
             return Err(UserAgentError::PublicKeyNotRegistered);
         };
 
-        let challenge = auth::AuthChallenge {
+        let challenge = AuthChallenge {
             pubkey: pubkey_bytes,
             nonce,
         };
@@ -231,19 +226,22 @@ where
             "Sent authentication challenge to client"
         );
 
-        Ok(auth_response(ServerAuthPayload::AuthChallenge(challenge)))
+        Ok(response(UserAgentResponsePayload::AuthChallenge(challenge)))
     }
 
     fn verify_challenge_solution(
         &self,
-        solution: &auth::AuthChallengeSolution,
+        solution: &AuthChallengeSolution,
     ) -> Result<(bool, &ChallengeContext), UserAgentError> {
         let UserAgentStates::WaitingForChallengeSolution(challenge_context) = self.state.state()
         else {
             error!("Received challenge solution in invalid state");
             return Err(UserAgentError::InvalidStateForChallengeSolution);
         };
-        let formatted_challenge = arbiter_proto::format_challenge(&challenge_context.challenge);
+        let formatted_challenge = arbiter_proto::format_challenge(
+            challenge_context.challenge.nonce,
+            &challenge_context.challenge.pubkey,
+        );
 
         let signature = solution.signature.as_slice().try_into().map_err(|_| {
             error!(?solution, "Invalid signature length");
@@ -261,15 +259,7 @@ where
 
 type Output = Result<UserAgentResponse, UserAgentError>;
 
-fn auth_response(payload: ServerAuthPayload) -> UserAgentResponse {
-    UserAgentResponse {
-        payload: Some(UserAgentResponsePayload::AuthMessage(AuthServerMessage {
-            payload: Some(payload),
-        })),
-    }
-}
-
-fn unseal_response(payload: UserAgentResponsePayload) -> UserAgentResponse {
+fn response(payload: UserAgentResponsePayload) -> UserAgentResponse {
     UserAgentResponse {
         payload: Some(payload),
     }
@@ -295,7 +285,7 @@ where
             client_public_key,
         }))?;
 
-        Ok(unseal_response(
+        Ok(response(
             UserAgentResponsePayload::UnsealStartResponse(UnsealStartResponse {
                 server_pubkey: public_key.as_bytes().to_vec(),
             }),
@@ -316,7 +306,7 @@ where
                     drop(secret_lock);
                     error!("Ephemeral secret already taken");
                     self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                    return Ok(unseal_response(UserAgentResponsePayload::UnsealResult(
+                    return Ok(response(UserAgentResponsePayload::UnsealResult(
                         UnsealResult::InvalidKey.into(),
                     )));
                 }
@@ -349,20 +339,20 @@ where
                     Ok(_) => {
                         info!("Successfully unsealed key with client-provided key");
                         self.transition(UserAgentEvents::ReceivedValidKey)?;
-                        Ok(unseal_response(UserAgentResponsePayload::UnsealResult(
+                        Ok(response(UserAgentResponsePayload::UnsealResult(
                             UnsealResult::Success.into(),
                         )))
                     }
                     Err(SendError::HandlerError(keyholder::Error::InvalidKey)) => {
                         self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                        Ok(unseal_response(UserAgentResponsePayload::UnsealResult(
+                        Ok(response(UserAgentResponsePayload::UnsealResult(
                             UnsealResult::InvalidKey.into(),
                         )))
                     }
                     Err(SendError::HandlerError(err)) => {
                         error!(?err, "Keyholder failed to unseal key");
                         self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                        Ok(unseal_response(UserAgentResponsePayload::UnsealResult(
+                        Ok(response(UserAgentResponsePayload::UnsealResult(
                             UnsealResult::InvalidKey.into(),
                         )))
                     }
@@ -376,7 +366,7 @@ where
             Err(err) => {
                 error!(?err, "Failed to decrypt unseal key");
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                Ok(unseal_response(UserAgentResponsePayload::UnsealResult(
+                Ok(response(UserAgentResponsePayload::UnsealResult(
                     UnsealResult::InvalidKey.into(),
                 )))
             }
@@ -403,7 +393,7 @@ where
 
     async fn handle_auth_challenge_solution(
         &mut self,
-        solution: auth::AuthChallengeSolution,
+        solution: AuthChallengeSolution,
     ) -> Output {
         let (valid, challenge_context) = self.verify_challenge_solution(&solution)?;
 
@@ -413,7 +403,7 @@ where
                 "Client provided valid solution to authentication challenge"
             );
             self.transition(UserAgentEvents::ReceivedGoodSolution)?;
-            Ok(auth_response(ServerAuthPayload::AuthOk(AuthOk {})))
+            Ok(response(UserAgentResponsePayload::AuthOk(AuthOk {})))
         } else {
             error!("Client provided invalid solution to authentication challenge");
             self.transition(UserAgentEvents::ReceivedBadSolution)?;

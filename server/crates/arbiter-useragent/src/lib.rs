@@ -1,12 +1,8 @@
 use arbiter_proto::{
     format_challenge,
-    proto::{
+    proto::user_agent::{
+        AuthChallengeRequest, AuthChallengeSolution, AuthOk,
         UserAgentRequest, UserAgentResponse,
-        auth::{
-            self, AuthChallengeRequest, AuthOk, ClientMessage as AuthClientMessage,
-            ServerMessage as AuthServerMessage, client_message::Payload as ClientAuthPayload,
-            server_message::Payload as ServerAuthPayload,
-        },
         user_agent_request::Payload as UserAgentRequestPayload,
         user_agent_response::Payload as UserAgentResponsePayload,
     },
@@ -81,14 +77,6 @@ where
         Ok(())
     }
 
-    fn auth_request(payload: ClientAuthPayload) -> UserAgentRequest {
-        UserAgentRequest {
-            payload: Some(UserAgentRequestPayload::AuthMessage(AuthClientMessage {
-                payload: Some(payload),
-            })),
-        }
-    }
-
     async fn send_auth_challenge_request(&mut self) -> Result<(), InboundError> {
         let req = AuthChallengeRequest {
             pubkey: self.key.verifying_key().to_bytes().to_vec(),
@@ -98,9 +86,9 @@ where
         self.transition(UserAgentEvents::SentAuthChallengeRequest)?;
 
         self.transport
-            .send(Self::auth_request(ClientAuthPayload::AuthChallengeRequest(
-                req,
-            )))
+            .send(UserAgentRequest {
+                payload: Some(UserAgentRequestPayload::AuthChallengeRequest(req)),
+            })
             .await
             .map_err(|_| InboundError::TransportSendFailed)?;
 
@@ -110,20 +98,20 @@ where
 
     async fn handle_auth_challenge(
         &mut self,
-        challenge: auth::AuthChallenge,
+        challenge: arbiter_proto::proto::user_agent::AuthChallenge,
     ) -> Result<(), InboundError> {
         self.transition(UserAgentEvents::ReceivedAuthChallenge)?;
 
-        let formatted = format_challenge(&challenge);
+        let formatted = format_challenge(challenge.nonce, &challenge.pubkey);
         let signature = self.key.sign(&formatted);
-        let solution = auth::AuthChallengeSolution {
+        let solution = AuthChallengeSolution {
             signature: signature.to_bytes().to_vec(),
         };
 
         self.transport
-            .send(Self::auth_request(
-                ClientAuthPayload::AuthChallengeSolution(solution),
-            ))
+            .send(UserAgentRequest {
+                payload: Some(UserAgentRequestPayload::AuthChallengeSolution(solution)),
+            })
             .await
             .map_err(|_| InboundError::TransportSendFailed)?;
 
@@ -141,17 +129,15 @@ where
         &mut self,
         inbound: UserAgentResponse
     ) -> Result<(), InboundError> {
-        let payload = inbound   
+        let payload = inbound
             .payload
             .ok_or(InboundError::MissingResponsePayload)?;
 
         match payload {
-            UserAgentResponsePayload::AuthMessage(AuthServerMessage {
-                payload: Some(ServerAuthPayload::AuthChallenge(challenge)),
-            }) => self.handle_auth_challenge(challenge).await,
-            UserAgentResponsePayload::AuthMessage(AuthServerMessage {
-                payload: Some(ServerAuthPayload::AuthOk(ok)),
-            }) => self.handle_auth_ok(ok),
+            UserAgentResponsePayload::AuthChallenge(challenge) => {
+                self.handle_auth_challenge(challenge).await
+            }
+            UserAgentResponsePayload::AuthOk(ok) => self.handle_auth_ok(ok),
             _ => Err(InboundError::UnexpectedResponsePayload),
         }
     }

@@ -1,6 +1,6 @@
-use arbiter_proto::proto::{
-    UnsealEncryptedKey, UnsealResult, UnsealStart, UserAgentRequest, UserAgentResponse,
-    auth::{AuthChallengeRequest, ClientMessage, client_message::Payload as ClientAuthPayload},
+use arbiter_proto::proto::user_agent::{
+    AuthChallengeRequest, UnsealEncryptedKey, UnsealResult, UnsealStart,
+    UserAgentRequest, UserAgentResponse,
     user_agent_request::Payload as UserAgentRequestPayload,
     user_agent_response::Payload as UserAgentResponsePayload,
 };
@@ -20,26 +20,6 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 
 type TestUserAgent =
     UserAgentActor<DummyTransport<UserAgentRequest, Result<UserAgentResponse, UserAgentError>>>;
-
-fn auth_request(payload: ClientAuthPayload) -> UserAgentRequest {
-    UserAgentRequest {
-        payload: Some(UserAgentRequestPayload::AuthMessage(ClientMessage {
-            payload: Some(payload),
-        })),
-    }
-}
-
-fn unseal_start_request(req: UnsealStart) -> UserAgentRequest {
-    UserAgentRequest {
-        payload: Some(UserAgentRequestPayload::UnsealStart(req)),
-    }
-}
-
-fn unseal_key_request(req: UnsealEncryptedKey) -> UserAgentRequest {
-    UserAgentRequest {
-        payload: Some(UserAgentRequestPayload::UnsealEncryptedKey(req)),
-    }
-}
 
 async fn setup_authenticated_user_agent(
     seal_key: &[u8],
@@ -64,12 +44,14 @@ async fn setup_authenticated_user_agent(
     let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
     let auth_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     user_agent
-        .process_transport_inbound(auth_request(ClientAuthPayload::AuthChallengeRequest(
-            AuthChallengeRequest {
-                pubkey: auth_key.verifying_key().to_bytes().to_vec(),
-                bootstrap_token: Some(token),
-            },
-        )))
+        .process_transport_inbound(UserAgentRequest {
+            payload: Some(UserAgentRequestPayload::AuthChallengeRequest(
+                AuthChallengeRequest {
+                    pubkey: auth_key.verifying_key().to_bytes().to_vec(),
+                    bootstrap_token: Some(token),
+                },
+            )),
+        })
         .await
         .unwrap();
 
@@ -84,9 +66,11 @@ async fn client_dh_encrypt(
     let client_public = PublicKey::from(&client_secret);
 
     let response = user_agent
-        .process_transport_inbound(unseal_start_request(UnsealStart {
-            client_pubkey: client_public.as_bytes().to_vec(),
-        }))
+        .process_transport_inbound(UserAgentRequest {
+            payload: Some(UserAgentRequestPayload::UnsealStart(UnsealStart {
+                client_pubkey: client_public.as_bytes().to_vec(),
+            })),
+        })
         .await
         .unwrap();
 
@@ -109,6 +93,12 @@ async fn client_dh_encrypt(
         nonce: nonce.to_vec(),
         ciphertext,
         associated_data: associated_data.to_vec(),
+    }
+}
+
+fn unseal_key_request(req: UnsealEncryptedKey) -> UserAgentRequest {
+    UserAgentRequest {
+        payload: Some(UserAgentRequestPayload::UnsealEncryptedKey(req)),
     }
 }
 
@@ -158,9 +148,11 @@ pub async fn test_unseal_corrupted_ciphertext() {
     let client_public = PublicKey::from(&client_secret);
 
     user_agent
-        .process_transport_inbound(unseal_start_request(UnsealStart {
-            client_pubkey: client_public.as_bytes().to_vec(),
-        }))
+        .process_transport_inbound(UserAgentRequest {
+            payload: Some(UserAgentRequestPayload::UnsealStart(UnsealStart {
+                client_pubkey: client_public.as_bytes().to_vec(),
+            })),
+        })
         .await
         .unwrap();
 
@@ -191,9 +183,11 @@ pub async fn test_unseal_start_without_auth_fails() {
     let client_public = PublicKey::from(&client_secret);
 
     let result = user_agent
-        .process_transport_inbound(unseal_start_request(UnsealStart {
-            client_pubkey: client_public.as_bytes().to_vec(),
-        }))
+        .process_transport_inbound(UserAgentRequest {
+            payload: Some(UserAgentRequestPayload::UnsealStart(UnsealStart {
+                client_pubkey: client_public.as_bytes().to_vec(),
+            })),
+        })
         .await;
 
     match result {

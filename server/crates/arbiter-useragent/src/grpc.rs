@@ -1,8 +1,9 @@
 use arbiter_proto::{
     proto::{
-        UserAgentRequest, UserAgentResponse, arbiter_service_client::ArbiterServiceClient,
+        user_agent::{UserAgentRequest, UserAgentResponse},
+        arbiter_service_client::ArbiterServiceClient,
     },
-    transport::{IdentityRecvConverter, IdentitySendConverter, RecvConverter, grpc},
+    transport::{IdentityRecvConverter, IdentitySendConverter, grpc},
     url::ArbiterUrl,
 };
 use ed25519_dalek::SigningKey;

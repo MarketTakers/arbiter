@@ -11,7 +11,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile_protos(
             &[
                 format!("{}/arbiter.proto", PROTOBUF_DIR),
-                format!("{}/auth.proto", PROTOBUF_DIR),
+                format!("{}/user_agent.proto", PROTOBUF_DIR),
+                format!("{}/client.proto", PROTOBUF_DIR),
             ],
             &[PROTOBUF_DIR.to_string()],
         )

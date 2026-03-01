@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use arbiter_proto::proto::auth::AuthChallenge;
+use arbiter_proto::proto::user_agent::AuthChallenge;
 use ed25519_dalek::VerifyingKey;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 

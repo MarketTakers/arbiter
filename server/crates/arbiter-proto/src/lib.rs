@@ -3,13 +3,15 @@ pub mod url;
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 
-use crate::proto::auth::AuthChallenge;
-
 pub mod proto {
     tonic::include_proto!("arbiter");
 
-    pub mod auth {
-        tonic::include_proto!("arbiter.auth");
+    pub mod user_agent {
+        tonic::include_proto!("arbiter.user_agent");
+    }
+
+    pub mod client {
+        tonic::include_proto!("arbiter.client");
     }
 }
 
@@ -28,7 +30,7 @@ pub fn home_path() -> Result<std::path::PathBuf, std::io::Error> {
     Ok(arbiter_home)
 }
 
-pub fn format_challenge(challenge: &AuthChallenge) -> Vec<u8> {
-    let concat_form = format!("{}:{}", challenge.nonce, BASE64_STANDARD.encode(&challenge.pubkey));
-    concat_form.into_bytes().to_vec()
+pub fn format_challenge(nonce: i32, pubkey: &[u8]) -> Vec<u8> {
+    let concat_form = format!("{}:{}", nonce, BASE64_STANDARD.encode(pubkey));
+    concat_form.into_bytes()
 }

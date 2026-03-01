@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package arbiter;
 
-import "auth.proto";
 import "client.proto";
 import "user_agent.proto";
 
@@ -12,6 +11,6 @@ message ServerInfo {
 }
 
 service ArbiterService {
-  rpc Client(stream ClientRequest) returns (stream ClientResponse);
-  rpc UserAgent(stream UserAgentRequest) returns (stream UserAgentResponse);
+  rpc Client(stream arbiter.client.ClientRequest) returns (stream arbiter.client.ClientResponse);
+  rpc UserAgent(stream arbiter.user_agent.UserAgentRequest) returns (stream arbiter.user_agent.UserAgentResponse);
 }

@@ -1,17 +1,32 @@
 syntax = "proto3";
 
-package arbiter;
+package arbiter.client;
 
-import "auth.proto";
+message AuthChallengeRequest {
+  bytes pubkey = 1;
+}
+
+message AuthChallenge {
+  bytes pubkey = 1;
+  int32 nonce = 2;
+}
+
+message AuthChallengeSolution {
+  bytes signature = 1;
+}
+
+message AuthOk {}
 
 message ClientRequest {
   oneof payload {
-    arbiter.auth.ClientMessage auth_message = 1;
+    AuthChallengeRequest auth_challenge_request = 1;
+    AuthChallengeSolution auth_challenge_solution = 2;
   }
 }
 
 message ClientResponse {
   oneof payload {
-    arbiter.auth.ServerMessage auth_message = 1;
+    AuthChallenge auth_challenge = 1;
+    AuthOk auth_ok = 2;
   }
 }

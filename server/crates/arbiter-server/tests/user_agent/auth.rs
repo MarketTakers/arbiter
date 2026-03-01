@@ -1,7 +1,5 @@
-use arbiter_proto::proto::{
-    UserAgentResponse,
-    UserAgentRequest,
-    auth::{self, AuthChallengeRequest, AuthOk, ClientMessage, client_message::Payload as ClientAuthPayload},
+use arbiter_proto::proto::user_agent::{
+    AuthChallengeRequest, AuthChallengeSolution, AuthOk, UserAgentRequest, UserAgentResponse,
     user_agent_request::Payload as UserAgentRequestPayload,
     user_agent_response::Payload as UserAgentResponsePayload,
 };
@@ -17,18 +15,10 @@ use diesel::{ExpressionMethods as _, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
 use ed25519_dalek::Signer as _;
 
-fn auth_request(payload: ClientAuthPayload) -> UserAgentRequest {
-    UserAgentRequest {
-        payload: Some(UserAgentRequestPayload::AuthMessage(ClientMessage {
-            payload: Some(payload),
-        })),
-    }
-}
-
 #[tokio::test]
 #[test_log::test]
 pub async fn test_bootstrap_token_auth() {
-    let db =db::create_test_pool().await;
+    let db = db::create_test_pool().await;
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
@@ -38,25 +28,21 @@ pub async fn test_bootstrap_token_auth() {
     let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
 
     let result = user_agent
-        .process_transport_inbound(auth_request(ClientAuthPayload::AuthChallengeRequest(
-            AuthChallengeRequest {
-                pubkey: pubkey_bytes,
-                bootstrap_token: Some(token),
-            },
-        )))
+        .process_transport_inbound(UserAgentRequest {
+            payload: Some(UserAgentRequestPayload::AuthChallengeRequest(
+                AuthChallengeRequest {
+                    pubkey: pubkey_bytes,
+                    bootstrap_token: Some(token),
+                },
+            )),
+        })
         .await
         .expect("Shouldn't fail to process message");
 
     assert_eq!(
         result,
         UserAgentResponse {
-            payload: Some(UserAgentResponsePayload::AuthMessage(
-                arbiter_proto::proto::auth::ServerMessage {
-                    payload: Some(arbiter_proto::proto::auth::server_message::Payload::AuthOk(
-                        AuthOk {},
-                    )),
-                },
-            )),
+            payload: Some(UserAgentResponsePayload::AuthOk(AuthOk {})),
         }
     );
 
@@ -81,12 +67,14 @@ pub async fn test_bootstrap_invalid_token_auth() {
     let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
 
     let result = user_agent
-        .process_transport_inbound(auth_request(ClientAuthPayload::AuthChallengeRequest(
-            AuthChallengeRequest {
-                pubkey: pubkey_bytes,
-                bootstrap_token: Some("invalid_token".to_string()),
-            },
-        )))
+        .process_transport_inbound(UserAgentRequest {
+            payload: Some(UserAgentRequestPayload::AuthChallengeRequest(
+                AuthChallengeRequest {
+                    pubkey: pubkey_bytes,
+                    bootstrap_token: Some("invalid_token".to_string()),
+                },
+            )),
+        })
         .await;
 
     match result {
@@ -120,49 +108,43 @@ pub async fn test_challenge_auth() {
     }
 
     let result = user_agent
-        .process_transport_inbound(auth_request(ClientAuthPayload::AuthChallengeRequest(
-            AuthChallengeRequest {
-                pubkey: pubkey_bytes,
-                bootstrap_token: None,
-            },
-        )))
+        .process_transport_inbound(UserAgentRequest {
+            payload: Some(UserAgentRequestPayload::AuthChallengeRequest(
+                AuthChallengeRequest {
+                    pubkey: pubkey_bytes,
+                    bootstrap_token: None,
+                },
+            )),
+        })
         .await
         .expect("Shouldn't fail to process message");
 
     let UserAgentResponse {
-        payload:
-            Some(UserAgentResponsePayload::AuthMessage(arbiter_proto::proto::auth::ServerMessage {
-                payload:
-                    Some(arbiter_proto::proto::auth::server_message::Payload::AuthChallenge(challenge)),
-            })),
+        payload: Some(UserAgentResponsePayload::AuthChallenge(challenge)),
     } = result
     else {
         panic!("Expected auth challenge response, got {result:?}");
     };
 
-    let formatted_challenge = arbiter_proto::format_challenge(&challenge);
+    let formatted_challenge = arbiter_proto::format_challenge(challenge.nonce, &challenge.pubkey);
     let signature = new_key.sign(&formatted_challenge);
     let serialized_signature = signature.to_bytes().to_vec();
 
     let result = user_agent
-        .process_transport_inbound(auth_request(ClientAuthPayload::AuthChallengeSolution(
-            auth::AuthChallengeSolution {
-                signature: serialized_signature,
-            },
-        )))
+        .process_transport_inbound(UserAgentRequest {
+            payload: Some(UserAgentRequestPayload::AuthChallengeSolution(
+                AuthChallengeSolution {
+                    signature: serialized_signature,
+                },
+            )),
+        })
         .await
         .expect("Shouldn't fail to process message");
 
     assert_eq!(
         result,
         UserAgentResponse {
-            payload: Some(UserAgentResponsePayload::AuthMessage(
-                arbiter_proto::proto::auth::ServerMessage {
-                    payload: Some(arbiter_proto::proto::auth::server_message::Payload::AuthOk(
-                        AuthOk {},
-                    )),
-                },
-            )),
+            payload: Some(UserAgentResponsePayload::AuthOk(AuthOk {})),
         }
     );
 }

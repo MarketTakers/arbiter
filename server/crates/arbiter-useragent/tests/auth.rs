@@ -1,18 +1,14 @@
 use arbiter_proto::{
     format_challenge,
-    proto::{
+    proto::user_agent::{
+        AuthChallenge, AuthOk,
         UserAgentRequest, UserAgentResponse,
-        auth::{
-            AuthChallenge, AuthOk, ClientMessage as AuthClientMessage,
-            ServerMessage as AuthServerMessage, client_message::Payload as ClientAuthPayload,
-            server_message::Payload as ServerAuthPayload,
-        },
         user_agent_request::Payload as UserAgentRequestPayload,
         user_agent_response::Payload as UserAgentResponsePayload,
     },
     transport::Bi,
 };
-use arbiter_useragent::{InboundError, UserAgentActor};
+use arbiter_useragent::UserAgentActor;
 use ed25519_dalek::SigningKey;
 use kameo::actor::Spawn;
 use tokio::sync::mpsc;
@@ -57,14 +53,6 @@ fn test_key() -> SigningKey {
     SigningKey::from_bytes(&[7u8; 32])
 }
 
-fn auth_response(payload: ServerAuthPayload) -> UserAgentResponse {
-    UserAgentResponse {
-        payload: Some(UserAgentResponsePayload::AuthMessage(AuthServerMessage {
-            payload: Some(payload),
-        })),
-    }
-}
-
 #[tokio::test]
 async fn sends_auth_request_on_start_with_bootstrap_token() {
     let key = test_key();
@@ -80,9 +68,7 @@ async fn sends_auth_request_on_start_with_bootstrap_token() {
         .expect("channel closed before auth request");
 
     let UserAgentRequest {
-        payload: Some(UserAgentRequestPayload::AuthMessage(AuthClientMessage {
-            payload: Some(ClientAuthPayload::AuthChallengeRequest(req)),
-        })),
+        payload: Some(UserAgentRequestPayload::AuthChallengeRequest(req)),
     } = outbound
     else {
         panic!("expected auth challenge request");
@@ -113,7 +99,9 @@ async fn challenge_flow_sends_solution_from_transport_inbound() {
         nonce: 42,
     };
     inbound_tx
-        .send(auth_response(ServerAuthPayload::AuthChallenge(challenge.clone())))
+        .send(UserAgentResponse {
+            payload: Some(UserAgentResponsePayload::AuthChallenge(challenge.clone())),
+        })
         .await
         .unwrap();
 
@@ -123,15 +111,13 @@ async fn challenge_flow_sends_solution_from_transport_inbound() {
         .expect("missing challenge solution");
 
     let UserAgentRequest {
-        payload: Some(UserAgentRequestPayload::AuthMessage(AuthClientMessage {
-            payload: Some(ClientAuthPayload::AuthChallengeSolution(solution)),
-        })),
+        payload: Some(UserAgentRequestPayload::AuthChallengeSolution(solution)),
     } = outbound
     else {
         panic!("expected auth challenge solution");
     };
 
-    let formatted = format_challenge(&challenge);
+    let formatted = format_challenge(challenge.nonce, &challenge.pubkey);
     let sig: ed25519_dalek::Signature = solution
         .signature
         .as_slice()
@@ -142,7 +128,9 @@ async fn challenge_flow_sends_solution_from_transport_inbound() {
         .expect("solution signature should verify");
 
     inbound_tx
-        .send(auth_response(ServerAuthPayload::AuthOk(AuthOk {})))
+        .send(UserAgentResponse {
+            payload: Some(UserAgentResponsePayload::AuthOk(AuthOk {})),
+        })
         .await
         .unwrap();
 
