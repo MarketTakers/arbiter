@@ -170,7 +170,7 @@ impl arbiter_proto::proto::arbiter_service_server::ArbiterService for Server {
             IdentityRecvConverter::<ClientRequest>::new(),
             ClientGrpcSender,
         );
-        ClientActor::spawn(ClientActor::new(self.context.clone(), transport));
+        ClientActor::spawn(ClientActor::new(self.context.clone(), Box::new(transport)));
 
         info!(event = "connection established", "grpc.client");
 
@@ -191,7 +191,7 @@ impl arbiter_proto::proto::arbiter_service_server::ArbiterService for Server {
             IdentityRecvConverter::<UserAgentRequest>::new(),
             UserAgentGrpcSender,
         );
-        UserAgentActor::spawn(UserAgentActor::new(self.context.clone(), transport));
+        UserAgentActor::spawn(UserAgentActor::new(self.context.clone(), Box::new(transport)));
 
         info!(event = "connection established", "grpc.user_agent");
 

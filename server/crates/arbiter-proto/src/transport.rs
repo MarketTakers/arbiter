@@ -76,6 +76,8 @@
 
 use std::marker::PhantomData;
 
+use async_trait::async_trait;
+
 /// Errors returned by transport adapters implementing [`Bi`].
 pub enum Error {
     /// The outbound side of the transport is no longer accepting messages.
@@ -87,13 +89,11 @@ pub enum Error {
 /// `Bi<Inbound, Outbound>` models a duplex channel with:
 /// - inbound items of type `Inbound` read via [`Bi::recv`]
 /// - outbound items of type `Outbound` written via [`Bi::send`]
+#[async_trait]
 pub trait Bi<Inbound, Outbound>: Send + Sync + 'static {
-    fn send(
-        &mut self,
-        item: Outbound,
-    ) -> impl std::future::Future<Output = Result<(), Error>> + Send;
+    async fn send(&mut self, item: Outbound) -> Result<(), Error>;
 
-    fn recv(&mut self) -> impl std::future::Future<Output = Option<Inbound>> + Send;
+    async fn recv(&mut self) -> Option<Inbound>;
 }
 
 /// Converts transport-facing inbound items into protocol-facing inbound items.
@@ -176,6 +176,7 @@ where
 
 /// gRPC-specific transport adapters and helpers.
 pub mod grpc {
+    use async_trait::async_trait;
     use futures::StreamExt;
     use tokio::sync::mpsc;
     use tonic::Streaming;
@@ -199,7 +200,6 @@ pub mod grpc {
         outbound_converter: OutboundConverter,
     }
 
-
     impl<InboundTransport, Inbound, InboundConverter, OutboundConverter>
         GrpcAdapter<InboundConverter, OutboundConverter>
     where
@@ -221,8 +221,8 @@ pub mod grpc {
         }
     }
 
-
-    impl< InboundConverter, OutboundConverter> Bi<InboundConverter::Output, OutboundConverter::Input>
+    #[async_trait]
+    impl<InboundConverter, OutboundConverter> Bi<InboundConverter::Output, OutboundConverter::Input>
         for GrpcAdapter<InboundConverter, OutboundConverter>
     where
         InboundConverter: RecvConverter,
@@ -275,6 +275,7 @@ impl<Inbound, Outbound> Default for DummyTransport<Inbound, Outbound> {
     }
 }
 
+#[async_trait]
 impl<Inbound, Outbound> Bi<Inbound, Outbound> for DummyTransport<Inbound, Outbound>
 where
     Inbound: Send + Sync + 'static,
@@ -284,10 +285,8 @@ where
         Ok(())
     }
 
-    fn recv(&mut self) -> impl std::future::Future<Output = Option<Inbound>> + Send {
-        async {
-            std::future::pending::<()>().await;
-            None
-        }
+    async fn recv(&mut self) -> Option<Inbound> {
+        std::future::pending::<()>().await;
+        None
     }
 }

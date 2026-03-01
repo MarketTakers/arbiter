@@ -59,6 +59,7 @@ version = "0.1.0"
 name = "arbiter-proto"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64",
  "futures",
  "hex",
@@ -122,6 +123,7 @@ name = "arbiter-useragent"
 version = "0.1.0"
 dependencies = [
  "arbiter-proto",
+ "async-trait",
  "ed25519-dalek",
  "http",
  "kameo",

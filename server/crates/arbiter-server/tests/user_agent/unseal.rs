@@ -1,10 +1,9 @@
 use arbiter_proto::proto::user_agent::{
     AuthChallengeRequest, UnsealEncryptedKey, UnsealResult, UnsealStart,
-    UserAgentRequest, UserAgentResponse,
+    UserAgentRequest,
     user_agent_request::Payload as UserAgentRequestPayload,
     user_agent_response::Payload as UserAgentResponsePayload,
 };
-use arbiter_proto::transport::DummyTransport;
 use arbiter_server::{
     actors::{
         GlobalActors,
@@ -18,14 +17,12 @@ use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use memsafe::MemSafe;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-type TestUserAgent =
-    UserAgentActor<DummyTransport<UserAgentRequest, Result<UserAgentResponse, UserAgentError>>>;
 
 async fn setup_authenticated_user_agent(
     seal_key: &[u8],
 ) -> (
     arbiter_server::db::DatabasePool,
-    TestUserAgent,
+    UserAgentActor,
 ) {
     let db = db::create_test_pool().await;
 
@@ -59,7 +56,7 @@ async fn setup_authenticated_user_agent(
 }
 
 async fn client_dh_encrypt(
-    user_agent: &mut TestUserAgent,
+    user_agent: &mut UserAgentActor,
     key_to_send: &[u8],
 ) -> UnsealEncryptedKey {
     let client_secret = EphemeralSecret::random();

@@ -71,9 +71,9 @@ pub enum UserAgentError {
     DatabaseOperationFailed,
 }
 
-pub struct UserAgentActor<Transport>
-where
-    Transport: Bi<UserAgentRequest, Result<UserAgentResponse, UserAgentError>>,
+pub type Transport = Box<dyn Bi<UserAgentRequest, Result<UserAgentResponse, UserAgentError>> + Send>;
+
+pub struct UserAgentActor
 {
     db: db::DatabasePool,
     actors: GlobalActors,
@@ -81,10 +81,7 @@ where
     transport: Transport,
 }
 
-impl<Transport> UserAgentActor<Transport>
-where
-    Transport: Bi<UserAgentRequest, Result<UserAgentResponse, UserAgentError>>,
-{
+impl UserAgentActor {
     pub(crate) fn new(context: ServerContext, transport: Transport) -> Self {
         Self {
             db: context.db.clone(),
@@ -265,10 +262,7 @@ fn response(payload: UserAgentResponsePayload) -> UserAgentResponse {
     }
 }
 
-impl<Transport> UserAgentActor<Transport>
-where
-    Transport: Bi<UserAgentRequest, Result<UserAgentResponse, UserAgentError>>,
-{
+impl UserAgentActor {
     async fn handle_unseal_request(&mut self, req: UnsealStart) -> Output {
         let secret = EphemeralSecret::random();
         let public_key = PublicKey::from(&secret);
@@ -413,10 +407,7 @@ where
 }
 
 
-impl<Transport> Actor for UserAgentActor<Transport>
-where
-    Transport: Bi<UserAgentRequest, Result<UserAgentResponse, UserAgentError>>,
-{
+impl Actor for UserAgentActor {
     type Args = Self;
 
     type Error = ();
@@ -466,13 +457,13 @@ where
 }
 
 
-impl UserAgentActor<DummyTransport<UserAgentRequest, Result<UserAgentResponse, UserAgentError>>> {
+impl UserAgentActor {
     pub fn new_manual(db: db::DatabasePool, actors: GlobalActors) -> Self {
         Self {
             db,
             actors,
             state: UserAgentStateMachine::new(DummyContext),
-            transport: DummyTransport::new(),
+            transport: Box::new(DummyTransport::new()),
         }
     }
 }

@@ -1,8 +1,7 @@
 use arbiter_proto::{
     proto::client::{
         AuthChallenge, AuthChallengeRequest, AuthChallengeSolution, AuthOk, ClientRequest,
-        ClientResponse,
-        client_request::Payload as ClientRequestPayload,
+        ClientResponse, client_request::Payload as ClientRequestPayload,
         client_response::Payload as ClientResponsePayload,
     },
     transport::{Bi, DummyTransport},
@@ -50,19 +49,15 @@ pub enum ClientError {
     DatabaseOperationFailed,
 }
 
-pub struct ClientActor<Transport>
-where
-    Transport: Bi<ClientRequest, Result<ClientResponse, ClientError>>,
-{
+pub type Transport = Box<dyn Bi<ClientRequest, Result<ClientResponse, ClientError>> + Send>;
+
+pub struct ClientActor {
     db: db::DatabasePool,
     state: ClientStateMachine<DummyContext>,
     transport: Transport,
 }
 
-impl<Transport> ClientActor<Transport>
-where
-    Transport: Bi<ClientRequest, Result<ClientResponse, ClientError>>,
-{
+impl ClientActor {
     pub(crate) fn new(context: ServerContext, transport: Transport) -> Self {
         Self {
             db: context.db.clone(),
@@ -197,10 +192,7 @@ where
         Ok((valid, challenge_context))
     }
 
-    async fn handle_auth_challenge_solution(
-        &mut self,
-        solution: AuthChallengeSolution,
-    ) -> Output {
+    async fn handle_auth_challenge_solution(&mut self, solution: AuthChallengeSolution) -> Output {
         let (valid, challenge_context) = self.verify_challenge_solution(&solution)?;
 
         if valid {
@@ -226,10 +218,7 @@ fn response(payload: ClientResponsePayload) -> ClientResponse {
     }
 }
 
-impl<Transport> Actor for ClientActor<Transport>
-where
-    Transport: Bi<ClientRequest, Result<ClientResponse, ClientError>>,
-{
+impl Actor for ClientActor {
     type Args = Self;
 
     type Error = ();
@@ -278,12 +267,12 @@ where
     }
 }
 
-impl ClientActor<DummyTransport<ClientRequest, Result<ClientResponse, ClientError>>> {
+impl ClientActor {
     pub fn new_manual(db: db::DatabasePool) -> Self {
         Self {
             db,
             state: ClientStateMachine::new(DummyContext),
-            transport: DummyTransport::new(),
+            transport: Box::new(DummyTransport::new()),
         }
     }
 }
