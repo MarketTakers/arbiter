@@ -79,8 +79,9 @@ use std::marker::PhantomData;
 use async_trait::async_trait;
 
 /// Errors returned by transport adapters implementing [`Bi`].
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
-    /// The outbound side of the transport is no longer accepting messages.
+    #[error("Transport channel is closed")]
     ChannelClosed,
 }
 

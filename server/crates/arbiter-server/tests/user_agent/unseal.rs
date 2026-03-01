@@ -1,15 +1,13 @@
 use arbiter_proto::proto::user_agent::{
-    AuthChallengeRequest, UnsealEncryptedKey, UnsealResult, UnsealStart,
-    UserAgentRequest,
+    UnsealEncryptedKey, UnsealResult, UnsealStart, UserAgentRequest,
     user_agent_request::Payload as UserAgentRequestPayload,
     user_agent_response::Payload as UserAgentResponsePayload,
 };
 use arbiter_server::{
     actors::{
         GlobalActors,
-        bootstrap::GetToken,
         keyholder::{Bootstrap, Seal},
-        user_agent::{UserAgentActor, UserAgentError},
+        user_agent::session::UserAgentSession,
     },
     db,
 };
@@ -17,16 +15,12 @@ use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use memsafe::MemSafe;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-
-async fn setup_authenticated_user_agent(
+async fn setup_sealed_user_agent(
     seal_key: &[u8],
-) -> (
-    arbiter_server::db::DatabasePool,
-    UserAgentActor,
-) {
+) -> (db::DatabasePool, UserAgentSession) {
     let db = db::create_test_pool().await;
-
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+
     actors
         .key_holder
         .ask(Bootstrap {
@@ -36,27 +30,13 @@ async fn setup_authenticated_user_agent(
         .unwrap();
     actors.key_holder.ask(Seal).await.unwrap();
 
-    let mut user_agent = UserAgentActor::new_manual(db.clone(), actors.clone());
+    let session = UserAgentSession::new_test(db.clone(), actors);
 
-    let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
-    let auth_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
-    user_agent
-        .process_transport_inbound(UserAgentRequest {
-            payload: Some(UserAgentRequestPayload::AuthChallengeRequest(
-                AuthChallengeRequest {
-                    pubkey: auth_key.verifying_key().to_bytes().to_vec(),
-                    bootstrap_token: Some(token),
-                },
-            )),
-        })
-        .await
-        .unwrap();
-
-    (db, user_agent)
+    (db, session)
 }
 
 async fn client_dh_encrypt(
-    user_agent: &mut UserAgentActor,
+    user_agent: &mut UserAgentSession,
     key_to_send: &[u8],
 ) -> UnsealEncryptedKey {
     let client_secret = EphemeralSecret::random();
@@ -103,7 +83,7 @@ fn unseal_key_request(req: UnsealEncryptedKey) -> UserAgentRequest {
 #[test_log::test]
 pub async fn test_unseal_success() {
     let seal_key = b"test-seal-key";
-    let (_db, mut user_agent) = setup_authenticated_user_agent(seal_key).await;
+    let (_db, mut user_agent) = setup_sealed_user_agent(seal_key).await;
 
     let encrypted_key = client_dh_encrypt(&mut user_agent, seal_key).await;
 
@@ -121,7 +101,7 @@ pub async fn test_unseal_success() {
 #[tokio::test]
 #[test_log::test]
 pub async fn test_unseal_wrong_seal_key() {
-    let (_db, mut user_agent) = setup_authenticated_user_agent(b"correct-key").await;
+    let (_db, mut user_agent) = setup_sealed_user_agent(b"correct-key").await;
 
     let encrypted_key = client_dh_encrypt(&mut user_agent, b"wrong-key").await;
 
@@ -139,7 +119,7 @@ pub async fn test_unseal_wrong_seal_key() {
 #[tokio::test]
 #[test_log::test]
 pub async fn test_unseal_corrupted_ciphertext() {
-    let (_db, mut user_agent) = setup_authenticated_user_agent(b"test-key").await;
+    let (_db, mut user_agent) = setup_sealed_user_agent(b"test-key").await;
 
     let client_secret = EphemeralSecret::random();
     let client_public = PublicKey::from(&client_secret);
@@ -170,36 +150,9 @@ pub async fn test_unseal_corrupted_ciphertext() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_unseal_start_without_auth_fails() {
-    let db = db::create_test_pool().await;
-
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
-    let mut user_agent = UserAgentActor::new_manual(db.clone(), actors);
-
-    let client_secret = EphemeralSecret::random();
-    let client_public = PublicKey::from(&client_secret);
-
-    let result = user_agent
-        .process_transport_inbound(UserAgentRequest {
-            payload: Some(UserAgentRequestPayload::UnsealStart(UnsealStart {
-                client_pubkey: client_public.as_bytes().to_vec(),
-            })),
-        })
-        .await;
-
-    match result {
-        Err(err) => {
-            assert_eq!(err, UserAgentError::StateTransitionFailed);
-        }
-        other => panic!("Expected state machine error, got {other:?}"),
-    }
-}
-
-#[tokio::test]
-#[test_log::test]
 pub async fn test_unseal_retry_after_invalid_key() {
     let seal_key = b"real-seal-key";
-    let (_db, mut user_agent) = setup_authenticated_user_agent(seal_key).await;
+    let (_db, mut user_agent) = setup_sealed_user_agent(seal_key).await;
 
     {
         let encrypted_key = client_dh_encrypt(&mut user_agent, b"wrong-key").await;
