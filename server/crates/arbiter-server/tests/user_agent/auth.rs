@@ -8,7 +8,7 @@ use arbiter_server::{
     actors::{
         GlobalActors,
         bootstrap::GetToken,
-        user_agent::{ConnectionProps, connect_user_agent},
+        user_agent::{UserAgentConnection, connect_user_agent},
     },
     db::{self, schema},
 };
@@ -26,7 +26,7 @@ pub async fn test_bootstrap_token_auth() {
     let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
-    let props = ConnectionProps::new(db.clone(), actors, Box::new(server_transport));
+    let props = UserAgentConnection::new(db.clone(), actors, Box::new(server_transport));
     let task = tokio::spawn(connect_user_agent(props));
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
@@ -62,7 +62,7 @@ pub async fn test_bootstrap_invalid_token_auth() {
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
-    let props = ConnectionProps::new(db.clone(), actors, Box::new(server_transport));
+    let props = UserAgentConnection::new(db.clone(), actors, Box::new(server_transport));
     let task = tokio::spawn(connect_user_agent(props));
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
@@ -112,7 +112,7 @@ pub async fn test_challenge_auth() {
     }
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
-    let props = ConnectionProps::new(db.clone(), actors, Box::new(server_transport));
+    let props = UserAgentConnection::new(db.clone(), actors, Box::new(server_transport));
     let task = tokio::spawn(connect_user_agent(props));
 
     // Send challenge request

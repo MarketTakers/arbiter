@@ -15,20 +15,21 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::actors::{
     keyholder::{self, TryUnseal},
-    user_agent::{ConnectionProps, UserAgentError},
+    router::RegisterUserAgent,
+    user_agent::{UserAgentConnection, UserAgentError},
 };
 
 mod state;
 use state::{DummyContext, UnsealContext, UserAgentEvents, UserAgentStateMachine, UserAgentStates};
 
 pub struct UserAgentSession {
-    props: ConnectionProps,
+    props: UserAgentConnection,
     key: VerifyingKey,
     state: UserAgentStateMachine<DummyContext>,
 }
 
 impl UserAgentSession {
-    pub(crate) fn new(props: ConnectionProps, key: VerifyingKey) -> Self {
+    pub(crate) fn new(props: UserAgentConnection, key: VerifyingKey) -> Self {
         Self {
             props,
             key,
@@ -180,12 +181,23 @@ impl UserAgentSession {
 impl Actor for UserAgentSession {
     type Args = Self;
 
-    type Error = ();
+    type Error = UserAgentError;
 
     async fn on_start(
         args: Self::Args,
-        _: kameo::prelude::ActorRef<Self>,
+        this: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
+        args.props
+            .actors
+            .router
+            .ask(RegisterUserAgent {
+                actor: this.clone(),
+            })
+            .await
+            .map_err(|err| {
+                error!(?err, "Failed to register user agent connection with router");
+                UserAgentError::ConnectionRegistrationFailed
+            })?;
         Ok(args)
     }
 
@@ -230,7 +242,7 @@ impl UserAgentSession {
     pub fn new_test(db: crate::db::DatabasePool, actors: crate::actors::GlobalActors) -> Self {
         use arbiter_proto::transport::DummyTransport;
         let transport: super::Transport = Box::new(DummyTransport::new());
-        let props = ConnectionProps::new(db, actors, transport);
+        let props = UserAgentConnection::new(db, actors, transport);
         let key = VerifyingKey::from_bytes(&[0u8; 32]).unwrap();
         Self {
             props,

@@ -6,7 +6,7 @@ use ed25519_dalek::VerifyingKey;
 use tracing::error;
 
 use crate::actors::user_agent::{
-    ConnectionProps,
+    UserAgentConnection,
     auth::state::{AuthContext, AuthStateMachine}, session::UserAgentSession,
 };
 
@@ -71,7 +71,7 @@ fn parse_auth_event(payload: UserAgentRequestPayload) -> Result<AuthEvents, Erro
     }
 }
 
-pub async fn authenticate(props: &mut ConnectionProps) -> Result<VerifyingKey, Error> {
+pub async fn authenticate(props: &mut UserAgentConnection) -> Result<VerifyingKey, Error> {
     let mut state = AuthStateMachine::new(AuthContext::new(props));
 
     loop {
@@ -111,7 +111,7 @@ pub async fn authenticate(props: &mut ConnectionProps) -> Result<VerifyingKey, E
 }
 
 
-pub async fn authenticate_and_create(mut props: ConnectionProps) -> Result<UserAgentSession, Error> {
+pub async fn authenticate_and_create(mut props: UserAgentConnection) -> Result<UserAgentSession, Error> {
     let key = authenticate(&mut props).await?;
     let session = UserAgentSession::new(props, key.clone());
     Ok(session)

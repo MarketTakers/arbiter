@@ -15,8 +15,8 @@ use tracing::info;
 
 use crate::{
     actors::{
-        client::{self, ClientError, ConnectionProps as ClientConnectionProps, connect_client},
-        user_agent::{self, ConnectionProps, UserAgentError, connect_user_agent},
+        client::{self, ClientError, ClientConnection as ClientConnectionProps, connect_client},
+        user_agent::{self, UserAgentConnection, UserAgentError, connect_user_agent},
     },
     context::ServerContext,
 };
@@ -62,6 +62,9 @@ fn client_error_status(value: ClientError) -> Status {
         }
         ClientError::StateTransitionFailed => Status::internal("State machine error"),
         ClientError::Auth(ref err) => client_auth_error_status(err),
+        ClientError::ConnectionRegistrationFailed => {
+            Status::internal("Connection registration failed")
+        }
     }
 }
 
@@ -98,6 +101,9 @@ fn user_agent_error_status(value: UserAgentError) -> Status {
         UserAgentError::StateTransitionFailed => Status::internal("State machine error"),
         UserAgentError::KeyHolderActorUnreachable => Status::internal("Vault is not available"),
         UserAgentError::Auth(ref err) => auth_error_status(err),
+        UserAgentError::ConnectionRegistrationFailed => {
+            Status::internal("Failed registering connection")
+        }
     }
 }
 
@@ -152,7 +158,11 @@ impl arbiter_proto::proto::arbiter_service_server::ArbiterService for Server {
             IdentityRecvConverter::<ClientRequest>::new(),
             ClientGrpcSender,
         );
-        let props = ClientConnectionProps::new(self.context.db.clone(), Box::new(transport));
+        let props = ClientConnectionProps::new(
+            self.context.db.clone(),
+            Box::new(transport),
+            self.context.actors.clone(),
+        );
         tokio::spawn(connect_client(props));
 
         info!(event = "connection established", "grpc.client");
@@ -174,7 +184,7 @@ impl arbiter_proto::proto::arbiter_service_server::ArbiterService for Server {
             IdentityRecvConverter::<UserAgentRequest>::new(),
             UserAgentGrpcSender,
         );
-        let props = ConnectionProps::new(
+        let props = UserAgentConnection::new(
             self.context.db.clone(),
             self.context.actors.clone(),
             Box::new(transport),

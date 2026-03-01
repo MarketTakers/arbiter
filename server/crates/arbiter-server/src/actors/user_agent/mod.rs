@@ -2,10 +2,13 @@ use arbiter_proto::{
     proto::user_agent::{UserAgentRequest, UserAgentResponse},
     transport::Bi,
 };
-use kameo::actor::Spawn;
+use kameo::actor::Spawn as _;
 use tracing::{error, info};
 
-use crate::{actors::{GlobalActors, user_agent::session::UserAgentSession}, db};
+use crate::{
+    actors::{GlobalActors, user_agent::session::UserAgentSession},
+    db::{self},
+};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum UserAgentError {
@@ -23,18 +26,20 @@ pub enum UserAgentError {
     KeyHolderActorUnreachable,
     #[error(transparent)]
     Auth(#[from] auth::Error),
+    #[error("Failed registering connection")]
+    ConnectionRegistrationFailed,
 }
 
 pub type Transport =
     Box<dyn Bi<UserAgentRequest, Result<UserAgentResponse, UserAgentError>> + Send>;
 
-pub struct ConnectionProps {
+pub struct UserAgentConnection {
     db: db::DatabasePool,
     actors: GlobalActors,
     transport: Transport,
 }
 
-impl ConnectionProps {
+impl UserAgentConnection {
     pub fn new(db: db::DatabasePool, actors: GlobalActors, transport: Transport) -> Self {
         Self {
             db,
@@ -44,17 +49,17 @@ impl ConnectionProps {
     }
 }
 
-pub mod session;
 pub mod auth;
+pub mod session;
 
-pub async fn connect_user_agent(mut props: ConnectionProps) {
-    match auth::authenticate_and_create( props).await {
+pub async fn connect_user_agent(props: UserAgentConnection) {
+    match auth::authenticate_and_create(props).await {
         Ok(session) => {
             UserAgentSession::spawn(session);
             info!("User authenticated, session started");
-        },
+        }
         Err(err) => {
             error!(?err, "Authentication failed, closing connection");
-        },
+        }
     }
 }

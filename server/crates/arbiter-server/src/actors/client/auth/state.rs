@@ -8,7 +8,7 @@ use ed25519_dalek::VerifyingKey;
 use tracing::error;
 
 use super::Error;
-use crate::{actors::client::ConnectionProps, db::schema};
+use crate::{actors::client::ClientConnection, db::schema};
 
 pub struct ChallengeRequest {
     pub pubkey: VerifyingKey,
@@ -68,11 +68,11 @@ async fn create_nonce(db: &crate::db::DatabasePool, pubkey_bytes: &[u8]) -> Resu
 }
 
 pub struct AuthContext<'a> {
-    pub(super) conn: &'a mut ConnectionProps,
+    pub(super) conn: &'a mut ClientConnection,
 }
 
 impl<'a> AuthContext<'a> {
-    pub fn new(conn: &'a mut ConnectionProps) -> Self {
+    pub fn new(conn: &'a mut ClientConnection) -> Self {
         Self { conn }
     }
 }

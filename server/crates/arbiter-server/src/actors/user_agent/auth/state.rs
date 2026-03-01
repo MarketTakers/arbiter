@@ -9,7 +9,7 @@ use tracing::error;
 
 use super::Error;
 use crate::{
-    actors::{bootstrap::ConsumeToken, user_agent::ConnectionProps},
+    actors::{bootstrap::ConsumeToken, user_agent::UserAgentConnection},
     db::schema,
 };
 
@@ -98,11 +98,11 @@ async fn register_key(db: &crate::db::DatabasePool, pubkey_bytes: &[u8]) -> Resu
 }
 
 pub struct AuthContext<'a> {
-    pub(super) conn: &'a mut ConnectionProps,
+    pub(super) conn: &'a mut UserAgentConnection,
 }
 
 impl<'a> AuthContext<'a> {
-    pub fn new(conn: &'a mut ConnectionProps) -> Self {
+    pub fn new(conn: &'a mut UserAgentConnection) -> Self {
         Self { conn }
     }
 }

@@ -1,11 +1,12 @@
-use arbiter_proto::transport::Bi;
 use arbiter_proto::proto::client::{
     AuthChallengeRequest, AuthChallengeSolution, ClientRequest,
     client_request::Payload as ClientRequestPayload,
     client_response::Payload as ClientResponsePayload,
 };
+use arbiter_proto::transport::Bi;
+use arbiter_server::actors::GlobalActors;
 use arbiter_server::{
-    actors::client::{ConnectionProps, connect_client},
+    actors::client::{ClientConnection, connect_client},
     db::{self, schema},
 };
 use diesel::{ExpressionMethods as _, insert_into};
@@ -20,7 +21,8 @@ pub async fn test_unregistered_pubkey_rejected() {
     let db = db::create_test_pool().await;
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
-    let props = ConnectionProps::new(db.clone(), Box::new(server_transport));
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let props = ClientConnection::new(db.clone(), Box::new(server_transport), actors);
     let task = tokio::spawn(connect_client(props));
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
@@ -59,7 +61,9 @@ pub async fn test_challenge_auth() {
     }
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
-    let props = ConnectionProps::new(db.clone(), Box::new(server_transport));
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+
+    let props = ClientConnection::new(db.clone(), Box::new(server_transport), actors);
     let task = tokio::spawn(connect_client(props));
 
     // Send challenge request
