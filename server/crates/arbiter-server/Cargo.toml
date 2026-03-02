@@ -44,6 +44,7 @@ strum = { version = "0.27.2", features = ["derive"] }
 pem = "3.0.6"
 k256 = "0.13.4"
 alloy.workspace = true
+arbiter-tokens-registry.path = "../arbiter-tokens-registry"
 
 [dev-dependencies]
 insta = "1.46.3"

@@ -1,4 +1,5 @@
 pub mod safe_signer;
+pub mod abi;
 
 use alloy::{
     consensus::TxEip1559,
@@ -55,7 +56,7 @@ impl Engine {
     pub async fn create_grant<P: Policy>(
         &self,
         client_id: i32,
-        full_grant: FullGrant<P::Grant>,
+        full_grant: FullGrant<P::Settings>,
     ) -> Result<i32, CreationError> {
         let mut conn = self.db.get().await?;
 

@@ -1,3 +1,4 @@
+use chrono::Utc;
 use diesel::{
     ExpressionMethods as _, OptionalExtension, QueryDsl, SelectableHelper,
     dsl::{insert_into, update},
@@ -312,7 +313,7 @@ impl KeyHolder {
                 current_nonce: nonce.to_vec(),
                 schema_version: 1,
                 associated_root_key_id: *root_key_history_id,
-                created_at: chrono::Utc::now().timestamp() as i32,
+                created_at: Utc::now().into()
             })
             .returning(schema::aead_encrypted::id)
             .get_result(&mut conn)

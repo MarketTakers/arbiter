@@ -710,6 +710,7 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "arbiter-proto",
+ "arbiter-tokens-registry",
  "argon2",
  "async-trait",
  "chacha20poly1305",
@@ -742,6 +743,13 @@ dependencies = [
  "tracing-subscriber",
  "x25519-dalek",
  "zeroize",
+]
+
+[[package]]
+name = "arbiter-tokens-registry"
+version = "0.1.0"
+dependencies = [
+ "alloy",
 ]
 
 [[package]]

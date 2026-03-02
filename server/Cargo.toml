@@ -1,9 +1,6 @@
 [workspace]
 members = [
-    "crates/arbiter-client",
-    "crates/arbiter-proto",
-    "crates/arbiter-server",
-    "crates/arbiter-useragent",
+    "crates/*",
 ]
 resolver = "3"
 

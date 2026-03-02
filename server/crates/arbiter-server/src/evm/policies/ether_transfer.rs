@@ -1,26 +1,24 @@
-use std::{fmt::Display, time::Duration};
+use std::fmt::Display;
 
 use alloy::primitives::{Address, U256};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use diesel::dsl::insert_into;
 use diesel::sqlite::Sqlite;
 use diesel::{ExpressionMethods, JoinOnDsl, prelude::*};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 
 use crate::db::models::{
-    EvmEtherTransferGrant, EvmEtherTransferGrantTarget, EvmEtherTransferVolumeLimit, SqliteTimestamp,
+    EvmBasicGrant, EvmEtherTransferGrant, EvmEtherTransferGrantTarget, EvmEtherTransferLimit,
+    NewEvmEtherTransferLimit, SqliteTimestamp,
 };
-use crate::evm::policies::{GrantMetadata, SpecificGrant, SpecificMeaning};
+use crate::db::schema::{evm_ether_transfer_limit, evm_transaction_log};
+use crate::evm::policies::{
+    Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning, VolumeRateLimit,
+};
 use crate::{
     db::{
-        models::{
-            self, NewEvmEtherTransferGrant, NewEvmEtherTransferGrantTarget,
-            NewEvmEtherTransferVolumeLimit,
-        },
-        schema::{
-            evm_ether_transfer_grant, evm_ether_transfer_grant_target,
-            evm_ether_transfer_volume_limit,
-        },
+        models::{self, NewEvmEtherTransferGrant, NewEvmEtherTransferGrantTarget},
+        schema::{evm_ether_transfer_grant, evm_ether_transfer_grant_target},
     },
     evm::{policies::Policy, utils},
 };
@@ -49,19 +47,13 @@ impl Into<SpecificMeaning> for Meaning {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct VolumeLimit {
-    window: Duration,
-    max_volume: U256,
-}
-
 // A grant for ether transfers, which can be scoped to specific target addresses and volume limits
-pub struct Grant {
+pub struct Settings {
     target: Vec<Address>,
-    limits: Vec<VolumeLimit>,
+    limit: VolumeRateLimit,
 }
 
-impl Into<SpecificGrant> for Grant {
+impl Into<SpecificGrant> for Settings {
     fn into(self) -> SpecificGrant {
         SpecificGrant::EtherTransfer(self)
     }
@@ -72,20 +64,17 @@ async fn query_relevant_past_transaction(
     longest_window: Duration,
     db: &mut impl AsyncConnection<Backend = Sqlite>,
 ) -> QueryResult<Vec<(U256, DateTime<Utc>)>> {
-    use crate::db::schema::evm_ether_transfer_log;
-    let past_transactions: Vec<(Vec<u8>, SqliteTimestamp)> =
-        evm_ether_transfer_log::table
-            .filter(evm_ether_transfer_log::grant_id.eq(grant_id))
-            .filter(
-                evm_ether_transfer_log::created_at
-                    .ge(SqliteTimestamp(chrono::Utc::now() - longest_window)),
-            )
-            .select((
-                evm_ether_transfer_log::value,
-                evm_ether_transfer_log::created_at,
-            ))
-            .load(db)
-            .await?;
+    let past_transactions: Vec<(Vec<u8>, SqliteTimestamp)> = evm_transaction_log::table
+        .filter(evm_transaction_log::grant_id.eq(grant_id))
+        .filter(
+            evm_transaction_log::signed_at.ge(SqliteTimestamp(chrono::Utc::now() - longest_window)),
+        )
+        .select((
+            evm_transaction_log::eth_value,
+            evm_transaction_log::signed_at,
+        ))
+        .load(db)
+        .await?;
     let past_transaction: Vec<(U256, DateTime<Utc>)> = past_transactions
         .into_iter()
         .filter_map(|(value_bytes, timestamp)| {
@@ -97,30 +86,22 @@ async fn query_relevant_past_transaction(
 }
 
 async fn check_rate_limits(
-    grant: &Grant,
-    meta: &GrantMetadata,
+    grant: &Grant<Settings>,
     db: &mut impl AsyncConnection<Backend = Sqlite>,
 ) -> QueryResult<Vec<EvalViolation>> {
     let mut violations = Vec::new();
-    // This has double meaning: checks for limit presence, and finds biggest window
-    // to extract all needed historical transactions in one go later
-    let longest_window = grant.limits.iter().map(|limit| limit.window).max();
+    let window = grant.settings.limit.window;
 
-    if let Some(longest_window) = longest_window {
-        let _past_transaction = query_relevant_past_transaction(meta.policy_grant_id, longest_window, db).await?;
+    let past_transaction = query_relevant_past_transaction(grant.id, window, db).await?;
 
-        for limit in &grant.limits {
-            let window_start = chrono::Utc::now() - limit.window;
-            let cumulative_volume: U256 = _past_transaction
-                .iter()
-                .filter(|(_, timestamp)| timestamp >= &window_start)
-                .fold(U256::default(), |acc, (value, _)| acc + *value);
+    let window_start = chrono::Utc::now() - grant.settings.limit.window;
+    let cumulative_volume: U256 = past_transaction
+        .iter()
+        .filter(|(_, timestamp)| timestamp >= &window_start)
+        .fold(U256::default(), |acc, (value, _)| acc + *value);
 
-            if cumulative_volume > limit.max_volume {
-                violations.push(EvalViolation::VolumetricLimitExceeded);
-            }
-        }
-        // TODO: Implement actual rate limit checking logic
+    if cumulative_volume > grant.settings.limit.max_volume {
+        violations.push(EvalViolation::VolumetricLimitExceeded);
     }
 
     Ok(violations)
@@ -128,7 +109,7 @@ async fn check_rate_limits(
 
 pub struct EtherTransfer;
 impl Policy for EtherTransfer {
-    type Grant = Grant;
+    type Settings = Settings;
 
     type Meaning = Meaning;
 
@@ -144,19 +125,19 @@ impl Policy for EtherTransfer {
     }
 
     async fn evaluate(
+        _: &EvalContext,
         meaning: &Self::Meaning,
-        grant: &Self::Grant,
-        meta: &GrantMetadata,
+        grant: &Grant<Self::Settings>,
         db: &mut impl AsyncConnection<Backend = Sqlite>,
     ) -> QueryResult<Vec<EvalViolation>> {
         let mut violations = Vec::new();
 
         // Check if the target address is within the grant's allowed targets
-        if !grant.target.contains(&meaning.to) {
+        if !grant.settings.target.contains(&meaning.to) {
             violations.push(EvalViolation::InvalidTarget { target: meaning.to });
         }
 
-        let rate_violations = check_rate_limits(grant, meta, db).await?;
+        let rate_violations = check_rate_limits(grant, db).await?;
         violations.extend(rate_violations);
 
         Ok(violations)
@@ -164,12 +145,22 @@ impl Policy for EtherTransfer {
 
     async fn create_grant(
         basic: &models::EvmBasicGrant,
-        grant: &Self::Grant,
+        grant: &Self::Settings,
         conn: &mut impl AsyncConnection<Backend = Sqlite>,
     ) -> diesel::result::QueryResult<DatabaseID> {
+        let limit_id: i32 = insert_into(evm_ether_transfer_limit::table)
+            .values(NewEvmEtherTransferLimit {
+                window_secs: grant.limit.window.num_seconds() as i32,
+                max_volume: utils::u256_to_bytes(grant.limit.max_volume).to_vec(),
+            })
+            .returning(evm_ether_transfer_limit::id)
+            .get_result(conn)
+            .await?;
+
         let grant_id: i32 = insert_into(evm_ether_transfer_grant::table)
             .values(&NewEvmEtherTransferGrant {
                 basic_grant_id: basic.id,
+                limit_id,
             })
             .returning(evm_ether_transfer_grant::id)
             .get_result(conn)
@@ -185,24 +176,13 @@ impl Policy for EtherTransfer {
                 .await?;
         }
 
-        for limit in &grant.limits {
-            insert_into(evm_ether_transfer_volume_limit::table)
-                .values(NewEvmEtherTransferVolumeLimit {
-                    grant_id,
-                    window_secs: limit.window.as_secs() as i32,
-                    max_volume: utils::u256_to_bytes(limit.max_volume).to_vec(),
-                })
-                .execute(conn)
-                .await?;
-        }
-
         Ok(grant_id)
     }
 
     async fn try_find_grant(
         context: &EvalContext,
         conn: &mut impl AsyncConnection<Backend = Sqlite>,
-    ) -> diesel::result::QueryResult<Option<(Self::Grant, GrantMetadata)>> {
+    ) -> diesel::result::QueryResult<Option<Grant<Self::Settings>>> {
         use crate::db::schema::{
             evm_basic_grant, evm_ether_transfer_grant, evm_ether_transfer_grant_target,
         };
@@ -212,7 +192,7 @@ impl Policy for EtherTransfer {
         // Find a grant where:
         // 1. The basic grant's wallet_id and client_id match the context
         // 2. Any of the grant's targets match the context's `to` address
-        let grant: Option<EvmEtherTransferGrant> = evm_ether_transfer_grant::table
+        let grant: Option<(EvmBasicGrant, EvmEtherTransferGrant)> = evm_ether_transfer_grant::table
             .inner_join(
                 evm_basic_grant::table
                     .on(evm_ether_transfer_grant::basic_grant_id.eq(evm_basic_grant::id)),
@@ -224,29 +204,28 @@ impl Policy for EtherTransfer {
             .filter(evm_basic_grant::wallet_id.eq(context.wallet_id))
             .filter(evm_basic_grant::client_id.eq(context.client_id))
             .filter(evm_ether_transfer_grant_target::address.eq(&target_bytes))
-            .select(EvmEtherTransferGrant::as_select())
-            .first::<EvmEtherTransferGrant>(conn)
+            .select((
+                EvmBasicGrant::as_select(),
+                EvmEtherTransferGrant::as_select(),
+            ))
+            .first(conn)
             .await
             .optional()?;
 
-        let Some(grant) = grant else {
+        let Some((basic_grant, grant)) = grant else {
             return Ok(None);
         };
 
-        use crate::db::schema::evm_ether_transfer_volume_limit;
-
-        // Load grant targets
         let target_bytes: Vec<EvmEtherTransferGrantTarget> = evm_ether_transfer_grant_target::table
             .select(EvmEtherTransferGrantTarget::as_select())
             .filter(evm_ether_transfer_grant_target::grant_id.eq(grant.id))
             .load(conn)
             .await?;
 
-        // Load volume limits
-        let limit_rows: Vec<EvmEtherTransferVolumeLimit> = evm_ether_transfer_volume_limit::table
-            .filter(evm_ether_transfer_volume_limit::grant_id.eq(grant.id))
-            .select(EvmEtherTransferVolumeLimit::as_select())
-            .load(conn)
+        let limit: EvmEtherTransferLimit = evm_ether_transfer_limit::table
+            .filter(evm_ether_transfer_limit::id.eq(grant.limit_id))
+            .select(EvmEtherTransferLimit::as_select())
+            .first::<EvmEtherTransferLimit>(conn)
             .await?;
 
         // Convert bytes back to Address
@@ -259,51 +238,31 @@ impl Policy for EtherTransfer {
             })
             .collect();
 
-        // Convert database rows to VolumeLimit
-        let limits: Vec<VolumeLimit> = limit_rows
-            .into_iter()
-            .filter_map(|limit| {
-                // TODO: Handle invalid volumes more gracefully
-                let max_volume = utils::bytes_to_u256(&limit.max_volume)?;
-                Some(VolumeLimit {
-                    window: Duration::from_secs(limit.window_secs as u64),
-                    max_volume,
-                })
-            })
-            .collect();
-
-        let domain_grant = Grant {
+        let settings = Settings {
             target: targets,
-            limits,
+            limit: VolumeRateLimit {
+                max_volume: utils::try_bytes_to_u256(&limit.max_volume)
+                    .map_err(|err| diesel::result::Error::DeserializationError(Box::new(err)))?,
+                window: chrono::Duration::seconds(limit.window_secs as i64),
+            },
         };
 
-        Ok(Some((
-            domain_grant,
-            GrantMetadata {
-                basic_grant_id: grant.basic_grant_id,
-                policy_grant_id: grant.id,
-            },
-        )))
+        Ok(Some(Grant {
+            id: grant.id,
+            shared_grant_id: grant.basic_grant_id,
+            shared: SharedGrantSettings::try_from_model(basic_grant)?,
+            settings,
+        }))
     }
 
     async fn record_transaction(
-        context: &EvalContext,
-        grant: &GrantMetadata,
-        conn: &mut impl AsyncConnection<Backend = Sqlite>,
+        _context: &EvalContext,
+        _: &Self::Meaning,
+        _log_id: i32,
+        _grant: &Grant<Self::Settings>,
+        _conn: &mut impl AsyncConnection<Backend = Sqlite>,
     ) -> diesel::result::QueryResult<()> {
-        use crate::db::schema::evm_ether_transfer_log;
-
-        insert_into(evm_ether_transfer_log::table)
-            .values(models::NewEvmEtherTransferLog {
-                grant_id: grant.policy_grant_id,
-                value: utils::u256_to_bytes(context.value).to_vec(),
-                client_id: context.client_id,
-                wallet_id: context.wallet_id,
-                chain_id: context.chain as i32,
-                recipient_address: context.to.to_vec(),
-            })
-            .execute(conn)
-            .await?;
+        // Basic log is sufficient
 
         Ok(())
     }
