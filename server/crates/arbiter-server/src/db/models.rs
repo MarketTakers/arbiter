@@ -1,14 +1,67 @@
 #![allow(unused)]
 #![allow(clippy::all)]
 
-use crate::db::schema::{self, aead_encrypted, arbiter_settings, root_key_history, tls_history};
+use crate::db::schema::{
+    self, aead_encrypted, arbiter_settings, evm_basic_grant, evm_ether_transfer_grant,
+    evm_ether_transfer_grant_target, evm_ether_transfer_log, evm_ether_transfer_volume_limit,
+    evm_token_approval_grant, evm_token_approval_grant_target,
+    evm_token_approval_log, evm_token_transfer_grant, evm_token_transfer_grant_target,
+    evm_token_transfer_log, evm_token_transfer_volume_limit, evm_unknown_call_grant,
+    evm_unknown_call_log, evm_wallet, root_key_history, tls_history,
+};
+use chrono::{DateTime, Utc};
 use diesel::{prelude::*, sqlite::Sqlite};
 use restructed::Models;
 
 pub mod types {
+    use std::os::unix;
+
     use chrono::{DateTime, Utc};
-    pub struct SqliteTimestamp(DateTime<Utc>);
+    use diesel::{
+        deserialize::{FromSql, FromSqlRow},
+        expression::AsExpression,
+        serialize::{IsNull, ToSql},
+        sql_types::Integer,
+        sqlite::{Sqlite, SqliteType},
+    };
+
+    #[derive(Debug, FromSqlRow, AsExpression)]
+    #[sql_type = "Integer"]
+    #[repr(transparent)] // hint compiler to optimize the wrapper struct away
+    pub struct SqliteTimestamp(pub DateTime<Utc>);
+
+    impl ToSql<Integer, Sqlite> for SqliteTimestamp {
+        fn to_sql<'b>(
+            &'b self,
+            out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
+        ) -> diesel::serialize::Result {
+            let unix_timestamp = self.0.timestamp() as i32;
+            out.set_value(unix_timestamp);
+            Ok(IsNull::No)
+        }
+    }
+
+    impl FromSql<Integer, Sqlite> for SqliteTimestamp {
+        fn from_sql(
+            mut bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
+        ) -> diesel::deserialize::Result<Self> {
+            let Some(SqliteType::Integer) = bytes.value_type() else {
+                return Err(format!(
+                    "Expected Integer type for SqliteTimestamp, got {:?}",
+                    bytes.value_type()
+                )
+                .into());
+            };
+
+            let unix_timestamp = bytes.read_integer();
+            let datetime = DateTime::from_timestamp(unix_timestamp as i64, 0)
+                .ok_or("Timestamp is out of bounds")?;
+
+            Ok(SqliteTimestamp(datetime))
+        }
+    }
 }
+pub use types::*;
 
 #[derive(Models, Queryable, Debug, Insertable, Selectable)]
 #[view(
@@ -58,9 +111,9 @@ pub struct TlsHistory {
     pub id: i32,
     pub cert: String,
     pub cert_key: String, // PEM Encoded private key
-    pub ca_cert: String, // PEM Encoded certificate for cert signing
-    pub ca_key: String, // PEM Encoded public key for cert signing
-    pub created_at: i32,
+    pub ca_cert: String,  // PEM Encoded certificate for cert signing
+    pub ca_key: String,   // PEM Encoded public key for cert signing
+    pub created_at: SqliteTimestamp,
 }
 
 #[derive(Queryable, Debug, Insertable, Selectable)]
@@ -68,7 +121,22 @@ pub struct TlsHistory {
 pub struct ArbiterSettings {
     pub id: i32,
     pub root_key_id: Option<i32>, // references root_key_history.id
-    pub tls_id: Option<i32>, // references tls_history.id
+    pub tls_id: Option<i32>,      // references tls_history.id
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_wallet, check_for_backend(Sqlite))]
+#[view(
+    NewEvmWallet,
+    derive(Insertable),
+    omit(id, created_at),
+    attributes_with = "deriveless"
+)]
+pub struct EvmWallet {
+    pub id: i32,
+    pub address: Vec<u8>,
+    pub aead_encrypted_id: i32,
+    pub created_at: SqliteTimestamp,
 }
 
 #[derive(Queryable, Debug)]
@@ -77,8 +145,8 @@ pub struct ProgramClient {
     pub id: i32,
     pub public_key: Vec<u8>,
     pub nonce: i32,
-    pub created_at: i32,
-    pub updated_at: i32,
+    pub created_at: SqliteTimestamp,
+    pub updated_at: SqliteTimestamp,
 }
 
 #[derive(Queryable, Debug)]
@@ -87,6 +155,237 @@ pub struct UseragentClient {
     pub id: i32,
     pub public_key: Vec<u8>,
     pub nonce: i32,
-    pub created_at: i32,
-    pub updated_at: i32,
+    pub created_at: SqliteTimestamp,
+    pub updated_at: SqliteTimestamp,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_basic_grant, check_for_backend(Sqlite))]
+#[view(
+    NewEvmBasicGrant,
+    derive(Insertable),
+    omit(id, created_at),
+    attributes_with = "deriveless"
+)]
+pub struct EvmBasicGrant {
+    pub id: i32,
+    pub wallet_id: i32, // references evm_wallet.id
+    pub client_id: i32, // references program_client.id
+    pub chain_id: i32,
+    pub valid_from: Option<SqliteTimestamp>,
+    pub valid_until: Option<SqliteTimestamp>,
+    pub max_gas_fee_per_gas: Option<Vec<u8>>,
+    pub max_priority_fee_per_gas: Option<Vec<u8>>,
+    pub rate_limit_count: Option<i32>,
+    pub rate_limit_window_secs: Option<i32>,
+    pub revoked_at: Option<SqliteTimestamp>,
+    pub created_at: SqliteTimestamp,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_ether_transfer_grant, check_for_backend(Sqlite))]
+#[view(
+    NewEvmEtherTransferGrant,
+    derive(Insertable),
+    omit(id),
+    attributes_with = "deriveless"
+)]
+pub struct EvmEtherTransferGrant {
+    pub id: i32,
+    pub basic_grant_id: i32,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_ether_transfer_grant_target, check_for_backend(Sqlite))]
+#[view(
+    NewEvmEtherTransferGrantTarget,
+    derive(Insertable),
+    omit(id),
+    attributes_with = "deriveless"
+)]
+pub struct EvmEtherTransferGrantTarget {
+    pub id: i32,
+    pub grant_id: i32,
+    pub address: Vec<u8>,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_ether_transfer_volume_limit, check_for_backend(Sqlite))]
+#[view(
+    NewEvmEtherTransferVolumeLimit,
+    derive(Insertable),
+    omit(id),
+    attributes_with = "deriveless"
+)]
+pub struct EvmEtherTransferVolumeLimit {
+    pub id: i32,
+    pub grant_id: i32,
+    pub window_secs: i32,
+    pub max_volume: Vec<u8>,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_token_approval_grant, check_for_backend(Sqlite))]
+#[view(
+    NewEvmTokenApprovalGrant,
+    derive(Insertable),
+    omit(id),
+    attributes_with = "deriveless"
+)]
+pub struct EvmTokenApprovalGrant {
+    pub id: i32,
+    pub basic_grant_id: i32,
+    pub token_contract: Vec<u8>,
+    pub max_total_approval: Vec<u8>,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_token_approval_grant_target, check_for_backend(Sqlite))]
+#[view(
+    NewEvmTokenApprovalGrantTarget,
+    derive(Insertable),
+    omit(id),
+    attributes_with = "deriveless"
+)]
+pub struct EvmTokenApprovalGrantTarget {
+    pub id: i32,
+    pub grant_id: i32,
+    pub address: Vec<u8>,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_token_transfer_grant, check_for_backend(Sqlite))]
+#[view(
+    NewEvmTokenTransferGrant,
+    derive(Insertable),
+    omit(id),
+    attributes_with = "deriveless"
+)]
+pub struct EvmTokenTransferGrant {
+    pub id: i32,
+    pub basic_grant_id: i32,
+    pub token_contract: Vec<u8>,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_token_transfer_grant_target, check_for_backend(Sqlite))]
+#[view(
+    NewEvmTokenTransferGrantTarget,
+    derive(Insertable),
+    omit(id),
+    attributes_with = "deriveless"
+)]
+pub struct EvmTokenTransferGrantTarget {
+    pub id: i32,
+    pub grant_id: i32,
+    pub address: Vec<u8>,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_token_transfer_volume_limit, check_for_backend(Sqlite))]
+#[view(
+    NewEvmTokenTransferVolumeLimit,
+    derive(Insertable),
+    omit(id),
+    attributes_with = "deriveless"
+)]
+pub struct EvmTokenTransferVolumeLimit {
+    pub id: i32,
+    pub grant_id: i32,
+    pub window_secs: i32,
+    pub max_volume: Vec<u8>,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_unknown_call_grant, check_for_backend(Sqlite))]
+#[view(
+    NewEvmUnknownCallGrant,
+    derive(Insertable),
+    omit(id),
+    attributes_with = "deriveless"
+)]
+pub struct EvmUnknownCallGrant {
+    pub id: i32,
+    pub basic_grant_id: i32,
+    pub contract: Vec<u8>,
+    pub selector: Option<Vec<u8>>,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_ether_transfer_log, check_for_backend(Sqlite))]
+#[view(
+    NewEvmEtherTransferLog,
+    derive(Insertable),
+    omit(id, created_at),
+    attributes_with = "deriveless"
+)]
+pub struct EvmEtherTransferLog {
+    pub id: i32,
+    pub grant_id: i32,
+    pub client_id: i32,
+    pub wallet_id: i32,
+    pub chain_id: i32,
+    pub recipient_address: Vec<u8>,
+    pub value: Vec<u8>,
+    pub created_at: SqliteTimestamp,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_token_transfer_log, check_for_backend(Sqlite))]
+#[view(
+    NewEvmTokenTransferLog,
+    derive(Insertable),
+    omit(id, created_at),
+    attributes_with = "deriveless"
+)]
+pub struct EvmTokenTransferLog {
+    pub id: i32,
+    pub grant_id: i32,
+    pub client_id: i32,
+    pub wallet_id: i32,
+    pub chain_id: i32,
+    pub token_contract: Vec<u8>,
+    pub recipient_address: Vec<u8>,
+    pub value: Vec<u8>,
+    pub created_at: SqliteTimestamp,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_token_approval_log, check_for_backend(Sqlite))]
+#[view(
+    NewEvmTokenApprovalLog,
+    derive(Insertable),
+    omit(id, created_at),
+    attributes_with = "deriveless"
+)]
+pub struct EvmTokenApprovalLog {
+    pub id: i32,
+    pub grant_id: i32,
+    pub client_id: i32,
+    pub wallet_id: i32,
+    pub chain_id: i32,
+    pub token_contract: Vec<u8>,
+    pub spender_address: Vec<u8>,
+    pub value: Vec<u8>,
+    pub created_at: SqliteTimestamp,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = evm_unknown_call_log, check_for_backend(Sqlite))]
+#[view(
+    NewEvmUnknownCallLog,
+    derive(Insertable),
+    omit(id, created_at),
+    attributes_with = "deriveless"
+)]
+pub struct EvmUnknownCallLog {
+    pub id: i32,
+    pub grant_id: i32,
+    pub client_id: i32,
+    pub wallet_id: i32,
+    pub chain_id: i32,
+    pub contract: Vec<u8>,
+    pub selector: Option<Vec<u8>>,
+    pub call_data: Option<Vec<u8>>,
+    pub created_at: SqliteTimestamp,
 }

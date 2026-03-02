@@ -13,6 +13,10 @@ pub mod proto {
     pub mod client {
         tonic::include_proto!("arbiter.client");
     }
+
+    pub mod evm {
+        tonic::include_proto!("arbiter.evm");
+    }
 }
 
 pub static BOOTSTRAP_PATH: &str = "bootstrap_token";

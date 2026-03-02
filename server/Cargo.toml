@@ -9,7 +9,12 @@ resolver = "3"
 
 
 [workspace.dependencies]
-tonic = { version = "0.14.3", features = ["deflate", "gzip", "tls-connect-info", "zstd"] }
+tonic = { version = "0.14.3", features = [
+    "deflate",
+    "gzip",
+    "tls-connect-info",
+    "zstd",
+] }
 tracing = "0.1.44"
 tokio = { version = "1.49.0", features = ["full"] }
 ed25519-dalek = { version = "3.0.0-pre.6", features = ["rand_core"] }
@@ -27,6 +32,7 @@ prost-types = { version = "0.14.3", features = ["chrono"] }
 x25519-dalek = { version = "2.0.1", features = ["getrandom"] }
 rstest = "0.26.1"
 rustls-pki-types = "1.14.0"
+alloy = "1.7.3"
 rcgen = { version = "0.14.7", features = [
     "aws_lc_rs",
     "pem",

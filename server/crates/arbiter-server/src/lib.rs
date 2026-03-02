@@ -24,6 +24,7 @@ use crate::{
 pub mod actors;
 pub mod context;
 pub mod db;
+pub mod evm;
 
 const DEFAULT_CHANNEL_SIZE: usize = 1000;
 

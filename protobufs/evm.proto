@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package arbiter.evm;
+
+enum EvmError {
+  EVM_ERROR_UNSPECIFIED = 0;
+  EVM_ERROR_VAULT_SEALED = 1;
+  EVM_ERROR_INTERNAL = 2;
+}
+
+message WalletEntry {
+  bytes address = 1; // 20-byte Ethereum address
+}
+
+message WalletList {
+  repeated WalletEntry wallets = 1;
+}
+
+message WalletCreateResponse {
+  oneof result {
+    WalletEntry wallet = 1;
+    EvmError error = 2;
+  }
+}
+
+message WalletListResponse {
+  oneof result {
+    WalletList wallets = 1;
+    EvmError error = 2;
+  }
+}

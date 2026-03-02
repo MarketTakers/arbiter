@@ -13,6 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 format!("{}/arbiter.proto", PROTOBUF_DIR),
                 format!("{}/user_agent.proto", PROTOBUF_DIR),
                 format!("{}/client.proto", PROTOBUF_DIR),
+                format!("{}/evm.proto", PROTOBUF_DIR),
             ],
             &[PROTOBUF_DIR.to_string()],
         )

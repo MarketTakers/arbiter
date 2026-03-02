@@ -42,6 +42,8 @@ argon2 = { version = "0.5.3", features = ["zeroize"] }
 restructed = "0.2.2"
 strum = { version = "0.27.2", features = ["derive"] }
 pem = "3.0.6"
+k256 = "0.13.4"
+alloy.workspace = true
 
 [dev-dependencies]
 insta = "1.46.3"

@@ -1,19 +1,26 @@
 use std::{ops::DerefMut, sync::Mutex};
 
-use arbiter_proto::proto::user_agent::{
-    UnsealEncryptedKey, UnsealResult, UnsealStart, UnsealStartResponse, UserAgentRequest,
-    UserAgentResponse, user_agent_request::Payload as UserAgentRequestPayload,
-    user_agent_response::Payload as UserAgentResponsePayload,
+use arbiter_proto::proto::{
+    evm as evm_proto,
+    user_agent::{
+        UnsealEncryptedKey, UnsealResult, UnsealStart, UnsealStartResponse, UserAgentRequest,
+        UserAgentResponse, user_agent_request::Payload as UserAgentRequestPayload,
+        user_agent_response::Payload as UserAgentResponsePayload,
+    },
 };
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use ed25519_dalek::VerifyingKey;
-use kameo::{Actor, error::SendError};
+use kameo::{
+    Actor,
+    error::SendError,
+};
 use memsafe::MemSafe;
 use tokio::select;
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::actors::{
+    evm::{Generate, ListWallets},
     keyholder::{self, TryUnseal},
     router::RegisterUserAgent,
     user_agent::{UserAgentConnection, UserAgentError},
@@ -58,6 +65,8 @@ impl UserAgentSession {
             UserAgentRequestPayload::UnsealEncryptedKey(unseal_encrypted_key) => {
                 self.handle_unseal_encrypted_key(unseal_encrypted_key).await
             }
+            UserAgentRequestPayload::EvmWalletCreate(_) => self.handle_evm_wallet_create().await,
+            UserAgentRequestPayload::EvmWalletList(_) => self.handle_evm_wallet_list().await,
             _ => Err(UserAgentError::UnexpectedRequestPayload),
         }
     }
@@ -174,6 +183,64 @@ impl UserAgentSession {
                     UnsealResult::InvalidKey.into(),
                 )))
             }
+        }
+    }
+}
+
+impl UserAgentSession {
+    async fn handle_evm_wallet_create(&mut self) -> Output {
+        use evm_proto::wallet_create_response::Result as CreateResult;
+
+        let result = match self.props.actors.evm.ask(Generate {}).await {
+            Ok(address) => CreateResult::Wallet(evm_proto::WalletEntry {
+                address: address.as_slice().to_vec(),
+            }),
+            Err(err) => CreateResult::Error(map_evm_error("wallet create", err).into()),
+        };
+
+        Ok(response(UserAgentResponsePayload::EvmWalletCreate(
+            evm_proto::WalletCreateResponse {
+                result: Some(result),
+            },
+        )))
+    }
+
+    async fn handle_evm_wallet_list(&mut self) -> Output {
+        use evm_proto::wallet_list_response::Result as ListResult;
+
+        let result = match self.props.actors.evm.ask(ListWallets {}).await {
+            Ok(wallets) => ListResult::Wallets(evm_proto::WalletList {
+                wallets: wallets
+                    .into_iter()
+                    .map(|addr| evm_proto::WalletEntry {
+                        address: addr.as_slice().to_vec(),
+                    })
+                    .collect(),
+            }),
+            Err(err) => ListResult::Error(map_evm_error("wallet list", err).into()),
+        };
+
+        Ok(response(UserAgentResponsePayload::EvmWalletList(
+            evm_proto::WalletListResponse {
+                result: Some(result),
+            },
+        )))
+    }
+}
+
+fn map_evm_error<M>(op: &str, err: SendError<M, crate::actors::evm::Error>) -> evm_proto::EvmError {
+    use crate::actors::{evm::Error as EvmError, keyholder::Error as KhError};
+    match err {
+        SendError::HandlerError(EvmError::Keyholder(KhError::NotBootstrapped)) => {
+            evm_proto::EvmError::VaultSealed
+        }
+        SendError::HandlerError(err) => {
+            error!(?err, "EVM {op} failed");
+            evm_proto::EvmError::Internal
+        }
+        _ => {
+            error!("EVM actor unreachable during {op}");
+            evm_proto::EvmError::Internal
         }
     }
 }

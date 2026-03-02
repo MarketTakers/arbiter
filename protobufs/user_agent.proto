@@ -3,6 +3,7 @@ syntax = "proto3";
 package arbiter.user_agent;
 
 import "google/protobuf/empty.proto";
+import "evm.proto";
 
 message AuthChallengeRequest {
   bytes pubkey = 1;
@@ -55,6 +56,8 @@ message UserAgentRequest {
     UnsealStart unseal_start = 3;
     UnsealEncryptedKey unseal_encrypted_key = 4;
     google.protobuf.Empty query_vault_state = 5;
+    google.protobuf.Empty evm_wallet_create = 6;
+    google.protobuf.Empty evm_wallet_list = 7;
   }
 }
 message UserAgentResponse {
@@ -64,5 +67,7 @@ message UserAgentResponse {
     UnsealStartResponse unseal_start_response = 3;
     UnsealResult unseal_result = 4;
     VaultState vault_state = 5;
+    arbiter.evm.WalletCreateResponse evm_wallet_create = 6;
+    arbiter.evm.WalletListResponse evm_wallet_list = 7;
   }
 }
