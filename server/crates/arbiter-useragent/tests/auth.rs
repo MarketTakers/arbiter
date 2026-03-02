@@ -13,12 +13,14 @@ use ed25519_dalek::SigningKey;
 use kameo::actor::Spawn;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
+use async_trait::async_trait;
 
 struct TestTransport {
     inbound_rx: mpsc::Receiver<UserAgentResponse>,
     outbound_tx: mpsc::Sender<UserAgentRequest>,
 }
 
+#[async_trait]
 impl Bi<UserAgentResponse, UserAgentRequest> for TestTransport {
     async fn send(&mut self, item: UserAgentRequest) -> Result<(), arbiter_proto::transport::Error> {
         self.outbound_tx

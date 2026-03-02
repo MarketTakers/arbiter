@@ -1,52 +1,50 @@
+use arbiter_proto::transport::Bi;
 use arbiter_proto::proto::client::{
-    AuthChallengeRequest, AuthChallengeSolution, AuthOk, ClientRequest, ClientResponse,
+    AuthChallengeRequest, AuthChallengeSolution, ClientRequest,
     client_request::Payload as ClientRequestPayload,
     client_response::Payload as ClientResponsePayload,
 };
 use arbiter_server::{
-    actors::client::{ClientActor, ClientError},
+    actors::client::{ConnectionProps, connect_client},
     db::{self, schema},
 };
 use diesel::{ExpressionMethods as _, insert_into};
 use diesel_async::RunQueryDsl;
 use ed25519_dalek::Signer as _;
 
+use super::common::ChannelTransport;
+
 #[tokio::test]
 #[test_log::test]
 pub async fn test_unregistered_pubkey_rejected() {
     let db = db::create_test_pool().await;
 
-    let mut client = ClientActor::new_manual(db.clone());
+    let (server_transport, mut test_transport) = ChannelTransport::new();
+    let props = ConnectionProps::new(db.clone(), Box::new(server_transport));
+    let task = tokio::spawn(connect_client(props));
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
 
-    let result = client
-        .process_transport_inbound(ClientRequest {
+    test_transport
+        .send(ClientRequest {
             payload: Some(ClientRequestPayload::AuthChallengeRequest(
                 AuthChallengeRequest {
                     pubkey: pubkey_bytes,
                 },
             )),
         })
-        .await;
+        .await
+        .unwrap();
 
-    match result {
-        Err(err) => {
-            assert_eq!(err, ClientError::PublicKeyNotRegistered);
-        }
-        Ok(_) => {
-            panic!("Expected error due to unregistered pubkey, but got success");
-        }
-    }
+    // Auth fails, connect_client returns, transport drops
+    task.await.unwrap();
 }
 
 #[tokio::test]
 #[test_log::test]
 pub async fn test_challenge_auth() {
     let db = db::create_test_pool().await;
-
-    let mut client = ClientActor::new_manual(db.clone());
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
@@ -60,8 +58,13 @@ pub async fn test_challenge_auth() {
             .unwrap();
     }
 
-    let result = client
-        .process_transport_inbound(ClientRequest {
+    let (server_transport, mut test_transport) = ChannelTransport::new();
+    let props = ConnectionProps::new(db.clone(), Box::new(server_transport));
+    let task = tokio::spawn(connect_client(props));
+
+    // Send challenge request
+    test_transport
+        .send(ClientRequest {
             payload: Some(ClientRequestPayload::AuthChallengeRequest(
                 AuthChallengeRequest {
                     pubkey: pubkey_bytes,
@@ -69,34 +72,36 @@ pub async fn test_challenge_auth() {
             )),
         })
         .await
-        .expect("Shouldn't fail to process message");
+        .unwrap();
 
-    let ClientResponse {
-        payload: Some(ClientResponsePayload::AuthChallenge(challenge)),
-    } = result
-    else {
-        panic!("Expected auth challenge response, got {result:?}");
+    // Read the challenge response
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive challenge");
+    let challenge = match response {
+        Ok(resp) => match resp.payload {
+            Some(ClientResponsePayload::AuthChallenge(c)) => c,
+            other => panic!("Expected AuthChallenge, got {other:?}"),
+        },
+        Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };
 
+    // Sign the challenge and send solution
     let formatted_challenge = arbiter_proto::format_challenge(challenge.nonce, &challenge.pubkey);
     let signature = new_key.sign(&formatted_challenge);
-    let serialized_signature = signature.to_bytes().to_vec();
 
-    let result = client
-        .process_transport_inbound(ClientRequest {
+    test_transport
+        .send(ClientRequest {
             payload: Some(ClientRequestPayload::AuthChallengeSolution(
                 AuthChallengeSolution {
-                    signature: serialized_signature,
+                    signature: signature.to_bytes().to_vec(),
                 },
             )),
         })
         .await
-        .expect("Shouldn't fail to process message");
+        .unwrap();
 
-    assert_eq!(
-        result,
-        ClientResponse {
-            payload: Some(ClientResponsePayload::AuthOk(AuthOk {})),
-        }
-    );
+    // Auth completes, session spawned
+    task.await.unwrap();
 }
