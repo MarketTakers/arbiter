@@ -254,4 +254,126 @@ where
 }
 
 mod grpc;
-pub use grpc::{ConnectError, connect_grpc};
+pub use grpc::{connect_grpc, ConnectError, UserAgentGrpc};
+
+use arbiter_proto::proto::user_agent::{
+    UnsealEncryptedKey, UnsealStart,
+    user_agent_request::Payload as RequestPayload,
+    user_agent_response::Payload as ResponsePayload,
+};
+
+/// Send an `UnsealStart` request and await the server's `UnsealStartResponse`.
+pub struct SendUnsealStart {
+    pub client_pubkey: Vec<u8>,
+}
+
+/// Send an `UnsealEncryptedKey` request and await the server's `UnsealResult`.
+pub struct SendUnsealEncryptedKey {
+    pub nonce: Vec<u8>,
+    pub ciphertext: Vec<u8>,
+    pub associated_data: Vec<u8>,
+}
+
+/// Query the server for the current `VaultState`.
+pub struct QueryVaultState;
+
+/// Errors that can occur during post-authentication session operations.
+#[derive(Debug, thiserror::Error)]
+pub enum SessionError {
+    #[error("Transport send failed")]
+    TransportSendFailed,
+    #[error("Transport closed unexpectedly")]
+    TransportClosed,
+    #[error("Server sent an unexpected response payload")]
+    UnexpectedResponse,
+}
+
+impl<Transport> kameo::message::Message<SendUnsealStart> for UserAgentActor<Transport>
+where
+    Transport: Bi<UserAgentResponse, UserAgentRequest>,
+{
+    type Reply = Result<arbiter_proto::proto::user_agent::UnsealStartResponse, SessionError>;
+
+    async fn handle(
+        &mut self,
+        msg: SendUnsealStart,
+        _ctx: &mut kameo::message::Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.transport
+            .send(UserAgentRequest {
+                payload: Some(RequestPayload::UnsealStart(UnsealStart {
+                    client_pubkey: msg.client_pubkey,
+                })),
+            })
+            .await
+            .map_err(|_| SessionError::TransportSendFailed)?;
+
+        match self.transport.recv().await {
+            Some(resp) => match resp.payload {
+                Some(ResponsePayload::UnsealStartResponse(r)) => Ok(r),
+                _ => Err(SessionError::UnexpectedResponse),
+            },
+            None => Err(SessionError::TransportClosed),
+        }
+    }
+}
+
+impl<Transport> kameo::message::Message<SendUnsealEncryptedKey> for UserAgentActor<Transport>
+where
+    Transport: Bi<UserAgentResponse, UserAgentRequest>,
+{
+    type Reply = Result<i32, SessionError>;
+
+    async fn handle(
+        &mut self,
+        msg: SendUnsealEncryptedKey,
+        _ctx: &mut kameo::message::Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.transport
+            .send(UserAgentRequest {
+                payload: Some(RequestPayload::UnsealEncryptedKey(UnsealEncryptedKey {
+                    nonce: msg.nonce,
+                    ciphertext: msg.ciphertext,
+                    associated_data: msg.associated_data,
+                })),
+            })
+            .await
+            .map_err(|_| SessionError::TransportSendFailed)?;
+
+        match self.transport.recv().await {
+            Some(resp) => match resp.payload {
+                Some(ResponsePayload::UnsealResult(r)) => Ok(r),
+                _ => Err(SessionError::UnexpectedResponse),
+            },
+            None => Err(SessionError::TransportClosed),
+        }
+    }
+}
+
+impl<Transport> kameo::message::Message<QueryVaultState> for UserAgentActor<Transport>
+where
+    Transport: Bi<UserAgentResponse, UserAgentRequest>,
+{
+    type Reply = Result<i32, SessionError>;
+
+    async fn handle(
+        &mut self,
+        _msg: QueryVaultState,
+        _ctx: &mut kameo::message::Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.transport
+            .send(UserAgentRequest {
+                payload: Some(RequestPayload::QueryVaultState(())),
+            })
+            .await
+            .map_err(|_| SessionError::TransportSendFailed)?;
+
+        match self.transport.recv().await {
+            Some(resp) => match resp.payload {
+                Some(ResponsePayload::VaultState(v)) => Ok(v),
+                _ => Err(SessionError::UnexpectedResponse),
+            },
+            None => Err(SessionError::TransportClosed),
+        }
+    }
+}

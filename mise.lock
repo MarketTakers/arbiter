@@ -42,6 +42,10 @@ backend = "cargo:diesel_cli"
 default-features = "false"
 features = "sqlite,sqlite-bundled"
 
+[[tools."cargo:rinf_cli"]]
+version = "8.9.1"
+backend = "cargo:rinf_cli"
+
 [[tools.flutter]]
 version = "3.38.9-stable"
 backend = "asdf:flutter"

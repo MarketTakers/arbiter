@@ -168,6 +168,9 @@ impl UserAgentSession {
             UserAgentRequestPayload::UnsealEncryptedKey(unseal_encrypted_key) => {
                 self.handle_unseal_encrypted_key(unseal_encrypted_key).await
             }
+            UserAgentRequestPayload::QueryVaultState(_) => {
+                self.handle_query_vault_state().await
+            }
             UserAgentRequestPayload::EvmWalletCreate(_) => self.handle_evm_wallet_create().await,
             UserAgentRequestPayload::EvmWalletList(_) => self.handle_evm_wallet_list().await,
             _ => Err(TransportResponseError::UnexpectedRequestPayload),
@@ -287,6 +290,27 @@ impl UserAgentSession {
                 )))
             }
         }
+    }
+}
+
+impl UserAgentSession {
+    async fn handle_query_vault_state(&mut self) -> Output {
+        use arbiter_proto::proto::user_agent::VaultState;
+        use crate::actors::keyholder::{GetState, StateDiscriminants};
+
+        let vault_state = match self.props.actors.key_holder.ask(GetState {}).await {
+            Ok(StateDiscriminants::Unbootstrapped) => VaultState::Unbootstrapped,
+            Ok(StateDiscriminants::Sealed) => VaultState::Sealed,
+            Ok(StateDiscriminants::Unsealed) => VaultState::Unsealed,
+            Err(err) => {
+                error!(?err, actor = "useragent", "keyholder.query.failed");
+                VaultState::Error
+            }
+        };
+
+        Ok(response(UserAgentResponsePayload::VaultState(
+            vault_state.into(),
+        )))
     }
 }
 
