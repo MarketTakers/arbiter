@@ -59,6 +59,18 @@ pub fn generate(rng: &mut impl rand::Rng) -> (MemSafe<[u8; 32]>, Address) {
 }
 
 impl SafeSigner {
+    /// Reconstructs a `SafeSigner` from key material held in a [`MemSafe`] buffer.
+    ///
+    /// The key bytes are read from protected memory, parsed as a secp256k1
+    /// scalar, and immediately moved into a new [`MemSafe`] cell. The raw
+    /// bytes are never exposed outside this function.
+    pub fn from_memsafe(mut cell: MemSafe<Vec<u8>>) -> Result<Self> {
+        let reader = cell.read().map_err(Error::other)?;
+        let sk = SigningKey::from_slice(reader.as_slice()).map_err(Error::other)?;
+        drop(reader);
+        Self::new(sk)
+    }
+
     /// Creates a new `SafeSigner` by moving the signing key into a protected
     /// memory region.
     pub fn new(key: SigningKey) -> Result<Self> {

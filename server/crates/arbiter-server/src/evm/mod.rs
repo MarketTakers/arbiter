@@ -87,6 +87,15 @@ pub enum CreationError {
     Database(#[from] diesel::result::Error),
 }
 
+/// Controls whether a transaction should be executed or only validated
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunKind {
+    /// Validate and record the transaction
+    Execution,
+    /// Validate only, do not record
+    CheckOnly,
+}
+
 // Supporting only EIP-1559 transactions for now, but we can easily extend this to support legacy transactions if needed
 pub struct Engine {
     db: db::DatabasePool,
@@ -97,7 +106,7 @@ impl Engine {
         &self,
         context: EvalContext,
         meaning: &P::Meaning,
-        dry_run: bool,
+        run_kind: RunKind,
     ) -> Result<(), PolicyError> {
         let mut conn = self.db.get().await?;
 
@@ -108,7 +117,7 @@ impl Engine {
         let violations = P::evaluate(&context, meaning, &grant, &mut conn).await?;
         if !violations.is_empty() {
             return Err(PolicyError::Violations(violations));
-        } else if !dry_run {
+        } else if run_kind == RunKind::Execution {
             conn.transaction(|conn| {
                 Box::pin(async move {
                     let log_id: i32 = insert_into(evm_transaction_log::table)
@@ -192,13 +201,12 @@ impl Engine {
         Ok(id)
     }
 
-    pub async fn evaluate_transaction<P: Policy>(
+    pub async fn evaluate_transaction(
         &self,
         wallet_id: i32,
         client_id: i32,
         transaction: TxEip1559,
-        // don't log
-        dry_run: bool,
+        run_kind: RunKind,
     ) -> Result<SpecificMeaning, VetError> {
         let TxKind::Call(to) = transaction.to else {
             return Err(VetError::ContractCreationNotSupported);
@@ -214,7 +222,7 @@ impl Engine {
 
         if let Some(meaning) = EtherTransfer::analyze(&context) {
             return match self
-                .vet_transaction::<EtherTransfer>(context, &meaning, dry_run)
+                .vet_transaction::<EtherTransfer>(context, &meaning, run_kind)
                 .await
             {
                 Ok(()) => Ok(meaning.into()),
@@ -223,7 +231,7 @@ impl Engine {
         }
         if let Some(meaning) = TokenTransfer::analyze(&context) {
             return match self
-                .vet_transaction::<TokenTransfer>(context, &meaning, dry_run)
+                .vet_transaction::<TokenTransfer>(context, &meaning, run_kind)
                 .await
             {
                 Ok(()) => Ok(meaning.into()),
