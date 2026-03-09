@@ -24,27 +24,36 @@ use crate::{
 pub mod policies;
 mod utils;
 
+/// Errors that can only occur once the transaction meaning is known (during policy evaluation)
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
-pub enum VetError {
+pub enum PolicyError {
     #[error("Database connection pool error")]
-    #[diagnostic(code(arbiter_server::evm::vet_error::database_error))]
+    #[diagnostic(code(arbiter_server::evm::policy_error::pool))]
     Pool(#[from] db::PoolError),
     #[error("Database returned error")]
-    #[diagnostic(code(arbiter_server::evm::vet_error::database_error))]
+    #[diagnostic(code(arbiter_server::evm::policy_error::database))]
     Database(#[from] diesel::result::Error),
     #[error("Transaction violates policy: {0:?}")]
-    #[diagnostic(code(arbiter_server::evm::vet_error::policy_violation))]
+    #[diagnostic(code(arbiter_server::evm::policy_error::violation))]
     Violations(Vec<EvalViolation>),
     #[error("No matching grant found")]
-    #[diagnostic(code(arbiter_server::evm::vet_error::no_matching_grant))]
+    #[diagnostic(code(arbiter_server::evm::policy_error::no_matching_grant))]
     NoMatchingGrant,
+}
+
+#[derive(Debug, thiserror::Error, miette::Diagnostic)]
+pub enum VetError {
     #[error("Contract creation transactions are not supported")]
     #[diagnostic(code(arbiter_server::evm::vet_error::contract_creation_unsupported))]
     ContractCreationNotSupported,
     #[error("Engine can't classify this transaction")]
     #[diagnostic(code(arbiter_server::evm::vet_error::unsupported))]
     UnsupportedTransactionType,
+    #[error("Policy evaluation failed: {1}")]
+    #[diagnostic(code(arbiter_server::evm::vet_error::evaluated))]
+    Evaluated(SpecificMeaning, #[source] PolicyError),
 }
+
 
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
 pub enum SignError {
@@ -89,16 +98,16 @@ impl Engine {
         context: EvalContext,
         meaning: &P::Meaning,
         dry_run: bool,
-    ) -> Result<(), VetError> {
+    ) -> Result<(), PolicyError> {
         let mut conn = self.db.get().await?;
 
         let grant = P::try_find_grant(&context, &mut conn)
             .await?
-            .ok_or(VetError::NoMatchingGrant)?;
+            .ok_or(PolicyError::NoMatchingGrant)?;
 
         let violations = P::evaluate(&context, meaning, &grant, &mut conn).await?;
         if !violations.is_empty() {
-            return Err(VetError::Violations(violations));
+            return Err(PolicyError::Violations(violations));
         } else if !dry_run {
             conn.transaction(|conn| {
                 Box::pin(async move {
@@ -190,7 +199,7 @@ impl Engine {
         transaction: TxEip1559,
         // don't log
         dry_run: bool,
-    ) -> Result<(), VetError> {
+    ) -> Result<SpecificMeaning, VetError> {
         let TxKind::Call(to) = transaction.to else {
             return Err(VetError::ContractCreationNotSupported);
         };
@@ -204,14 +213,22 @@ impl Engine {
         };
 
         if let Some(meaning) = EtherTransfer::analyze(&context) {
-            return self
+            return match self
                 .vet_transaction::<EtherTransfer>(context, &meaning, dry_run)
-                .await;
+                .await
+            {
+                Ok(()) => Ok(meaning.into()),
+                Err(e) => Err(VetError::Evaluated(meaning.into(), e)),
+            };
         }
         if let Some(meaning) = TokenTransfer::analyze(&context) {
-            return self
+            return match self
                 .vet_transaction::<TokenTransfer>(context, &meaning, dry_run)
-                .await;
+                .await
+            {
+                Ok(()) => Ok(meaning.into()),
+                Err(e) => Err(VetError::Evaluated(meaning.into(), e)),
+            };
         }
 
         Err(VetError::UnsupportedTransactionType)

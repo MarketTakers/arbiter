@@ -70,7 +70,7 @@ pub struct Grant<PolicySettings> {
 
 pub trait Policy: Sized {
     type Settings: Send + Sync + 'static + Into<SpecificGrant>;
-    type Meaning: Display + Send + Sync + 'static + Into<SpecificMeaning>;
+    type Meaning: Display + std::fmt::Debug + Send + Sync + 'static + Into<SpecificMeaning>;
 
     fn analyze(context: &EvalContext) -> Option<Self::Meaning>;
 
@@ -114,6 +114,7 @@ pub enum ReceiverTarget {
 }
 
 // Classification of what transaction does
+#[derive(Debug)]
 pub enum SpecificMeaning {
     EtherTransfer(ether_transfer::Meaning),
     TokenTransfer(token_transfers::Meaning),
