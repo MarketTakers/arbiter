@@ -3,8 +3,7 @@ use std::fmt::Display;
 use alloy::primitives::{Address, Bytes, ChainId, U256};
 use chrono::{DateTime, Duration, Utc};
 use diesel::{
-    ExpressionMethods as _, QueryDsl, SelectableHelper, result::QueryResult,
-    sqlite::Sqlite,
+    ExpressionMethods as _, QueryDsl, SelectableHelper, result::QueryResult, sqlite::Sqlite,
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use miette::Diagnostic;
@@ -70,8 +69,8 @@ pub struct Grant<PolicySettings> {
 }
 
 pub trait Policy: Sized {
-    type Settings: Send + 'static + Into<SpecificGrant>;
-    type Meaning: Display + Send + 'static + Into<SpecificMeaning>;
+    type Settings: Send + Sync + 'static + Into<SpecificGrant>;
+    type Meaning: Display + Send + Sync + 'static + Into<SpecificMeaning>;
 
     fn analyze(context: &EvalContext) -> Option<Self::Meaning>;
 
@@ -106,7 +105,7 @@ pub trait Policy: Sized {
         log_id: i32,
         grant: &Grant<Self::Settings>,
         conn: &mut impl AsyncConnection<Backend = Sqlite>,
-    ) -> impl Future<Output = QueryResult<()>>;
+    ) -> impl Future<Output = QueryResult<()>> + Send;
 }
 
 pub enum ReceiverTarget {

@@ -114,8 +114,8 @@ async fn check_volume_rate_limits(
     Ok(violations)
 }
 
-pub struct TokenTransferPolicy;
-impl Policy for TokenTransferPolicy {
+pub struct TokenTransfer;
+impl Policy for TokenTransfer {
     type Settings = Settings;
     type Meaning = Meaning;
 
