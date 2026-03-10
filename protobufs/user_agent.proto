@@ -58,6 +58,9 @@ message UserAgentRequest {
     google.protobuf.Empty query_vault_state = 5;
     google.protobuf.Empty evm_wallet_create = 6;
     google.protobuf.Empty evm_wallet_list = 7;
+    arbiter.evm.EvmGrantCreateRequest evm_grant_create = 8;
+    arbiter.evm.EvmGrantDeleteRequest evm_grant_delete = 9;
+    arbiter.evm.EvmGrantListRequest evm_grant_list = 10;
   }
 }
 message UserAgentResponse {
@@ -69,5 +72,8 @@ message UserAgentResponse {
     VaultState vault_state = 5;
     arbiter.evm.WalletCreateResponse evm_wallet_create = 6;
     arbiter.evm.WalletListResponse evm_wallet_list = 7;
+    arbiter.evm.EvmGrantCreateResponse evm_grant_create = 8;
+    arbiter.evm.EvmGrantDeleteResponse evm_grant_delete = 9;
+    arbiter.evm.EvmGrantListResponse evm_grant_list = 10;
   }
 }

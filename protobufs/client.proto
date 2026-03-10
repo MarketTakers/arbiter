@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package arbiter.client;
 
+import "evm.proto";
+
 message AuthChallengeRequest {
   bytes pubkey = 1;
 }
@@ -21,6 +23,8 @@ message ClientRequest {
   oneof payload {
     AuthChallengeRequest auth_challenge_request = 1;
     AuthChallengeSolution auth_challenge_solution = 2;
+    arbiter.evm.EvmSignTransactionRequest evm_sign_transaction = 3;
+    arbiter.evm.EvmAnalyzeTransactionRequest evm_analyze_transaction = 4;
   }
 }
 
@@ -28,5 +32,7 @@ message ClientResponse {
   oneof payload {
     AuthChallenge auth_challenge = 1;
     AuthOk auth_ok = 2;
+    arbiter.evm.EvmSignTransactionResponse evm_sign_transaction = 3;
+    arbiter.evm.EvmAnalyzeTransactionResponse evm_analyze_transaction = 4;
   }
 }
