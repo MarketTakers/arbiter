@@ -1,7 +1,7 @@
 pub mod abi;
 pub mod safe_signer;
 
-use alloy::{consensus::TxEip1559, primitives::TxKind, signers::Signature};
+use alloy::{consensus::TxEip1559, primitives::TxKind};
 use chrono::Utc;
 use diesel::{QueryResult, insert_into};
 use diesel_async::{AsyncConnection, RunQueryDsl};
@@ -10,7 +10,7 @@ use crate::{
     db::{
         self,
         models::{
-            EvmBasicGrant, EvmTransactionLog, NewEvmBasicGrant, NewEvmTransactionLog,
+            EvmBasicGrant, NewEvmBasicGrant, NewEvmTransactionLog,
             SqliteTimestamp,
         },
         schema::{self, evm_transaction_log},
