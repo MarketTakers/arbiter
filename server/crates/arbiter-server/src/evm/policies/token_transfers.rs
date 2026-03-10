@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use alloy::{
     primitives::{Address, U256},
     sol_types::SolCall,
@@ -14,7 +16,8 @@ use crate::db::models::{
     NewEvmTokenTransferLog, NewEvmTokenTransferVolumeLimit, SqliteTimestamp,
 };
 use crate::db::schema::{
-    evm_token_transfer_grant, evm_token_transfer_log, evm_token_transfer_volume_limit,
+    evm_basic_grant, evm_token_transfer_grant, evm_token_transfer_log,
+    evm_token_transfer_volume_limit,
 };
 use crate::evm::{
     abi::IERC20::transferCall,
@@ -23,6 +26,14 @@ use crate::evm::{
 };
 
 use super::{DatabaseID, EvalContext, EvalViolation};
+
+#[diesel::auto_type]
+fn grant_join() -> _ {
+    evm_token_transfer_grant::table.inner_join(
+        evm_basic_grant::table
+            .on(evm_token_transfer_grant::basic_grant_id.eq(evm_basic_grant::id)),
+    )
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Meaning {
@@ -192,15 +203,9 @@ impl Policy for TokenTransfer {
         context: &EvalContext,
         conn: &mut impl AsyncConnection<Backend = Sqlite>,
     ) -> QueryResult<Option<Grant<Self::Settings>>> {
-        use crate::db::schema::{evm_basic_grant, evm_token_transfer_grant};
-
         let token_contract_bytes = context.to.to_vec();
 
-        let grant: Option<(EvmBasicGrant, EvmTokenTransferGrant)> = evm_token_transfer_grant::table
-            .inner_join(
-                evm_basic_grant::table
-                    .on(evm_token_transfer_grant::basic_grant_id.eq(evm_basic_grant::id)),
-            )
+        let grant: Option<(EvmBasicGrant, EvmTokenTransferGrant)> = grant_join()
             .filter(evm_basic_grant::wallet_id.eq(context.wallet_id))
             .filter(evm_basic_grant::client_id.eq(context.client_id))
             .filter(evm_token_transfer_grant::token_contract.eq(&token_contract_bytes))
@@ -287,5 +292,83 @@ impl Policy for TokenTransfer {
             .await?;
 
         Ok(())
+    }
+
+    async fn find_all_grants(
+        conn: &mut impl AsyncConnection<Backend = Sqlite>,
+    ) -> QueryResult<Vec<Grant<Self::Settings>>> {
+        let grants: Vec<(EvmBasicGrant, EvmTokenTransferGrant)> = grant_join()
+            .filter(evm_basic_grant::revoked_at.is_null())
+            .select((EvmBasicGrant::as_select(), EvmTokenTransferGrant::as_select()))
+            .load(conn)
+            .await?;
+
+        if grants.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let grant_ids: Vec<i32> = grants.iter().map(|(_, g)| g.id).collect();
+
+        let all_volume_limits: Vec<EvmTokenTransferVolumeLimit> =
+            evm_token_transfer_volume_limit::table
+                .filter(evm_token_transfer_volume_limit::grant_id.eq_any(&grant_ids))
+                .select(EvmTokenTransferVolumeLimit::as_select())
+                .load(conn)
+                .await?;
+
+        let mut limits_by_grant: HashMap<i32, Vec<EvmTokenTransferVolumeLimit>> = HashMap::new();
+        for limit in all_volume_limits {
+            limits_by_grant.entry(limit.grant_id).or_default().push(limit);
+        }
+
+        grants
+            .into_iter()
+            .map(|(basic, specific)| {
+                let volume_limits: Vec<VolumeRateLimit> = limits_by_grant
+                    .get(&specific.id)
+                    .map(|v| v.as_slice())
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|row| {
+                        Ok(VolumeRateLimit {
+                            max_volume: utils::try_bytes_to_u256(&row.max_volume)
+                                .map_err(|e| diesel::result::Error::DeserializationError(Box::new(e)))?,
+                            window: Duration::seconds(row.window_secs as i64),
+                        })
+                    })
+                    .collect::<QueryResult<Vec<_>>>()?;
+
+                let token_contract: [u8; 20] = specific
+                    .token_contract
+                    .clone()
+                    .try_into()
+                    .map_err(|_| diesel::result::Error::DeserializationError(
+                        "Invalid token contract address length".into(),
+                    ))?;
+
+                let target: Option<Address> = match &specific.receiver {
+                    None => None,
+                    Some(bytes) => {
+                        let arr: [u8; 20] = bytes.clone().try_into().map_err(|_| {
+                            diesel::result::Error::DeserializationError(
+                                "Invalid receiver address length".into(),
+                            )
+                        })?;
+                        Some(Address::from(arr))
+                    }
+                };
+
+                Ok(Grant {
+                    id: specific.id,
+                    shared_grant_id: specific.basic_grant_id,
+                    shared: SharedGrantSettings::try_from_model(basic)?,
+                    settings: Settings {
+                        token_contract: Address::from(token_contract),
+                        target,
+                        volume_limits,
+                    },
+                })
+            })
+            .collect()
     }
 }

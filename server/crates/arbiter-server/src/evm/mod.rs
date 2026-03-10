@@ -16,7 +16,7 @@ use crate::{
         schema::{self, evm_transaction_log},
     },
     evm::policies::{
-        EvalContext, EvalViolation, FullGrant, Policy, SpecificMeaning,
+        EvalContext, EvalViolation, FullGrant, Grant, Policy, SpecificGrant, SpecificMeaning,
         ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
     },
 };
@@ -84,6 +84,17 @@ pub enum CreationError {
 
     #[error("Database returned error")]
     #[diagnostic(code(arbiter_server::evm::creation_error::database_error))]
+    Database(#[from] diesel::result::Error),
+}
+
+#[derive(Debug, thiserror::Error, miette::Diagnostic)]
+pub enum ListGrantsError {
+    #[error("Database connection pool error")]
+    #[diagnostic(code(arbiter_server::evm::list_grants_error::pool))]
+    Pool(#[from] db::PoolError),
+
+    #[error("Database returned error")]
+    #[diagnostic(code(arbiter_server::evm::list_grants_error::database))]
     Database(#[from] diesel::result::Error),
 }
 
@@ -199,6 +210,27 @@ impl Engine {
             .await?;
 
         Ok(id)
+    }
+
+    pub async fn list_all_grants(&self) -> Result<Vec<Grant<SpecificGrant>>, ListGrantsError> {
+        let mut conn = self.db.get().await?;
+
+        let mut grants: Vec<Grant<SpecificGrant>> = Vec::new();
+
+        grants.extend(
+            EtherTransfer::find_all_grants(&mut conn)
+                .await?
+                .into_iter()
+                .map(Grant::from),
+        );
+        grants.extend(
+            TokenTransfer::find_all_grants(&mut conn)
+                .await?
+                .into_iter()
+                .map(Grant::from),
+        );
+
+        Ok(grants)
     }
 
     pub async fn evaluate_transaction(

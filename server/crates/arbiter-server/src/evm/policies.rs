@@ -97,6 +97,11 @@ pub trait Policy: Sized {
         conn: &mut impl AsyncConnection<Backend = Sqlite>,
     ) -> impl Future<Output = QueryResult<Option<Grant<Self::Settings>>>> + Send;
 
+    // Return all non-revoked grants, eagerly loading policy-specific settings
+    fn find_all_grants(
+        conn: &mut impl AsyncConnection<Backend = Sqlite>,
+    ) -> impl Future<Output = QueryResult<Vec<Grant<Self::Settings>>>> + Send;
+
     // Records, updates or deletes rate limits
     // In other words, records grant-specific things after transaction is executed
     fn record_transaction(
@@ -190,6 +195,19 @@ impl SharedGrantSettings {
 pub enum SpecificGrant {
     EtherTransfer(ether_transfer::Settings),
     TokenTransfer(token_transfers::Settings),
+}
+
+/// Blanket conversion from a typed `Grant<S>` into `Grant<SpecificGrant>`.
+/// Lets the engine collect across all policies into one `Vec<Grant<SpecificGrant>>`.
+impl<S: Into<SpecificGrant>> From<Grant<S>> for Grant<SpecificGrant> {
+    fn from(g: Grant<S>) -> Self {
+        Grant {
+            id: g.id,
+            shared_grant_id: g.shared_grant_id,
+            shared: g.shared,
+            settings: g.settings.into(),
+        }
+    }
 }
 
 pub struct FullGrant<PolicyGrant> {

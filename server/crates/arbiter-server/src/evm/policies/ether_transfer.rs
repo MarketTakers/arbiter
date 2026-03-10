@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Display;
 
 use alloy::primitives::{Address, U256};
@@ -11,7 +12,7 @@ use crate::db::models::{
     EvmBasicGrant, EvmEtherTransferGrant, EvmEtherTransferGrantTarget, EvmEtherTransferLimit,
     NewEvmEtherTransferLimit, SqliteTimestamp,
 };
-use crate::db::schema::{evm_ether_transfer_limit, evm_transaction_log};
+use crate::db::schema::{evm_basic_grant, evm_ether_transfer_limit, evm_transaction_log};
 use crate::evm::policies::{
     Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning, VolumeRateLimit,
 };
@@ -22,6 +23,14 @@ use crate::{
     },
     evm::{policies::Policy, utils},
 };
+
+#[diesel::auto_type]
+fn grant_join() -> _ {
+    evm_ether_transfer_grant::table.inner_join(
+        evm_basic_grant::table
+            .on(evm_ether_transfer_grant::basic_grant_id.eq(evm_basic_grant::id)),
+    )
+}
 
 use super::{DatabaseID, EvalContext, EvalViolation};
 
@@ -183,24 +192,12 @@ impl Policy for EtherTransfer {
         context: &EvalContext,
         conn: &mut impl AsyncConnection<Backend = Sqlite>,
     ) -> diesel::result::QueryResult<Option<Grant<Self::Settings>>> {
-        use crate::db::schema::{
-            evm_basic_grant, evm_ether_transfer_grant, evm_ether_transfer_grant_target,
-        };
-
         let target_bytes = context.to.to_vec();
 
         // Find a grant where:
         // 1. The basic grant's wallet_id and client_id match the context
         // 2. Any of the grant's targets match the context's `to` address
-        let grant: Option<(EvmBasicGrant, EvmEtherTransferGrant)> = evm_ether_transfer_grant::table
-            .inner_join(
-                evm_basic_grant::table
-                    .on(evm_ether_transfer_grant::basic_grant_id.eq(evm_basic_grant::id)),
-            )
-            .inner_join(
-                evm_ether_transfer_grant_target::table
-                    .on(evm_ether_transfer_grant::id.eq(evm_ether_transfer_grant_target::grant_id)),
-            )
+        let grant: Option<(EvmBasicGrant, EvmEtherTransferGrant)> = grant_join()
             .filter(evm_basic_grant::wallet_id.eq(context.wallet_id))
             .filter(evm_basic_grant::client_id.eq(context.client_id))
             .filter(evm_ether_transfer_grant_target::address.eq(&target_bytes))
@@ -265,5 +262,76 @@ impl Policy for EtherTransfer {
         // Basic log is sufficient
 
         Ok(())
+    }
+
+    async fn find_all_grants(
+        conn: &mut impl AsyncConnection<Backend = Sqlite>,
+    ) -> QueryResult<Vec<Grant<Self::Settings>>> {
+        let grants: Vec<(EvmBasicGrant, EvmEtherTransferGrant)> = grant_join()
+            .filter(evm_basic_grant::revoked_at.is_null())
+            .select((EvmBasicGrant::as_select(), EvmEtherTransferGrant::as_select()))
+            .load(conn)
+            .await?;
+
+        if grants.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let grant_ids: Vec<i32> = grants.iter().map(|(_, g)| g.id).collect();
+        let limit_ids: Vec<i32> = grants.iter().map(|(_, g)| g.limit_id).collect();
+
+        let all_targets: Vec<EvmEtherTransferGrantTarget> = evm_ether_transfer_grant_target::table
+            .filter(evm_ether_transfer_grant_target::grant_id.eq_any(&grant_ids))
+            .select(EvmEtherTransferGrantTarget::as_select())
+            .load(conn)
+            .await?;
+
+        let all_limits: Vec<EvmEtherTransferLimit> = evm_ether_transfer_limit::table
+            .filter(evm_ether_transfer_limit::id.eq_any(&limit_ids))
+            .select(EvmEtherTransferLimit::as_select())
+            .load(conn)
+            .await?;
+
+        let mut targets_by_grant: HashMap<i32, Vec<EvmEtherTransferGrantTarget>> = HashMap::new();
+        for target in all_targets {
+            targets_by_grant.entry(target.grant_id).or_default().push(target);
+        }
+
+        let limits_by_id: HashMap<i32, EvmEtherTransferLimit> =
+            all_limits.into_iter().map(|l| (l.id, l)).collect();
+
+        grants
+            .into_iter()
+            .map(|(basic, specific)| {
+                let targets: Vec<Address> = targets_by_grant
+                    .get(&specific.id)
+                    .map(|v| v.as_slice())
+                    .unwrap_or_default()
+                    .iter()
+                    .filter_map(|t| {
+                        let arr: [u8; 20] = t.address.clone().try_into().ok()?;
+                        Some(Address::from(arr))
+                    })
+                    .collect();
+
+                let limit = limits_by_id
+                    .get(&specific.limit_id)
+                    .ok_or(diesel::result::Error::NotFound)?;
+
+                Ok(Grant {
+                    id: specific.id,
+                    shared_grant_id: specific.basic_grant_id,
+                    shared: SharedGrantSettings::try_from_model(basic)?,
+                    settings: Settings {
+                        target: targets,
+                        limit: VolumeRateLimit {
+                            max_volume: utils::try_bytes_to_u256(&limit.max_volume)
+                                .map_err(|e| diesel::result::Error::DeserializationError(Box::new(e)))?,
+                            window: Duration::seconds(limit.window_secs as i64),
+                        },
+                    },
+                })
+            })
+            .collect()
     }
 }
