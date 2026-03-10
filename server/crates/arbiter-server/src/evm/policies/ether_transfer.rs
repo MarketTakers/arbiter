@@ -201,6 +201,7 @@ impl Policy for EtherTransfer {
             .filter(evm_basic_grant::wallet_id.eq(context.wallet_id))
             .filter(evm_basic_grant::client_id.eq(context.client_id))
             .filter(evm_ether_transfer_grant_target::address.eq(&target_bytes))
+            .filter(evm_basic_grant::revoked_at.is_null())
             .select((
                 EvmBasicGrant::as_select(),
                 EvmEtherTransferGrant::as_select(),

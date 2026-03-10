@@ -21,7 +21,9 @@ use crate::db::schema::{
 };
 use crate::evm::{
     abi::IERC20::transferCall,
-    policies::{Grant, Policy, SharedGrantSettings, SpecificGrant, SpecificMeaning, VolumeRateLimit},
+    policies::{
+        Grant, Policy, SharedGrantSettings, SpecificGrant, SpecificMeaning, VolumeRateLimit,
+    },
     utils,
 };
 
@@ -30,8 +32,7 @@ use super::{DatabaseID, EvalContext, EvalViolation};
 #[diesel::auto_type]
 fn grant_join() -> _ {
     evm_token_transfer_grant::table.inner_join(
-        evm_basic_grant::table
-            .on(evm_token_transfer_grant::basic_grant_id.eq(evm_basic_grant::id)),
+        evm_basic_grant::table.on(evm_token_transfer_grant::basic_grant_id.eq(evm_basic_grant::id)),
     )
 }
 
@@ -206,6 +207,7 @@ impl Policy for TokenTransfer {
         let token_contract_bytes = context.to.to_vec();
 
         let grant: Option<(EvmBasicGrant, EvmTokenTransferGrant)> = grant_join()
+            .filter(evm_basic_grant::revoked_at.is_null())
             .filter(evm_basic_grant::wallet_id.eq(context.wallet_id))
             .filter(evm_basic_grant::client_id.eq(context.client_id))
             .filter(evm_token_transfer_grant::token_contract.eq(&token_contract_bytes))
@@ -299,7 +301,10 @@ impl Policy for TokenTransfer {
     ) -> QueryResult<Vec<Grant<Self::Settings>>> {
         let grants: Vec<(EvmBasicGrant, EvmTokenTransferGrant)> = grant_join()
             .filter(evm_basic_grant::revoked_at.is_null())
-            .select((EvmBasicGrant::as_select(), EvmTokenTransferGrant::as_select()))
+            .select((
+                EvmBasicGrant::as_select(),
+                EvmTokenTransferGrant::as_select(),
+            ))
             .load(conn)
             .await?;
 
@@ -318,7 +323,10 @@ impl Policy for TokenTransfer {
 
         let mut limits_by_grant: HashMap<i32, Vec<EvmTokenTransferVolumeLimit>> = HashMap::new();
         for limit in all_volume_limits {
-            limits_by_grant.entry(limit.grant_id).or_default().push(limit);
+            limits_by_grant
+                .entry(limit.grant_id)
+                .or_default()
+                .push(limit);
         }
 
         grants
@@ -331,20 +339,20 @@ impl Policy for TokenTransfer {
                     .iter()
                     .map(|row| {
                         Ok(VolumeRateLimit {
-                            max_volume: utils::try_bytes_to_u256(&row.max_volume)
-                                .map_err(|e| diesel::result::Error::DeserializationError(Box::new(e)))?,
+                            max_volume: utils::try_bytes_to_u256(&row.max_volume).map_err(|e| {
+                                diesel::result::Error::DeserializationError(Box::new(e))
+                            })?,
                             window: Duration::seconds(row.window_secs as i64),
                         })
                     })
                     .collect::<QueryResult<Vec<_>>>()?;
 
-                let token_contract: [u8; 20] = specific
-                    .token_contract
-                    .clone()
-                    .try_into()
-                    .map_err(|_| diesel::result::Error::DeserializationError(
-                        "Invalid token contract address length".into(),
-                    ))?;
+                let token_contract: [u8; 20] =
+                    specific.token_contract.clone().try_into().map_err(|_| {
+                        diesel::result::Error::DeserializationError(
+                            "Invalid token contract address length".into(),
+                        )
+                    })?;
 
                 let target: Option<Address> = match &specific.receiver {
                     None => None,

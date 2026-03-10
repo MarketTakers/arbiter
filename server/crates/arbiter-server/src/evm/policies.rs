@@ -27,6 +27,10 @@ pub struct EvalContext {
     pub to: Address,
     pub value: U256,
     pub calldata: Bytes,
+
+    // Gas pricing (EIP-1559)
+    pub max_fee_per_gas: u128,
+    pub max_priority_fee_per_gas: u128,
 }
 
 #[derive(Debug, Error, Diagnostic)]

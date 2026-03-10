@@ -50,19 +50,19 @@ message SharedSettings {
   uint64 chain_id = 2;
   optional google.protobuf.Timestamp valid_from = 3;
   optional google.protobuf.Timestamp valid_until = 4;
-  optional bytes max_gas_fee_per_gas = 5;      // U256 as big-endian bytes
+  optional bytes max_gas_fee_per_gas = 5; // U256 as big-endian bytes
   optional bytes max_priority_fee_per_gas = 6; // U256 as big-endian bytes
   optional TransactionRateLimit rate_limit = 7;
 }
 
 message EtherTransferSettings {
-  repeated bytes targets = 1;  // list of 20-byte Ethereum addresses
+  repeated bytes targets = 1; // list of 20-byte Ethereum addresses
   VolumeRateLimit limit = 2;
 }
 
 message TokenTransferSettings {
-  bytes token_contract = 1;    // 20-byte Ethereum address
-  optional bytes target = 2;   // 20-byte Ethereum address; absent means any recipient allowed
+  bytes token_contract = 1; // 20-byte Ethereum address
+  optional bytes target = 2; // 20-byte Ethereum address; absent means any recipient allowed
   repeated VolumeRateLimit volume_limits = 3;
 }
 
@@ -74,20 +74,20 @@ message SpecificGrant {
 }
 
 message EtherTransferMeaning {
-  bytes to = 1;    // 20-byte Ethereum address
+  bytes to = 1; // 20-byte Ethereum address
   bytes value = 2; // U256 as big-endian bytes
 }
 
 message TokenInfo {
   string symbol = 1;
-  bytes address = 2;  // 20-byte Ethereum address
+  bytes address = 2; // 20-byte Ethereum address
   uint64 chain_id = 3;
 }
 
 // Mirror of token_transfers::Meaning
 message TokenTransferMeaning {
   TokenInfo token = 1;
-  bytes to = 2;    // 20-byte Ethereum address
+  bytes to = 2; // 20-byte Ethereum address
   bytes value = 3; // U256 as big-endian bytes
 }
 
@@ -101,13 +101,13 @@ message SpecificMeaning {
 
 // --- Eval error types ---
 message GasLimitExceededViolation {
-  optional bytes max_gas_fee_per_gas = 1;      // U256 as big-endian bytes
+  optional bytes max_gas_fee_per_gas = 1; // U256 as big-endian bytes
   optional bytes max_priority_fee_per_gas = 2; // U256 as big-endian bytes
 }
 
 message EvalViolation {
   oneof kind {
-    bytes invalid_target = 1;                              // 20-byte Ethereum address
+    bytes invalid_target = 1; // 20-byte Ethereum address
     GasLimitExceededViolation gas_limit_exceeded = 2;
     google.protobuf.Empty rate_limit_exceeded = 3;
     google.protobuf.Empty volumetric_limit_exceeded = 4;
@@ -167,6 +167,7 @@ message GrantEntry {
   int32 id = 1;
   int32 client_id = 2;
   SharedSettings shared = 3;
+  SpecificGrant specific = 4;
 }
 
 message EvmGrantListRequest {
@@ -187,7 +188,7 @@ message EvmGrantList {
 // --- Client transaction operations ---
 
 message EvmSignTransactionRequest {
-  bytes wallet_address = 1;  // 20-byte Ethereum address
+  bytes wallet_address = 1; // 20-byte Ethereum address
   bytes rlp_transaction = 2; // RLP-encoded EIP-1559 transaction (unsigned)
 }
 
@@ -195,14 +196,14 @@ message EvmSignTransactionRequest {
 // is always either an eval error or an internal error, never a partial success
 message EvmSignTransactionResponse {
   oneof result {
-    bytes signature = 1;                    // 65-byte signature: r[32] || s[32] || v[1]
+    bytes signature = 1; // 65-byte signature: r[32] || s[32] || v[1]
     TransactionEvalError eval_error = 2;
     EvmError error = 3;
   }
 }
 
 message EvmAnalyzeTransactionRequest {
-  bytes wallet_address = 1;  // 20-byte Ethereum address
+  bytes wallet_address = 1; // 20-byte Ethereum address
   bytes rlp_transaction = 2; // RLP-encoded EIP-1559 transaction
 }
 

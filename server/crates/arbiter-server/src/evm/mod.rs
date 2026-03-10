@@ -1,9 +1,9 @@
 pub mod abi;
 pub mod safe_signer;
 
-use alloy::{consensus::TxEip1559, primitives::TxKind};
+use alloy::{consensus::TxEip1559, primitives::{TxKind, U256}};
 use chrono::Utc;
-use diesel::{QueryResult, insert_into};
+use diesel::{QueryResult, insert_into, sqlite::Sqlite};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 
 use crate::{
@@ -16,7 +16,8 @@ use crate::{
         schema::{self, evm_transaction_log},
     },
     evm::policies::{
-        EvalContext, EvalViolation, FullGrant, Grant, Policy, SpecificGrant, SpecificMeaning,
+        DatabaseID, EvalContext, EvalViolation, FullGrant, Grant, Policy, SharedGrantSettings,
+        SpecificGrant, SpecificMeaning,
         ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
     },
 };
@@ -107,6 +108,54 @@ pub enum RunKind {
     CheckOnly,
 }
 
+async fn check_shared_constraints(
+    context: &EvalContext,
+    shared: &SharedGrantSettings,
+    shared_grant_id: DatabaseID,
+    conn: &mut impl AsyncConnection<Backend = Sqlite>,
+) -> QueryResult<Vec<EvalViolation>> {
+    let mut violations = Vec::new();
+    let now = Utc::now();
+
+    // Validity window
+    if shared.valid_from.map_or(false, |t| now < t)
+        || shared.valid_until.map_or(false, |t| now > t)
+    {
+        violations.push(EvalViolation::InvalidTime);
+    }
+
+    // Gas fee caps
+    let fee_exceeded = shared
+        .max_gas_fee_per_gas
+        .map_or(false, |cap| U256::from(context.max_fee_per_gas) > cap);
+    let priority_exceeded = shared
+        .max_priority_fee_per_gas
+        .map_or(false, |cap| U256::from(context.max_priority_fee_per_gas) > cap);
+    if fee_exceeded || priority_exceeded {
+        violations.push(EvalViolation::GasLimitExceeded {
+            max_gas_fee_per_gas: shared.max_gas_fee_per_gas,
+            max_priority_fee_per_gas: shared.max_priority_fee_per_gas,
+        });
+    }
+
+    // Transaction count rate limit
+    if let Some(rate_limit) = &shared.rate_limit {
+        let window_start = SqliteTimestamp(now - rate_limit.window);
+        let count: i64 = evm_transaction_log::table
+            .filter(evm_transaction_log::grant_id.eq(shared_grant_id))
+            .filter(evm_transaction_log::signed_at.ge(window_start))
+            .count()
+            .get_result(conn)
+            .await?;
+
+        if count >= rate_limit.count as i64 {
+            violations.push(EvalViolation::RateLimitExceeded);
+        }
+    }
+
+    Ok(violations)
+}
+
 // Supporting only EIP-1559 transactions for now, but we can easily extend this to support legacy transactions if needed
 pub struct Engine {
     db: db::DatabasePool,
@@ -125,7 +174,11 @@ impl Engine {
             .await?
             .ok_or(PolicyError::NoMatchingGrant)?;
 
-        let violations = P::evaluate(&context, meaning, &grant, &mut conn).await?;
+        let mut violations =
+            check_shared_constraints(&context, &grant.shared, grant.shared_grant_id, &mut conn)
+                .await?;
+        violations.extend(P::evaluate(&context, meaning, &grant, &mut conn).await?);
+
         if !violations.is_empty() {
             return Err(PolicyError::Violations(violations));
         } else if run_kind == RunKind::Execution {
@@ -247,9 +300,11 @@ impl Engine {
             wallet_id,
             client_id,
             chain: transaction.chain_id,
-            to: to,
+            to,
             value: transaction.value,
             calldata: transaction.input.clone(),
+            max_fee_per_gas: transaction.max_fee_per_gas,
+            max_priority_fee_per_gas: transaction.max_priority_fee_per_gas,
         };
 
         if let Some(meaning) = EtherTransfer::analyze(&context) {
