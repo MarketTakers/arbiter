@@ -27,6 +27,82 @@ This document covers concrete technology choices and dependencies. For the archi
 
 ---
 
+## EVM Policy Engine
+
+### Overview
+
+The EVM engine classifies incoming transactions, enforces grant constraints, and records executions. It is the sole path through which a wallet key is used for signing.
+
+The central abstraction is the `Policy` trait. Each implementation handles one semantic transaction category and owns its own database tables for grant storage and transaction logging.
+
+### Transaction Evaluation Flow
+
+`Engine::evaluate_transaction` runs the following steps in order:
+
+1. **Classify** — Each registered policy's `analyze(context)` inspects the transaction fields (`chain`, `to`, `value`, `calldata`). The first one returning `Some(meaning)` wins. If none match, the transaction is rejected as `UnsupportedTransactionType`.
+2. **Find grant** — `Policy::try_find_grant` queries for a non-revoked grant covering this wallet, client, chain, and target address.
+3. **Check shared constraints** — `check_shared_constraints` runs in the engine before any policy-specific logic. It enforces the validity window, gas fee caps, and transaction count rate limit (see below).
+4. **Evaluate** — `Policy::evaluate` checks the decoded meaning against the grant's policy-specific constraints and returns any violations.
+5. **Record** — If `RunKind::Execution` and there are no violations, the engine writes to `evm_transaction_log` and calls `Policy::record_transaction` for any policy-specific logging (e.g., token transfer volume).
+
+### Policy Trait
+
+| Method | Purpose |
+|---|---|
+| `analyze` | Pure — classifies a transaction into a typed `Meaning`, or `None` if this policy doesn't apply |
+| `evaluate` | Checks the `Meaning` against a `Grant`; returns a list of `EvalViolation`s |
+| `create_grant` | Inserts policy-specific rows; returns the specific grant ID |
+| `try_find_grant` | Finds a matching non-revoked grant for the given `EvalContext` |
+| `find_all_grants` | Returns all non-revoked grants (used for listing) |
+| `record_transaction` | Persists policy-specific data after execution |
+
+`analyze` and `evaluate` are intentionally separate: classification is pure and cheap, while evaluation may involve DB queries (e.g., fetching past transfer volume).
+
+### Registered Policies
+
+**EtherTransfer** — plain ETH transfers (empty calldata)
+
+- Grant requires: allowlist of recipient addresses + one volumetric rate limit (max ETH over a time window)
+- Violations: recipient not in allowlist, cumulative ETH volume exceeded
+
+**TokenTransfer** — ERC-20 `transfer(address,uint256)` calls
+
+- Recognised by ABI-decoding the `transfer(address,uint256)` selector against a static registry of known token contracts (`arbiter_tokens_registry`)
+- Grant requires: token contract address, optional recipient restriction, zero or more volumetric rate limits
+- Violations: recipient mismatch, any volumetric limit exceeded
+
+### Grant Model
+
+Every grant has two layers:
+
+- **Shared (`evm_basic_grant`)** — wallet, chain, validity period, gas fee caps, transaction count rate limit. One row per grant regardless of type.
+- **Specific** — policy-owned tables (`evm_ether_transfer_grant`, `evm_token_transfer_grant`, etc.) holding type-specific configuration.
+
+`find_all_grants` uses a `#[diesel::auto_type]` base join between the specific and shared tables, then batch-loads related rows (targets, volume limits) in two additional queries to avoid N+1.
+
+The engine exposes `list_all_grants` which collects across all policy types into `Vec<Grant<SpecificGrant>>` via a blanket `From<Grant<S>> for Grant<SpecificGrant>` conversion.
+
+### Shared Constraints (enforced by the engine)
+
+These are checked centrally in `check_shared_constraints` before policy evaluation:
+
+| Constraint | Fields | Behaviour |
+|---|---|---|
+| Validity window | `valid_from`, `valid_until` | Emits `InvalidTime` if current time is outside the range |
+| Gas fee cap | `max_gas_fee_per_gas`, `max_priority_fee_per_gas` | Emits `GasLimitExceeded` if either cap is breached |
+| Tx count rate limit | `rate_limit` (`count` + `window`) | Counts rows in `evm_transaction_log` within the window; emits `RateLimitExceeded` if at or above the limit |
+
+---
+
+### Known Limitations
+
+- **Only EIP-1559 transactions are supported.** Legacy and EIP-2930 types are rejected outright.
+- **No opaque-calldata (unknown contract) grant type.** The architecture describes a category for unrecognised contracts, but no policy implements it yet. Any transaction that is not a plain ETH transfer or a known ERC-20 transfer is unconditionally rejected.
+- **Token registry is static.** Tokens are recognised only if they appear in the hard-coded `arbiter_tokens_registry` crate. There is no mechanism to register additional contracts at runtime.
+- **Nonce management is not implemented.** The architecture lists nonce deduplication as a core responsibility, but no nonce tracking or enforcement exists yet.
+
+---
+
 ## Memory Protection
 
 The unsealed root key must be held in a hardened memory cell resistant to dumps, page swaps, and hibernation.
