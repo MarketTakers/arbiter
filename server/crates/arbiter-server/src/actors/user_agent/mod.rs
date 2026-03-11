@@ -11,7 +11,7 @@ use crate::{
 };
 
 #[derive(Debug, thiserror::Error, PartialEq)]
-pub enum UserAgentError {
+pub enum TransportResponseError {
     #[error("Expected message with payload")]
     MissingRequestPayload,
     #[error("Unexpected request payload")]
@@ -31,7 +31,7 @@ pub enum UserAgentError {
 }
 
 pub type Transport =
-    Box<dyn Bi<UserAgentRequest, Result<UserAgentResponse, UserAgentError>> + Send>;
+    Box<dyn Bi<UserAgentRequest, Result<UserAgentResponse, TransportResponseError>> + Send>;
 
 pub struct UserAgentConnection {
     db: db::DatabasePool,
