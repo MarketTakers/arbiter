@@ -56,7 +56,7 @@ impl Actor for MessageRouter {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq, Hash)]
 pub enum ApprovalError {
     #[error("No user agents connected")]
     NoUserAgentsConnected,

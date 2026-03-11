@@ -1,17 +1,14 @@
 use std::{ops::DerefMut, sync::Mutex};
 
-use arbiter_proto::proto::{
-    client,
-    user_agent::{
+use arbiter_proto::proto::user_agent::{
         ClientConnectionCancel, ClientConnectionRequest, UnsealEncryptedKey, UnsealResult,
         UnsealStart, UnsealStartResponse, UserAgentRequest, UserAgentResponse,
         user_agent_request::Payload as UserAgentRequestPayload,
         user_agent_response::Payload as UserAgentResponsePayload,
-    },
-};
+    };
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use ed25519_dalek::VerifyingKey;
-use kameo::{Actor, error::SendError, message, messages, prelude::Context};
+use kameo::{Actor, error::SendError, messages, prelude::Context};
 use memsafe::MemSafe;
 use tokio::{select, sync::watch};
 use tracing::{error, info};
@@ -62,7 +59,7 @@ impl UserAgentSession {
     async fn send_msg<Reply: kameo::Reply>(
         &mut self,
         msg: UserAgentResponsePayload,
-        ctx: &mut Context<Self, Reply>,
+        _ctx: &mut Context<Self, Reply>,
     ) -> Result<(), Error> {
         self.props
             .transport
@@ -111,7 +108,6 @@ impl UserAgentSession {
 
 #[messages]
 impl UserAgentSession {
-
     // TODO: Think about refactoring it to state-machine based flow, as we already have one 
     #[message(ctx)]
     pub async fn request_new_client_approval(

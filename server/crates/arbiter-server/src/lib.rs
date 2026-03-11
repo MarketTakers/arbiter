@@ -77,13 +77,12 @@ fn client_auth_error_status(value: &client::auth::Error) -> Status {
         Error::InvalidAuthPubkeyEncoding => {
             Status::invalid_argument("Failed to convert pubkey to VerifyingKey")
         }
-        Error::InvalidSignatureLength => Status::invalid_argument("Invalid signature length"),
-        Error::PublicKeyNotRegistered | Error::InvalidChallengeSolution => {
-            Status::unauthenticated(value.to_string())
-        }
+        Error::InvalidChallengeSolution => Status::unauthenticated(value.to_string()),
+        Error::ApproveError(_) => Status::permission_denied(value.to_string()),
         Error::Transport => Status::internal("Transport error"),
         Error::DatabasePoolUnavailable => Status::internal("Database pool error"),
         Error::DatabaseOperationFailed => Status::internal("Database error"),
+        Error::InternalError => Status::internal("Internal error"),
     }
 }
 

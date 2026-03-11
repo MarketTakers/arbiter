@@ -1,12 +1,13 @@
 #![allow(unused)]
 #![allow(clippy::all)]
 
-use crate::db::schema::{self, aead_encrypted, arbiter_settings, root_key_history, tls_history};
-use diesel::{prelude::*, sqlite::Sqlite};
+use crate::db::{ schema::{self, aead_encrypted, arbiter_settings, root_key_history, tls_history}};
+use diesel::{prelude::*, sql_types::Bool, sqlite::Sqlite};
 use restructed::Models;
 
 pub mod types {
     use chrono::{DateTime, Utc};
+    use diesel::{deserialize::FromSql, expression::AsExpression, serialize::{IsNull, ToSql}, sql_types::Integer, sqlite::Sqlite};
     pub struct SqliteTimestamp(DateTime<Utc>);
 }
 
@@ -58,8 +59,8 @@ pub struct TlsHistory {
     pub id: i32,
     pub cert: String,
     pub cert_key: String, // PEM Encoded private key
-    pub ca_cert: String, // PEM Encoded certificate for cert signing
-    pub ca_key: String, // PEM Encoded public key for cert signing
+    pub ca_cert: String,  // PEM Encoded certificate for cert signing
+    pub ca_key: String,   // PEM Encoded public key for cert signing
     pub created_at: i32,
 }
 
@@ -68,10 +69,10 @@ pub struct TlsHistory {
 pub struct ArbiterSettings {
     pub id: i32,
     pub root_key_id: Option<i32>, // references root_key_history.id
-    pub tls_id: Option<i32>, // references tls_history.id
+    pub tls_id: Option<i32>,      // references tls_history.id
 }
 
-#[derive(Queryable, Debug)]
+#[derive(Queryable, Debug, Insertable, Selectable)]
 #[diesel(table_name = schema::program_client, check_for_backend(Sqlite))]
 pub struct ProgramClient {
     pub id: i32,
