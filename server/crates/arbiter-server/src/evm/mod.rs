@@ -1,24 +1,24 @@
 pub mod abi;
 pub mod safe_signer;
 
-use alloy::{consensus::TxEip1559, primitives::{TxKind, U256}};
+use alloy::{
+    consensus::TxEip1559,
+    primitives::{TxKind, U256},
+};
 use chrono::Utc;
-use diesel::{QueryResult, insert_into, sqlite::Sqlite};
+use diesel::{ExpressionMethods as _, QueryDsl, QueryResult, insert_into, sqlite::Sqlite};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 
 use crate::{
     db::{
         self,
-        models::{
-            EvmBasicGrant, NewEvmBasicGrant, NewEvmTransactionLog,
-            SqliteTimestamp,
-        },
+        models::{EvmBasicGrant, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp},
         schema::{self, evm_transaction_log},
     },
     evm::policies::{
         DatabaseID, EvalContext, EvalViolation, FullGrant, Grant, Policy, SharedGrantSettings,
-        SpecificGrant, SpecificMeaning,
-        ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
+        SpecificGrant, SpecificMeaning, ether_transfer::EtherTransfer,
+        token_transfers::TokenTransfer,
     },
 };
 
@@ -54,7 +54,6 @@ pub enum VetError {
     #[diagnostic(code(arbiter_server::evm::vet_error::evaluated))]
     Evaluated(SpecificMeaning, #[source] PolicyError),
 }
-
 
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
 pub enum SignError {
@@ -118,8 +117,7 @@ async fn check_shared_constraints(
     let now = Utc::now();
 
     // Validity window
-    if shared.valid_from.map_or(false, |t| now < t)
-        || shared.valid_until.map_or(false, |t| now > t)
+    if shared.valid_from.map_or(false, |t| now < t) || shared.valid_until.map_or(false, |t| now > t)
     {
         violations.push(EvalViolation::InvalidTime);
     }
@@ -128,9 +126,9 @@ async fn check_shared_constraints(
     let fee_exceeded = shared
         .max_gas_fee_per_gas
         .map_or(false, |cap| U256::from(context.max_fee_per_gas) > cap);
-    let priority_exceeded = shared
-        .max_priority_fee_per_gas
-        .map_or(false, |cap| U256::from(context.max_priority_fee_per_gas) > cap);
+    let priority_exceeded = shared.max_priority_fee_per_gas.map_or(false, |cap| {
+        U256::from(context.max_priority_fee_per_gas) > cap
+    });
     if fee_exceeded || priority_exceeded {
         violations.push(EvalViolation::GasLimitExceeded {
             max_gas_fee_per_gas: shared.max_gas_fee_per_gas,
@@ -274,13 +272,23 @@ impl Engine {
             EtherTransfer::find_all_grants(&mut conn)
                 .await?
                 .into_iter()
-                .map(Grant::from),
+                .map(|g| Grant {
+                    id: g.id,
+                    shared_grant_id: g.shared_grant_id,
+                    shared: g.shared,
+                    settings: SpecificGrant::EtherTransfer(g.settings),
+                }),
         );
         grants.extend(
             TokenTransfer::find_all_grants(&mut conn)
                 .await?
                 .into_iter()
-                .map(Grant::from),
+                .map(|g| Grant {
+                    id: g.id,
+                    shared_grant_id: g.shared_grant_id,
+                    shared: g.shared,
+                    settings: SpecificGrant::TokenTransfer(g.settings),
+                }),
         );
 
         Ok(grants)

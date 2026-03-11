@@ -51,6 +51,7 @@ fn parse_auth_event(payload: ClientRequestPayload) -> Result<AuthEvents, Error> 
                 solution: signature,
             }))
         }
+        _ => Err(Error::UnexpectedMessagePayload) ,
     }
 }
 

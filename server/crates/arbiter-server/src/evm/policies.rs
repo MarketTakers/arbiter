@@ -17,6 +17,7 @@ use crate::{
 pub mod ether_transfer;
 pub mod token_transfers;
 
+#[derive(Debug, Clone)]
 pub struct EvalContext {
     // Which wallet is this transaction for
     pub client_id: i32,
@@ -71,6 +72,7 @@ pub struct Grant<PolicySettings> {
     pub shared: SharedGrantSettings,
     pub settings: PolicySettings,
 }
+
 
 pub trait Policy: Sized {
     type Settings: Send + Sync + 'static + Into<SpecificGrant>;
@@ -199,19 +201,6 @@ impl SharedGrantSettings {
 pub enum SpecificGrant {
     EtherTransfer(ether_transfer::Settings),
     TokenTransfer(token_transfers::Settings),
-}
-
-/// Blanket conversion from a typed `Grant<S>` into `Grant<SpecificGrant>`.
-/// Lets the engine collect across all policies into one `Vec<Grant<SpecificGrant>>`.
-impl<S: Into<SpecificGrant>> From<Grant<S>> for Grant<SpecificGrant> {
-    fn from(g: Grant<S>) -> Self {
-        Grant {
-            id: g.id,
-            shared_grant_id: g.shared_grant_id,
-            shared: g.shared,
-            settings: g.settings.into(),
-        }
-    }
 }
 
 pub struct FullGrant<PolicyGrant> {

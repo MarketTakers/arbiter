@@ -56,7 +56,7 @@ pub mod types {
         fn from_sql(
             mut bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
         ) -> diesel::deserialize::Result<Self> {
-            let Some(SqliteType::Integer) = bytes.value_type() else {
+            let Some(SqliteType::Long) = bytes.value_type() else {
                 return Err(format!(
                     "Expected Integer type for SqliteTimestamp, got {:?}",
                     bytes.value_type()
@@ -64,8 +64,8 @@ pub mod types {
                 .into());
             };
 
-            let unix_timestamp = bytes.read_integer();
-            let datetime = DateTime::from_timestamp(unix_timestamp as i64, 0)
+            let unix_timestamp = bytes.read_long();
+            let datetime = DateTime::from_timestamp(unix_timestamp, 0)
                 .ok_or("Timestamp is out of bounds")?;
 
             Ok(SqliteTimestamp(datetime))

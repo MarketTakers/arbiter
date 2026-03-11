@@ -6,7 +6,7 @@ use alloy::{
 };
 use arbiter_tokens_registry::evm::nonfungible::{self, TokenInfo};
 use chrono::{DateTime, Duration, Utc};
-use diesel::dsl::insert_into;
+use diesel::dsl::{auto_type, insert_into};
 use diesel::sqlite::Sqlite;
 use diesel::{ExpressionMethods, prelude::*};
 use diesel_async::{AsyncConnection, RunQueryDsl};
@@ -29,7 +29,7 @@ use crate::evm::{
 
 use super::{DatabaseID, EvalContext, EvalViolation};
 
-#[diesel::auto_type]
+#[auto_type]
 fn grant_join() -> _ {
     evm_token_transfer_grant::table.inner_join(
         evm_basic_grant::table.on(evm_token_transfer_grant::basic_grant_id.eq(evm_basic_grant::id)),
@@ -380,3 +380,6 @@ impl Policy for TokenTransfer {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests;

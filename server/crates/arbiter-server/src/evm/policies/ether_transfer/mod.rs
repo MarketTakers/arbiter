@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use alloy::primitives::{Address, U256};
 use chrono::{DateTime, Duration, Utc};
-use diesel::dsl::insert_into;
+use diesel::dsl::{auto_type, insert_into};
 use diesel::sqlite::Sqlite;
 use diesel::{ExpressionMethods, JoinOnDsl, prelude::*};
 use diesel_async::{AsyncConnection, RunQueryDsl};
@@ -24,11 +24,10 @@ use crate::{
     evm::{policies::Policy, utils},
 };
 
-#[diesel::auto_type]
+#[auto_type]
 fn grant_join() -> _ {
     evm_ether_transfer_grant::table.inner_join(
-        evm_basic_grant::table
-            .on(evm_ether_transfer_grant::basic_grant_id.eq(evm_basic_grant::id)),
+        evm_basic_grant::table.on(evm_ether_transfer_grant::basic_grant_id.eq(evm_basic_grant::id)),
     )
 }
 
@@ -197,11 +196,16 @@ impl Policy for EtherTransfer {
         // Find a grant where:
         // 1. The basic grant's wallet_id and client_id match the context
         // 2. Any of the grant's targets match the context's `to` address
-        let grant: Option<(EvmBasicGrant, EvmEtherTransferGrant)> = grant_join()
-            .filter(evm_basic_grant::wallet_id.eq(context.wallet_id))
-            .filter(evm_basic_grant::client_id.eq(context.client_id))
-            .filter(evm_ether_transfer_grant_target::address.eq(&target_bytes))
-            .filter(evm_basic_grant::revoked_at.is_null())
+        let grant: Option<(EvmBasicGrant, EvmEtherTransferGrant)> = evm_ether_transfer_grant::table
+            .inner_join(evm_basic_grant::table)
+            .inner_join(evm_ether_transfer_grant_target::table)
+            .filter(
+                evm_basic_grant::wallet_id
+                    .eq(context.wallet_id)
+                    .and(evm_basic_grant::client_id.eq(context.client_id))
+                    .and(evm_basic_grant::revoked_at.is_null())
+                    .and(evm_ether_transfer_grant_target::address.eq(&target_bytes)),
+            )
             .select((
                 EvmBasicGrant::as_select(),
                 EvmEtherTransferGrant::as_select(),
@@ -270,7 +274,10 @@ impl Policy for EtherTransfer {
     ) -> QueryResult<Vec<Grant<Self::Settings>>> {
         let grants: Vec<(EvmBasicGrant, EvmEtherTransferGrant)> = grant_join()
             .filter(evm_basic_grant::revoked_at.is_null())
-            .select((EvmBasicGrant::as_select(), EvmEtherTransferGrant::as_select()))
+            .select((
+                EvmBasicGrant::as_select(),
+                EvmEtherTransferGrant::as_select(),
+            ))
             .load(conn)
             .await?;
 
@@ -295,7 +302,10 @@ impl Policy for EtherTransfer {
 
         let mut targets_by_grant: HashMap<i32, Vec<EvmEtherTransferGrantTarget>> = HashMap::new();
         for target in all_targets {
-            targets_by_grant.entry(target.grant_id).or_default().push(target);
+            targets_by_grant
+                .entry(target.grant_id)
+                .or_default()
+                .push(target);
         }
 
         let limits_by_id: HashMap<i32, EvmEtherTransferLimit> =
@@ -326,8 +336,9 @@ impl Policy for EtherTransfer {
                     settings: Settings {
                         target: targets,
                         limit: VolumeRateLimit {
-                            max_volume: utils::try_bytes_to_u256(&limit.max_volume)
-                                .map_err(|e| diesel::result::Error::DeserializationError(Box::new(e)))?,
+                            max_volume: utils::try_bytes_to_u256(&limit.max_volume).map_err(
+                                |e| diesel::result::Error::DeserializationError(Box::new(e)),
+                            )?,
                             window: Duration::seconds(limit.window_secs as i64),
                         },
                     },
@@ -336,3 +347,6 @@ impl Policy for EtherTransfer {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests;
