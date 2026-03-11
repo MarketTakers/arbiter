@@ -21,7 +21,7 @@ pub mod types {
     };
 
     #[derive(Debug, FromSqlRow, AsExpression)]
-    #[sql_type = "Integer"]
+    #[diesel(sql_type = Integer)]
     #[repr(transparent)] // hint compiler to optimize the wrapper struct away
     pub struct SqliteTimestamp(pub DateTime<Utc>);
     impl SqliteTimestamp {

@@ -1,6 +1,6 @@
 use alloy::primitives::{Address, Bytes, U256, address};
 use chrono::{Duration, Utc};
-use diesel::{ExpressionMethods, SelectableHelper, insert_into};
+use diesel::{SelectableHelper, insert_into};
 use diesel_async::RunQueryDsl;
 
 use crate::db::{
