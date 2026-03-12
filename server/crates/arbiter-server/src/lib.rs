@@ -16,7 +16,7 @@ use tracing::info;
 use crate::{
     actors::{
         client::{self, ClientError, ClientConnection as ClientConnectionProps, connect_client},
-        user_agent::{self, UserAgentConnection, UserAgentError, connect_user_agent},
+        user_agent::{self, UserAgentConnection, TransportResponseError, connect_user_agent},
     },
     context::ServerContext,
 };
@@ -30,7 +30,7 @@ const DEFAULT_CHANNEL_SIZE: usize = 1000;
 struct UserAgentGrpcSender;
 
 impl SendConverter for UserAgentGrpcSender {
-    type Input = Result<UserAgentResponse, UserAgentError>;
+    type Input = Result<UserAgentResponse, TransportResponseError>;
     type Output = Result<UserAgentResponse, Status>;
 
     fn convert(&self, item: Self::Input) -> Self::Output {
@@ -77,31 +77,30 @@ fn client_auth_error_status(value: &client::auth::Error) -> Status {
         Error::InvalidAuthPubkeyEncoding => {
             Status::invalid_argument("Failed to convert pubkey to VerifyingKey")
         }
-        Error::InvalidSignatureLength => Status::invalid_argument("Invalid signature length"),
-        Error::PublicKeyNotRegistered | Error::InvalidChallengeSolution => {
-            Status::unauthenticated(value.to_string())
-        }
+        Error::InvalidChallengeSolution => Status::unauthenticated(value.to_string()),
+        Error::ApproveError(_) => Status::permission_denied(value.to_string()),
         Error::Transport => Status::internal("Transport error"),
         Error::DatabasePoolUnavailable => Status::internal("Database pool error"),
         Error::DatabaseOperationFailed => Status::internal("Database error"),
+        Error::InternalError => Status::internal("Internal error"),
     }
 }
 
-fn user_agent_error_status(value: UserAgentError) -> Status {
+fn user_agent_error_status(value: TransportResponseError) -> Status {
     match value {
-        UserAgentError::MissingRequestPayload | UserAgentError::UnexpectedRequestPayload => {
+        TransportResponseError::MissingRequestPayload | TransportResponseError::UnexpectedRequestPayload => {
             Status::invalid_argument("Expected message with payload")
         }
-        UserAgentError::InvalidStateForUnsealEncryptedKey => {
+        TransportResponseError::InvalidStateForUnsealEncryptedKey => {
             Status::failed_precondition("Invalid state for unseal encrypted key")
         }
-        UserAgentError::InvalidClientPubkeyLength => {
+        TransportResponseError::InvalidClientPubkeyLength => {
             Status::invalid_argument("client_pubkey must be 32 bytes")
         }
-        UserAgentError::StateTransitionFailed => Status::internal("State machine error"),
-        UserAgentError::KeyHolderActorUnreachable => Status::internal("Vault is not available"),
-        UserAgentError::Auth(ref err) => auth_error_status(err),
-        UserAgentError::ConnectionRegistrationFailed => {
+        TransportResponseError::StateTransitionFailed => Status::internal("State machine error"),
+        TransportResponseError::KeyHolderActorUnreachable => Status::internal("Vault is not available"),
+        TransportResponseError::Auth(ref err) => auth_error_status(err),
+        TransportResponseError::ConnectionRegistrationFailed => {
             Status::internal("Failed registering connection")
         }
     }

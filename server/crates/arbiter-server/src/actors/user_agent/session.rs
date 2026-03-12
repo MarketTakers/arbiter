@@ -1,26 +1,37 @@
 use std::{ops::DerefMut, sync::Mutex};
 
 use arbiter_proto::proto::user_agent::{
-    UnsealEncryptedKey, UnsealResult, UnsealStart, UnsealStartResponse, UserAgentRequest,
-    UserAgentResponse, user_agent_request::Payload as UserAgentRequestPayload,
-    user_agent_response::Payload as UserAgentResponsePayload,
-};
+        ClientConnectionCancel, ClientConnectionRequest, UnsealEncryptedKey, UnsealResult,
+        UnsealStart, UnsealStartResponse, UserAgentRequest, UserAgentResponse,
+        user_agent_request::Payload as UserAgentRequestPayload,
+        user_agent_response::Payload as UserAgentResponsePayload,
+    };
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use ed25519_dalek::VerifyingKey;
-use kameo::{Actor, error::SendError};
+use kameo::{Actor, error::SendError, messages, prelude::Context};
 use memsafe::MemSafe;
-use tokio::select;
+use tokio::{select, sync::watch};
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::actors::{
     keyholder::{self, TryUnseal},
     router::RegisterUserAgent,
-    user_agent::{UserAgentConnection, UserAgentError},
+    user_agent::{TransportResponseError, UserAgentConnection},
 };
 
 mod state;
 use state::{DummyContext, UnsealContext, UserAgentEvents, UserAgentStateMachine, UserAgentStates};
+
+// Error for consumption by other actors
+#[derive(Debug, thiserror::Error, PartialEq)]
+pub enum Error {
+    #[error("User agent session ended due to connection loss")]
+    ConnectionLost,
+
+    #[error("User agent session ended due to unexpected message")]
+    UnexpectedMessage,
+}
 
 pub struct UserAgentSession {
     props: UserAgentConnection,
@@ -29,7 +40,7 @@ pub struct UserAgentSession {
 }
 
 impl UserAgentSession {
-    pub(crate) fn new(props: UserAgentConnection, key: VerifyingKey) -> Self {
+     pub(crate) fn new(props: UserAgentConnection, key: VerifyingKey) -> Self {
         Self {
             props,
             key,
@@ -37,18 +48,118 @@ impl UserAgentSession {
         }
     }
 
-    fn transition(&mut self, event: UserAgentEvents) -> Result<(), UserAgentError> {
+    fn transition(&mut self, event: UserAgentEvents) -> Result<(), TransportResponseError> {
         self.state.process_event(event).map_err(|e| {
             error!(?e, "State transition failed");
-            UserAgentError::StateTransitionFailed
+            TransportResponseError::StateTransitionFailed
         })?;
         Ok(())
     }
 
+    async fn send_msg<Reply: kameo::Reply>(
+        &mut self,
+        msg: UserAgentResponsePayload,
+        _ctx: &mut Context<Self, Reply>,
+    ) -> Result<(), Error> {
+        self.props
+            .transport
+            .send(Ok(response(msg)))
+            .await
+            .map_err(|_| {
+                error!(
+                    actor = "useragent",
+                    reason = "channel closed",
+                    "send.failed"
+                );
+                Error::ConnectionLost
+            })
+    }
+
+    async fn expect_msg<Extractor, Msg, Reply>(
+        &mut self,
+        extractor: Extractor,
+        ctx: &mut Context<Self, Reply>,
+    ) -> Result<Msg, Error>
+    where
+        Extractor: FnOnce(UserAgentRequestPayload) -> Option<Msg>,
+        Reply: kameo::Reply,
+    {
+        let msg = self.props.transport.recv().await.ok_or_else(|| {
+            error!(
+                actor = "useragent",
+                reason = "channel closed",
+                "recv.failed"
+            );
+            ctx.stop();
+            Error::ConnectionLost
+        })?;
+
+        msg.payload.and_then(extractor).ok_or_else(|| {
+            error!(
+                actor = "useragent",
+                reason = "unexpected message",
+                "recv.failed"
+            );
+            ctx.stop();
+            Error::UnexpectedMessage
+        })
+    }
+}
+
+#[messages]
+impl UserAgentSession {
+    // TODO: Think about refactoring it to state-machine based flow, as we already have one 
+    #[message(ctx)]
+    pub async fn request_new_client_approval(
+        &mut self,
+        client_pubkey: VerifyingKey,
+        mut cancel_flag: watch::Receiver<()>,
+        ctx: &mut Context<Self, Result<bool, Error>>,
+    ) -> Result<bool, Error> {
+        self.send_msg(
+            UserAgentResponsePayload::ClientConnectionRequest(
+                ClientConnectionRequest {
+                    pubkey: client_pubkey.as_bytes().to_vec(),
+                }
+                .into(),
+            ),
+            ctx,
+        )
+        .await?;
+
+        let extractor = |msg| {
+            if let UserAgentRequestPayload::ClientConnectionResponse(client_connection_response) =
+                msg
+            {
+                Some(client_connection_response)
+            } else {
+                None
+            }
+        };
+
+        tokio::select! {
+            _ = cancel_flag.changed() => {
+                info!(actor = "useragent", "client connection approval cancelled");
+                self.send_msg(
+                    UserAgentResponsePayload::ClientConnectionCancel(ClientConnectionCancel {}),
+                    ctx,
+                ).await?;
+                return Ok(false);
+            }
+            result = self.expect_msg(extractor, ctx) => {
+                let result = result?;
+                info!(actor = "useragent", "received client connection approval result: approved={}", result.approved);
+                return Ok(result.approved);
+            }
+        }
+    }
+}
+
+impl UserAgentSession {
     pub async fn process_transport_inbound(&mut self, req: UserAgentRequest) -> Output {
         let msg = req.payload.ok_or_else(|| {
             error!(actor = "useragent", "Received message with no payload");
-            UserAgentError::MissingRequestPayload
+            TransportResponseError::MissingRequestPayload
         })?;
 
         match msg {
@@ -58,12 +169,12 @@ impl UserAgentSession {
             UserAgentRequestPayload::UnsealEncryptedKey(unseal_encrypted_key) => {
                 self.handle_unseal_encrypted_key(unseal_encrypted_key).await
             }
-            _ => Err(UserAgentError::UnexpectedRequestPayload),
+            _ => Err(TransportResponseError::UnexpectedRequestPayload),
         }
     }
 }
 
-type Output = Result<UserAgentResponse, UserAgentError>;
+type Output = Result<UserAgentResponse, TransportResponseError>;
 
 fn response(payload: UserAgentResponsePayload) -> UserAgentResponse {
     UserAgentResponse {
@@ -79,7 +190,7 @@ impl UserAgentSession {
         let client_pubkey_bytes: [u8; 32] = req
             .client_pubkey
             .try_into()
-            .map_err(|_| UserAgentError::InvalidClientPubkeyLength)?;
+            .map_err(|_| TransportResponseError::InvalidClientPubkeyLength)?;
 
         let client_public_key = PublicKey::from(client_pubkey_bytes);
 
@@ -98,7 +209,7 @@ impl UserAgentSession {
     async fn handle_unseal_encrypted_key(&mut self, req: UnsealEncryptedKey) -> Output {
         let UserAgentStates::WaitingForUnsealKey(unseal_context) = self.state.state() else {
             error!("Received unseal encrypted key in invalid state");
-            return Err(UserAgentError::InvalidStateForUnsealEncryptedKey);
+            return Err(TransportResponseError::InvalidStateForUnsealEncryptedKey);
         };
         let ephemeral_secret = {
             let mut secret_lock = unseal_context.secret.lock().unwrap();
@@ -163,7 +274,7 @@ impl UserAgentSession {
                     Err(err) => {
                         error!(?err, "Failed to send unseal request to keyholder");
                         self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                        Err(UserAgentError::KeyHolderActorUnreachable)
+                        Err(TransportResponseError::KeyHolderActorUnreachable)
                     }
                 }
             }
@@ -181,7 +292,7 @@ impl UserAgentSession {
 impl Actor for UserAgentSession {
     type Args = Self;
 
-    type Error = UserAgentError;
+    type Error = TransportResponseError;
 
     async fn on_start(
         args: Self::Args,
@@ -196,7 +307,7 @@ impl Actor for UserAgentSession {
             .await
             .map_err(|err| {
                 error!(?err, "Failed to register user agent connection with router");
-                UserAgentError::ConnectionRegistrationFailed
+                TransportResponseError::ConnectionRegistrationFailed
             })?;
         Ok(args)
     }
