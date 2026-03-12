@@ -2,7 +2,10 @@
 #![allow(clippy::all)]
 
 use crate::db::schema::{
-    self, aead_encrypted, arbiter_settings, evm_basic_grant, evm_ether_transfer_grant, evm_ether_transfer_grant_target, evm_ether_transfer_limit, evm_token_transfer_grant, evm_token_transfer_log, evm_token_transfer_volume_limit, evm_transaction_log, evm_wallet, root_key_history, tls_history
+    self, aead_encrypted, arbiter_settings, evm_basic_grant, evm_ether_transfer_grant,
+    evm_ether_transfer_grant_target, evm_ether_transfer_limit, evm_token_transfer_grant,
+    evm_token_transfer_log, evm_token_transfer_volume_limit, evm_transaction_log, evm_wallet,
+    root_key_history, tls_history,
 };
 use chrono::{DateTime, Utc};
 use diesel::{prelude::*, sqlite::Sqlite};
@@ -65,8 +68,8 @@ pub mod types {
             };
 
             let unix_timestamp = bytes.read_long();
-            let datetime = DateTime::from_timestamp(unix_timestamp, 0)
-                .ok_or("Timestamp is out of bounds")?;
+            let datetime =
+                DateTime::from_timestamp(unix_timestamp, 0).ok_or("Timestamp is out of bounds")?;
 
             Ok(SqliteTimestamp(datetime))
         }
@@ -150,7 +153,7 @@ pub struct EvmWallet {
     pub created_at: SqliteTimestamp,
 }
 
-#[derive(Queryable, Debug)]
+#[derive(Queryable, Debug, Insertable, Selectable)]
 #[diesel(table_name = schema::program_client, check_for_backend(Sqlite))]
 pub struct ProgramClient {
     pub id: i32,
@@ -252,7 +255,6 @@ pub struct EvmEtherTransferGrantTarget {
     pub grant_id: i32,
     pub address: Vec<u8>,
 }
-
 
 #[derive(Models, Queryable, Debug, Insertable, Selectable)]
 #[diesel(table_name = evm_token_transfer_grant, check_for_backend(Sqlite))]

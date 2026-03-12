@@ -83,6 +83,23 @@ use async_trait::async_trait;
 pub enum Error {
     #[error("Transport channel is closed")]
     ChannelClosed,
+    #[error("Unexpected message received")]
+    UnexpectedMessage,
+}
+
+/// Receives one message from `transport` and extracts a value from it using
+/// `extractor`. Returns [`Error::ChannelClosed`] if the transport closes and
+/// [`Error::UnexpectedMessage`] if `extractor` returns `None`.
+pub async fn expect_message<T, Inbound, Outbound, Target, F>(
+    transport: &mut T,
+    extractor: F,
+) -> Result<Target, Error>
+where
+    T: Bi<Inbound, Outbound> + ?Sized,
+    F: FnOnce(Inbound) -> Option<Target>,
+{
+    let msg = transport.recv().await.ok_or(Error::ChannelClosed)?;
+    extractor(msg).ok_or(Error::UnexpectedMessage)
 }
 
 /// Minimal bidirectional transport abstraction used by protocol code.

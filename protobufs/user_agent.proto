@@ -49,6 +49,16 @@ enum VaultState {
   VAULT_STATE_ERROR = 4;
 }
 
+message ClientConnectionRequest {
+  bytes pubkey = 1;
+}
+
+message ClientConnectionResponse {
+  bool approved = 1;
+}
+
+message ClientConnectionCancel {}
+
 message UserAgentRequest {
   oneof payload {
     AuthChallengeRequest auth_challenge_request = 1;
@@ -61,6 +71,7 @@ message UserAgentRequest {
     arbiter.evm.EvmGrantCreateRequest evm_grant_create = 8;
     arbiter.evm.EvmGrantDeleteRequest evm_grant_delete = 9;
     arbiter.evm.EvmGrantListRequest evm_grant_list = 10;
+    ClientConnectionResponse client_connection_response = 11;
   }
 }
 message UserAgentResponse {
@@ -75,5 +86,7 @@ message UserAgentResponse {
     arbiter.evm.EvmGrantCreateResponse evm_grant_create = 8;
     arbiter.evm.EvmGrantDeleteResponse evm_grant_delete = 9;
     arbiter.evm.EvmGrantListResponse evm_grant_list = 10;
+    ClientConnectionRequest client_connection_request = 11;
+    ClientConnectionCancel client_connection_cancel = 12;
   }
 }

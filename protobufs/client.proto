@@ -23,15 +23,23 @@ message ClientRequest {
   oneof payload {
     AuthChallengeRequest auth_challenge_request = 1;
     AuthChallengeSolution auth_challenge_solution = 2;
-    arbiter.evm.EvmSignTransactionRequest evm_sign_transaction = 3;
-    arbiter.evm.EvmAnalyzeTransactionRequest evm_analyze_transaction = 4;
   }
+}
+
+message ClientConnectError {
+  enum Code {
+    UNKNOWN = 0;
+    APPROVAL_DENIED = 1;
+    NO_USER_AGENTS_ONLINE = 2;
+  }
+  Code code = 1;
 }
 
 message ClientResponse {
   oneof payload {
     AuthChallenge auth_challenge = 1;
     AuthOk auth_ok = 2;
+    ClientConnectError client_connect_error = 5;
     arbiter.evm.EvmSignTransactionResponse evm_sign_transaction = 3;
     arbiter.evm.EvmAnalyzeTransactionResponse evm_analyze_transaction = 4;
   }
