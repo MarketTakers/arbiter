@@ -37,6 +37,3 @@ rcgen = { version = "0.14.7", features = [
     "zeroize",
 ], default-features = false }
 k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"] }
-rsa = { version = "0.9", features = ["sha2"] }
-sha2 = "0.10"
-spki = "0.7"

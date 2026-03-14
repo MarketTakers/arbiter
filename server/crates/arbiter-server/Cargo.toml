@@ -43,9 +43,6 @@ restructed = "0.2.2"
 strum = { version = "0.27.2", features = ["derive"] }
 pem = "3.0.6"
 k256.workspace = true
-rsa.workspace = true
-sha2.workspace = true
-spki.workspace = true
 alloy.workspace = true
 arbiter-tokens-registry.path = "../arbiter-tokens-registry"
 

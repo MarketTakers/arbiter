@@ -81,7 +81,6 @@ pub mod types {
     pub enum KeyType {
         Ed25519 = 1,
         EcdsaSecp256k1 = 2,
-        Rsa = 3,
     }
 
     impl ToSql<Integer, Sqlite> for KeyType {
@@ -104,7 +103,6 @@ pub mod types {
             match bytes.read_long() {
                 1 => Ok(KeyType::Ed25519),
                 2 => Ok(KeyType::EcdsaSecp256k1),
-                3 => Ok(KeyType::Rsa),
                 other => Err(format!("Unknown KeyType discriminant: {other}").into()),
             }
         }

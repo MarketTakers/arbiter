@@ -6,7 +6,8 @@ use tracing::error;
 
 use crate::actors::user_agent::{
     UserAgentConnection,
-    auth::state::{AuthContext, AuthPublicKey, AuthStateMachine}, session::UserAgentSession,
+    auth::state::{AuthContext, AuthPublicKey, AuthStateMachine},
+    session::UserAgentSession,
 };
 
 #[derive(thiserror::Error, Debug, PartialEq)]
@@ -50,12 +51,6 @@ fn parse_pubkey(key_type: ProtoKeyType, pubkey: Vec<u8>) -> Result<AuthPublicKey
             let key = k256::ecdsa::VerifyingKey::from_sec1_bytes(&pubkey)
                 .map_err(|_| Error::InvalidAuthPubkeyEncoding)?;
             Ok(AuthPublicKey::EcdsaSecp256k1(key))
-        }
-        ProtoKeyType::Rsa => {
-            use rsa::pkcs8::DecodePublicKey as _;
-            let key = rsa::RsaPublicKey::from_public_key_der(&pubkey)
-                .map_err(|_| Error::InvalidAuthPubkeyEncoding)?;
-            Ok(AuthPublicKey::Rsa(key))
         }
     }
 }
@@ -131,7 +126,9 @@ pub async fn authenticate(props: &mut UserAgentConnection) -> Result<AuthPublicK
     }
 }
 
-pub async fn authenticate_and_create(mut props: UserAgentConnection) -> Result<UserAgentSession, Error> {
+pub async fn authenticate_and_create(
+    mut props: UserAgentConnection,
+) -> Result<UserAgentSession, Error> {
     let _key = authenticate(&mut props).await?;
     let session = UserAgentSession::new(props);
     Ok(session)

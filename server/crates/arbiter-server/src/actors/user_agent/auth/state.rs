@@ -11,30 +11,22 @@ use crate::{
     db::{models::KeyType, schema},
 };
 
-/// Abstraction over Ed25519 / ECDSA-secp256k1 / RSA public keys used during the auth handshake.
+/// Abstraction over Ed25519 / ECDSA-secp256k1 public keys used during the auth handshake.
 #[derive(Clone)]
 pub enum AuthPublicKey {
     Ed25519(ed25519_dalek::VerifyingKey),
     /// Compressed SEC1 public key; signature bytes are raw 64-byte (r||s).
     EcdsaSecp256k1(k256::ecdsa::VerifyingKey),
-    /// RSA-2048+ public key; signature bytes are PSS+SHA-256.
-    Rsa(rsa::RsaPublicKey),
 }
 
 impl AuthPublicKey {
     /// Canonical bytes stored in DB and echoed back in the challenge.
-    /// Ed25519: raw 32 bytes. ECDSA: SEC1 compressed 33 bytes. RSA: DER-encoded SPKI.
+    /// Ed25519: raw 32 bytes. ECDSA: SEC1 compressed 33 bytes.
     pub fn to_stored_bytes(&self) -> Vec<u8> {
         match self {
             AuthPublicKey::Ed25519(k) => k.to_bytes().to_vec(),
             // SEC1 compressed (33 bytes) is the natural compact format for secp256k1
             AuthPublicKey::EcdsaSecp256k1(k) => k.to_encoded_point(true).as_bytes().to_vec(),
-            AuthPublicKey::Rsa(k) => {
-                use rsa::pkcs8::EncodePublicKey as _;
-                k.to_public_key_der()
-                    .expect("rsa SPKI encoding is infallible")
-                    .to_vec()
-            }
         }
     }
 
@@ -42,7 +34,6 @@ impl AuthPublicKey {
         match self {
             AuthPublicKey::Ed25519(_) => KeyType::Ed25519,
             AuthPublicKey::EcdsaSecp256k1(_) => KeyType::EcdsaSecp256k1,
-            AuthPublicKey::Rsa(_) => KeyType::Rsa,
         }
     }
 }
@@ -170,15 +161,6 @@ impl AuthStateMachineContext for AuthContext<'_> {
                 })?;
                 vk.verify(&formatted, &sig).is_ok()
             }
-            AuthPublicKey::Rsa(pk) => {
-                use rsa::signature::Verifier as _;
-                let verifying_key = rsa::pss::VerifyingKey::<sha2::Sha256>::new(pk.clone());
-                let sig = rsa::pss::Signature::try_from(solution.as_slice()).map_err(|_| {
-                    error!(?solution, "Invalid RSA signature bytes");
-                    Error::InvalidChallengeSolution
-                })?;
-                verifying_key.verify(&formatted, &sig).is_ok()
-            }
         };
 
         Ok(valid)
@@ -282,13 +264,6 @@ impl AuthStateMachineContext for AuthContext<'_> {
                 AuthPublicKey::EcdsaSecp256k1(
                     k256::ecdsa::VerifyingKey::from_sec1_bytes(&bytes)
                         .expect("ecdsa key was already validated in parse_auth_event"),
-                )
-            }
-            crate::db::models::KeyType::Rsa => {
-                use rsa::pkcs8::DecodePublicKey as _;
-                AuthPublicKey::Rsa(
-                    rsa::RsaPublicKey::from_public_key_der(&bytes)
-                        .expect("rsa key was already validated in parse_auth_event"),
                 )
             }
         };

@@ -203,7 +203,6 @@ pub mod grpc {
 
     /// [`Bi`] adapter backed by a tonic gRPC bidirectional stream.
     ///
-
     /// Tonic receive errors are logged and treated as stream closure (`None`).
     /// The receive converter is only invoked for successful inbound transport
     /// items.
