@@ -20,7 +20,7 @@ impl Display for ArbiterUrl {
             "{ARBITER_URL_SCHEME}://{}:{}?{CERT_QUERY_KEY}={}",
             self.host,
             self.port,
-            BASE64_URL_SAFE.encode(self.ca_cert.to_vec())
+            BASE64_URL_SAFE.encode(&self.ca_cert)
         );
         if let Some(token) = &self.bootstrap_token {
             base.push_str(&format!("&{BOOTSTRAP_TOKEN_QUERY_KEY}={}", token));

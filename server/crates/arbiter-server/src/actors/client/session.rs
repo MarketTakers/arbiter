@@ -1,5 +1,4 @@
 use arbiter_proto::proto::client::{ClientRequest, ClientResponse};
-use ed25519_dalek::VerifyingKey;
 use kameo::Actor;
 use tokio::select;
 use tracing::{error, info};
@@ -10,12 +9,11 @@ use crate::{actors::{
 
 pub struct ClientSession {
     props: ClientConnection,
-    key: VerifyingKey,
 }
 
 impl ClientSession {
-    pub(crate) fn new(props: ClientConnection, key: VerifyingKey) -> Self {
-        Self { props, key }
+    pub(crate) fn new(props: ClientConnection) -> Self {
+        Self { props }
     }
 
     pub async fn process_transport_inbound(&mut self, req: ClientRequest) -> Output {
@@ -24,9 +22,8 @@ impl ClientSession {
             ClientError::MissingRequestPayload
         })?;
 
-        match msg {
-            _ => Err(ClientError::UnexpectedRequestPayload),
-        }
+        let _ = msg;
+        Err(ClientError::UnexpectedRequestPayload)
     }
 }
 
@@ -92,7 +89,6 @@ impl ClientSession {
         use arbiter_proto::transport::DummyTransport;
         let transport: super::Transport = Box::new(DummyTransport::new());
         let props = ClientConnection::new(db, transport, actors);
-        let key = VerifyingKey::from_bytes(&[0u8; 32]).unwrap();
-        Self { props, key }
+        Self { props }
     }
 }

@@ -15,8 +15,8 @@ use tracing::info;
 
 use crate::{
     actors::{
-        client::{self, ClientError, ClientConnection as ClientConnectionProps, connect_client},
-        user_agent::{self, UserAgentConnection, TransportResponseError, connect_user_agent},
+        client::{self, ClientConnection as ClientConnectionProps, ClientError, connect_client},
+        user_agent::{self, TransportResponseError, UserAgentConnection, connect_user_agent},
     },
     context::ServerContext,
 };
@@ -89,7 +89,8 @@ fn client_auth_error_status(value: &client::auth::Error) -> Status {
 
 fn user_agent_error_status(value: TransportResponseError) -> Status {
     match value {
-        TransportResponseError::MissingRequestPayload | TransportResponseError::UnexpectedRequestPayload => {
+        TransportResponseError::MissingRequestPayload
+        | TransportResponseError::UnexpectedRequestPayload => {
             Status::invalid_argument("Expected message with payload")
         }
         TransportResponseError::InvalidStateForUnsealEncryptedKey => {
@@ -99,7 +100,9 @@ fn user_agent_error_status(value: TransportResponseError) -> Status {
             Status::invalid_argument("client_pubkey must be 32 bytes")
         }
         TransportResponseError::StateTransitionFailed => Status::internal("State machine error"),
-        TransportResponseError::KeyHolderActorUnreachable => Status::internal("Vault is not available"),
+        TransportResponseError::KeyHolderActorUnreachable => {
+            Status::internal("Vault is not available")
+        }
         TransportResponseError::Auth(ref err) => auth_error_status(err),
         TransportResponseError::ConnectionRegistrationFailed => {
             Status::internal("Failed registering connection")

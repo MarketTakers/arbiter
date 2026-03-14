@@ -135,10 +135,10 @@ pub async fn create_test_pool() -> DatabasePool {
     let tempfile_name = Alphanumeric.sample_string(&mut rand::rng(), 16);
 
     let file = std::env::temp_dir().join(tempfile_name);
-    let url = format!(
-        "{}?mode=rwc",
-        file.to_str().expect("temp file path is not valid UTF-8")
-    );
+    let url = file
+        .to_str()
+        .expect("temp file path is not valid UTF-8")
+        .to_string();
 
     create_pool(Some(&url))
         .await

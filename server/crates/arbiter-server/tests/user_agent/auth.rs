@@ -1,5 +1,5 @@
 use arbiter_proto::proto::user_agent::{
-    AuthChallengeRequest, AuthChallengeSolution, UserAgentRequest,
+    AuthChallengeRequest, AuthChallengeSolution, KeyType as ProtoKeyType, UserAgentRequest,
     user_agent_request::Payload as UserAgentRequestPayload,
     user_agent_response::Payload as UserAgentResponsePayload,
 };
@@ -38,6 +38,7 @@ pub async fn test_bootstrap_token_auth() {
                 AuthChallengeRequest {
                     pubkey: pubkey_bytes,
                     bootstrap_token: Some(token),
+                    key_type: ProtoKeyType::Ed25519.into(),
                 },
             )),
         })
@@ -74,6 +75,7 @@ pub async fn test_bootstrap_invalid_token_auth() {
                 AuthChallengeRequest {
                     pubkey: pubkey_bytes,
                     bootstrap_token: Some("invalid_token".to_string()),
+                    key_type: ProtoKeyType::Ed25519.into(),
                 },
             )),
         })
@@ -102,10 +104,14 @@ pub async fn test_challenge_auth() {
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
 
+    // Pre-register key with key_type
     {
         let mut conn = db.get().await.unwrap();
         insert_into(schema::useragent_client::table)
-            .values(schema::useragent_client::public_key.eq(pubkey_bytes.clone()))
+            .values((
+                schema::useragent_client::public_key.eq(pubkey_bytes.clone()),
+                schema::useragent_client::key_type.eq(1i32),
+            ))
             .execute(&mut conn)
             .await
             .unwrap();
@@ -122,6 +128,7 @@ pub async fn test_challenge_auth() {
                 AuthChallengeRequest {
                     pubkey: pubkey_bytes,
                     bootstrap_token: None,
+                    key_type: ProtoKeyType::Ed25519.into(),
                 },
             )),
         })

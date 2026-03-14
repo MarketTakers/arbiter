@@ -12,8 +12,6 @@ use diesel::{prelude::*, sqlite::Sqlite};
 use restructed::Models;
 
 pub mod types {
-    use std::os::unix;
-
     use chrono::{DateTime, Utc};
     use diesel::{
         deserialize::{FromSql, FromSqlRow},
@@ -38,9 +36,9 @@ pub mod types {
             SqliteTimestamp(dt)
         }
     }
-    impl Into<chrono::DateTime<Utc>> for SqliteTimestamp {
-        fn into(self) -> chrono::DateTime<Utc> {
-            self.0
+    impl From<SqliteTimestamp> for chrono::DateTime<Utc> {
+        fn from(ts: SqliteTimestamp) -> Self {
+            ts.0
         }
     }
 
@@ -72,6 +70,40 @@ pub mod types {
                 DateTime::from_timestamp(unix_timestamp, 0).ok_or("Timestamp is out of bounds")?;
 
             Ok(SqliteTimestamp(datetime))
+        }
+    }
+
+    /// Key algorithm stored in the `useragent_client.key_type` column.
+    /// Values must stay stable — they are persisted in the database.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, FromSqlRow, AsExpression, strum::FromRepr)]
+    #[diesel(sql_type = Integer)]
+    #[repr(i32)]
+    pub enum KeyType {
+        Ed25519 = 1,
+        EcdsaSecp256k1 = 2,
+        Rsa = 3,
+    }
+
+    impl ToSql<Integer, Sqlite> for KeyType {
+        fn to_sql<'b>(
+            &'b self,
+            out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
+        ) -> diesel::serialize::Result {
+            out.set_value(*self as i32);
+            Ok(IsNull::No)
+        }
+    }
+
+    impl FromSql<Integer, Sqlite> for KeyType {
+        fn from_sql(
+            mut bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
+        ) -> diesel::deserialize::Result<Self> {
+            let Some(SqliteType::Long) = bytes.value_type() else {
+                return Err("Expected Integer for KeyType".into());
+            };
+            let discriminant = bytes.read_long();
+            KeyType::from_repr(discriminant as i32)
+                .ok_or_else(|| format!("Unknown KeyType discriminant: {discriminant}").into())
         }
     }
 }
@@ -171,6 +203,7 @@ pub struct UseragentClient {
     pub public_key: Vec<u8>,
     pub created_at: SqliteTimestamp,
     pub updated_at: SqliteTimestamp,
+    pub key_type: KeyType,
 }
 
 #[derive(Models, Queryable, Debug, Insertable, Selectable)]

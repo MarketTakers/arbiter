@@ -3,17 +3,15 @@ use std::{ops::DerefMut, sync::Mutex};
 use arbiter_proto::proto::{
     evm as evm_proto,
     user_agent::{
-        ClientConnectionCancel, ClientConnectionRequest, UnsealEncryptedKey, UnsealResult, UnsealStart, UnsealStartResponse, UserAgentRequest,
-        UserAgentResponse, user_agent_request::Payload as UserAgentRequestPayload,
+        ClientConnectionCancel, ClientConnectionRequest, UnsealEncryptedKey, UnsealResult,
+        UnsealStart, UnsealStartResponse, UserAgentRequest, UserAgentResponse,
+        user_agent_request::Payload as UserAgentRequestPayload,
         user_agent_response::Payload as UserAgentResponsePayload,
     },
 };
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use ed25519_dalek::VerifyingKey;
-use kameo::{
-    Actor,
-    error::SendError, messages, prelude::Context,
-};
+use kameo::{Actor, error::SendError, messages, prelude::Context};
 use memsafe::MemSafe;
 use tokio::{select, sync::watch};
 use tracing::{error, info};
@@ -41,15 +39,13 @@ pub enum Error {
 
 pub struct UserAgentSession {
     props: UserAgentConnection,
-    key: VerifyingKey,
     state: UserAgentStateMachine<DummyContext>,
 }
 
 impl UserAgentSession {
-     pub(crate) fn new(props: UserAgentConnection, key: VerifyingKey) -> Self {
+    pub(crate) fn new(props: UserAgentConnection) -> Self {
         Self {
             props,
-            key,
             state: UserAgentStateMachine::new(DummyContext),
         }
     }
@@ -114,7 +110,7 @@ impl UserAgentSession {
 
 #[messages]
 impl UserAgentSession {
-    // TODO: Think about refactoring it to state-machine based flow, as we already have one 
+    // TODO: Think about refactoring it to state-machine based flow, as we already have one
     #[message(ctx)]
     pub async fn request_new_client_approval(
         &mut self,
@@ -123,12 +119,9 @@ impl UserAgentSession {
         ctx: &mut Context<Self, Result<bool, Error>>,
     ) -> Result<bool, Error> {
         self.send_msg(
-            UserAgentResponsePayload::ClientConnectionRequest(
-                ClientConnectionRequest {
-                    pubkey: client_pubkey.as_bytes().to_vec(),
-                }
-                .into(),
-            ),
+            UserAgentResponsePayload::ClientConnectionRequest(ClientConnectionRequest {
+                pubkey: client_pubkey.as_bytes().to_vec(),
+            }),
             ctx,
         )
         .await?;
@@ -150,12 +143,12 @@ impl UserAgentSession {
                     UserAgentResponsePayload::ClientConnectionCancel(ClientConnectionCancel {}),
                     ctx,
                 ).await?;
-                return Ok(false);
+                Ok(false)
             }
             result = self.expect_msg(extractor, ctx) => {
                 let result = result?;
                 info!(actor = "useragent", "received client connection approval result: approved={}", result.approved);
-                return Ok(result.approved);
+                Ok(result.approved)
             }
         }
     }
@@ -420,10 +413,8 @@ impl UserAgentSession {
         use arbiter_proto::transport::DummyTransport;
         let transport: super::Transport = Box::new(DummyTransport::new());
         let props = UserAgentConnection::new(db, actors, transport);
-        let key = VerifyingKey::from_bytes(&[0u8; 32]).unwrap();
         Self {
             props,
-            key,
             state: UserAgentStateMachine::new(DummyContext),
         }
     }

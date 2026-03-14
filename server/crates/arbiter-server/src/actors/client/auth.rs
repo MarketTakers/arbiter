@@ -17,7 +17,10 @@ use kameo::error::SendError;
 use tracing::error;
 
 use crate::{
-    actors::{client::ClientConnection, router::{self, RequestClientApproval}},
+    actors::{
+        client::ClientConnection,
+        router::{self, RequestClientApproval},
+    },
     db::{self, schema::program_client},
 };
 
@@ -100,7 +103,9 @@ async fn approve_new_client(
 ) -> Result<(), Error> {
     let result = actors
         .router
-        .ask(RequestClientApproval { client_pubkey: pubkey })
+        .ask(RequestClientApproval {
+            client_pubkey: pubkey,
+        })
         .await;
 
     match result {
@@ -166,18 +171,18 @@ async fn challenge_client(
             Error::Transport
         })?;
 
-    let AuthChallengeSolution { signature } = expect_message(
-        &mut *props.transport,
-        |req: ClientRequest| match req.payload? {
-            ClientRequestPayload::AuthChallengeSolution(s) => Some(s),
-            _ => None,
-        },
-    )
-    .await
-    .map_err(|e| {
-        error!(error = ?e, "Failed to receive challenge solution");
-        Error::Transport
-    })?;
+    let AuthChallengeSolution { signature } =
+        expect_message(&mut *props.transport, |req: ClientRequest| {
+            match req.payload? {
+                ClientRequestPayload::AuthChallengeSolution(s) => Some(s),
+                _ => None,
+            }
+        })
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "Failed to receive challenge solution");
+            Error::Transport
+        })?;
 
     let formatted = format_challenge(nonce, &challenge.pubkey);
     let sig = signature.as_slice().try_into().map_err(|_| {
@@ -196,9 +201,9 @@ async fn challenge_client(
 fn connect_error_code(err: &Error) -> ConnectErrorCode {
     match err {
         Error::ApproveError(ApproveError::Denied) => ConnectErrorCode::ApprovalDenied,
-        Error::ApproveError(ApproveError::Upstream(router::ApprovalError::NoUserAgentsConnected)) => {
-            ConnectErrorCode::NoUserAgentsOnline
-        }
+        Error::ApproveError(ApproveError::Upstream(
+            router::ApprovalError::NoUserAgentsConnected,
+        )) => ConnectErrorCode::NoUserAgentsOnline,
         _ => ConnectErrorCode::Unknown,
     }
 }
@@ -234,7 +239,7 @@ async fn authenticate(props: &mut ClientConnection) -> Result<VerifyingKey, Erro
 
 pub async fn authenticate_and_create(mut props: ClientConnection) -> Result<ClientSession, Error> {
     match authenticate(&mut props).await {
-        Ok(pubkey) => Ok(ClientSession::new(props, pubkey)),
+        Ok(_pubkey) => Ok(ClientSession::new(props)),
         Err(err) => {
             let code = connect_error_code(&err);
             let _ = props
