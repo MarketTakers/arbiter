@@ -5,6 +5,9 @@ edition = "2024"
 repository = "https://git.markettakers.org/MarketTakers/arbiter"
 license = "Apache-2.0"
 
+[lints]
+workspace = true
+
 [dependencies]
 diesel = { version = "2.3.6", features = ["chrono", "returning_clauses_for_sqlite_3_35", "serde_json", "time", "uuid"] }
 diesel-async = { version = "0.7.4", features = [
@@ -43,6 +46,9 @@ restructed = "0.2.2"
 strum = { version = "0.27.2", features = ["derive"] }
 pem = "3.0.6"
 k256.workspace = true
+rsa.workspace = true
+sha2.workspace = true
+spki.workspace = true
 alloy.workspace = true
 arbiter-tokens-registry.path = "../arbiter-tokens-registry"
 

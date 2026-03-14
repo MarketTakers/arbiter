@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 
+[lints]
+workspace = true
+
 [dependencies]
 arbiter-proto.path = "../arbiter-proto"
 kameo.workspace = true
@@ -15,6 +18,9 @@ ed25519-dalek.workspace = true
 smlang.workspace = true
 x25519-dalek.workspace = true
 k256.workspace = true
+rsa.workspace = true
+sha2.workspace = true
+spki.workspace = true
 rand.workspace = true
 thiserror.workspace = true
 tokio-stream.workspace = true

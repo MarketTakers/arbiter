@@ -52,6 +52,12 @@ fn parse_pubkey(key_type: ProtoKeyType, pubkey: Vec<u8>) -> Result<AuthPublicKey
                 .map_err(|_| Error::InvalidAuthPubkeyEncoding)?;
             Ok(AuthPublicKey::EcdsaSecp256k1(key))
         }
+        ProtoKeyType::Rsa => {
+            use rsa::pkcs8::DecodePublicKey as _;
+            let key = rsa::RsaPublicKey::from_public_key_der(&pubkey)
+                .map_err(|_| Error::InvalidAuthPubkeyEncoding)?;
+            Ok(AuthPublicKey::Rsa(key))
+        }
     }
 }
 

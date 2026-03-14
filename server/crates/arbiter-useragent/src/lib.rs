@@ -18,6 +18,8 @@ pub enum SigningKeyEnum {
     Ed25519(ed25519_dalek::SigningKey),
     /// secp256k1 ECDSA; public key is sent as SEC1 compressed 33 bytes; signature is raw 64-byte (r||s).
     EcdsaSecp256k1(k256::ecdsa::SigningKey),
+    /// RSA for Windows Hello (KeyCredentialManager); public key is DER SPKI; signature is PSS+SHA-256.
+    Rsa(rsa::RsaPrivateKey),
 }
 
 impl SigningKeyEnum {
@@ -29,6 +31,13 @@ impl SigningKeyEnum {
             SigningKeyEnum::EcdsaSecp256k1(k) => {
                 k.verifying_key().to_encoded_point(true).as_bytes().to_vec()
             }
+            SigningKeyEnum::Rsa(k) => {
+                use rsa::pkcs8::EncodePublicKey as _;
+                k.to_public_key()
+                    .to_public_key_der()
+                    .expect("rsa SPKI encoding is infallible")
+                    .to_vec()
+            }
         }
     }
 
@@ -37,6 +46,7 @@ impl SigningKeyEnum {
         match self {
             SigningKeyEnum::Ed25519(_) => ProtoKeyType::Ed25519,
             SigningKeyEnum::EcdsaSecp256k1(_) => ProtoKeyType::EcdsaSecp256k1,
+            SigningKeyEnum::Rsa(_) => ProtoKeyType::Rsa,
         }
     }
 
@@ -51,6 +61,15 @@ impl SigningKeyEnum {
                 use k256::ecdsa::signature::Signer as _;
                 let sig: k256::ecdsa::Signature = k.sign(msg);
                 sig.to_bytes().to_vec()
+            }
+            SigningKeyEnum::Rsa(k) => {
+                use rsa::signature::RandomizedSigner as _;
+                let signing_key = rsa::pss::BlindedSigningKey::<sha2::Sha256>::new(k.clone());
+                // Use rand_core OsRng from the rsa crate's re-exported rand_core (0.6.x),
+                // which is the version rsa's signature API expects.
+                let sig = signing_key.sign_with_rng(&mut rsa::rand_core::OsRng, msg);
+                use rsa::signature::SignatureEncoding as _;
+                sig.to_vec()
             }
         }
     }

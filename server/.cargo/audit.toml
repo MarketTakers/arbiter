@@ -1,0 +1,13 @@
+[advisories]
+# RUSTSEC-2023-0071: Marvin Attack timing side-channel in rsa crate.
+# No fixed version is available upstream.
+# RSA support is required for Windows Hello / KeyCredentialManager
+# (https://learn.microsoft.com/en-us/uwp/api/windows.security.credentials.keycredentialmanager.requestcreateasync),
+# which only issues RSA-2048 keys.
+# Mitigations in place:
+#   - Signing uses BlindedSigningKey (PSS+SHA-256), which applies blinding to
+#     protect the private key from timing recovery during signing.
+#   - RSA decryption is never performed; we only verify public-key signatures.
+#   - The attack requires local, high-resolution timing access against the
+#     signing process, which is not exposed in our threat model.
+ignore = ["RUSTSEC-2023-0071"]

@@ -1,0 +1,8 @@
+disallowed-methods = [
+    # RSA decryption is forbidden: the rsa crate has RUSTSEC-2023-0071 (Marvin Attack).
+    # We only use RSA for Windows Hello (KeyCredentialManager) public-key verification — decryption
+    # is never required and must not be introduced.
+    { path = "rsa::RsaPrivateKey::decrypt", reason = "RSA decryption is forbidden (RUSTSEC-2023-0071 Marvin Attack). Only PSS signing/verification is permitted." },
+    { path = "rsa::pkcs1v15::DecryptingKey::decrypt", reason = "RSA decryption is forbidden (RUSTSEC-2023-0071 Marvin Attack). Only PSS signing/verification is permitted." },
+    { path = "rsa::oaep::DecryptingKey::decrypt", reason = "RSA decryption is forbidden (RUSTSEC-2023-0071 Marvin Attack). Only PSS signing/verification is permitted." },
+]

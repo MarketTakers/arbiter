@@ -36,9 +36,9 @@ pub mod types {
             SqliteTimestamp(dt)
         }
     }
-    impl Into<chrono::DateTime<Utc>> for SqliteTimestamp {
-        fn into(self) -> chrono::DateTime<Utc> {
-            self.0
+    impl From<SqliteTimestamp> for chrono::DateTime<Utc> {
+        fn from(ts: SqliteTimestamp) -> Self {
+            ts.0
         }
     }
 
@@ -75,12 +75,13 @@ pub mod types {
 
     /// Key algorithm stored in the `useragent_client.key_type` column.
     /// Values must stay stable — they are persisted in the database.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, FromSqlRow, AsExpression)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, FromSqlRow, AsExpression, strum::FromRepr)]
     #[diesel(sql_type = Integer)]
     #[repr(i32)]
     pub enum KeyType {
         Ed25519 = 1,
         EcdsaSecp256k1 = 2,
+        Rsa = 3,
     }
 
     impl ToSql<Integer, Sqlite> for KeyType {
@@ -100,11 +101,9 @@ pub mod types {
             let Some(SqliteType::Long) = bytes.value_type() else {
                 return Err("Expected Integer for KeyType".into());
             };
-            match bytes.read_long() {
-                1 => Ok(KeyType::Ed25519),
-                2 => Ok(KeyType::EcdsaSecp256k1),
-                other => Err(format!("Unknown KeyType discriminant: {other}").into()),
-            }
+            let discriminant = bytes.read_long();
+            KeyType::from_repr(discriminant as i32)
+                .ok_or_else(|| format!("Unknown KeyType discriminant: {discriminant}").into())
         }
     }
 }
