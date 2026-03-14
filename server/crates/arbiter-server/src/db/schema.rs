@@ -153,6 +153,7 @@ diesel::table! {
         public_key -> Binary,
         created_at -> Integer,
         updated_at -> Integer,
+        key_type -> Integer,
     }
 }
 

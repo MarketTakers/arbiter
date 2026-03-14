@@ -1,13 +1,12 @@
 use arbiter_proto::proto::user_agent::{
-    AuthChallengeRequest, AuthChallengeSolution, UserAgentRequest,
+    AuthChallengeRequest, AuthChallengeSolution, KeyType as ProtoKeyType, UserAgentRequest,
     user_agent_request::Payload as UserAgentRequestPayload,
 };
-use ed25519_dalek::VerifyingKey;
 use tracing::error;
 
 use crate::actors::user_agent::{
     UserAgentConnection,
-    auth::state::{AuthContext, AuthStateMachine}, session::UserAgentSession,
+    auth::state::{AuthContext, AuthPublicKey, AuthStateMachine}, session::UserAgentSession,
 };
 
 #[derive(thiserror::Error, Debug, PartialEq)]
@@ -37,28 +36,50 @@ pub enum Error {
 mod state;
 use state::*;
 
+fn parse_pubkey(key_type: ProtoKeyType, pubkey: Vec<u8>) -> Result<AuthPublicKey, Error> {
+    match key_type {
+        // UNSPECIFIED treated as Ed25519 for backward compatibility
+        ProtoKeyType::Unspecified | ProtoKeyType::Ed25519 => {
+            let pubkey_bytes = pubkey.as_array().ok_or(Error::InvalidClientPubkeyLength)?;
+            let key = ed25519_dalek::VerifyingKey::from_bytes(pubkey_bytes)
+                .map_err(|_| Error::InvalidAuthPubkeyEncoding)?;
+            Ok(AuthPublicKey::Ed25519(key))
+        }
+        ProtoKeyType::EcdsaSecp256k1 => {
+            // Public key is sent as 33-byte SEC1 compressed point
+            let key = k256::ecdsa::VerifyingKey::from_sec1_bytes(&pubkey)
+                .map_err(|_| Error::InvalidAuthPubkeyEncoding)?;
+            Ok(AuthPublicKey::EcdsaSecp256k1(key))
+        }
+        ProtoKeyType::Rsa => {
+            use rsa::pkcs8::DecodePublicKey as _;
+            let key = rsa::RsaPublicKey::from_public_key_der(&pubkey)
+                .map_err(|_| Error::InvalidAuthPubkeyEncoding)?;
+            Ok(AuthPublicKey::Rsa(key))
+        }
+    }
+}
+
 fn parse_auth_event(payload: UserAgentRequestPayload) -> Result<AuthEvents, Error> {
     match payload {
         UserAgentRequestPayload::AuthChallengeRequest(AuthChallengeRequest {
             pubkey,
             bootstrap_token: None,
+            key_type,
         }) => {
-            let pubkey_bytes = pubkey.as_array().ok_or(Error::InvalidClientPubkeyLength)?;
-            let pubkey = VerifyingKey::from_bytes(pubkey_bytes)
-                .map_err(|_| Error::InvalidAuthPubkeyEncoding)?;
+            let kt = ProtoKeyType::try_from(key_type).unwrap_or(ProtoKeyType::Unspecified);
             Ok(AuthEvents::AuthRequest(ChallengeRequest {
-                pubkey: pubkey.into(),
+                pubkey: parse_pubkey(kt, pubkey)?,
             }))
         }
         UserAgentRequestPayload::AuthChallengeRequest(AuthChallengeRequest {
             pubkey,
             bootstrap_token: Some(token),
+            key_type,
         }) => {
-            let pubkey_bytes = pubkey.as_array().ok_or(Error::InvalidClientPubkeyLength)?;
-            let pubkey = VerifyingKey::from_bytes(pubkey_bytes)
-                .map_err(|_| Error::InvalidAuthPubkeyEncoding)?;
+            let kt = ProtoKeyType::try_from(key_type).unwrap_or(ProtoKeyType::Unspecified);
             Ok(AuthEvents::BootstrapAuthRequest(BootstrapAuthRequest {
-                pubkey: pubkey.into(),
+                pubkey: parse_pubkey(kt, pubkey)?,
                 token,
             }))
         }
@@ -71,11 +92,11 @@ fn parse_auth_event(payload: UserAgentRequestPayload) -> Result<AuthEvents, Erro
     }
 }
 
-pub async fn authenticate(props: &mut UserAgentConnection) -> Result<VerifyingKey, Error> {
+pub async fn authenticate(props: &mut UserAgentConnection) -> Result<AuthPublicKey, Error> {
     let mut state = AuthStateMachine::new(AuthContext::new(props));
 
     loop {
-        // This is needed because `state` now holds mutable reference to `ConnectionProps`, so we can't directly access `props` here
+        // `state` holds a mutable reference to `props` so we can't access it directly here
         let transport = state.context_mut().conn.transport.as_mut();
         let Some(UserAgentRequest {
             payload: Some(payload),
@@ -110,9 +131,8 @@ pub async fn authenticate(props: &mut UserAgentConnection) -> Result<VerifyingKe
     }
 }
 
-
 pub async fn authenticate_and_create(mut props: UserAgentConnection) -> Result<UserAgentSession, Error> {
-    let key = authenticate(&mut props).await?;
-    let session = UserAgentSession::new(props, key.clone());
+    let _key = authenticate(&mut props).await?;
+    let session = UserAgentSession::new(props);
     Ok(session)
 }

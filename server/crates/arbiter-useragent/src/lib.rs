@@ -1,18 +1,79 @@
 use arbiter_proto::{
     format_challenge,
     proto::user_agent::{
-        AuthChallengeRequest, AuthChallengeSolution, AuthOk,
+        AuthChallengeRequest, AuthChallengeSolution, AuthOk, KeyType as ProtoKeyType,
         UserAgentRequest, UserAgentResponse,
         user_agent_request::Payload as UserAgentRequestPayload,
         user_agent_response::Payload as UserAgentResponsePayload,
     },
     transport::Bi,
 };
-use ed25519_dalek::{Signer, SigningKey};
 use kameo::{Actor, actor::ActorRef};
 use smlang::statemachine;
 use tokio::select;
 use tracing::{error, info};
+
+/// Signing key variants supported by the user-agent auth protocol.
+pub enum SigningKeyEnum {
+    Ed25519(ed25519_dalek::SigningKey),
+    /// secp256k1 ECDSA; public key is sent as DER SPKI; signature is raw 64-byte (r||s).
+    EcdsaSecp256k1(k256::ecdsa::SigningKey),
+    /// RSA; public key is sent as DER SPKI; signature is PSS+SHA-256.
+    Rsa(rsa::RsaPrivateKey),
+}
+
+impl SigningKeyEnum {
+    /// Returns the canonical public key bytes to include in `AuthChallengeRequest.pubkey`.
+    pub fn pubkey_bytes(&self) -> Vec<u8> {
+        match self {
+            SigningKeyEnum::Ed25519(k) => k.verifying_key().to_bytes().to_vec(),
+            // 33-byte SEC1 compressed point — compact and natively supported by secp256k1 tooling
+            SigningKeyEnum::EcdsaSecp256k1(k) => {
+                k.verifying_key().to_encoded_point(true).as_bytes().to_vec()
+            }
+            SigningKeyEnum::Rsa(k) => {
+                use rsa::pkcs8::EncodePublicKey as _;
+                k.to_public_key()
+                    .to_public_key_der()
+                    .expect("rsa SPKI encoding is infallible")
+                    .to_vec()
+            }
+        }
+    }
+
+    /// Returns the proto `KeyType` discriminant to send in `AuthChallengeRequest.key_type`.
+    pub fn proto_key_type(&self) -> ProtoKeyType {
+        match self {
+            SigningKeyEnum::Ed25519(_) => ProtoKeyType::Ed25519,
+            SigningKeyEnum::EcdsaSecp256k1(_) => ProtoKeyType::EcdsaSecp256k1,
+            SigningKeyEnum::Rsa(_) => ProtoKeyType::Rsa,
+        }
+    }
+
+    /// Signs `msg` and returns raw signature bytes matching the server-side verification.
+    pub fn sign(&self, msg: &[u8]) -> Vec<u8> {
+        match self {
+            SigningKeyEnum::Ed25519(k) => {
+                use ed25519_dalek::Signer as _;
+                k.sign(msg).to_bytes().to_vec()
+            }
+            SigningKeyEnum::EcdsaSecp256k1(k) => {
+                use k256::ecdsa::signature::Signer as _;
+                let sig: k256::ecdsa::Signature = k.sign(msg);
+                sig.to_bytes().to_vec()
+            }
+            SigningKeyEnum::Rsa(k) => {
+                use rsa::signature::RandomizedSigner as _;
+                let signing_key = rsa::pss::BlindedSigningKey::<sha2::Sha256>::new(k.clone());
+                // Use rand_core OsRng from the rsa crate's re-exported rand_core (0.6.x),
+                // which is the version rsa's signature API expects.
+                let sig = signing_key.sign_with_rng(&mut rsa::rand_core::OsRng, msg);
+                use rsa::signature::SignatureEncoding as _;
+                sig.to_vec()
+            }
+        }
+    }
+}
 
 statemachine! {
     name: UserAgent,
@@ -50,7 +111,7 @@ pub struct UserAgentActor<Transport>
 where
     Transport: Bi<UserAgentResponse, UserAgentRequest>,
 {
-    key: SigningKey,
+    key: SigningKeyEnum,
     bootstrap_token: Option<String>,
     state: UserAgentStateMachine<DummyContext>,
     transport: Transport,
@@ -60,7 +121,7 @@ impl<Transport> UserAgentActor<Transport>
 where
     Transport: Bi<UserAgentResponse, UserAgentRequest>,
 {
-    pub fn new(key: SigningKey, bootstrap_token: Option<String>, transport: Transport) -> Self {
+    pub fn new(key: SigningKeyEnum, bootstrap_token: Option<String>, transport: Transport) -> Self {
         Self {
             key,
             bootstrap_token,
@@ -79,8 +140,9 @@ where
 
     async fn send_auth_challenge_request(&mut self) -> Result<(), InboundError> {
         let req = AuthChallengeRequest {
-            pubkey: self.key.verifying_key().to_bytes().to_vec(),
+            pubkey: self.key.pubkey_bytes(),
             bootstrap_token: self.bootstrap_token.take(),
+            key_type: self.key.proto_key_type().into(),
         };
 
         self.transition(UserAgentEvents::SentAuthChallengeRequest)?;
@@ -103,9 +165,9 @@ where
         self.transition(UserAgentEvents::ReceivedAuthChallenge)?;
 
         let formatted = format_challenge(challenge.nonce, &challenge.pubkey);
-        let signature = self.key.sign(&formatted);
+        let signature_bytes = self.key.sign(&formatted);
         let solution = AuthChallengeSolution {
-            signature: signature.to_bytes().to_vec(),
+            signature: signature_bytes,
         };
 
         self.transport
@@ -127,7 +189,7 @@ where
 
     pub async fn process_inbound_transport(
         &mut self,
-        inbound: UserAgentResponse
+        inbound: UserAgentResponse,
     ) -> Result<(), InboundError> {
         let payload = inbound
             .payload
@@ -192,4 +254,4 @@ where
 }
 
 mod grpc;
-pub use grpc::{connect_grpc, ConnectError};
+pub use grpc::{ConnectError, connect_grpc};

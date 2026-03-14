@@ -1,12 +1,11 @@
 use arbiter_proto::{
     proto::{
-        user_agent::{UserAgentRequest, UserAgentResponse},
         arbiter_service_client::ArbiterServiceClient,
+        user_agent::{UserAgentRequest, UserAgentResponse},
     },
     transport::{IdentityRecvConverter, IdentitySendConverter, grpc},
     url::ArbiterUrl,
 };
-use ed25519_dalek::SigningKey;
 use kameo::actor::{ActorRef, Spawn};
 
 use tokio::sync::mpsc;
@@ -14,6 +13,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use tonic::transport::ClientTlsConfig;
 
+use super::{SigningKeyEnum, UserAgentActor};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectError {
@@ -30,8 +30,6 @@ pub enum ConnectError {
     Grpc(#[from] tonic::Status),
 }
 
-    use super::UserAgentActor;
-
 pub type UserAgentGrpc = ActorRef<
     UserAgentActor<
         grpc::GrpcAdapter<
@@ -42,7 +40,7 @@ pub type UserAgentGrpc = ActorRef<
 >;
 pub async fn connect_grpc(
     url: ArbiterUrl,
-    key: SigningKey,
+    key: SigningKeyEnum,
 ) -> Result<UserAgentGrpc, ConnectError> {
     let bootstrap_token = url.bootstrap_token.clone();
     let anchor = webpki::anchor_from_trusted_cert(&url.ca_cert)?.to_owned();

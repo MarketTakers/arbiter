@@ -1,0 +1,4 @@
+[profile.dev]
+# Override global Cranelift backend: Cranelift does not propagate cargo:rustc-link-lib
+# from native dependencies (aws-lc-sys etc.) to lld-link, causing undefined symbol errors.
+codegen-backend = "llvm"

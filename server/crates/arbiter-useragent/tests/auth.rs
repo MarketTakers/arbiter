@@ -1,19 +1,18 @@
 use arbiter_proto::{
     format_challenge,
     proto::user_agent::{
-        AuthChallenge, AuthOk,
-        UserAgentRequest, UserAgentResponse,
+        AuthChallenge, AuthOk, UserAgentRequest, UserAgentResponse,
         user_agent_request::Payload as UserAgentRequestPayload,
         user_agent_response::Payload as UserAgentResponsePayload,
     },
     transport::Bi,
 };
-use arbiter_useragent::UserAgentActor;
+use arbiter_useragent::{SigningKeyEnum, UserAgentActor};
+use async_trait::async_trait;
 use ed25519_dalek::SigningKey;
 use kameo::actor::Spawn;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
-use async_trait::async_trait;
 
 struct TestTransport {
     inbound_rx: mpsc::Receiver<UserAgentResponse>,
@@ -22,7 +21,10 @@ struct TestTransport {
 
 #[async_trait]
 impl Bi<UserAgentResponse, UserAgentRequest> for TestTransport {
-    async fn send(&mut self, item: UserAgentRequest) -> Result<(), arbiter_proto::transport::Error> {
+    async fn send(
+        &mut self,
+        item: UserAgentRequest,
+    ) -> Result<(), arbiter_proto::transport::Error> {
         self.outbound_tx
             .send(item)
             .await
@@ -51,14 +53,14 @@ fn make_transport() -> (
     )
 }
 
-fn test_key() -> SigningKey {
-    SigningKey::from_bytes(&[7u8; 32])
+fn test_key() -> SigningKeyEnum {
+    SigningKeyEnum::Ed25519(SigningKey::from_bytes(&[7u8; 32]))
 }
 
 #[tokio::test]
 async fn sends_auth_request_on_start_with_bootstrap_token() {
     let key = test_key();
-    let pubkey = key.verifying_key().to_bytes().to_vec();
+    let pubkey = key.pubkey_bytes();
     let bootstrap_token = Some("bootstrap-123".to_string());
     let (transport, inbound_tx, mut outbound_rx) = make_transport();
 
@@ -86,7 +88,7 @@ async fn sends_auth_request_on_start_with_bootstrap_token() {
 #[tokio::test]
 async fn challenge_flow_sends_solution_from_transport_inbound() {
     let key = test_key();
-    let verify_key = key.verifying_key();
+    let pubkey_bytes = key.pubkey_bytes();
     let (transport, inbound_tx, mut outbound_rx) = make_transport();
 
     let actor = UserAgentActor::spawn(UserAgentActor::new(key, None, transport));
@@ -97,7 +99,7 @@ async fn challenge_flow_sends_solution_from_transport_inbound() {
         .expect("missing initial auth request");
 
     let challenge = AuthChallenge {
-        pubkey: verify_key.to_bytes().to_vec(),
+        pubkey: pubkey_bytes.clone(),
         nonce: 42,
     };
     inbound_tx
@@ -119,13 +121,16 @@ async fn challenge_flow_sends_solution_from_transport_inbound() {
         panic!("expected auth challenge solution");
     };
 
+    // Verify the signature using the Ed25519 verifying key
     let formatted = format_challenge(challenge.nonce, &challenge.pubkey);
+    let raw_key = SigningKey::from_bytes(&[7u8; 32]);
     let sig: ed25519_dalek::Signature = solution
         .signature
         .as_slice()
         .try_into()
         .expect("signature bytes length");
-    verify_key
+    raw_key
+        .verifying_key()
         .verify_strict(&formatted, &sig)
         .expect("solution signature should verify");
 
