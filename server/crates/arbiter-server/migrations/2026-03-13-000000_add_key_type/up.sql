@@ -1,1 +1,0 @@
-ALTER TABLE useragent_client ADD COLUMN key_type INTEGER NOT NULL DEFAULT 1;
