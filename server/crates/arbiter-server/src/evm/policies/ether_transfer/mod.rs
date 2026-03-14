@@ -41,17 +41,12 @@ pub struct Meaning {
 }
 impl Display for Meaning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Ether transfer of {} to {}",
-            self.value,
-            self.to.to_string()
-        )
+        write!(f, "Ether transfer of {} to {}", self.value, self.to)
     }
 }
-impl Into<SpecificMeaning> for Meaning {
-    fn into(self) -> SpecificMeaning {
-        SpecificMeaning::EtherTransfer(self)
+impl From<Meaning> for SpecificMeaning {
+    fn from(val: Meaning) -> SpecificMeaning {
+        SpecificMeaning::EtherTransfer(val)
     }
 }
 
@@ -61,9 +56,9 @@ pub struct Settings {
     limit: VolumeRateLimit,
 }
 
-impl Into<SpecificGrant> for Settings {
-    fn into(self) -> SpecificGrant {
-        SpecificGrant::EtherTransfer(self)
+impl From<Settings> for SpecificGrant {
+    fn from(val: Settings) -> SpecificGrant {
+        SpecificGrant::EtherTransfer(val)
     }
 }
 

@@ -1,4 +1,4 @@
-use alloy::{consensus::TxEip1559, network::TxSigner, primitives::Address, signers::Signature};
+use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
 use diesel::{ExpressionMethods, OptionalExtension as _, QueryDsl, SelectableHelper as _, dsl::insert_into};
 use diesel_async::RunQueryDsl;
 use kameo::{Actor, actor::ActorRef, messages};

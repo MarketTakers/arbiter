@@ -67,7 +67,7 @@ async fn request_client_approval(
     client_pubkey: VerifyingKey,
 ) -> Result<bool, ApprovalError> {
     if user_agents.is_empty() {
-        return Err(ApprovalError::NoUserAgentsConnected).into();
+        return Err(ApprovalError::NoUserAgentsConnected);
     }
 
     let mut pool = JoinSet::new();
@@ -76,7 +76,6 @@ async fn request_client_approval(
     for weak_ref in user_agents {
         match weak_ref.upgrade() {
             Some(agent) => {
-                let client_pubkey = client_pubkey.clone();
                 let cancel_rx = cancel_rx.clone();
                 pool.spawn(async move {
                     agent
@@ -167,7 +166,7 @@ impl MessageRouter {
         // handle in subtask to not to lock the actor
         tokio::task::spawn(async move {
             let result = request_client_approval(&weak_refs, client_pubkey).await;
-            let _ = reply_sender.send(result);
+            reply_sender.send(result);
         });
 
         reply

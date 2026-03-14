@@ -117,7 +117,8 @@ async fn check_shared_constraints(
     let now = Utc::now();
 
     // Validity window
-    if shared.valid_from.map_or(false, |t| now < t) || shared.valid_until.map_or(false, |t| now > t)
+    if shared.valid_from.is_some_and(|t| now < t)
+        || shared.valid_until.is_some_and(|t| now > t)
     {
         violations.push(EvalViolation::InvalidTime);
     }
@@ -125,8 +126,8 @@ async fn check_shared_constraints(
     // Gas fee caps
     let fee_exceeded = shared
         .max_gas_fee_per_gas
-        .map_or(false, |cap| U256::from(context.max_fee_per_gas) > cap);
-    let priority_exceeded = shared.max_priority_fee_per_gas.map_or(false, |cap| {
+        .is_some_and(|cap| U256::from(context.max_fee_per_gas) > cap);
+    let priority_exceeded = shared.max_priority_fee_per_gas.is_some_and(|cap| {
         U256::from(context.max_priority_fee_per_gas) > cap
     });
     if fee_exceeded || priority_exceeded {
@@ -228,7 +229,7 @@ impl Engine {
                         .values(&NewEvmBasicGrant {
                             wallet_id: full_grant.basic.wallet_id,
                             chain_id: full_grant.basic.chain as i32,
-                            client_id: client_id,
+                            client_id,
                             valid_from: full_grant.basic.valid_from.map(SqliteTimestamp),
                             valid_until: full_grant.basic.valid_until.map(SqliteTimestamp),
                             max_gas_fee_per_gas: full_grant

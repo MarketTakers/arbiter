@@ -51,9 +51,9 @@ impl std::fmt::Display for Meaning {
         )
     }
 }
-impl Into<SpecificMeaning> for Meaning {
-    fn into(self) -> SpecificMeaning {
-        SpecificMeaning::TokenTransfer(self)
+impl From<Meaning> for SpecificMeaning {
+    fn from(val: Meaning) -> SpecificMeaning {
+        SpecificMeaning::TokenTransfer(val)
     }
 }
 
@@ -63,9 +63,9 @@ pub struct Settings {
     target: Option<Address>,
     volume_limits: Vec<VolumeRateLimit>,
 }
-impl Into<SpecificGrant> for Settings {
-    fn into(self) -> SpecificGrant {
-        SpecificGrant::TokenTransfer(self)
+impl From<Settings> for SpecificGrant {
+    fn from(val: Settings) -> SpecificGrant {
+        SpecificGrant::TokenTransfer(val)
     }
 }
 
@@ -156,10 +156,10 @@ impl Policy for TokenTransfer {
             return Ok(violations);
         }
 
-        if let Some(allowed) = grant.settings.target {
-            if allowed != meaning.to {
-                violations.push(EvalViolation::InvalidTarget { target: meaning.to });
-            }
+        if let Some(allowed) = grant.settings.target
+            && allowed != meaning.to
+        {
+            violations.push(EvalViolation::InvalidTarget { target: meaning.to });
         }
 
         let rate_violations = check_volume_rate_limits(grant, db).await?;

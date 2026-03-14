@@ -94,13 +94,13 @@ impl SafeSigner {
         &self,
         tx: &mut dyn SignableTransaction<Signature>,
     ) -> Result<Signature> {
-        if let Some(chain_id) = self.chain_id {
-            if !tx.set_chain_id_checked(chain_id) {
-                return Err(Error::TransactionChainIdMismatch {
-                    signer: chain_id,
-                    tx: tx.chain_id().unwrap(),
-                });
-            }
+        if let Some(chain_id) = self.chain_id
+            && !tx.set_chain_id_checked(chain_id)
+        {
+            return Err(Error::TransactionChainIdMismatch {
+                signer: chain_id,
+                tx: tx.chain_id().unwrap(),
+            });
         }
         self.sign_hash_inner(&tx.signature_hash()).map_err(Error::other)
     }
