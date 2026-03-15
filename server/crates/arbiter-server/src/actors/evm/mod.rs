@@ -1,5 +1,7 @@
 use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
-use diesel::{ExpressionMethods, OptionalExtension as _, QueryDsl, SelectableHelper as _, dsl::insert_into};
+use diesel::{
+    ExpressionMethods, OptionalExtension as _, QueryDsl, SelectableHelper as _, dsl::insert_into,
+};
 use diesel_async::RunQueryDsl;
 use kameo::{Actor, actor::ActorRef, messages};
 use memsafe::MemSafe;
@@ -7,13 +9,16 @@ use rand::{SeedableRng, rng, rngs::StdRng};
 
 use crate::{
     actors::keyholder::{CreateNew, Decrypt, KeyHolder},
-    db::{self, DatabasePool, models::{self, EvmBasicGrant, SqliteTimestamp}, schema},
+    db::{
+        self, DatabasePool,
+        models::{self, EvmBasicGrant, SqliteTimestamp},
+        schema,
+    },
     evm::{
         self, RunKind,
         policies::{
             FullGrant, SharedGrantSettings, SpecificGrant, SpecificMeaning,
-            ether_transfer::EtherTransfer,
-            token_transfers::TokenTransfer,
+            ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
         },
     },
 };
@@ -88,7 +93,12 @@ impl EvmActor {
         // todo: audit
         let rng = StdRng::from_rng(&mut rng());
         let engine = evm::Engine::new(db.clone());
-        Self { keyholder, db, rng, engine }
+        Self {
+            keyholder,
+            db,
+            rng,
+            engine,
+        }
     }
 }
 
@@ -149,12 +159,24 @@ impl EvmActor {
         match grant {
             SpecificGrant::EtherTransfer(settings) => {
                 self.engine
-                    .create_grant::<EtherTransfer>(client_id, FullGrant { basic, specific: settings })
+                    .create_grant::<EtherTransfer>(
+                        client_id,
+                        FullGrant {
+                            basic,
+                            specific: settings,
+                        },
+                    )
                     .await
             }
             SpecificGrant::TokenTransfer(settings) => {
                 self.engine
-                    .create_grant::<TokenTransfer>(client_id, FullGrant { basic, specific: settings })
+                    .create_grant::<TokenTransfer>(
+                        client_id,
+                        FullGrant {
+                            basic,
+                            specific: settings,
+                        },
+                    )
                     .await
             }
         }
@@ -204,8 +226,14 @@ impl EvmActor {
             .ok_or(SignTransactionError::WalletNotFound)?;
         drop(conn);
 
-        let meaning = self.engine
-            .evaluate_transaction(wallet.id, client_id, transaction.clone(), RunKind::Execution)
+        let meaning = self
+            .engine
+            .evaluate_transaction(
+                wallet.id,
+                client_id,
+                transaction.clone(),
+                RunKind::Execution,
+            )
             .await?;
 
         Ok(meaning)
@@ -230,14 +258,21 @@ impl EvmActor {
 
         let raw_key: MemSafe<Vec<u8>> = self
             .keyholder
-            .ask(Decrypt { aead_id: wallet.aead_encrypted_id })
+            .ask(Decrypt {
+                aead_id: wallet.aead_encrypted_id,
+            })
             .await
             .map_err(|_| SignTransactionError::KeyholderSend)?;
 
         let signer = safe_signer::SafeSigner::from_memsafe(raw_key)?;
 
         self.engine
-            .evaluate_transaction(wallet.id, client_id, transaction.clone(), RunKind::Execution)
+            .evaluate_transaction(
+                wallet.id,
+                client_id,
+                transaction.clone(),
+                RunKind::Execution,
+            )
             .await?;
 
         use alloy::network::TxSignerSync as _;

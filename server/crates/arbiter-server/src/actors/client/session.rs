@@ -1,11 +1,15 @@
-use arbiter_proto::proto::client::{ClientRequest, ClientResponse};
 use kameo::Actor;
 use tokio::select;
 use tracing::{error, info};
 
-use crate::{actors::{
-    GlobalActors, client::{ClientError, ClientConnection}, router::RegisterClient
-}, db};
+use crate::{
+    actors::{
+        GlobalActors,
+        client::{ClientConnection, ClientError, Request, Response},
+        router::RegisterClient,
+    },
+    db,
+};
 
 pub struct ClientSession {
     props: ClientConnection,
@@ -16,18 +20,13 @@ impl ClientSession {
         Self { props }
     }
 
-    pub async fn process_transport_inbound(&mut self, req: ClientRequest) -> Output {
-        let msg = req.payload.ok_or_else(|| {
-            error!(actor = "client", "Received message with no payload");
-            ClientError::MissingRequestPayload
-        })?;
-
-        let _ = msg;
+    pub async fn process_transport_inbound(&mut self, req: Request) -> Output {
+        let _ = req;
         Err(ClientError::UnexpectedRequestPayload)
     }
 }
 
-type Output = Result<ClientResponse, ClientError>;
+type Output = Result<Response, ClientError>;
 
 impl Actor for ClientSession {
     type Args = Self;

@@ -8,7 +8,7 @@ use rcgen::{
     BasicConstraints, Certificate, CertificateParams, CertifiedIssuer, DistinguishedName, DnType,
     IsCa, Issuer, KeyPair, KeyUsagePurpose,
 };
-use rustls::pki_types::{pem::PemObject};
+use rustls::pki_types::pem::PemObject;
 use thiserror::Error;
 use tonic::transport::CertificateDer;
 
@@ -59,10 +59,7 @@ pub enum InitError {
 pub type PemCert = String;
 
 pub fn encode_cert_to_pem(cert: &CertificateDer) -> PemCert {
-    pem::encode_config(
-        &Pem::new("CERTIFICATE", cert.to_vec()),
-        ENCODE_CONFIG,
-    )
+    pem::encode_config(&Pem::new("CERTIFICATE", cert.to_vec()), ENCODE_CONFIG)
 }
 
 #[allow(unused)]

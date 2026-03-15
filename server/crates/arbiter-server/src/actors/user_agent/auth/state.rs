@@ -1,52 +1,15 @@
-use arbiter_proto::proto::user_agent::{
-    AuthChallenge, AuthOk, UserAgentResponse,
-    user_agent_response::Payload as UserAgentResponsePayload,
-};
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, update};
 use diesel_async::RunQueryDsl;
 use tracing::error;
 
 use super::Error;
 use crate::{
-    actors::{bootstrap::ConsumeToken, user_agent::UserAgentConnection},
-    db::{models::KeyType, schema},
+    actors::{
+        bootstrap::ConsumeToken,
+        user_agent::{AuthPublicKey, Response, UserAgentConnection},
+    },
+    db::schema,
 };
-
-/// Abstraction over Ed25519 / ECDSA-secp256k1 / RSA public keys used during the auth handshake.
-#[derive(Clone)]
-pub enum AuthPublicKey {
-    Ed25519(ed25519_dalek::VerifyingKey),
-    /// Compressed SEC1 public key; signature bytes are raw 64-byte (r||s).
-    EcdsaSecp256k1(k256::ecdsa::VerifyingKey),
-    /// RSA-2048+ public key (Windows Hello / KeyCredentialManager); signature bytes are PSS+SHA-256.
-    Rsa(rsa::RsaPublicKey),
-}
-
-impl AuthPublicKey {
-    /// Canonical bytes stored in DB and echoed back in the challenge.
-    /// Ed25519: raw 32 bytes. ECDSA: SEC1 compressed 33 bytes. RSA: DER-encoded SPKI.
-    pub fn to_stored_bytes(&self) -> Vec<u8> {
-        match self {
-            AuthPublicKey::Ed25519(k) => k.to_bytes().to_vec(),
-            // SEC1 compressed (33 bytes) is the natural compact format for secp256k1
-            AuthPublicKey::EcdsaSecp256k1(k) => k.to_encoded_point(true).as_bytes().to_vec(),
-            AuthPublicKey::Rsa(k) => {
-                use rsa::pkcs8::EncodePublicKey as _;
-                k.to_public_key_der()
-                    .expect("rsa SPKI encoding is infallible")
-                    .to_vec()
-            }
-        }
-    }
-
-    pub fn key_type(&self) -> KeyType {
-        match self {
-            AuthPublicKey::Ed25519(_) => KeyType::Ed25519,
-            AuthPublicKey::EcdsaSecp256k1(_) => KeyType::EcdsaSecp256k1,
-            AuthPublicKey::Rsa(_) => KeyType::Rsa,
-        }
-    }
-}
 
 pub struct ChallengeRequest {
     pub pubkey: AuthPublicKey,
@@ -58,7 +21,7 @@ pub struct BootstrapAuthRequest {
 }
 
 pub struct ChallengeContext {
-    pub challenge: AuthChallenge,
+    pub challenge_nonce: i32,
     pub key: AuthPublicKey,
 }
 
@@ -155,16 +118,9 @@ impl AuthStateMachineContext for AuthContext<'_> {
         let stored_bytes = pubkey.to_stored_bytes();
         let nonce = create_nonce(&self.conn.db, &stored_bytes).await?;
 
-        let challenge = AuthChallenge {
-            pubkey: stored_bytes,
-            nonce,
-        };
-
         self.conn
             .transport
-            .send(Ok(UserAgentResponse {
-                payload: Some(UserAgentResponsePayload::AuthChallenge(challenge.clone())),
-            }))
+            .send(Ok(Response::AuthChallenge { nonce }))
             .await
             .map_err(|e| {
                 error!(?e, "Failed to send auth challenge");
@@ -172,7 +128,7 @@ impl AuthStateMachineContext for AuthContext<'_> {
             })?;
 
         Ok(ChallengeContext {
-            challenge,
+            challenge_nonce: nonce,
             key: pubkey,
         })
     }
@@ -217,10 +173,10 @@ impl AuthStateMachineContext for AuthContext<'_> {
     #[allow(clippy::unused_unit)]
     async fn verify_solution(
         &mut self,
-        ChallengeContext { challenge, key  }: &ChallengeContext,
+        ChallengeContext { challenge_nonce, key }: &ChallengeContext,
         ChallengeSolution { solution }: ChallengeSolution,
     ) -> Result<AuthPublicKey, Self::Error> {
-        let formatted = arbiter_proto::format_challenge(challenge.nonce, &challenge.pubkey);
+        let formatted = arbiter_proto::format_challenge(*challenge_nonce, &key.to_stored_bytes());
 
         let valid = match key {
             AuthPublicKey::Ed25519(vk) => {
@@ -252,9 +208,7 @@ impl AuthStateMachineContext for AuthContext<'_> {
         if valid {
             self.conn
                 .transport
-                .send(Ok(UserAgentResponse {
-                    payload: Some(UserAgentResponsePayload::AuthOk(AuthOk {})),
-                }))
+                .send(Ok(Response::AuthOk))
                 .await
                 .map_err(|_| Error::Transport)?;
         }

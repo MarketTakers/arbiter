@@ -3,11 +3,11 @@ use std::sync::Mutex;
 use alloy::{
     consensus::SignableTransaction,
     network::{TxSigner, TxSignerSync},
-    primitives::{Address, ChainId, Signature, B256},
+    primitives::{Address, B256, ChainId, Signature},
     signers::{Error, Result, Signer, SignerSync, utils::secret_key_to_address},
 };
 use async_trait::async_trait;
-use k256::ecdsa::{self, signature::hazmat::PrehashSigner, RecoveryId, SigningKey};
+use k256::ecdsa::{self, RecoveryId, SigningKey, signature::hazmat::PrehashSigner};
 use memsafe::MemSafe;
 
 /// An Ethereum signer that stores its secp256k1 secret key inside a
@@ -90,10 +90,7 @@ impl SafeSigner {
         Ok(sig.into())
     }
 
-    fn sign_tx_inner(
-        &self,
-        tx: &mut dyn SignableTransaction<Signature>,
-    ) -> Result<Signature> {
+    fn sign_tx_inner(&self, tx: &mut dyn SignableTransaction<Signature>) -> Result<Signature> {
         if let Some(chain_id) = self.chain_id
             && !tx.set_chain_id_checked(chain_id)
         {
@@ -102,7 +99,8 @@ impl SafeSigner {
                 tx: tx.chain_id().unwrap(),
             });
         }
-        self.sign_hash_inner(&tx.signature_hash()).map_err(Error::other)
+        self.sign_hash_inner(&tx.signature_hash())
+            .map_err(Error::other)
     }
 }
 

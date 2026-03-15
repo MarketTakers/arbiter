@@ -313,7 +313,7 @@ impl KeyHolder {
                 current_nonce: nonce.to_vec(),
                 schema_version: 1,
                 associated_root_key_id: *root_key_history_id,
-                created_at: Utc::now().into()
+                created_at: Utc::now().into(),
             })
             .returning(schema::aead_encrypted::id)
             .get_result(&mut conn)
@@ -346,7 +346,7 @@ impl KeyHolder {
 #[cfg(test)]
 mod tests {
     use diesel::SelectableHelper;
-    
+
     use diesel_async::RunQueryDsl;
     use memsafe::MemSafe;
 

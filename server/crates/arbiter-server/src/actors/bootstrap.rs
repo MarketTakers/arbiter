@@ -3,12 +3,7 @@ use diesel::QueryDsl;
 use diesel_async::RunQueryDsl;
 use kameo::{Actor, messages};
 use miette::Diagnostic;
-use rand::{
-    RngExt,
-    distr::{Alphanumeric},
-    make_rng,
-    rngs::StdRng,
-};
+use rand::{RngExt, distr::Alphanumeric, make_rng, rngs::StdRng};
 use thiserror::Error;
 
 use crate::db::{self, DatabasePool, schema};
@@ -60,7 +55,6 @@ impl Bootstrapper {
             .await?;
 
         drop(conn);
-
 
         let token = if row_count == 0 {
             let token = generate_token().await?;

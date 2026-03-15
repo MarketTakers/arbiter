@@ -756,30 +756,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arbiter-useragent"
-version = "0.1.0"
-dependencies = [
- "arbiter-proto",
- "async-trait",
- "ed25519-dalek",
- "http",
- "k256",
- "kameo",
- "rand 0.10.0",
- "rsa",
- "rustls-webpki",
- "sha2 0.10.9",
- "smlang",
- "spki",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tonic",
- "tracing",
- "x25519-dalek",
-]
-
-[[package]]
 name = "argon2"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

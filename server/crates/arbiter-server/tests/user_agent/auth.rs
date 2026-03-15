@@ -1,14 +1,9 @@
-use arbiter_proto::proto::user_agent::{
-    AuthChallengeRequest, AuthChallengeSolution, KeyType as ProtoKeyType, UserAgentRequest,
-    user_agent_request::Payload as UserAgentRequestPayload,
-    user_agent_response::Payload as UserAgentResponsePayload,
-};
 use arbiter_proto::transport::Bi;
 use arbiter_server::{
     actors::{
         GlobalActors,
         bootstrap::GetToken,
-        user_agent::{UserAgentConnection, connect_user_agent},
+        user_agent::{AuthPublicKey, Request, Response, UserAgentConnection, connect_user_agent},
     },
     db::{self, schema},
 };
@@ -30,17 +25,10 @@ pub async fn test_bootstrap_token_auth() {
     let task = tokio::spawn(connect_user_agent(props));
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
-    let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
-
     test_transport
-        .send(UserAgentRequest {
-            payload: Some(UserAgentRequestPayload::AuthChallengeRequest(
-                AuthChallengeRequest {
-                    pubkey: pubkey_bytes,
-                    bootstrap_token: Some(token),
-                    key_type: ProtoKeyType::Ed25519.into(),
-                },
-            )),
+        .send(Request::AuthChallengeRequest {
+            pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+            bootstrap_token: Some(token),
         })
         .await
         .unwrap();
@@ -67,17 +55,10 @@ pub async fn test_bootstrap_invalid_token_auth() {
     let task = tokio::spawn(connect_user_agent(props));
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
-    let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
-
     test_transport
-        .send(UserAgentRequest {
-            payload: Some(UserAgentRequestPayload::AuthChallengeRequest(
-                AuthChallengeRequest {
-                    pubkey: pubkey_bytes,
-                    bootstrap_token: Some("invalid_token".to_string()),
-                    key_type: ProtoKeyType::Ed25519.into(),
-                },
-            )),
+        .send(Request::AuthChallengeRequest {
+            pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+            bootstrap_token: Some("invalid_token".to_string()),
         })
         .await
         .unwrap();
@@ -123,14 +104,9 @@ pub async fn test_challenge_auth() {
 
     // Send challenge request
     test_transport
-        .send(UserAgentRequest {
-            payload: Some(UserAgentRequestPayload::AuthChallengeRequest(
-                AuthChallengeRequest {
-                    pubkey: pubkey_bytes,
-                    bootstrap_token: None,
-                    key_type: ProtoKeyType::Ed25519.into(),
-                },
-            )),
+        .send(Request::AuthChallengeRequest {
+            pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+            bootstrap_token: None,
         })
         .await
         .unwrap();
@@ -141,24 +117,19 @@ pub async fn test_challenge_auth() {
         .await
         .expect("should receive challenge");
     let challenge = match response {
-        Ok(resp) => match resp.payload {
-            Some(UserAgentResponsePayload::AuthChallenge(c)) => c,
+        Ok(resp) => match resp {
+            Response::AuthChallenge { nonce } => nonce,
             other => panic!("Expected AuthChallenge, got {other:?}"),
         },
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };
 
-    // Sign the challenge and send solution
-    let formatted_challenge = arbiter_proto::format_challenge(challenge.nonce, &challenge.pubkey);
+    let formatted_challenge = arbiter_proto::format_challenge(challenge, &pubkey_bytes);
     let signature = new_key.sign(&formatted_challenge);
 
     test_transport
-        .send(UserAgentRequest {
-            payload: Some(UserAgentRequestPayload::AuthChallengeSolution(
-                AuthChallengeSolution {
-                    signature: signature.to_bytes().to_vec(),
-                },
-            )),
+        .send(Request::AuthChallengeSolution {
+            signature: signature.to_bytes().to_vec(),
         })
         .await
         .unwrap();

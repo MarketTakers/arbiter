@@ -1,13 +1,8 @@
-use arbiter_proto::proto::user_agent::{
-    UnsealEncryptedKey, UnsealResult, UnsealStart, UserAgentRequest,
-    user_agent_request::Payload as UserAgentRequestPayload,
-    user_agent_response::Payload as UserAgentResponsePayload,
-};
 use arbiter_server::{
     actors::{
         GlobalActors,
         keyholder::{Bootstrap, Seal},
-        user_agent::session::UserAgentSession,
+        user_agent::{Request, Response, UnsealError, session::UserAgentSession},
     },
     db,
 };
@@ -15,9 +10,7 @@ use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use memsafe::MemSafe;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-async fn setup_sealed_user_agent(
-    seal_key: &[u8],
-) -> (db::DatabasePool, UserAgentSession) {
+async fn setup_sealed_user_agent(seal_key: &[u8]) -> (db::DatabasePool, UserAgentSession) {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
@@ -35,29 +28,23 @@ async fn setup_sealed_user_agent(
     (db, session)
 }
 
-async fn client_dh_encrypt(
-    user_agent: &mut UserAgentSession,
-    key_to_send: &[u8],
-) -> UnsealEncryptedKey {
+async fn client_dh_encrypt(user_agent: &mut UserAgentSession, key_to_send: &[u8]) -> Request {
     let client_secret = EphemeralSecret::random();
     let client_public = PublicKey::from(&client_secret);
 
     let response = user_agent
-        .process_transport_inbound(UserAgentRequest {
-            payload: Some(UserAgentRequestPayload::UnsealStart(UnsealStart {
-                client_pubkey: client_public.as_bytes().to_vec(),
-            })),
+        .process_transport_inbound(Request::UnsealStart {
+            client_pubkey: client_public,
         })
         .await
         .unwrap();
 
-    let server_pubkey = match response.payload.unwrap() {
-        UserAgentResponsePayload::UnsealStartResponse(resp) => resp.server_pubkey,
+    let server_pubkey = match response {
+        Response::UnsealStartResponse { server_pubkey } => server_pubkey,
         other => panic!("Expected UnsealStartResponse, got {other:?}"),
     };
-    let server_public = PublicKey::from(<[u8; 32]>::try_from(server_pubkey.as_slice()).unwrap());
 
-    let shared_secret = client_secret.diffie_hellman(&server_public);
+    let shared_secret = client_secret.diffie_hellman(&server_pubkey);
     let cipher = XChaCha20Poly1305::new(shared_secret.as_bytes().into());
     let nonce = XNonce::from([0u8; 24]);
     let associated_data = b"unseal";
@@ -66,16 +53,10 @@ async fn client_dh_encrypt(
         .encrypt_in_place(&nonce, associated_data, &mut ciphertext)
         .unwrap();
 
-    UnsealEncryptedKey {
+    Request::UnsealEncryptedKey {
         nonce: nonce.to_vec(),
         ciphertext,
         associated_data: associated_data.to_vec(),
-    }
-}
-
-fn unseal_key_request(req: UnsealEncryptedKey) -> UserAgentRequest {
-    UserAgentRequest {
-        payload: Some(UserAgentRequestPayload::UnsealEncryptedKey(req)),
     }
 }
 
@@ -88,14 +69,11 @@ pub async fn test_unseal_success() {
     let encrypted_key = client_dh_encrypt(&mut user_agent, seal_key).await;
 
     let response = user_agent
-        .process_transport_inbound(unseal_key_request(encrypted_key))
+        .process_transport_inbound(encrypted_key)
         .await
         .unwrap();
 
-    assert_eq!(
-        response.payload.unwrap(),
-        UserAgentResponsePayload::UnsealResult(UnsealResult::Success.into()),
-    );
+    assert!(matches!(response, Response::UnsealResult(Ok(()))));
 }
 
 #[tokio::test]
@@ -106,14 +84,14 @@ pub async fn test_unseal_wrong_seal_key() {
     let encrypted_key = client_dh_encrypt(&mut user_agent, b"wrong-key").await;
 
     let response = user_agent
-        .process_transport_inbound(unseal_key_request(encrypted_key))
+        .process_transport_inbound(encrypted_key)
         .await
         .unwrap();
 
-    assert_eq!(
-        response.payload.unwrap(),
-        UserAgentResponsePayload::UnsealResult(UnsealResult::InvalidKey.into()),
-    );
+    assert!(matches!(
+        response,
+        Response::UnsealResult(Err(UnsealError::InvalidKey))
+    ));
 }
 
 #[tokio::test]
@@ -125,27 +103,25 @@ pub async fn test_unseal_corrupted_ciphertext() {
     let client_public = PublicKey::from(&client_secret);
 
     user_agent
-        .process_transport_inbound(UserAgentRequest {
-            payload: Some(UserAgentRequestPayload::UnsealStart(UnsealStart {
-                client_pubkey: client_public.as_bytes().to_vec(),
-            })),
+        .process_transport_inbound(Request::UnsealStart {
+            client_pubkey: client_public,
         })
         .await
         .unwrap();
 
     let response = user_agent
-        .process_transport_inbound(unseal_key_request(UnsealEncryptedKey {
+        .process_transport_inbound(Request::UnsealEncryptedKey {
             nonce: vec![0u8; 24],
             ciphertext: vec![0u8; 32],
             associated_data: vec![],
-        }))
+        })
         .await
         .unwrap();
 
-    assert_eq!(
-        response.payload.unwrap(),
-        UserAgentResponsePayload::UnsealResult(UnsealResult::InvalidKey.into()),
-    );
+    assert!(matches!(
+        response,
+        Response::UnsealResult(Err(UnsealError::InvalidKey))
+    ));
 }
 
 #[tokio::test]
@@ -158,27 +134,24 @@ pub async fn test_unseal_retry_after_invalid_key() {
         let encrypted_key = client_dh_encrypt(&mut user_agent, b"wrong-key").await;
 
         let response = user_agent
-            .process_transport_inbound(unseal_key_request(encrypted_key))
+            .process_transport_inbound(encrypted_key)
             .await
             .unwrap();
 
-        assert_eq!(
-            response.payload.unwrap(),
-            UserAgentResponsePayload::UnsealResult(UnsealResult::InvalidKey.into()),
-        );
+        assert!(matches!(
+            response,
+            Response::UnsealResult(Err(UnsealError::InvalidKey))
+        ));
     }
 
     {
         let encrypted_key = client_dh_encrypt(&mut user_agent, seal_key).await;
 
         let response = user_agent
-            .process_transport_inbound(unseal_key_request(encrypted_key))
+            .process_transport_inbound(encrypted_key)
             .await
             .unwrap();
 
-        assert_eq!(
-            response.payload.unwrap(),
-            UserAgentResponsePayload::UnsealResult(UnsealResult::Success.into()),
-        );
+        assert!(matches!(response, Response::UnsealResult(Ok(()))));
     }
 }

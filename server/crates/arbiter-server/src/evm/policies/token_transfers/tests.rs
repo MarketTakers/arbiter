@@ -140,10 +140,18 @@ async fn evaluate_rejects_nonzero_eth_value() {
     let mut context = ctx(DAI, calldata);
     context.value = U256::from(1u64); // ETH attached to an ERC-20 call
 
-    let m = TokenTransfer::analyze(&EvalContext { value: U256::ZERO, ..context.clone() })
+    let m = TokenTransfer::analyze(&EvalContext {
+        value: U256::ZERO,
+        ..context.clone()
+    })
+    .unwrap();
+    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn)
+        .await
         .unwrap();
-    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn).await.unwrap();
-    assert!(v.iter().any(|e| matches!(e, EvalViolation::InvalidTransactionType)));
+    assert!(
+        v.iter()
+            .any(|e| matches!(e, EvalViolation::InvalidTransactionType))
+    );
 }
 
 #[tokio::test]
@@ -160,7 +168,9 @@ async fn evaluate_passes_any_recipient_when_no_restriction() {
     let calldata = transfer_calldata(RECIPIENT, U256::from(100u64));
     let context = ctx(DAI, calldata);
     let m = TokenTransfer::analyze(&context).unwrap();
-    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn).await.unwrap();
+    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn)
+        .await
+        .unwrap();
     assert!(v.is_empty());
 }
 
@@ -178,7 +188,9 @@ async fn evaluate_passes_matching_restricted_recipient() {
     let calldata = transfer_calldata(RECIPIENT, U256::from(100u64));
     let context = ctx(DAI, calldata);
     let m = TokenTransfer::analyze(&context).unwrap();
-    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn).await.unwrap();
+    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn)
+        .await
+        .unwrap();
     assert!(v.is_empty());
 }
 
@@ -196,8 +208,13 @@ async fn evaluate_rejects_wrong_restricted_recipient() {
     let calldata = transfer_calldata(OTHER, U256::from(100u64));
     let context = ctx(DAI, calldata);
     let m = TokenTransfer::analyze(&context).unwrap();
-    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn).await.unwrap();
-    assert!(v.iter().any(|e| matches!(e, EvalViolation::InvalidTarget { .. })));
+    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn)
+        .await
+        .unwrap();
+    assert!(
+        v.iter()
+            .any(|e| matches!(e, EvalViolation::InvalidTarget { .. }))
+    );
 }
 
 #[tokio::test]
@@ -207,7 +224,9 @@ async fn evaluate_passes_volume_within_limit() {
 
     let basic = insert_basic(&mut conn, false).await;
     let settings = make_settings(None, Some(1_000));
-    let grant_id = TokenTransfer::create_grant(&basic, &settings, &mut *conn).await.unwrap();
+    let grant_id = TokenTransfer::create_grant(&basic, &settings, &mut *conn)
+        .await
+        .unwrap();
 
     // Record a past transfer of 500 (within 1000 limit)
     use crate::db::{models::NewEvmTokenTransferLog, schema::evm_token_transfer_log};
@@ -224,12 +243,22 @@ async fn evaluate_passes_volume_within_limit() {
         .await
         .unwrap();
 
-    let grant = Grant { id: grant_id, shared_grant_id: basic.id, shared: shared(), settings };
+    let grant = Grant {
+        id: grant_id,
+        shared_grant_id: basic.id,
+        shared: shared(),
+        settings,
+    };
     let calldata = transfer_calldata(RECIPIENT, U256::from(100u64));
     let context = ctx(DAI, calldata);
     let m = TokenTransfer::analyze(&context).unwrap();
-    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn).await.unwrap();
-    assert!(!v.iter().any(|e| matches!(e, EvalViolation::VolumetricLimitExceeded)));
+    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn)
+        .await
+        .unwrap();
+    assert!(
+        !v.iter()
+            .any(|e| matches!(e, EvalViolation::VolumetricLimitExceeded))
+    );
 }
 
 #[tokio::test]
@@ -239,7 +268,9 @@ async fn evaluate_rejects_volume_over_limit() {
 
     let basic = insert_basic(&mut conn, false).await;
     let settings = make_settings(None, Some(1_000));
-    let grant_id = TokenTransfer::create_grant(&basic, &settings, &mut *conn).await.unwrap();
+    let grant_id = TokenTransfer::create_grant(&basic, &settings, &mut *conn)
+        .await
+        .unwrap();
 
     use crate::db::{models::NewEvmTokenTransferLog, schema::evm_token_transfer_log};
     insert_into(evm_token_transfer_log::table)
@@ -255,12 +286,22 @@ async fn evaluate_rejects_volume_over_limit() {
         .await
         .unwrap();
 
-    let grant = Grant { id: grant_id, shared_grant_id: basic.id, shared: shared(), settings };
+    let grant = Grant {
+        id: grant_id,
+        shared_grant_id: basic.id,
+        shared: shared(),
+        settings,
+    };
     let calldata = transfer_calldata(RECIPIENT, U256::from(100u64));
     let context = ctx(DAI, calldata);
     let m = TokenTransfer::analyze(&context).unwrap();
-    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn).await.unwrap();
-    assert!(v.iter().any(|e| matches!(e, EvalViolation::VolumetricLimitExceeded)));
+    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn)
+        .await
+        .unwrap();
+    assert!(
+        v.iter()
+            .any(|e| matches!(e, EvalViolation::VolumetricLimitExceeded))
+    );
 }
 
 #[tokio::test]
@@ -277,8 +318,13 @@ async fn evaluate_no_volume_limits_always_passes() {
     let calldata = transfer_calldata(RECIPIENT, U256::from(u64::MAX));
     let context = ctx(DAI, calldata);
     let m = TokenTransfer::analyze(&context).unwrap();
-    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn).await.unwrap();
-    assert!(!v.iter().any(|e| matches!(e, EvalViolation::VolumetricLimitExceeded)));
+    let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn)
+        .await
+        .unwrap();
+    assert!(
+        !v.iter()
+            .any(|e| matches!(e, EvalViolation::VolumetricLimitExceeded))
+    );
 }
 
 // ── try_find_grant ───────────────────────────────────────────────────────
@@ -290,7 +336,9 @@ async fn try_find_grant_roundtrip() {
 
     let basic = insert_basic(&mut conn, false).await;
     let settings = make_settings(Some(RECIPIENT), Some(5_000));
-    TokenTransfer::create_grant(&basic, &settings, &mut *conn).await.unwrap();
+    TokenTransfer::create_grant(&basic, &settings, &mut *conn)
+        .await
+        .unwrap();
 
     let calldata = transfer_calldata(RECIPIENT, U256::from(100u64));
     let found = TokenTransfer::try_find_grant(&ctx(DAI, calldata), &mut *conn)
@@ -312,7 +360,9 @@ async fn try_find_grant_revoked_returns_none() {
 
     let basic = insert_basic(&mut conn, true).await;
     let settings = make_settings(None, None);
-    TokenTransfer::create_grant(&basic, &settings, &mut *conn).await.unwrap();
+    TokenTransfer::create_grant(&basic, &settings, &mut *conn)
+        .await
+        .unwrap();
 
     let calldata = transfer_calldata(RECIPIENT, U256::from(1u64));
     let found = TokenTransfer::try_find_grant(&ctx(DAI, calldata), &mut *conn)
@@ -328,7 +378,9 @@ async fn try_find_grant_unknown_token_returns_none() {
 
     let basic = insert_basic(&mut conn, false).await;
     let settings = make_settings(None, None);
-    TokenTransfer::create_grant(&basic, &settings, &mut *conn).await.unwrap();
+    TokenTransfer::create_grant(&basic, &settings, &mut *conn)
+        .await
+        .unwrap();
 
     // Query with a different token contract
     let calldata = transfer_calldata(RECIPIENT, U256::from(1u64));
@@ -355,9 +407,13 @@ async fn find_all_grants_excludes_revoked() {
 
     let settings = make_settings(None, Some(1_000));
     let active = insert_basic(&mut conn, false).await;
-    TokenTransfer::create_grant(&active, &settings, &mut *conn).await.unwrap();
+    TokenTransfer::create_grant(&active, &settings, &mut *conn)
+        .await
+        .unwrap();
     let revoked = insert_basic(&mut conn, true).await;
-    TokenTransfer::create_grant(&revoked, &settings, &mut *conn).await.unwrap();
+    TokenTransfer::create_grant(&revoked, &settings, &mut *conn)
+        .await
+        .unwrap();
 
     let all = TokenTransfer::find_all_grants(&mut *conn).await.unwrap();
     assert_eq!(all.len(), 1);
@@ -370,12 +426,17 @@ async fn find_all_grants_loads_volume_limits() {
 
     let basic = insert_basic(&mut conn, false).await;
     let settings = make_settings(None, Some(9_999));
-    TokenTransfer::create_grant(&basic, &settings, &mut *conn).await.unwrap();
+    TokenTransfer::create_grant(&basic, &settings, &mut *conn)
+        .await
+        .unwrap();
 
     let all = TokenTransfer::find_all_grants(&mut *conn).await.unwrap();
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].settings.volume_limits.len(), 1);
-    assert_eq!(all[0].settings.volume_limits[0].max_volume, U256::from(9_999u64));
+    assert_eq!(
+        all[0].settings.volume_limits[0].max_volume,
+        U256::from(9_999u64)
+    );
 }
 
 #[tokio::test]
@@ -388,9 +449,13 @@ async fn find_all_grants_multiple_grants_batch_loaded() {
         .await
         .unwrap();
     let b2 = insert_basic(&mut conn, false).await;
-    TokenTransfer::create_grant(&b2, &make_settings(Some(RECIPIENT), Some(2_000)), &mut *conn)
-        .await
-        .unwrap();
+    TokenTransfer::create_grant(
+        &b2,
+        &make_settings(Some(RECIPIENT), Some(2_000)),
+        &mut *conn,
+    )
+    .await
+    .unwrap();
 
     let all = TokenTransfer::find_all_grants(&mut *conn).await.unwrap();
     assert_eq!(all.len(), 2);

@@ -73,7 +73,6 @@ pub struct Grant<PolicySettings> {
     pub settings: PolicySettings,
 }
 
-
 pub trait Policy: Sized {
     type Settings: Send + Sync + 'static + Into<SpecificGrant>;
     type Meaning: Display + std::fmt::Debug + Send + Sync + 'static + Into<SpecificMeaning>;
