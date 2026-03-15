@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:arbiter/features/pk_manager.dart';
+import 'package:arbiter/features/identity/pk_manager.dart';
 
 final storage = FlutterSecureStorage(
   aOptions: AndroidOptions.biometric(
@@ -16,7 +16,6 @@ final storage = FlutterSecureStorage(
     synchronizable: false,
     accessControlFlags: [
       AccessControlFlag.userPresence,
-      AccessControlFlag.privateKeyUsage,
     ],
     usesDataProtectionKeychain: true,
   ),

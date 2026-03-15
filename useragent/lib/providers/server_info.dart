@@ -1,4 +1,4 @@
-import 'package:arbiter/features/server_info_storage.dart';
+import 'package:arbiter/features/connection/server_info_storage.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 

@@ -1,7 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:json_annotation/json_annotation.dart';
 
+part 'server_info_storage.g.dart';
+
+@JsonSerializable()
 class StoredServerInfo {
   const StoredServerInfo({
     required this.address,
@@ -13,19 +17,9 @@ class StoredServerInfo {
   final int port;
   final String caCertFingerprint;
 
-  Map<String, dynamic> toJson() => {
-    'address': address,
-    'port': port,
-    'caCertFingerprint': caCertFingerprint,
-  };
-
-  factory StoredServerInfo.fromJson(Map<String, dynamic> json) {
-    return StoredServerInfo(
-      address: json['address'] as String,
-      port: json['port'] as int,
-      caCertFingerprint: json['caCertFingerprint'] as String,
-    );
-  }
+  factory StoredServerInfo.fromJson(Map<String, dynamic> json) => _$StoredServerInfoFromJson(json);
+  Map<String, dynamic> toJson() => _$StoredServerInfoToJson(this);
+  
 }
 
 abstract class ServerInfoStorage {

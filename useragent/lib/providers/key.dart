@@ -1,7 +1,7 @@
 import 'package:mtcore/markettakers.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:arbiter/features/pk_manager.dart';
-import 'package:arbiter/features/simple_ed25519.dart';
+import 'package:arbiter/features/identity/pk_manager.dart';
+import 'package:arbiter/features/identity/simple_ed25519.dart';
 
 part 'key.g.dart';
 

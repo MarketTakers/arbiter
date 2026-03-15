@@ -10,13 +10,9 @@
 // ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
 // ignore_for_file: non_constant_identifier_names, prefer_relative_imports
 
-import 'dart:async' as $async;
 import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
-
-import 'client.pb.dart' as $0;
-import 'user_agent.pb.dart' as $1;
 
 export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
 
@@ -84,21 +80,6 @@ class ServerInfo extends $pb.GeneratedMessage {
   $core.bool hasCertPublicKey() => $_has(1);
   @$pb.TagNumber(2)
   void clearCertPublicKey() => $_clearField(2);
-}
-
-class ArbiterServiceApi {
-  final $pb.RpcClient _client;
-
-  ArbiterServiceApi(this._client);
-
-  $async.Future<$0.ClientResponse> client(
-          $pb.ClientContext? ctx, $0.ClientRequest request) =>
-      _client.invoke<$0.ClientResponse>(
-          ctx, 'ArbiterService', 'Client', request, $0.ClientResponse());
-  $async.Future<$1.UserAgentResponse> userAgent(
-          $pb.ClientContext? ctx, $1.UserAgentRequest request) =>
-      _client.invoke<$1.UserAgentResponse>(
-          ctx, 'ArbiterService', 'UserAgent', request, $1.UserAgentResponse());
 }
 
 const $core.bool _omitFieldNames =

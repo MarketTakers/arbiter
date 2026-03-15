@@ -26,10 +26,12 @@ class AuthChallengeRequest extends $pb.GeneratedMessage {
   factory AuthChallengeRequest({
     $core.List<$core.int>? pubkey,
     $core.String? bootstrapToken,
+    KeyType? keyType,
   }) {
     final result = create();
     if (pubkey != null) result.pubkey = pubkey;
     if (bootstrapToken != null) result.bootstrapToken = bootstrapToken;
+    if (keyType != null) result.keyType = keyType;
     return result;
   }
 
@@ -50,6 +52,8 @@ class AuthChallengeRequest extends $pb.GeneratedMessage {
     ..a<$core.List<$core.int>>(
         1, _omitFieldNames ? '' : 'pubkey', $pb.PbFieldType.OY)
     ..aOS(2, _omitFieldNames ? '' : 'bootstrapToken')
+    ..aE<KeyType>(3, _omitFieldNames ? '' : 'keyType',
+        enumValues: KeyType.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -88,6 +92,15 @@ class AuthChallengeRequest extends $pb.GeneratedMessage {
   $core.bool hasBootstrapToken() => $_has(1);
   @$pb.TagNumber(2)
   void clearBootstrapToken() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  KeyType get keyType => $_getN(2);
+  @$pb.TagNumber(3)
+  set keyType(KeyType value) => $_setField(3, value);
+  @$pb.TagNumber(3)
+  $core.bool hasKeyType() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearKeyType() => $_clearField(3);
 }
 
 class AuthChallenge extends $pb.GeneratedMessage {

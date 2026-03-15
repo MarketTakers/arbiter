@@ -8,6 +8,7 @@ class Router extends RootStackRouter {
   List<AutoRoute> get routes => [
     AutoRoute(page: Bootstrap.page, path: '/bootstrap', initial: true),
     AutoRoute(page: ServerInfoSetupRoute.page, path: '/server-info'),
+    AutoRoute(page: ServerConnectionRoute.page, path: '/server-connection'),
 
     AutoRoute(
       page: DashboardRouter.page,

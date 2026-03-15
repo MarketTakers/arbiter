@@ -1,5 +1,6 @@
-import 'package:arbiter/features/arbiter_url.dart';
-import 'package:arbiter/features/server_info_storage.dart';
+import 'package:arbiter/features/connection/arbiter_url.dart';
+import 'package:arbiter/features/connection/server_info_storage.dart';
+import 'package:arbiter/providers/connection/bootstrap_token.dart';
 import 'package:arbiter/providers/server_info.dart';
 import 'package:arbiter/router.gr.dart';
 import 'package:auto_route/auto_route.dart';
@@ -25,7 +26,7 @@ class ServerInfoSetupScreen extends HookConsumerWidget {
       if (serverInfo != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (context.mounted) {
-            context.router.replace(const DashboardRouter());
+            context.router.replace(ServerConnectionRoute());
           }
         });
       }
@@ -38,6 +39,14 @@ class ServerInfoSetupScreen extends HookConsumerWidget {
 
       try {
         final arbiterUrl = ArbiterUrl.parse(controller.text.trim());
+
+        // set token before triggering reconnection by updating server info
+        if (arbiterUrl.bootstrapToken != null) {
+          ref
+              .read(bootstrapTokenProvider.notifier)
+              .set(arbiterUrl.bootstrapToken!);
+        }
+
         await ref
             .read(serverInfoProvider.notifier)
             .save(
@@ -47,7 +56,9 @@ class ServerInfoSetupScreen extends HookConsumerWidget {
             );
 
         if (context.mounted) {
-          context.router.replace(const DashboardRouter());
+          context.router.replace(
+            ServerConnectionRoute(arbiterUrl: controller.text.trim()),
+          );
         }
       } on FormatException catch (error) {
         errorText.value = error.message;
@@ -94,13 +105,15 @@ class ServerInfoSetupScreen extends HookConsumerWidget {
           final options = [
             const _OptionCard(
               title: 'Local',
-              subtitle: 'Will start and connect to a local service in a future update.',
+              subtitle:
+                  'Will start and connect to a local service in a future update.',
               enabled: false,
               child: SizedBox.shrink(),
             ),
             _OptionCard(
               title: 'Remote',
-              subtitle: 'Paste an Arbiter URL to store the server address, port, and CA fingerprint.',
+              subtitle:
+                  'Paste an Arbiter URL to store the server address, port, and CA fingerprint.',
               child: _RemoteConnectionForm(
                 controller: controller,
                 errorText: errorText.value,
@@ -271,10 +284,7 @@ class _OptionCard extends StatelessWidget {
               ),
               SizedBox(height: 1.h),
               Text(subtitle, style: theme.textTheme.bodyMedium),
-              if (enabled) ...[
-                SizedBox(height: 2.h),
-                child,
-              ],
+              if (enabled) ...[SizedBox(height: 2.h), child],
             ],
           ),
         ),

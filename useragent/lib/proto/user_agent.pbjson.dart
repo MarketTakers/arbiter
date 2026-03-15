@@ -15,6 +15,22 @@ import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
+@$core.Deprecated('Use keyTypeDescriptor instead')
+const KeyType$json = {
+  '1': 'KeyType',
+  '2': [
+    {'1': 'KEY_TYPE_UNSPECIFIED', '2': 0},
+    {'1': 'KEY_TYPE_ED25519', '2': 1},
+    {'1': 'KEY_TYPE_ECDSA_SECP256K1', '2': 2},
+    {'1': 'KEY_TYPE_RSA', '2': 3},
+  ],
+};
+
+/// Descriptor for `KeyType`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List keyTypeDescriptor = $convert.base64Decode(
+    'CgdLZXlUeXBlEhgKFEtFWV9UWVBFX1VOU1BFQ0lGSUVEEAASFAoQS0VZX1RZUEVfRUQyNTUxOR'
+    'ABEhwKGEtFWV9UWVBFX0VDRFNBX1NFQ1AyNTZLMRACEhAKDEtFWV9UWVBFX1JTQRAD');
+
 @$core.Deprecated('Use unsealResultDescriptor instead')
 const UnsealResult$json = {
   '1': 'UnsealResult',
@@ -64,6 +80,14 @@ const AuthChallengeRequest$json = {
       '10': 'bootstrapToken',
       '17': true
     },
+    {
+      '1': 'key_type',
+      '3': 3,
+      '4': 1,
+      '5': 14,
+      '6': '.arbiter.user_agent.KeyType',
+      '10': 'keyType'
+    },
   ],
   '8': [
     {'1': '_bootstrap_token'},
@@ -73,8 +97,9 @@ const AuthChallengeRequest$json = {
 /// Descriptor for `AuthChallengeRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List authChallengeRequestDescriptor = $convert.base64Decode(
     'ChRBdXRoQ2hhbGxlbmdlUmVxdWVzdBIWCgZwdWJrZXkYASABKAxSBnB1YmtleRIsCg9ib290c3'
-    'RyYXBfdG9rZW4YAiABKAlIAFIOYm9vdHN0cmFwVG9rZW6IAQFCEgoQX2Jvb3RzdHJhcF90b2tl'
-    'bg==');
+    'RyYXBfdG9rZW4YAiABKAlIAFIOYm9vdHN0cmFwVG9rZW6IAQESNgoIa2V5X3R5cGUYAyABKA4y'
+    'Gy5hcmJpdGVyLnVzZXJfYWdlbnQuS2V5VHlwZVIHa2V5VHlwZUISChBfYm9vdHN0cmFwX3Rva2'
+    'Vu');
 
 @$core.Deprecated('Use authChallengeDescriptor instead')
 const AuthChallenge$json = {
