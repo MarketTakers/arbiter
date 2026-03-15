@@ -13,33 +13,34 @@ import 'package:arbiter/screens/bootstrap.dart' as _i2;
 import 'package:arbiter/screens/dashboard.dart' as _i4;
 import 'package:arbiter/screens/dashboard/about.dart' as _i1;
 import 'package:arbiter/screens/dashboard/calc.dart' as _i3;
-import 'package:auto_route/auto_route.dart' as _i5;
+import 'package:arbiter/screens/server_info_setup.dart' as _i5;
+import 'package:auto_route/auto_route.dart' as _i6;
 
 /// generated route for
 /// [_i1.AboutScreen]
-class AboutRoute extends _i5.PageRouteInfo<void> {
-  const AboutRoute({List<_i5.PageRouteInfo>? children})
+class AboutRoute extends _i6.PageRouteInfo<void> {
+  const AboutRoute({List<_i6.PageRouteInfo>? children})
     : super(AboutRoute.name, initialChildren: children);
 
   static const String name = 'AboutRoute';
 
-  static _i5.PageInfo page = _i5.PageInfo(
+  static _i6.PageInfo page = _i6.PageInfo(
     name,
     builder: (data) {
-      return _i1.AboutScreen();
+      return const _i1.AboutScreen();
     },
   );
 }
 
 /// generated route for
 /// [_i2.Bootstrap]
-class Bootstrap extends _i5.PageRouteInfo<void> {
-  const Bootstrap({List<_i5.PageRouteInfo>? children})
+class Bootstrap extends _i6.PageRouteInfo<void> {
+  const Bootstrap({List<_i6.PageRouteInfo>? children})
     : super(Bootstrap.name, initialChildren: children);
 
   static const String name = 'Bootstrap';
 
-  static _i5.PageInfo page = _i5.PageInfo(
+  static _i6.PageInfo page = _i6.PageInfo(
     name,
     builder: (data) {
       return const _i2.Bootstrap();
@@ -49,13 +50,13 @@ class Bootstrap extends _i5.PageRouteInfo<void> {
 
 /// generated route for
 /// [_i3.CalcScreen]
-class CalcRoute extends _i5.PageRouteInfo<void> {
-  const CalcRoute({List<_i5.PageRouteInfo>? children})
+class CalcRoute extends _i6.PageRouteInfo<void> {
+  const CalcRoute({List<_i6.PageRouteInfo>? children})
     : super(CalcRoute.name, initialChildren: children);
 
   static const String name = 'CalcRoute';
 
-  static _i5.PageInfo page = _i5.PageInfo(
+  static _i6.PageInfo page = _i6.PageInfo(
     name,
     builder: (data) {
       return const _i3.CalcScreen();
@@ -65,16 +66,32 @@ class CalcRoute extends _i5.PageRouteInfo<void> {
 
 /// generated route for
 /// [_i4.DashboardRouter]
-class DashboardRouter extends _i5.PageRouteInfo<void> {
-  const DashboardRouter({List<_i5.PageRouteInfo>? children})
+class DashboardRouter extends _i6.PageRouteInfo<void> {
+  const DashboardRouter({List<_i6.PageRouteInfo>? children})
     : super(DashboardRouter.name, initialChildren: children);
 
   static const String name = 'DashboardRouter';
 
-  static _i5.PageInfo page = _i5.PageInfo(
+  static _i6.PageInfo page = _i6.PageInfo(
     name,
     builder: (data) {
       return const _i4.DashboardRouter();
+    },
+  );
+}
+
+/// generated route for
+/// [_i5.ServerInfoSetupScreen]
+class ServerInfoSetupRoute extends _i6.PageRouteInfo<void> {
+  const ServerInfoSetupRoute({List<_i6.PageRouteInfo>? children})
+    : super(ServerInfoSetupRoute.name, initialChildren: children);
+
+  static const String name = 'ServerInfoSetupRoute';
+
+  static _i6.PageInfo page = _i6.PageInfo(
+    name,
+    builder: (data) {
+      return const _i5.ServerInfoSetupScreen();
     },
   );
 }

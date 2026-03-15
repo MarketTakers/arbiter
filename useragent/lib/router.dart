@@ -1,8 +1,4 @@
-import 'package:arbiter/screens/dashboard/about.dart';
-import 'package:arbiter/screens/dashboard/calc.dart';
 import 'package:auto_route/auto_route.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
 
 import 'router.gr.dart';
 
@@ -11,6 +7,7 @@ class Router extends RootStackRouter {
   @override
   List<AutoRoute> get routes => [
     AutoRoute(page: Bootstrap.page, path: '/bootstrap', initial: true),
+    AutoRoute(page: ServerInfoSetupRoute.page, path: '/server-info'),
 
     AutoRoute(
       page: DashboardRouter.page,

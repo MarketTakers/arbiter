@@ -14,13 +14,13 @@ class Bootstrap extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final container = ProviderScope.containerOf(  context);
+    final container = ProviderScope.containerOf(context);
     final completer = useMemoized(() {
       final completer = Completer<void>();
       completer.future.then((_) async {
         if (context.mounted) {
           final router = AutoRouter.of(context);
-          router.replace(const DashboardRouter());
+          router.replace(const ServerInfoSetupRoute());
         }
       });
 
