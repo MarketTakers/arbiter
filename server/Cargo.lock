@@ -762,6 +762,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbiter-terrors-poc"
+version = "0.1.0"
+dependencies = [
+ "terrors",
+]
+
+[[package]]
 name = "arbiter-tokens-registry"
 version = "0.1.0"
 dependencies = [
@@ -4855,6 +4862,12 @@ dependencies = [
  "rustix",
  "windows-sys 0.60.2",
 ]
+
+[[package]]
+name = "terrors"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "987fd8c678ca950df2a18b2c6e9da6ca511d449278fab3565efe0d49c0c07a5d"
 
 [[package]]
 name = "test-log"
