@@ -52,6 +52,7 @@ impl UserAgentConnection {
 pub mod auth;
 pub mod session;
 
+#[tracing::instrument(skip(props))]
 pub async fn connect_user_agent(props: UserAgentConnection) {
     match auth::authenticate_and_create(props).await {
         Ok(session) => {

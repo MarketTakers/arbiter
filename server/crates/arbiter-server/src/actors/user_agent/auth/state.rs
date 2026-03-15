@@ -1,5 +1,6 @@
 use arbiter_proto::proto::user_agent::{
-    AuthChallenge, UserAgentResponse, user_agent_response::Payload as UserAgentResponsePayload,
+    AuthChallenge, AuthOk, UserAgentResponse,
+    user_agent_response::Payload as UserAgentResponsePayload,
 };
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, update};
 use diesel_async::RunQueryDsl;
@@ -71,7 +72,7 @@ smlang::statemachine!(
     transitions: {
         *Init + AuthRequest(ChallengeRequest) / async prepare_challenge = SentChallenge(ChallengeContext),
         Init + BootstrapAuthRequest(BootstrapAuthRequest) [async verify_bootstrap_token] / provide_key_bootstrap = AuthOk(AuthPublicKey),
-        SentChallenge(ChallengeContext) + ReceivedSolution(ChallengeSolution) [async verify_solution] / provide_key = AuthOk(AuthPublicKey),
+        SentChallenge(ChallengeContext) + ReceivedSolution(ChallengeSolution) / async verify_solution = AuthOk(AuthPublicKey),
     }
 );
 
@@ -147,43 +148,6 @@ impl<'a> AuthContext<'a> {
 impl AuthStateMachineContext for AuthContext<'_> {
     type Error = Error;
 
-    async fn verify_solution(
-        &self,
-        ChallengeContext { challenge, key }: &ChallengeContext,
-        ChallengeSolution { solution }: &ChallengeSolution,
-    ) -> Result<bool, Self::Error> {
-        let formatted = arbiter_proto::format_challenge(challenge.nonce, &challenge.pubkey);
-
-        let valid = match key {
-            AuthPublicKey::Ed25519(vk) => {
-                let sig = solution.as_slice().try_into().map_err(|_| {
-                    error!(?solution, "Invalid Ed25519 signature length");
-                    Error::InvalidChallengeSolution
-                })?;
-                vk.verify_strict(&formatted, &sig).is_ok()
-            }
-            AuthPublicKey::EcdsaSecp256k1(vk) => {
-                use k256::ecdsa::signature::Verifier as _;
-                let sig = k256::ecdsa::Signature::try_from(solution.as_slice()).map_err(|_| {
-                    error!(?solution, "Invalid ECDSA signature bytes");
-                    Error::InvalidChallengeSolution
-                })?;
-                vk.verify(&formatted, &sig).is_ok()
-            }
-            AuthPublicKey::Rsa(pk) => {
-                use rsa::signature::Verifier as _;
-                let verifying_key = rsa::pss::VerifyingKey::<sha2::Sha256>::new(pk.clone());
-                let sig = rsa::pss::Signature::try_from(solution.as_slice()).map_err(|_| {
-                    error!(?solution, "Invalid RSA signature bytes");
-                    Error::InvalidChallengeSolution
-                })?;
-                verifying_key.verify(&formatted, &sig).is_ok()
-            }
-        };
-
-        Ok(valid)
-    }
-
     async fn prepare_challenge(
         &mut self,
         ChallengeRequest { pubkey }: ChallengeRequest,
@@ -249,49 +213,52 @@ impl AuthStateMachineContext for AuthContext<'_> {
         Ok(event_data.pubkey)
     }
 
-    fn provide_key(
+    #[allow(missing_docs)]
+    #[allow(clippy::unused_unit)]
+    async fn verify_solution(
         &mut self,
-        state_data: &ChallengeContext,
-        _: ChallengeSolution,
+        ChallengeContext { challenge, key  }: &ChallengeContext,
+        ChallengeSolution { solution }: ChallengeSolution,
     ) -> Result<AuthPublicKey, Self::Error> {
-        // ChallengeContext.key cannot be taken by value because smlang passes it by ref;
-        // we reconstruct stored bytes and return them wrapped in Ed25519 placeholder.
-        // Session uses only the raw bytes, so we carry them via a Vec<u8>.
-        // IMPORTANT: do NOT simplify this by storing the key type separately — the
-        // `AuthPublicKey` enum IS the source of truth for key bytes and type.
-        //
-        // smlang state-machine trait requires returning an owned value from `provide_key`,
-        // but `state_data` is only available by shared reference here.  We extract the
-        // stored bytes and re-wrap as the correct variant so the caller can call
-        // `to_stored_bytes()` / `key_type()` without losing information.
-        let bytes = state_data.challenge.pubkey.clone();
-        let key_type = state_data.key.key_type();
-        let rebuilt = match key_type {
-            crate::db::models::KeyType::Ed25519 => {
-                let arr: &[u8; 32] = bytes
-                    .as_slice()
-                    .try_into()
-                    .expect("ed25519 pubkey must be 32 bytes in challenge");
-                AuthPublicKey::Ed25519(
-                    ed25519_dalek::VerifyingKey::from_bytes(arr)
-                        .expect("key was already validated in parse_auth_event"),
-                )
+        let formatted = arbiter_proto::format_challenge(challenge.nonce, &challenge.pubkey);
+
+        let valid = match key {
+            AuthPublicKey::Ed25519(vk) => {
+                let sig = solution.as_slice().try_into().map_err(|_| {
+                    error!(?solution, "Invalid Ed25519 signature length");
+                    Error::InvalidChallengeSolution
+                })?;
+                vk.verify_strict(&formatted, &sig).is_ok()
             }
-            crate::db::models::KeyType::EcdsaSecp256k1 => {
-                // bytes are SEC1 compressed (33 bytes produced by to_encoded_point(true))
-                AuthPublicKey::EcdsaSecp256k1(
-                    k256::ecdsa::VerifyingKey::from_sec1_bytes(&bytes)
-                        .expect("ecdsa key was already validated in parse_auth_event"),
-                )
+            AuthPublicKey::EcdsaSecp256k1(vk) => {
+                use k256::ecdsa::signature::Verifier as _;
+                let sig = k256::ecdsa::Signature::try_from(solution.as_slice()).map_err(|_| {
+                    error!(?solution, "Invalid ECDSA signature bytes");
+                    Error::InvalidChallengeSolution
+                })?;
+                vk.verify(&formatted, &sig).is_ok()
             }
-            crate::db::models::KeyType::Rsa => {
-                use rsa::pkcs8::DecodePublicKey as _;
-                AuthPublicKey::Rsa(
-                    rsa::RsaPublicKey::from_public_key_der(&bytes)
-                        .expect("rsa key was already validated in parse_auth_event"),
-                )
+            AuthPublicKey::Rsa(pk) => {
+                use rsa::signature::Verifier as _;
+                let verifying_key = rsa::pss::VerifyingKey::<sha2::Sha256>::new(pk.clone());
+                let sig = rsa::pss::Signature::try_from(solution.as_slice()).map_err(|_| {
+                    error!(?solution, "Invalid RSA signature bytes");
+                    Error::InvalidChallengeSolution
+                })?;
+                verifying_key.verify(&formatted, &sig).is_ok()
             }
         };
-        Ok(rebuilt)
+
+        if valid {
+            self.conn
+                .transport
+                .send(Ok(UserAgentResponse {
+                    payload: Some(UserAgentResponsePayload::AuthOk(AuthOk {})),
+                }))
+                .await
+                .map_err(|_| Error::Transport)?;
+        }
+
+        Ok(key.clone())
     }
 }
