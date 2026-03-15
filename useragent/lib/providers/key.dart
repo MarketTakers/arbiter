@@ -1,4 +1,3 @@
-import 'package:hooks_riverpod/experimental/mutation.dart';
 import 'package:mtcore/markettakers.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:arbiter/features/pk_manager.dart';
@@ -11,22 +10,22 @@ KeyManager keyManager(Ref ref) {
   return SimpleEd25519Manager();
 }
 
-@riverpod
+@Riverpod(keepAlive: true)
 class Key extends _$Key {
   @override
   Future<KeyHandle?> build() async {
-    final manager = SimpleEd25519Manager();
+    final manager = ref.watch(keyManagerProvider);
     final keyHandle = await manager.get();
     return keyHandle;
   }
 
   Future<void> create() async {
+    final manager = ref.watch(keyManagerProvider);
     if (state.value != null) {
       return;
     }
 
     state = await AsyncValue.guard(() async {
-      final manager = SimpleEd25519Manager();
       final newKeyHandle = await manager.create();
       return newKeyHandle;
     });
@@ -34,7 +33,7 @@ class Key extends _$Key {
 }
 
 class KeyBootstrapper implements StageFactory {
-  final MutationTarget ref;
+  final ProviderContainer ref;
 
   KeyBootstrapper({required this.ref});
 
@@ -43,14 +42,14 @@ class KeyBootstrapper implements StageFactory {
 
   @override
   Future<bool> get isAlreadyCompleted async {
-    final key = await ref.container.read(keyProvider.future);
+    final key = await ref.read(keyProvider.future);
     return key != null;
   }
 
   @override
   Future<void> start(StageController controller) async {
     controller.setIndefiniteProgress();
-    final key = ref.container.read(keyProvider.notifier);
+    final key = ref.read(keyProvider.notifier);
 
     await key.create();
   }

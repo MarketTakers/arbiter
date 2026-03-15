@@ -3,9 +3,12 @@ import 'package:flutter/material.dart' hide Router;
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(
-    MaterialApp(
-      home: ProviderScope(child: Scaffold(body: Router())),
+    ProviderScope(
+      child: MaterialApp.router(
+        routerConfig: Router().config(),
+      ),
     ),
   );
 }

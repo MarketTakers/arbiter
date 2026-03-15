@@ -1,32 +1,24 @@
-import 'dart:async';
+import 'package:arbiter/screens/dashboard/about.dart';
+import 'package:arbiter/screens/dashboard/calc.dart';
+import 'package:auto_route/auto_route.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
 
-import 'package:arbiter/features/bootstrap.dart';
-import 'package:arbiter/home.dart';
-import 'package:flutter/src/widgets/async.dart';
-import 'package:flutter/src/widgets/framework.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'router.gr.dart';
 
-final _bootstapCompleter = Completer<void>();
-
-class Router extends HookConsumerWidget {
+@AutoRouterConfig(generateForDir: ['lib/screens'])
+class Router extends RootStackRouter {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final bootstrapper = useMemoized(
-      () => Bootstrap(completer: _bootstapCompleter),
-    );
-    final bootstrapFuture = useFuture(_bootstapCompleter.future);
+  List<AutoRoute> get routes => [
+    AutoRoute(page: Bootstrap.page, path: '/bootstrap', initial: true),
 
-    switch (bootstrapFuture.connectionState) {
-      case ConnectionState.none ||
-          ConnectionState.waiting ||
-          ConnectionState.active:
-        return bootstrapper;
-
-      case ConnectionState.done:
-        break;
-    }
-
-    return Home();
-  }
+    AutoRoute(
+      page: DashboardRouter.page,
+      path: '/dashboard',
+      children: [
+        AutoRoute(page: AboutRoute.page, path: 'about'),
+        AutoRoute(page: CalcRoute.page, path: 'calc'),
+      ],
+    ),
+  ];
 }

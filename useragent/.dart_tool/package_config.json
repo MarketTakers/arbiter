@@ -38,6 +38,18 @@
       "languageVersion": "3.4"
     },
     {
+      "name": "auto_route",
+      "rootUri": "file:///Users/kaska/.pub-cache/hosted/pub.dev/auto_route-11.1.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.0"
+    },
+    {
+      "name": "auto_route_generator",
+      "rootUri": "file:///Users/kaska/.pub-cache/hosted/pub.dev/auto_route_generator-10.4.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.4"
+    },
+    {
       "name": "biometric_signature",
       "rootUri": "file:///Users/kaska/.pub-cache/hosted/pub.dev/biometric_signature-10.2.0",
       "packageUri": "lib/",
@@ -213,7 +225,7 @@
     },
     {
       "name": "flutter_adaptive_scaffold",
-      "rootUri": "file:///Users/kaska/.pub-cache/git/flutter_adaptive_scaffold-4852b5041d8d9ed6cacb4dc4c6723086f0612e37/",
+      "rootUri": "file:///Users/kaska/.pub-cache/git/flutter_adaptive_scaffold-b2e3615901a7ab837cb7fc35efbfcf8b55f27638/",
       "packageUri": "lib/",
       "languageVersion": "3.10"
     },
@@ -356,6 +368,12 @@
       "languageVersion": "3.7"
     },
     {
+      "name": "hotreloader",
+      "rootUri": "file:///Users/kaska/.pub-cache/hosted/pub.dev/hotreloader-4.3.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.0"
+    },
+    {
       "name": "http",
       "rootUri": "file:///Users/kaska/.pub-cache/hosted/pub.dev/http-1.6.0",
       "packageUri": "lib/",
@@ -414,6 +432,12 @@
       "rootUri": "file:///Users/kaska/.pub-cache/hosted/pub.dev/leak_tracker_testing-3.0.2",
       "packageUri": "lib/",
       "languageVersion": "3.2"
+    },
+    {
+      "name": "lean_builder",
+      "rootUri": "file:///Users/kaska/.pub-cache/hosted/pub.dev/lean_builder-0.1.6",
+      "packageUri": "lib/",
+      "languageVersion": "3.8"
     },
     {
       "name": "lints",
@@ -813,9 +837,9 @@
     },
     {
       "name": "watcher",
-      "rootUri": "file:///Users/kaska/.pub-cache/hosted/pub.dev/watcher-1.2.1",
+      "rootUri": "file:///Users/kaska/.pub-cache/hosted/pub.dev/watcher-1.1.4",
       "packageUri": "lib/",
-      "languageVersion": "3.4"
+      "languageVersion": "3.1"
     },
     {
       "name": "web",
@@ -852,6 +876,12 @@
       "rootUri": "file:///Users/kaska/.pub-cache/hosted/pub.dev/xdg_directories-1.1.0",
       "packageUri": "lib/",
       "languageVersion": "3.3"
+    },
+    {
+      "name": "xxh3",
+      "rootUri": "file:///Users/kaska/.pub-cache/hosted/pub.dev/xxh3-1.2.0",
+      "packageUri": "lib/",
+      "languageVersion": "2.16"
     },
     {
       "name": "yaml",

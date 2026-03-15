@@ -60,7 +60,7 @@ final class KeyProvider extends $AsyncNotifierProvider<Key, KeyHandle?> {
         argument: null,
         retry: null,
         name: r'keyProvider',
-        isAutoDispose: true,
+        isAutoDispose: false,
         dependencies: null,
         $allTransitiveDependencies: null,
       );
@@ -73,7 +73,7 @@ final class KeyProvider extends $AsyncNotifierProvider<Key, KeyHandle?> {
   Key create() => Key();
 }
 
-String _$keyHash() => r'6d66204174c4d2d5c76e27f3a8de8f9a9c88a3e0';
+String _$keyHash() => r'37b209825067adadbb75fe0b4ce936ea1c201dc8';
 
 abstract class _$Key extends $AsyncNotifier<KeyHandle?> {
   FutureOr<KeyHandle?> build();
