@@ -254,12 +254,11 @@ where
 }
 
 mod grpc;
-pub use grpc::{connect_grpc, ConnectError, UserAgentGrpc};
+pub use grpc::{ConnectError, UserAgentGrpc, connect_grpc};
 
 use arbiter_proto::proto::user_agent::{
-    UnsealEncryptedKey, UnsealStart,
-    user_agent_request::Payload as RequestPayload,
-    user_agent_response::Payload as ResponsePayload,
+    BootstrapEncryptedKey, UnsealEncryptedKey, UnsealStart,
+    user_agent_request::Payload as RequestPayload, user_agent_response::Payload as ResponsePayload,
 };
 
 /// Send an `UnsealStart` request and await the server's `UnsealStartResponse`.
@@ -269,6 +268,13 @@ pub struct SendUnsealStart {
 
 /// Send an `UnsealEncryptedKey` request and await the server's `UnsealResult`.
 pub struct SendUnsealEncryptedKey {
+    pub nonce: Vec<u8>,
+    pub ciphertext: Vec<u8>,
+    pub associated_data: Vec<u8>,
+}
+
+/// Send a `BootstrapEncryptedKey` request and await the server's `BootstrapResult`.
+pub struct SendBootstrapEncryptedKey {
     pub nonce: Vec<u8>,
     pub ciphertext: Vec<u8>,
     pub associated_data: Vec<u8>,
@@ -343,6 +349,40 @@ where
         match self.transport.recv().await {
             Some(resp) => match resp.payload {
                 Some(ResponsePayload::UnsealResult(r)) => Ok(r),
+                _ => Err(SessionError::UnexpectedResponse),
+            },
+            None => Err(SessionError::TransportClosed),
+        }
+    }
+}
+
+impl<Transport> kameo::message::Message<SendBootstrapEncryptedKey> for UserAgentActor<Transport>
+where
+    Transport: Bi<UserAgentResponse, UserAgentRequest>,
+{
+    type Reply = Result<i32, SessionError>;
+
+    async fn handle(
+        &mut self,
+        msg: SendBootstrapEncryptedKey,
+        _ctx: &mut kameo::message::Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        self.transport
+            .send(UserAgentRequest {
+                payload: Some(RequestPayload::BootstrapEncryptedKey(
+                    BootstrapEncryptedKey {
+                        nonce: msg.nonce,
+                        ciphertext: msg.ciphertext,
+                        associated_data: msg.associated_data,
+                    },
+                )),
+            })
+            .await
+            .map_err(|_| SessionError::TransportSendFailed)?;
+
+        match self.transport.recv().await {
+            Some(resp) => match resp.payload {
+                Some(ResponsePayload::BootstrapResult(r)) => Ok(r),
                 _ => Err(SessionError::UnexpectedResponse),
             },
             None => Err(SessionError::TransportClosed),

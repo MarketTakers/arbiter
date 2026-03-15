@@ -460,6 +460,89 @@ class UnsealEncryptedKey extends $pb.GeneratedMessage {
   void clearAssociatedData() => $_clearField(3);
 }
 
+class BootstrapEncryptedKey extends $pb.GeneratedMessage {
+  factory BootstrapEncryptedKey({
+    $core.List<$core.int>? nonce,
+    $core.List<$core.int>? ciphertext,
+    $core.List<$core.int>? associatedData,
+  }) {
+    final result = create();
+    if (nonce != null) result.nonce = nonce;
+    if (ciphertext != null) result.ciphertext = ciphertext;
+    if (associatedData != null) result.associatedData = associatedData;
+    return result;
+  }
+
+  BootstrapEncryptedKey._();
+
+  factory BootstrapEncryptedKey.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory BootstrapEncryptedKey.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'BootstrapEncryptedKey',
+      package:
+          const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.user_agent'),
+      createEmptyInstance: create)
+    ..a<$core.List<$core.int>>(
+        1, _omitFieldNames ? '' : 'nonce', $pb.PbFieldType.OY)
+    ..a<$core.List<$core.int>>(
+        2, _omitFieldNames ? '' : 'ciphertext', $pb.PbFieldType.OY)
+    ..a<$core.List<$core.int>>(
+        3, _omitFieldNames ? '' : 'associatedData', $pb.PbFieldType.OY)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BootstrapEncryptedKey clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  BootstrapEncryptedKey copyWith(
+          void Function(BootstrapEncryptedKey) updates) =>
+      super.copyWith((message) => updates(message as BootstrapEncryptedKey))
+          as BootstrapEncryptedKey;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static BootstrapEncryptedKey create() => BootstrapEncryptedKey._();
+  @$core.override
+  BootstrapEncryptedKey createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static BootstrapEncryptedKey getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<BootstrapEncryptedKey>(create);
+  static BootstrapEncryptedKey? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.List<$core.int> get nonce => $_getN(0);
+  @$pb.TagNumber(1)
+  set nonce($core.List<$core.int> value) => $_setBytes(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasNonce() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearNonce() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.List<$core.int> get ciphertext => $_getN(1);
+  @$pb.TagNumber(2)
+  set ciphertext($core.List<$core.int> value) => $_setBytes(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasCiphertext() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearCiphertext() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.List<$core.int> get associatedData => $_getN(2);
+  @$pb.TagNumber(3)
+  set associatedData($core.List<$core.int> value) => $_setBytes(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasAssociatedData() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearAssociatedData() => $_clearField(3);
+}
+
 class ClientConnectionRequest extends $pb.GeneratedMessage {
   factory ClientConnectionRequest({
     $core.List<$core.int>? pubkey,
@@ -625,6 +708,7 @@ enum UserAgentRequest_Payload {
   evmGrantDelete,
   evmGrantList,
   clientConnectionResponse,
+  bootstrapEncryptedKey,
   notSet
 }
 
@@ -641,6 +725,7 @@ class UserAgentRequest extends $pb.GeneratedMessage {
     $1.EvmGrantDeleteRequest? evmGrantDelete,
     $1.EvmGrantListRequest? evmGrantList,
     ClientConnectionResponse? clientConnectionResponse,
+    BootstrapEncryptedKey? bootstrapEncryptedKey,
   }) {
     final result = create();
     if (authChallengeRequest != null)
@@ -658,6 +743,8 @@ class UserAgentRequest extends $pb.GeneratedMessage {
     if (evmGrantList != null) result.evmGrantList = evmGrantList;
     if (clientConnectionResponse != null)
       result.clientConnectionResponse = clientConnectionResponse;
+    if (bootstrapEncryptedKey != null)
+      result.bootstrapEncryptedKey = bootstrapEncryptedKey;
     return result;
   }
 
@@ -683,6 +770,7 @@ class UserAgentRequest extends $pb.GeneratedMessage {
     9: UserAgentRequest_Payload.evmGrantDelete,
     10: UserAgentRequest_Payload.evmGrantList,
     11: UserAgentRequest_Payload.clientConnectionResponse,
+    12: UserAgentRequest_Payload.bootstrapEncryptedKey,
     0: UserAgentRequest_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -690,7 +778,7 @@ class UserAgentRequest extends $pb.GeneratedMessage {
       package:
           const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.user_agent'),
       createEmptyInstance: create)
-    ..oo(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+    ..oo(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
     ..aOM<AuthChallengeRequest>(
         1, _omitFieldNames ? '' : 'authChallengeRequest',
         subBuilder: AuthChallengeRequest.create)
@@ -716,6 +804,9 @@ class UserAgentRequest extends $pb.GeneratedMessage {
     ..aOM<ClientConnectionResponse>(
         11, _omitFieldNames ? '' : 'clientConnectionResponse',
         subBuilder: ClientConnectionResponse.create)
+    ..aOM<BootstrapEncryptedKey>(
+        12, _omitFieldNames ? '' : 'bootstrapEncryptedKey',
+        subBuilder: BootstrapEncryptedKey.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -748,6 +839,7 @@ class UserAgentRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(9)
   @$pb.TagNumber(10)
   @$pb.TagNumber(11)
+  @$pb.TagNumber(12)
   UserAgentRequest_Payload whichPayload() =>
       _UserAgentRequest_PayloadByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(1)
@@ -761,6 +853,7 @@ class UserAgentRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(9)
   @$pb.TagNumber(10)
   @$pb.TagNumber(11)
+  @$pb.TagNumber(12)
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -885,6 +978,18 @@ class UserAgentRequest extends $pb.GeneratedMessage {
   void clearClientConnectionResponse() => $_clearField(11);
   @$pb.TagNumber(11)
   ClientConnectionResponse ensureClientConnectionResponse() => $_ensure(10);
+
+  @$pb.TagNumber(12)
+  BootstrapEncryptedKey get bootstrapEncryptedKey => $_getN(11);
+  @$pb.TagNumber(12)
+  set bootstrapEncryptedKey(BootstrapEncryptedKey value) =>
+      $_setField(12, value);
+  @$pb.TagNumber(12)
+  $core.bool hasBootstrapEncryptedKey() => $_has(11);
+  @$pb.TagNumber(12)
+  void clearBootstrapEncryptedKey() => $_clearField(12);
+  @$pb.TagNumber(12)
+  BootstrapEncryptedKey ensureBootstrapEncryptedKey() => $_ensure(11);
 }
 
 enum UserAgentResponse_Payload {
@@ -900,6 +1005,7 @@ enum UserAgentResponse_Payload {
   evmGrantList,
   clientConnectionRequest,
   clientConnectionCancel,
+  bootstrapResult,
   notSet
 }
 
@@ -917,6 +1023,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
     $1.EvmGrantListResponse? evmGrantList,
     ClientConnectionRequest? clientConnectionRequest,
     ClientConnectionCancel? clientConnectionCancel,
+    BootstrapResult? bootstrapResult,
   }) {
     final result = create();
     if (authChallenge != null) result.authChallenge = authChallenge;
@@ -934,6 +1041,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
       result.clientConnectionRequest = clientConnectionRequest;
     if (clientConnectionCancel != null)
       result.clientConnectionCancel = clientConnectionCancel;
+    if (bootstrapResult != null) result.bootstrapResult = bootstrapResult;
     return result;
   }
 
@@ -960,6 +1068,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
     10: UserAgentResponse_Payload.evmGrantList,
     11: UserAgentResponse_Payload.clientConnectionRequest,
     12: UserAgentResponse_Payload.clientConnectionCancel,
+    13: UserAgentResponse_Payload.bootstrapResult,
     0: UserAgentResponse_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -967,7 +1076,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
       package:
           const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.user_agent'),
       createEmptyInstance: create)
-    ..oo(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+    ..oo(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
     ..aOM<AuthChallenge>(1, _omitFieldNames ? '' : 'authChallenge',
         subBuilder: AuthChallenge.create)
     ..aOM<AuthOk>(2, _omitFieldNames ? '' : 'authOk', subBuilder: AuthOk.create)
@@ -993,6 +1102,8 @@ class UserAgentResponse extends $pb.GeneratedMessage {
     ..aOM<ClientConnectionCancel>(
         12, _omitFieldNames ? '' : 'clientConnectionCancel',
         subBuilder: ClientConnectionCancel.create)
+    ..aE<BootstrapResult>(13, _omitFieldNames ? '' : 'bootstrapResult',
+        enumValues: BootstrapResult.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1026,6 +1137,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
   @$pb.TagNumber(10)
   @$pb.TagNumber(11)
   @$pb.TagNumber(12)
+  @$pb.TagNumber(13)
   UserAgentResponse_Payload whichPayload() =>
       _UserAgentResponse_PayloadByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(1)
@@ -1040,6 +1152,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
   @$pb.TagNumber(10)
   @$pb.TagNumber(11)
   @$pb.TagNumber(12)
+  @$pb.TagNumber(13)
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -1171,6 +1284,15 @@ class UserAgentResponse extends $pb.GeneratedMessage {
   void clearClientConnectionCancel() => $_clearField(12);
   @$pb.TagNumber(12)
   ClientConnectionCancel ensureClientConnectionCancel() => $_ensure(11);
+
+  @$pb.TagNumber(13)
+  BootstrapResult get bootstrapResult => $_getN(12);
+  @$pb.TagNumber(13)
+  set bootstrapResult(BootstrapResult value) => $_setField(13, value);
+  @$pb.TagNumber(13)
+  $core.bool hasBootstrapResult() => $_has(12);
+  @$pb.TagNumber(13)
+  void clearBootstrapResult() => $_clearField(13);
 }
 
 const $core.bool _omitFieldNames =

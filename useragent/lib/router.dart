@@ -9,6 +9,7 @@ class Router extends RootStackRouter {
     AutoRoute(page: Bootstrap.page, path: '/bootstrap', initial: true),
     AutoRoute(page: ServerInfoSetupRoute.page, path: '/server-info'),
     AutoRoute(page: ServerConnectionRoute.page, path: '/server-connection'),
+    AutoRoute(page: VaultSetupRoute.page, path: '/vault'),
 
     AutoRoute(
       page: DashboardRouter.page,

@@ -20,12 +20,18 @@ class ConnectionManager extends _$ConnectionManager {
     }
     final Connection connection;
     try {
-       connection = await connectAndAuthorize(serverInfo, key, bootstrapToken: token);
+      connection = await connectAndAuthorize(
+        serverInfo,
+        key,
+        bootstrapToken: token,
+      );
+      if (token != null) {
+        ref.read(bootstrapTokenProvider.notifier).clear();
+      }
     } catch (e) {
       talker.handle(e);
       rethrow;
     }
-    
 
     ref.onDispose(() {
       final connection = state.asData?.value;

@@ -18,7 +18,7 @@ class ServerConnectionScreen extends HookConsumerWidget {
 
     if (connectionState.value != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        context.router.replace(const DashboardRouter());
+        context.router.replace(const VaultSetupRoute());
       });
     }
 

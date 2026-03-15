@@ -41,7 +41,7 @@ final class BootstrapTokenProvider
   }
 }
 
-String _$bootstrapTokenHash() => r'a59e679ab0561ed2ab4148660499891571d439db';
+String _$bootstrapTokenHash() => r'5c09ea4480fc3a7fd0d0a0bced712912542cca5d';
 
 abstract class _$BootstrapToken extends $Notifier<String?> {
   String? build();

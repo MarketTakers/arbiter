@@ -33,7 +33,7 @@ final class ConnectionManagerProvider
   ConnectionManager create() => ConnectionManager();
 }
 
-String _$connectionManagerHash() => r'8923346dff75a9a06127c71a0a39ca65d9733d8c';
+String _$connectionManagerHash() => r'd01084e550f315bc6cadfe74413a7f959426a80e';
 
 abstract class _$ConnectionManager extends $AsyncNotifier<Connection?> {
   FutureOr<Connection?> build();

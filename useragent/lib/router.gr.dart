@@ -15,18 +15,19 @@ import 'package:arbiter/screens/dashboard/about.dart' as _i1;
 import 'package:arbiter/screens/dashboard/calc.dart' as _i3;
 import 'package:arbiter/screens/server_connection.dart' as _i5;
 import 'package:arbiter/screens/server_info_setup.dart' as _i6;
-import 'package:auto_route/auto_route.dart' as _i7;
-import 'package:flutter/material.dart' as _i8;
+import 'package:arbiter/screens/vault_setup.dart' as _i7;
+import 'package:auto_route/auto_route.dart' as _i8;
+import 'package:flutter/material.dart' as _i9;
 
 /// generated route for
 /// [_i1.AboutScreen]
-class AboutRoute extends _i7.PageRouteInfo<void> {
-  const AboutRoute({List<_i7.PageRouteInfo>? children})
+class AboutRoute extends _i8.PageRouteInfo<void> {
+  const AboutRoute({List<_i8.PageRouteInfo>? children})
     : super(AboutRoute.name, initialChildren: children);
 
   static const String name = 'AboutRoute';
 
-  static _i7.PageInfo page = _i7.PageInfo(
+  static _i8.PageInfo page = _i8.PageInfo(
     name,
     builder: (data) {
       return const _i1.AboutScreen();
@@ -36,13 +37,13 @@ class AboutRoute extends _i7.PageRouteInfo<void> {
 
 /// generated route for
 /// [_i2.Bootstrap]
-class Bootstrap extends _i7.PageRouteInfo<void> {
-  const Bootstrap({List<_i7.PageRouteInfo>? children})
+class Bootstrap extends _i8.PageRouteInfo<void> {
+  const Bootstrap({List<_i8.PageRouteInfo>? children})
     : super(Bootstrap.name, initialChildren: children);
 
   static const String name = 'Bootstrap';
 
-  static _i7.PageInfo page = _i7.PageInfo(
+  static _i8.PageInfo page = _i8.PageInfo(
     name,
     builder: (data) {
       return const _i2.Bootstrap();
@@ -52,13 +53,13 @@ class Bootstrap extends _i7.PageRouteInfo<void> {
 
 /// generated route for
 /// [_i3.CalcScreen]
-class CalcRoute extends _i7.PageRouteInfo<void> {
-  const CalcRoute({List<_i7.PageRouteInfo>? children})
+class CalcRoute extends _i8.PageRouteInfo<void> {
+  const CalcRoute({List<_i8.PageRouteInfo>? children})
     : super(CalcRoute.name, initialChildren: children);
 
   static const String name = 'CalcRoute';
 
-  static _i7.PageInfo page = _i7.PageInfo(
+  static _i8.PageInfo page = _i8.PageInfo(
     name,
     builder: (data) {
       return const _i3.CalcScreen();
@@ -68,13 +69,13 @@ class CalcRoute extends _i7.PageRouteInfo<void> {
 
 /// generated route for
 /// [_i4.DashboardRouter]
-class DashboardRouter extends _i7.PageRouteInfo<void> {
-  const DashboardRouter({List<_i7.PageRouteInfo>? children})
+class DashboardRouter extends _i8.PageRouteInfo<void> {
+  const DashboardRouter({List<_i8.PageRouteInfo>? children})
     : super(DashboardRouter.name, initialChildren: children);
 
   static const String name = 'DashboardRouter';
 
-  static _i7.PageInfo page = _i7.PageInfo(
+  static _i8.PageInfo page = _i8.PageInfo(
     name,
     builder: (data) {
       return const _i4.DashboardRouter();
@@ -85,11 +86,11 @@ class DashboardRouter extends _i7.PageRouteInfo<void> {
 /// generated route for
 /// [_i5.ServerConnectionScreen]
 class ServerConnectionRoute
-    extends _i7.PageRouteInfo<ServerConnectionRouteArgs> {
+    extends _i8.PageRouteInfo<ServerConnectionRouteArgs> {
   ServerConnectionRoute({
-    _i8.Key? key,
+    _i9.Key? key,
     String? arbiterUrl,
-    List<_i7.PageRouteInfo>? children,
+    List<_i8.PageRouteInfo>? children,
   }) : super(
          ServerConnectionRoute.name,
          args: ServerConnectionRouteArgs(key: key, arbiterUrl: arbiterUrl),
@@ -98,7 +99,7 @@ class ServerConnectionRoute
 
   static const String name = 'ServerConnectionRoute';
 
-  static _i7.PageInfo page = _i7.PageInfo(
+  static _i8.PageInfo page = _i8.PageInfo(
     name,
     builder: (data) {
       final args = data.argsAs<ServerConnectionRouteArgs>(
@@ -115,7 +116,7 @@ class ServerConnectionRoute
 class ServerConnectionRouteArgs {
   const ServerConnectionRouteArgs({this.key, this.arbiterUrl});
 
-  final _i8.Key? key;
+  final _i9.Key? key;
 
   final String? arbiterUrl;
 
@@ -137,16 +138,32 @@ class ServerConnectionRouteArgs {
 
 /// generated route for
 /// [_i6.ServerInfoSetupScreen]
-class ServerInfoSetupRoute extends _i7.PageRouteInfo<void> {
-  const ServerInfoSetupRoute({List<_i7.PageRouteInfo>? children})
+class ServerInfoSetupRoute extends _i8.PageRouteInfo<void> {
+  const ServerInfoSetupRoute({List<_i8.PageRouteInfo>? children})
     : super(ServerInfoSetupRoute.name, initialChildren: children);
 
   static const String name = 'ServerInfoSetupRoute';
 
-  static _i7.PageInfo page = _i7.PageInfo(
+  static _i8.PageInfo page = _i8.PageInfo(
     name,
     builder: (data) {
       return const _i6.ServerInfoSetupScreen();
+    },
+  );
+}
+
+/// generated route for
+/// [_i7.VaultSetupScreen]
+class VaultSetupRoute extends _i8.PageRouteInfo<void> {
+  const VaultSetupRoute({List<_i8.PageRouteInfo>? children})
+    : super(VaultSetupRoute.name, initialChildren: children);
+
+  static const String name = 'VaultSetupRoute';
+
+  static _i8.PageInfo page = _i8.PageInfo(
+    name,
+    builder: (data) {
+      return const _i7.VaultSetupScreen();
     },
   );
 }

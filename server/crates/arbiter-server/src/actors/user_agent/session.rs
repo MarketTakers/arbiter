@@ -3,9 +3,9 @@ use std::{ops::DerefMut, sync::Mutex};
 use arbiter_proto::proto::{
     evm as evm_proto,
     user_agent::{
-        ClientConnectionCancel, ClientConnectionRequest, UnsealEncryptedKey, UnsealResult,
-        UnsealStart, UnsealStartResponse, UserAgentRequest, UserAgentResponse,
-        user_agent_request::Payload as UserAgentRequestPayload,
+        BootstrapEncryptedKey, BootstrapResult, ClientConnectionCancel, ClientConnectionRequest,
+        UnsealEncryptedKey, UnsealResult, UnsealStart, UnsealStartResponse, UserAgentRequest,
+        UserAgentResponse, user_agent_request::Payload as UserAgentRequestPayload,
         user_agent_response::Payload as UserAgentResponsePayload,
     },
 };
@@ -19,7 +19,7 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::actors::{
     evm::{Generate, ListWallets},
-    keyholder::{self, TryUnseal},
+    keyholder::{self, Bootstrap, TryUnseal},
     router::RegisterUserAgent,
     user_agent::{TransportResponseError, UserAgentConnection},
 };
@@ -168,9 +168,11 @@ impl UserAgentSession {
             UserAgentRequestPayload::UnsealEncryptedKey(unseal_encrypted_key) => {
                 self.handle_unseal_encrypted_key(unseal_encrypted_key).await
             }
-            UserAgentRequestPayload::QueryVaultState(_) => {
-                self.handle_query_vault_state().await
+            UserAgentRequestPayload::BootstrapEncryptedKey(bootstrap_encrypted_key) => {
+                self.handle_bootstrap_encrypted_key(bootstrap_encrypted_key)
+                    .await
             }
+            UserAgentRequestPayload::QueryVaultState(_) => self.handle_query_vault_state().await,
             UserAgentRequestPayload::EvmWalletCreate(_) => self.handle_evm_wallet_create().await,
             UserAgentRequestPayload::EvmWalletList(_) => self.handle_evm_wallet_list().await,
             _ => Err(TransportResponseError::UnexpectedRequestPayload),
@@ -187,6 +189,59 @@ fn response(payload: UserAgentResponsePayload) -> UserAgentResponse {
 }
 
 impl UserAgentSession {
+    fn take_unseal_secret(
+        &mut self,
+    ) -> Result<(EphemeralSecret, PublicKey), TransportResponseError> {
+        let UserAgentStates::WaitingForUnsealKey(unseal_context) = self.state.state() else {
+            error!("Received encrypted key in invalid state");
+            return Err(TransportResponseError::InvalidStateForUnsealEncryptedKey);
+        };
+
+        let ephemeral_secret = {
+            let mut secret_lock = unseal_context.secret.lock().unwrap();
+            let secret = secret_lock.take();
+            match secret {
+                Some(secret) => secret,
+                None => {
+                    drop(secret_lock);
+                    error!("Ephemeral secret already taken");
+                    return Err(TransportResponseError::StateTransitionFailed);
+                }
+            }
+        };
+
+        Ok((ephemeral_secret, unseal_context.client_public_key))
+    }
+
+    fn decrypt_client_key_material(
+        ephemeral_secret: EphemeralSecret,
+        client_public_key: PublicKey,
+        nonce: &[u8],
+        ciphertext: &[u8],
+        associated_data: &[u8],
+    ) -> Result<MemSafe<Vec<u8>>, ()> {
+        let nonce = XNonce::from_slice(nonce);
+
+        let shared_secret = ephemeral_secret.diffie_hellman(&client_public_key);
+        let cipher = XChaCha20Poly1305::new(shared_secret.as_bytes().into());
+
+        let mut key_buffer = MemSafe::new(ciphertext.to_vec()).unwrap();
+
+        let decryption_result = {
+            let mut write_handle = key_buffer.write().unwrap();
+            let write_handle = write_handle.deref_mut();
+            cipher.decrypt_in_place(nonce, associated_data, write_handle)
+        };
+
+        match decryption_result {
+            Ok(_) => Ok(key_buffer),
+            Err(err) => {
+                error!(?err, "Failed to decrypt encrypted key material");
+                Err(())
+            }
+        }
+    }
+
     async fn handle_unseal_request(&mut self, req: UnsealStart) -> Output {
         let secret = EphemeralSecret::random();
         let public_key = PublicKey::from(&secret);
@@ -211,83 +266,131 @@ impl UserAgentSession {
     }
 
     async fn handle_unseal_encrypted_key(&mut self, req: UnsealEncryptedKey) -> Output {
-        let UserAgentStates::WaitingForUnsealKey(unseal_context) = self.state.state() else {
-            error!("Received unseal encrypted key in invalid state");
-            return Err(TransportResponseError::InvalidStateForUnsealEncryptedKey);
+        let (ephemeral_secret, client_public_key) = match self.take_unseal_secret() {
+            Ok(values) => values,
+            Err(TransportResponseError::StateTransitionFailed) => {
+                self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                return Ok(response(UserAgentResponsePayload::UnsealResult(
+                    UnsealResult::InvalidKey.into(),
+                )));
+            }
+            Err(err) => return Err(err),
         };
-        let ephemeral_secret = {
-            let mut secret_lock = unseal_context.secret.lock().unwrap();
-            let secret = secret_lock.take();
-            match secret {
-                Some(secret) => secret,
-                None => {
-                    drop(secret_lock);
-                    error!("Ephemeral secret already taken");
-                    self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                    return Ok(response(UserAgentResponsePayload::UnsealResult(
-                        UnsealResult::InvalidKey.into(),
-                    )));
-                }
+
+        let seal_key_buffer = match Self::decrypt_client_key_material(
+            ephemeral_secret,
+            client_public_key,
+            &req.nonce,
+            &req.ciphertext,
+            &req.associated_data,
+        ) {
+            Ok(buffer) => buffer,
+            Err(()) => {
+                self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                return Ok(response(UserAgentResponsePayload::UnsealResult(
+                    UnsealResult::InvalidKey.into(),
+                )));
             }
         };
 
-        let nonce = XNonce::from_slice(&req.nonce);
-
-        let shared_secret = ephemeral_secret.diffie_hellman(&unseal_context.client_public_key);
-        let cipher = XChaCha20Poly1305::new(shared_secret.as_bytes().into());
-
-        let mut seal_key_buffer = MemSafe::new(req.ciphertext.clone()).unwrap();
-
-        let decryption_result = {
-            let mut write_handle = seal_key_buffer.write().unwrap();
-            let write_handle = write_handle.deref_mut();
-            cipher.decrypt_in_place(nonce, &req.associated_data, write_handle)
-        };
-
-        match decryption_result {
+        match self
+            .props
+            .actors
+            .key_holder
+            .ask(TryUnseal {
+                seal_key_raw: seal_key_buffer,
+            })
+            .await
+        {
             Ok(_) => {
-                match self
-                    .props
-                    .actors
-                    .key_holder
-                    .ask(TryUnseal {
-                        seal_key_raw: seal_key_buffer,
-                    })
-                    .await
-                {
-                    Ok(_) => {
-                        info!("Successfully unsealed key with client-provided key");
-                        self.transition(UserAgentEvents::ReceivedValidKey)?;
-                        Ok(response(UserAgentResponsePayload::UnsealResult(
-                            UnsealResult::Success.into(),
-                        )))
-                    }
-                    Err(SendError::HandlerError(keyholder::Error::InvalidKey)) => {
-                        self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                        Ok(response(UserAgentResponsePayload::UnsealResult(
-                            UnsealResult::InvalidKey.into(),
-                        )))
-                    }
-                    Err(SendError::HandlerError(err)) => {
-                        error!(?err, "Keyholder failed to unseal key");
-                        self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                        Ok(response(UserAgentResponsePayload::UnsealResult(
-                            UnsealResult::InvalidKey.into(),
-                        )))
-                    }
-                    Err(err) => {
-                        error!(?err, "Failed to send unseal request to keyholder");
-                        self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                        Err(TransportResponseError::KeyHolderActorUnreachable)
-                    }
-                }
+                info!("Successfully unsealed key with client-provided key");
+                self.transition(UserAgentEvents::ReceivedValidKey)?;
+                Ok(response(UserAgentResponsePayload::UnsealResult(
+                    UnsealResult::Success.into(),
+                )))
             }
-            Err(err) => {
-                error!(?err, "Failed to decrypt unseal key");
+            Err(SendError::HandlerError(keyholder::Error::InvalidKey)) => {
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
                 Ok(response(UserAgentResponsePayload::UnsealResult(
                     UnsealResult::InvalidKey.into(),
                 )))
+            }
+            Err(SendError::HandlerError(err)) => {
+                error!(?err, "Keyholder failed to unseal key");
+                self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                Ok(response(UserAgentResponsePayload::UnsealResult(
+                    UnsealResult::InvalidKey.into(),
+                )))
+            }
+            Err(err) => {
+                error!(?err, "Failed to send unseal request to keyholder");
+                self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                Err(TransportResponseError::KeyHolderActorUnreachable)
+            }
+        }
+    }
+
+    async fn handle_bootstrap_encrypted_key(&mut self, req: BootstrapEncryptedKey) -> Output {
+        let (ephemeral_secret, client_public_key) = match self.take_unseal_secret() {
+            Ok(values) => values,
+            Err(TransportResponseError::StateTransitionFailed) => {
+                self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                return Ok(response(UserAgentResponsePayload::BootstrapResult(
+                    BootstrapResult::InvalidKey.into(),
+                )));
+            }
+            Err(err) => return Err(err),
+        };
+
+        let seal_key_buffer = match Self::decrypt_client_key_material(
+            ephemeral_secret,
+            client_public_key,
+            &req.nonce,
+            &req.ciphertext,
+            &req.associated_data,
+        ) {
+            Ok(buffer) => buffer,
+            Err(()) => {
+                self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                return Ok(response(UserAgentResponsePayload::BootstrapResult(
+                    BootstrapResult::InvalidKey.into(),
+                )));
+            }
+        };
+
+        match self
+            .props
+            .actors
+            .key_holder
+            .ask(Bootstrap {
+                seal_key_raw: seal_key_buffer,
+            })
+            .await
+        {
+            Ok(_) => {
+                info!("Successfully bootstrapped vault with client-provided key");
+                self.transition(UserAgentEvents::ReceivedValidKey)?;
+                Ok(response(UserAgentResponsePayload::BootstrapResult(
+                    BootstrapResult::Success.into(),
+                )))
+            }
+            Err(SendError::HandlerError(keyholder::Error::AlreadyBootstrapped)) => {
+                self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                Ok(response(UserAgentResponsePayload::BootstrapResult(
+                    BootstrapResult::AlreadyBootstrapped.into(),
+                )))
+            }
+            Err(SendError::HandlerError(err)) => {
+                error!(?err, "Keyholder failed to bootstrap vault");
+                self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                Ok(response(UserAgentResponsePayload::BootstrapResult(
+                    BootstrapResult::InvalidKey.into(),
+                )))
+            }
+            Err(err) => {
+                error!(?err, "Failed to send bootstrap request to keyholder");
+                self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+                Err(TransportResponseError::KeyHolderActorUnreachable)
             }
         }
     }
@@ -295,8 +398,8 @@ impl UserAgentSession {
 
 impl UserAgentSession {
     async fn handle_query_vault_state(&mut self) -> Output {
-        use arbiter_proto::proto::user_agent::VaultState;
         use crate::actors::keyholder::{GetState, StateDiscriminants};
+        use arbiter_proto::proto::user_agent::VaultState;
 
         let vault_state = match self.props.actors.key_holder.ask(GetState {}).await {
             Ok(StateDiscriminants::Unbootstrapped) => VaultState::Unbootstrapped,

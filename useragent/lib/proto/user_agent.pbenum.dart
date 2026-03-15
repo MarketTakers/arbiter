@@ -64,6 +64,31 @@ class UnsealResult extends $pb.ProtobufEnum {
   const UnsealResult._(super.value, super.name);
 }
 
+class BootstrapResult extends $pb.ProtobufEnum {
+  static const BootstrapResult BOOTSTRAP_RESULT_UNSPECIFIED =
+      BootstrapResult._(0, _omitEnumNames ? '' : 'BOOTSTRAP_RESULT_UNSPECIFIED');
+  static const BootstrapResult BOOTSTRAP_RESULT_SUCCESS =
+      BootstrapResult._(1, _omitEnumNames ? '' : 'BOOTSTRAP_RESULT_SUCCESS');
+  static const BootstrapResult BOOTSTRAP_RESULT_ALREADY_BOOTSTRAPPED =
+      BootstrapResult._(2, _omitEnumNames ? '' : 'BOOTSTRAP_RESULT_ALREADY_BOOTSTRAPPED');
+  static const BootstrapResult BOOTSTRAP_RESULT_INVALID_KEY =
+      BootstrapResult._(3, _omitEnumNames ? '' : 'BOOTSTRAP_RESULT_INVALID_KEY');
+
+  static const $core.List<BootstrapResult> values = <BootstrapResult>[
+    BOOTSTRAP_RESULT_UNSPECIFIED,
+    BOOTSTRAP_RESULT_SUCCESS,
+    BOOTSTRAP_RESULT_ALREADY_BOOTSTRAPPED,
+    BOOTSTRAP_RESULT_INVALID_KEY,
+  ];
+
+  static final $core.List<BootstrapResult?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 3);
+  static BootstrapResult? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const BootstrapResult._(super.value, super.name);
+}
+
 class VaultState extends $pb.ProtobufEnum {
   static const VaultState VAULT_STATE_UNSPECIFIED =
       VaultState._(0, _omitEnumNames ? '' : 'VAULT_STATE_UNSPECIFIED');
