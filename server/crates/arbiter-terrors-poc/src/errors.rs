@@ -9,8 +9,11 @@ pub enum ProtoError {
 }
 
 // Internal terrors types
+#[derive(Debug)]
 pub struct NotRegistered;
+#[derive(Debug)]
 pub struct InvalidSignature;
+#[derive(Debug)]
 pub struct Internal(pub String);
 
 impl From<NotRegistered> for ProtoError {
