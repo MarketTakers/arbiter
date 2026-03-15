@@ -1,19 +1,35 @@
-use arbiter_proto::proto::client::{ClientRequest, ClientResponse};
+use alloy::{consensus::TxEip1559, primitives::Address, rlp::Decodable};
+use arbiter_proto::proto::{
+    client::{
+        ClientRequest, ClientResponse, client_request::Payload as ClientRequestPayload,
+        client_response::Payload as ClientResponsePayload,
+    },
+    evm::{
+        EvmError, EvmSignTransactionResponse, evm_sign_transaction_response::Result as SignResult,
+    },
+};
 use kameo::Actor;
 use tokio::select;
 use tracing::{error, info};
 
-use crate::{actors::{
-    GlobalActors, client::{ClientError, ClientConnection}, router::RegisterClient
-}, db};
+use crate::{
+    actors::{
+        GlobalActors,
+        client::{ClientConnection, ClientError},
+        evm::ClientSignTransaction,
+        router::RegisterClient,
+    },
+    db,
+};
 
 pub struct ClientSession {
     props: ClientConnection,
+    client_id: i32,
 }
 
 impl ClientSession {
-    pub(crate) fn new(props: ClientConnection) -> Self {
-        Self { props }
+    pub(crate) fn new(props: ClientConnection, client_id: i32) -> Self {
+        Self { props, client_id }
     }
 
     pub async fn process_transport_inbound(&mut self, req: ClientRequest) -> Output {
@@ -22,8 +38,46 @@ impl ClientSession {
             ClientError::MissingRequestPayload
         })?;
 
-        let _ = msg;
-        Err(ClientError::UnexpectedRequestPayload)
+        match msg {
+            ClientRequestPayload::EvmSignTransaction(sign_req) => {
+                let wallet_address: [u8; 20] = sign_req
+                    .wallet_address
+                    .try_into()
+                    .map_err(|_| ClientError::UnexpectedRequestPayload)?;
+
+                let mut rlp_bytes: &[u8] = &sign_req.rlp_transaction;
+                let tx = TxEip1559::decode(&mut rlp_bytes)
+                    .map_err(|_| ClientError::UnexpectedRequestPayload)?;
+
+                let result = self
+                    .props
+                    .actors
+                    .evm
+                    .ask(ClientSignTransaction {
+                        client_id: self.client_id,
+                        wallet_address: Address::from_slice(&wallet_address),
+                        transaction: tx,
+                    })
+                    .await;
+
+                let response_result = match result {
+                    Ok(signature) => SignResult::Signature(signature.as_bytes().to_vec()),
+                    Err(err) => {
+                        error!(?err, "client sign transaction failed");
+                        SignResult::Error(EvmError::Internal.into())
+                    }
+                };
+
+                Ok(ClientResponse {
+                    payload: Some(ClientResponsePayload::EvmSignTransaction(
+                        EvmSignTransactionResponse {
+                            result: Some(response_result),
+                        },
+                    )),
+                })
+            }
+            _ => Err(ClientError::UnexpectedRequestPayload),
+        }
     }
 }
 
@@ -89,6 +143,9 @@ impl ClientSession {
         use arbiter_proto::transport::DummyTransport;
         let transport: super::Transport = Box::new(DummyTransport::new());
         let props = ClientConnection::new(db, transport, actors);
-        Self { props }
+        Self {
+            props,
+            client_id: 0,
+        }
     }
 }

@@ -3,25 +3,32 @@ use std::{ops::DerefMut, sync::Mutex};
 use arbiter_proto::proto::{
     evm as evm_proto,
     user_agent::{
-        ClientConnectionCancel, ClientConnectionRequest, UnsealEncryptedKey, UnsealResult,
+        SdkClientApproveRequest, SdkClientApproveResponse, SdkClientEntry,
+        SdkClientError as ProtoSdkClientError, SdkClientList, SdkClientListResponse,
+        SdkClientRevokeRequest, SdkClientRevokeResponse, UnsealEncryptedKey, UnsealResult,
         UnsealStart, UnsealStartResponse, UserAgentRequest, UserAgentResponse,
+        sdk_client_approve_response, sdk_client_list_response, sdk_client_revoke_response,
         user_agent_request::Payload as UserAgentRequestPayload,
         user_agent_response::Payload as UserAgentResponsePayload,
     },
 };
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
-use ed25519_dalek::VerifyingKey;
-use kameo::{Actor, error::SendError, messages, prelude::Context};
+use diesel::{ExpressionMethods as _, QueryDsl as _, dsl::insert_into};
+use diesel_async::RunQueryDsl as _;
+use kameo::{Actor, error::SendError, prelude::Context};
 use memsafe::MemSafe;
-use tokio::{select, sync::watch};
+use tokio::select;
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-use crate::actors::{
-    evm::{Generate, ListWallets},
-    keyholder::{self, TryUnseal},
-    router::RegisterUserAgent,
-    user_agent::{TransportResponseError, UserAgentConnection},
+use crate::{
+    actors::{
+        evm::{Generate, ListWallets},
+        keyholder::{self, TryUnseal},
+        router::RegisterUserAgent,
+        user_agent::{TransportResponseError, UserAgentConnection},
+    },
+    db::schema::program_client,
 };
 
 mod state;
@@ -108,52 +115,6 @@ impl UserAgentSession {
     }
 }
 
-#[messages]
-impl UserAgentSession {
-    // TODO: Think about refactoring it to state-machine based flow, as we already have one
-    #[message(ctx)]
-    pub async fn request_new_client_approval(
-        &mut self,
-        client_pubkey: VerifyingKey,
-        mut cancel_flag: watch::Receiver<()>,
-        ctx: &mut Context<Self, Result<bool, Error>>,
-    ) -> Result<bool, Error> {
-        self.send_msg(
-            UserAgentResponsePayload::ClientConnectionRequest(ClientConnectionRequest {
-                pubkey: client_pubkey.as_bytes().to_vec(),
-            }),
-            ctx,
-        )
-        .await?;
-
-        let extractor = |msg| {
-            if let UserAgentRequestPayload::ClientConnectionResponse(client_connection_response) =
-                msg
-            {
-                Some(client_connection_response)
-            } else {
-                None
-            }
-        };
-
-        tokio::select! {
-            _ = cancel_flag.changed() => {
-                info!(actor = "useragent", "client connection approval cancelled");
-                self.send_msg(
-                    UserAgentResponsePayload::ClientConnectionCancel(ClientConnectionCancel {}),
-                    ctx,
-                ).await?;
-                Ok(false)
-            }
-            result = self.expect_msg(extractor, ctx) => {
-                let result = result?;
-                info!(actor = "useragent", "received client connection approval result: approved={}", result.approved);
-                Ok(result.approved)
-            }
-        }
-    }
-}
-
 impl UserAgentSession {
     pub async fn process_transport_inbound(&mut self, req: UserAgentRequest) -> Output {
         let msg = req.payload.ok_or_else(|| {
@@ -170,6 +131,13 @@ impl UserAgentSession {
             }
             UserAgentRequestPayload::EvmWalletCreate(_) => self.handle_evm_wallet_create().await,
             UserAgentRequestPayload::EvmWalletList(_) => self.handle_evm_wallet_list().await,
+            UserAgentRequestPayload::SdkClientApprove(req) => {
+                self.handle_sdk_client_approve(req).await
+            }
+            UserAgentRequestPayload::SdkClientRevoke(req) => {
+                self.handle_sdk_client_revoke(req).await
+            }
+            UserAgentRequestPayload::SdkClientList(_) => self.handle_sdk_client_list().await,
             _ => Err(TransportResponseError::UnexpectedRequestPayload),
         }
     }
@@ -328,6 +296,204 @@ impl UserAgentSession {
                 result: Some(result),
             },
         )))
+    }
+}
+
+impl UserAgentSession {
+    async fn handle_sdk_client_approve(&mut self, req: SdkClientApproveRequest) -> Output {
+        use sdk_client_approve_response::Result as ApproveResult;
+
+        if req.pubkey.len() != 32 {
+            return Ok(response(UserAgentResponsePayload::SdkClientApprove(
+                SdkClientApproveResponse {
+                    result: Some(ApproveResult::Error(ProtoSdkClientError::Internal.into())),
+                },
+            )));
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i32;
+
+        let mut conn = match self.props.db.get().await {
+            Ok(c) => c,
+            Err(e) => {
+                error!(?e, "Failed to get DB connection for sdk_client_approve");
+                return Ok(response(UserAgentResponsePayload::SdkClientApprove(
+                    SdkClientApproveResponse {
+                        result: Some(ApproveResult::Error(ProtoSdkClientError::Internal.into())),
+                    },
+                )));
+            }
+        };
+
+        let pubkey_bytes = req.pubkey.clone();
+        let insert_result = insert_into(program_client::table)
+            .values((
+                program_client::public_key.eq(&pubkey_bytes),
+                program_client::nonce.eq(1), // pre-incremented; challenge will use nonce=0
+                program_client::created_at.eq(now),
+                program_client::updated_at.eq(now),
+            ))
+            .execute(&mut conn)
+            .await;
+
+        match insert_result {
+            Ok(_) => {
+                match program_client::table
+                    .filter(program_client::public_key.eq(&pubkey_bytes))
+                    .order(program_client::id.desc())
+                    .select((
+                        program_client::id,
+                        program_client::public_key,
+                        program_client::created_at,
+                    ))
+                    .first::<(i32, Vec<u8>, i32)>(&mut conn)
+                    .await
+                {
+                    Ok((id, pubkey, created_at)) => Ok(response(
+                        UserAgentResponsePayload::SdkClientApprove(SdkClientApproveResponse {
+                            result: Some(ApproveResult::Client(SdkClientEntry {
+                                id,
+                                pubkey,
+                                created_at,
+                            })),
+                        }),
+                    )),
+                    Err(e) => {
+                        error!(?e, "Failed to fetch inserted SDK client");
+                        Ok(response(UserAgentResponsePayload::SdkClientApprove(
+                            SdkClientApproveResponse {
+                                result: Some(ApproveResult::Error(
+                                    ProtoSdkClientError::Internal.into(),
+                                )),
+                            },
+                        )))
+                    }
+                }
+            }
+            Err(diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UniqueViolation,
+                _,
+            )) => Ok(response(UserAgentResponsePayload::SdkClientApprove(
+                SdkClientApproveResponse {
+                    result: Some(ApproveResult::Error(
+                        ProtoSdkClientError::AlreadyExists.into(),
+                    )),
+                },
+            ))),
+            Err(e) => {
+                error!(?e, "Failed to insert SDK client");
+                Ok(response(UserAgentResponsePayload::SdkClientApprove(
+                    SdkClientApproveResponse {
+                        result: Some(ApproveResult::Error(ProtoSdkClientError::Internal.into())),
+                    },
+                )))
+            }
+        }
+    }
+
+    async fn handle_sdk_client_list(&mut self) -> Output {
+        let mut conn = match self.props.db.get().await {
+            Ok(c) => c,
+            Err(e) => {
+                error!(?e, "Failed to get DB connection for sdk_client_list");
+                return Ok(response(UserAgentResponsePayload::SdkClientList(
+                    SdkClientListResponse {
+                        result: Some(sdk_client_list_response::Result::Error(
+                            ProtoSdkClientError::Internal.into(),
+                        )),
+                    },
+                )));
+            }
+        };
+
+        match program_client::table
+            .select((
+                program_client::id,
+                program_client::public_key,
+                program_client::created_at,
+            ))
+            .load::<(i32, Vec<u8>, i32)>(&mut conn)
+            .await
+        {
+            Ok(rows) => Ok(response(UserAgentResponsePayload::SdkClientList(
+                SdkClientListResponse {
+                    result: Some(sdk_client_list_response::Result::Clients(SdkClientList {
+                        clients: rows
+                            .into_iter()
+                            .map(|(id, pubkey, created_at)| SdkClientEntry {
+                                id,
+                                pubkey,
+                                created_at,
+                            })
+                            .collect(),
+                    })),
+                },
+            ))),
+            Err(e) => {
+                error!(?e, "Failed to list SDK clients");
+                Ok(response(UserAgentResponsePayload::SdkClientList(
+                    SdkClientListResponse {
+                        result: Some(sdk_client_list_response::Result::Error(
+                            ProtoSdkClientError::Internal.into(),
+                        )),
+                    },
+                )))
+            }
+        }
+    }
+
+    async fn handle_sdk_client_revoke(&mut self, req: SdkClientRevokeRequest) -> Output {
+        use sdk_client_revoke_response::Result as RevokeResult;
+
+        let mut conn = match self.props.db.get().await {
+            Ok(c) => c,
+            Err(e) => {
+                error!(?e, "Failed to get DB connection for sdk_client_revoke");
+                return Ok(response(UserAgentResponsePayload::SdkClientRevoke(
+                    SdkClientRevokeResponse {
+                        result: Some(RevokeResult::Error(ProtoSdkClientError::Internal.into())),
+                    },
+                )));
+            }
+        };
+
+        match diesel::delete(program_client::table)
+            .filter(program_client::id.eq(req.client_id))
+            .execute(&mut conn)
+            .await
+        {
+            Ok(0) => Ok(response(UserAgentResponsePayload::SdkClientRevoke(
+                SdkClientRevokeResponse {
+                    result: Some(RevokeResult::Error(ProtoSdkClientError::NotFound.into())),
+                },
+            ))),
+            Ok(_) => Ok(response(UserAgentResponsePayload::SdkClientRevoke(
+                SdkClientRevokeResponse {
+                    result: Some(RevokeResult::Ok(())),
+                },
+            ))),
+            Err(diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::ForeignKeyViolation,
+                _,
+            )) => Ok(response(UserAgentResponsePayload::SdkClientRevoke(
+                SdkClientRevokeResponse {
+                    result: Some(RevokeResult::Error(
+                        ProtoSdkClientError::HasRelatedData.into(),
+                    )),
+                },
+            ))),
+            Err(e) => {
+                error!(?e, "Failed to delete SDK client");
+                Ok(response(UserAgentResponsePayload::SdkClientRevoke(
+                    SdkClientRevokeResponse {
+                        result: Some(RevokeResult::Error(ProtoSdkClientError::Internal.into())),
+                    },
+                )))
+            }
+        }
     }
 }
 

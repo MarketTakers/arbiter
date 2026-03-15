@@ -23,6 +23,7 @@ message ClientRequest {
   oneof payload {
     AuthChallengeRequest auth_challenge_request = 1;
     AuthChallengeSolution auth_challenge_solution = 2;
+    arbiter.evm.EvmSignTransactionRequest evm_sign_transaction = 3;
   }
 }
 

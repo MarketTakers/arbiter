@@ -1,20 +1,14 @@
 use std::{collections::HashMap, ops::ControlFlow};
 
-use ed25519_dalek::VerifyingKey;
 use kameo::{
     Actor,
     actor::{ActorId, ActorRef},
     messages,
     prelude::{ActorStopReason, Context, WeakActorRef},
-    reply::DelegatedReply,
 };
-use tokio::{sync::watch, task::JoinSet};
-use tracing::{info, warn};
+use tracing::info;
 
-use crate::actors::{
-    client::session::ClientSession,
-    user_agent::session::{RequestNewClientApproval, UserAgentSession},
-};
+use crate::actors::{client::session::ClientSession, user_agent::session::UserAgentSession};
 
 #[derive(Default)]
 pub struct MessageRouter {
@@ -56,73 +50,6 @@ impl Actor for MessageRouter {
     }
 }
 
-#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq, Hash)]
-pub enum ApprovalError {
-    #[error("No user agents connected")]
-    NoUserAgentsConnected,
-}
-
-async fn request_client_approval(
-    user_agents: &[WeakActorRef<UserAgentSession>],
-    client_pubkey: VerifyingKey,
-) -> Result<bool, ApprovalError> {
-    if user_agents.is_empty() {
-        return Err(ApprovalError::NoUserAgentsConnected);
-    }
-
-    let mut pool = JoinSet::new();
-    let (cancel_tx, cancel_rx) = watch::channel(());
-
-    for weak_ref in user_agents {
-        match weak_ref.upgrade() {
-            Some(agent) => {
-                let cancel_rx = cancel_rx.clone();
-                pool.spawn(async move {
-                    agent
-                        .ask(RequestNewClientApproval {
-                            client_pubkey,
-                            cancel_flag: cancel_rx.clone(),
-                        })
-                        .await
-                });
-            }
-            None => {
-                warn!(
-                    id = weak_ref.id().to_string(),
-                    actor = "MessageRouter",
-                    event = "useragent.disconnected_before_approval"
-                );
-            }
-        }
-    }
-
-    while let Some(result) = pool.join_next().await {
-        match result {
-            Ok(Ok(approved)) => {
-                // cancel other pending requests
-                let _ = cancel_tx.send(());
-                return Ok(approved);
-            }
-            Ok(Err(err)) => {
-                warn!(
-                    ?err,
-                    actor = "MessageRouter",
-                    event = "useragent.approval_error"
-                );
-            }
-            Err(err) => {
-                warn!(
-                    ?err,
-                    actor = "MessageRouter",
-                    event = "useragent.approval_task_failed"
-                );
-            }
-        }
-    }
-
-    Err(ApprovalError::NoUserAgentsConnected)
-}
-
 #[messages]
 impl MessageRouter {
     #[message(ctx)]
@@ -145,30 +72,5 @@ impl MessageRouter {
         info!(id = %actor.id(), actor = "MessageRouter", event = "client.connected");
         ctx.actor_ref().link(&actor).await;
         self.clients.insert(actor.id(), actor);
-    }
-
-    #[message(ctx)]
-    pub async fn request_client_approval(
-        &mut self,
-        client_pubkey: VerifyingKey,
-        ctx: &mut Context<Self, DelegatedReply<Result<bool, ApprovalError>>>,
-    ) -> DelegatedReply<Result<bool, ApprovalError>> {
-        let (reply, Some(reply_sender)) = ctx.reply_sender() else {
-            panic!("Exptected `request_client_approval` to have callback channel");
-        };
-
-        let weak_refs = self
-            .user_agents
-            .values()
-            .map(|agent| agent.downgrade())
-            .collect::<Vec<_>>();
-
-        // handle in subtask to not to lock the actor
-        tokio::task::spawn(async move {
-            let result = request_client_approval(&weak_refs, client_pubkey).await;
-            reply_sender.send(result);
-        });
-
-        reply
     }
 }

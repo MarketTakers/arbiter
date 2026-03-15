@@ -79,7 +79,7 @@ fn client_auth_error_status(value: &client::auth::Error) -> Status {
             Status::invalid_argument("Failed to convert pubkey to VerifyingKey")
         }
         Error::InvalidChallengeSolution => Status::unauthenticated(value.to_string()),
-        Error::ApproveError(_) => Status::permission_denied(value.to_string()),
+        Error::NotRegistered => Status::permission_denied(value.to_string()),
         Error::Transport => Status::internal("Transport error"),
         Error::DatabasePoolUnavailable => Status::internal("Database pool error"),
         Error::DatabaseOperationFailed => Status::internal("Database error"),
