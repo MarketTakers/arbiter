@@ -3,10 +3,10 @@ use std::collections::HashSet;
 use arbiter_server::{
     actors::keyholder::{Error, encryption::v1},
     db::{self, models, schema},
+    safe_cell::{SafeCell, SafeCellHandle as _},
 };
 use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper, dsl::update};
 use diesel_async::RunQueryDsl;
-use memsafe::MemSafe;
 
 use crate::common;
 
@@ -18,12 +18,12 @@ async fn test_create_decrypt_roundtrip() {
 
     let plaintext = b"hello arbiter";
     let aead_id = actor
-        .create_new(MemSafe::new(plaintext.to_vec()).unwrap())
+        .create_new(SafeCell::new(plaintext.to_vec()))
         .await
         .unwrap();
 
     let mut decrypted = actor.decrypt(aead_id).await.unwrap();
-    assert_eq!(*decrypted.read().unwrap(), plaintext);
+    assert_eq!(*decrypted.read(), plaintext);
 }
 
 #[tokio::test]
@@ -44,11 +44,11 @@ async fn test_ciphertext_differs_across_entries() {
 
     let plaintext = b"same content";
     let id1 = actor
-        .create_new(MemSafe::new(plaintext.to_vec()).unwrap())
+        .create_new(SafeCell::new(plaintext.to_vec()))
         .await
         .unwrap();
     let id2 = actor
-        .create_new(MemSafe::new(plaintext.to_vec()).unwrap())
+        .create_new(SafeCell::new(plaintext.to_vec()))
         .await
         .unwrap();
 
@@ -70,8 +70,8 @@ async fn test_ciphertext_differs_across_entries() {
 
     let mut d1 = actor.decrypt(id1).await.unwrap();
     let mut d2 = actor.decrypt(id2).await.unwrap();
-    assert_eq!(*d1.read().unwrap(), plaintext);
-    assert_eq!(*d2.read().unwrap(), plaintext);
+    assert_eq!(*d1.read(), plaintext);
+    assert_eq!(*d2.read(), plaintext);
 }
 
 #[tokio::test]
@@ -83,7 +83,7 @@ async fn test_nonce_never_reused() {
     let n = 5;
     for i in 0..n {
         actor
-            .create_new(MemSafe::new(format!("secret {i}").into_bytes()).unwrap())
+            .create_new(SafeCell::new(format!("secret {i}").into_bytes()))
             .await
             .unwrap();
     }
@@ -137,7 +137,7 @@ async fn broken_db_nonce_format_fails_closed() {
     drop(conn);
 
     let err = actor
-        .create_new(MemSafe::new(b"must fail".to_vec()).unwrap())
+        .create_new(SafeCell::new(b"must fail".to_vec()))
         .await
         .unwrap_err();
     assert!(matches!(err, Error::BrokenDatabase));
@@ -145,7 +145,7 @@ async fn broken_db_nonce_format_fails_closed() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_keyholder(&db).await;
     let id = actor
-        .create_new(MemSafe::new(b"decrypt target".to_vec()).unwrap())
+        .create_new(SafeCell::new(b"decrypt target".to_vec()))
         .await
         .unwrap();
     let mut conn = db.get().await.unwrap();

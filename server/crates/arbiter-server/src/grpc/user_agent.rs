@@ -6,7 +6,6 @@ use arbiter_proto::{
             EvmGrantCreateRequest, EvmGrantCreateResponse, EvmGrantDeleteRequest,
             EvmGrantDeleteResponse, EvmGrantList, EvmGrantListResponse, GrantEntry,
             SharedSettings as ProtoSharedSettings, SpecificGrant as ProtoSpecificGrant,
-            SpecificGrant as ProtoGrantSpecificGrant,
             TokenTransferSettings as ProtoTokenTransferSettings,
             VolumeRateLimit as ProtoVolumeRateLimit, WalletCreateResponse, WalletEntry, WalletList,
             WalletListResponse, evm_grant_create_response::Result as EvmGrantCreateResult,
@@ -42,7 +41,6 @@ use crate::{
         TransportResponseError, UnsealError, VaultState,
     },
     evm::{
-        self,
         policies::{Grant, SpecificGrant},
         policies::{
             SharedGrantSettings, TransactionRateLimit, VolumeRateLimit, ether_transfer,

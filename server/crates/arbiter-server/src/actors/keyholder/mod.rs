@@ -5,15 +5,15 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::{Actor, Reply, messages};
-use memsafe::MemSafe;
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
 
-use crate::db::{
+use crate::{db::{
     self,
     models::{self, RootKeyHistory},
     schema::{self},
-};
+}, safe_cell::SafeCellHandle as _};
+use crate::safe_cell::SafeCell;
 use encryption::v1::{self, KeyCell, Nonce};
 
 pub mod encryption;
@@ -136,7 +136,7 @@ impl KeyHolder {
     }
 
     #[message]
-    pub async fn bootstrap(&mut self, seal_key_raw: MemSafe<Vec<u8>>) -> Result<(), Error> {
+    pub async fn bootstrap(&mut self, seal_key_raw: SafeCell<Vec<u8>>) -> Result<(), Error> {
         if !matches!(self.state, State::Unbootstrapped) {
             return Err(Error::AlreadyBootstrapped);
         }
@@ -149,7 +149,7 @@ impl KeyHolder {
         let data_encryption_nonce = v1::Nonce::default();
 
         let root_key_ciphertext: Vec<u8> = {
-            let root_key_reader = root_key.0.read().unwrap();
+            let root_key_reader = root_key.0.read();
             let root_key_reader = root_key_reader.as_slice();
             seal_key
                 .encrypt(&root_key_nonce, v1::ROOT_KEY_TAG, root_key_reader)
@@ -199,7 +199,7 @@ impl KeyHolder {
     }
 
     #[message]
-    pub async fn try_unseal(&mut self, seal_key_raw: MemSafe<Vec<u8>>) -> Result<(), Error> {
+    pub async fn try_unseal(&mut self, seal_key_raw: SafeCell<Vec<u8>>) -> Result<(), Error> {
         let State::Sealed {
             root_key_history_id,
         } = &self.state
@@ -225,7 +225,7 @@ impl KeyHolder {
         })?;
         let mut seal_key = v1::derive_seal_key(seal_key_raw, &salt);
 
-        let mut root_key = MemSafe::new(current_key.ciphertext.clone()).unwrap();
+        let mut root_key = SafeCell::new(current_key.ciphertext.clone());
 
         let nonce = v1::Nonce::try_from(current_key.root_key_encryption_nonce.as_slice()).map_err(
             |_| {
@@ -256,7 +256,7 @@ impl KeyHolder {
 
     // Decrypts the `aead_encrypted` entry with the given ID and returns the plaintext
     #[message]
-    pub async fn decrypt(&mut self, aead_id: i32) -> Result<MemSafe<Vec<u8>>, Error> {
+    pub async fn decrypt(&mut self, aead_id: i32) -> Result<SafeCell<Vec<u8>>, Error> {
         let State::Unsealed { root_key, .. } = &mut self.state else {
             return Err(Error::NotBootstrapped);
         };
@@ -279,14 +279,14 @@ impl KeyHolder {
             );
             Error::BrokenDatabase
         })?;
-        let mut output = MemSafe::new(row.ciphertext).unwrap();
+        let mut output = SafeCell::new(row.ciphertext);
         root_key.decrypt_in_place(&nonce, v1::TAG, &mut output)?;
         Ok(output)
     }
 
     // Creates new `aead_encrypted` entry in the database and returns it's ID
     #[message]
-    pub async fn create_new(&mut self, mut plaintext: MemSafe<Vec<u8>>) -> Result<i32, Error> {
+    pub async fn create_new(&mut self, mut plaintext: SafeCell<Vec<u8>>) -> Result<i32, Error> {
         let State::Unsealed {
             root_key,
             root_key_history_id,
@@ -299,7 +299,7 @@ impl KeyHolder {
         // Borrow checker note: &mut borrow a few lines above is disjoint from this field
         let nonce = Self::get_new_nonce(&self.db, *root_key_history_id).await?;
 
-        let mut ciphertext_buffer = plaintext.write().unwrap();
+        let mut ciphertext_buffer = plaintext.write();
         let ciphertext_buffer: &mut Vec<u8> = ciphertext_buffer.as_mut();
         root_key.encrypt_in_place(&nonce, v1::TAG, &mut *ciphertext_buffer)?;
 
@@ -348,15 +348,14 @@ mod tests {
     use diesel::SelectableHelper;
 
     use diesel_async::RunQueryDsl;
-    use memsafe::MemSafe;
 
-    use crate::db::{self};
+    use crate::{db::{self}, safe_cell::SafeCell};
 
     use super::*;
 
     async fn bootstrapped_actor(db: &db::DatabasePool) -> KeyHolder {
         let mut actor = KeyHolder::new(db.clone()).await.unwrap();
-        let seal_key = MemSafe::new(b"test-seal-key".to_vec()).unwrap();
+        let seal_key = SafeCell::new(b"test-seal-key".to_vec());
         actor.bootstrap(seal_key).await.unwrap();
         actor
     }
@@ -391,7 +390,7 @@ mod tests {
         assert_eq!(root_row.data_encryption_nonce, n2.to_vec());
 
         let id = actor
-            .create_new(MemSafe::new(b"post-interleave".to_vec()).unwrap())
+            .create_new(SafeCell::new(b"post-interleave".to_vec()))
             .await
             .unwrap();
         let row: models::AeadEncrypted = schema::aead_encrypted::table

@@ -2,13 +2,11 @@ use std::{ops::DerefMut, sync::Mutex};
 
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use kameo::error::SendError;
-use memsafe::MemSafe;
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-use crate::actors::{
-    evm::{Generate, ListWallets, UseragentListGrants},
-    evm::{UseragentCreateGrant, UseragentDeleteGrant},
+use crate::{actors::{
+    evm::{Generate, ListWallets, UseragentCreateGrant, UseragentDeleteGrant, UseragentListGrants},
     keyholder::{self, Bootstrap, TryUnseal},
     user_agent::{
         BootstrapError, Request, Response, TransportResponseError, UnsealError, VaultState,
@@ -17,7 +15,8 @@ use crate::actors::{
             state::{UnsealContext, UserAgentEvents, UserAgentStates},
         },
     },
-};
+}, safe_cell::SafeCellHandle as _};
+use crate::safe_cell::SafeCell;
 
 impl UserAgentSession {
     pub async fn process_transport_inbound(&mut self, req: Request) -> Output {
@@ -93,16 +92,16 @@ impl UserAgentSession {
         nonce: &[u8],
         ciphertext: &[u8],
         associated_data: &[u8],
-    ) -> Result<MemSafe<Vec<u8>>, ()> {
+    ) -> Result<SafeCell<Vec<u8>>, ()> {
         let nonce = XNonce::from_slice(nonce);
 
         let shared_secret = ephemeral_secret.diffie_hellman(&client_public_key);
         let cipher = XChaCha20Poly1305::new(shared_secret.as_bytes().into());
 
-        let mut key_buffer = MemSafe::new(ciphertext.to_vec()).unwrap();
+        let mut key_buffer = SafeCell::new(ciphertext.to_vec());
 
         let decryption_result = {
-            let mut write_handle = key_buffer.write().unwrap();
+            let mut write_handle = key_buffer.write();
             let write_handle = write_handle.deref_mut();
             cipher.decrypt_in_place(nonce, associated_data, write_handle)
         };

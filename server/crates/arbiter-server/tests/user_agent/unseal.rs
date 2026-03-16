@@ -5,9 +5,9 @@ use arbiter_server::{
         user_agent::{Request, Response, UnsealError, session::UserAgentSession},
     },
     db,
+    safe_cell::{SafeCell, SafeCellHandle as _},
 };
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
-use memsafe::MemSafe;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 async fn setup_sealed_user_agent(seal_key: &[u8]) -> (db::DatabasePool, UserAgentSession) {
@@ -17,7 +17,7 @@ async fn setup_sealed_user_agent(seal_key: &[u8]) -> (db::DatabasePool, UserAgen
     actors
         .key_holder
         .ask(Bootstrap {
-            seal_key_raw: MemSafe::new(seal_key.to_vec()).unwrap(),
+            seal_key_raw: SafeCell::new(seal_key.to_vec()),
         })
         .await
         .unwrap();

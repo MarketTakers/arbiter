@@ -1,5 +1,3 @@
-
-use chacha20poly1305::aead::KeyInit;
 use ed25519_dalek::VerifyingKey;
 use kameo::{Actor, messages, prelude::Context};
 use tokio::{select, sync::watch};

@@ -5,11 +5,12 @@ use chacha20poly1305::{
     AeadInPlace, Key, KeyInit as _, XChaCha20Poly1305, XNonce,
     aead::{AeadMut, Error, Payload},
 };
-use memsafe::MemSafe;
 use rand::{
     Rng as _, SeedableRng,
     rngs::{StdRng, SysRng},
 };
+
+use crate::safe_cell::{SafeCell, SafeCellHandle as _};
 
 pub const ROOT_KEY_TAG: &[u8] = "arbiter/seal/v1".as_bytes();
 pub const TAG: &[u8] = "arbiter/private-key/v1".as_bytes();
@@ -47,23 +48,23 @@ impl<'a> TryFrom<&'a [u8]> for Nonce {
     }
 }
 
-pub struct KeyCell(pub MemSafe<Key>);
-impl From<MemSafe<Key>> for KeyCell {
-    fn from(value: MemSafe<Key>) -> Self {
+pub struct KeyCell(pub SafeCell<Key>);
+impl From<SafeCell<Key>> for KeyCell {
+    fn from(value: SafeCell<Key>) -> Self {
         Self(value)
     }
 }
-impl TryFrom<MemSafe<Vec<u8>>> for KeyCell {
+impl TryFrom<SafeCell<Vec<u8>>> for KeyCell {
     type Error = ();
 
-    fn try_from(mut value: MemSafe<Vec<u8>>) -> Result<Self, Self::Error> {
-        let value = value.read().unwrap();
+    fn try_from(mut value: SafeCell<Vec<u8>>) -> Result<Self, Self::Error> {
+        let value = value.read();
         if value.len() != size_of::<Key>() {
             return Err(());
         }
-        let mut cell = MemSafe::new(Key::default()).unwrap();
+        let mut cell = SafeCell::new(Key::default());
         {
-            let mut cell_write = cell.write().unwrap();
+            let mut cell_write = cell.write();
             let cell_slice: &mut [u8] = cell_write.as_mut();
             cell_slice.copy_from_slice(&value);
         }
@@ -73,9 +74,9 @@ impl TryFrom<MemSafe<Vec<u8>>> for KeyCell {
 
 impl KeyCell {
     pub fn new_secure_random() -> Self {
-        let mut key = MemSafe::new(Key::default()).unwrap();
+        let mut key = SafeCell::new(Key::default());
         {
-            let mut key_buffer = key.write().unwrap();
+            let mut key_buffer = key.write();
             let key_buffer: &mut [u8] = key_buffer.as_mut();
 
             let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
@@ -91,7 +92,7 @@ impl KeyCell {
         associated_data: &[u8],
         mut buffer: impl AsMut<Vec<u8>>,
     ) -> Result<(), Error> {
-        let key_reader = self.0.read().unwrap();
+        let key_reader = self.0.read();
         let key_ref = key_reader.deref();
         let cipher = XChaCha20Poly1305::new(key_ref);
         let nonce = XNonce::from_slice(nonce.0.as_ref());
@@ -102,13 +103,13 @@ impl KeyCell {
         &mut self,
         nonce: &Nonce,
         associated_data: &[u8],
-        buffer: &mut MemSafe<Vec<u8>>,
+        buffer: &mut SafeCell<Vec<u8>>,
     ) -> Result<(), Error> {
-        let key_reader = self.0.read().unwrap();
+        let key_reader = self.0.read();
         let key_ref = key_reader.deref();
         let cipher = XChaCha20Poly1305::new(key_ref);
         let nonce = XNonce::from_slice(nonce.0.as_ref());
-        let mut buffer = buffer.write().unwrap();
+        let mut buffer = buffer.write();
         let buffer: &mut Vec<u8> = buffer.as_mut();
         cipher.decrypt_in_place(nonce, associated_data, buffer)
     }
@@ -119,7 +120,7 @@ impl KeyCell {
         associated_data: &[u8],
         plaintext: impl AsRef<[u8]>,
     ) -> Result<Vec<u8>, Error> {
-        let key_reader = self.0.read().unwrap();
+        let key_reader = self.0.read();
         let key_ref = key_reader.deref();
         let mut cipher = XChaCha20Poly1305::new(key_ref);
         let nonce = XNonce::from_slice(nonce.0.as_ref());
@@ -146,13 +147,13 @@ pub fn generate_salt() -> Salt {
 
 /// User password might be of different length, have not enough entropy, etc...
 /// Derive a fixed-length key from the password using Argon2id, which is designed for password hashing and key derivation.
-pub fn derive_seal_key(mut password: MemSafe<Vec<u8>>, salt: &Salt) -> KeyCell {
+pub fn derive_seal_key(mut password: SafeCell<Vec<u8>>, salt: &Salt) -> KeyCell {
     let params = argon2::Params::new(262_144, 3, 4, None).unwrap();
     let hasher = Argon2::new(Algorithm::Argon2id, argon2::Version::V0x13, params);
-    let mut key = MemSafe::new(Key::default()).unwrap();
+    let mut key = SafeCell::new(Key::default());
     {
-        let password_source = password.read().unwrap();
-        let mut key_buffer = key.write().unwrap();
+        let password_source = password.read();
+        let mut key_buffer = key.write();
         let key_buffer: &mut [u8] = key_buffer.as_mut();
 
         hasher
@@ -166,20 +167,20 @@ pub fn derive_seal_key(mut password: MemSafe<Vec<u8>>, salt: &Salt) -> KeyCell {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use memsafe::MemSafe;
+    use crate::safe_cell::SafeCell;
 
     #[test]
     pub fn derive_seal_key_deterministic() {
         static PASSWORD: &[u8] = b"password";
-        let password = MemSafe::new(PASSWORD.to_vec()).unwrap();
-        let password2 = MemSafe::new(PASSWORD.to_vec()).unwrap();
+        let password = SafeCell::new(PASSWORD.to_vec());
+        let password2 = SafeCell::new(PASSWORD.to_vec());
         let salt = generate_salt();
 
         let mut key1 = derive_seal_key(password, &salt);
         let mut key2 = derive_seal_key(password2, &salt);
 
-        let key1_reader = key1.0.read().unwrap();
-        let key2_reader = key2.0.read().unwrap();
+        let key1_reader = key1.0.read();
+        let key2_reader = key2.0.read();
 
         assert_eq!(key1_reader.deref(), key2_reader.deref());
     }
@@ -187,11 +188,11 @@ mod tests {
     #[test]
     pub fn successful_derive() {
         static PASSWORD: &[u8] = b"password";
-        let password = MemSafe::new(PASSWORD.to_vec()).unwrap();
+        let password = SafeCell::new(PASSWORD.to_vec());
         let salt = generate_salt();
 
         let mut key = derive_seal_key(password, &salt);
-        let key_reader = key.0.read().unwrap();
+        let key_reader = key.0.read();
         let key_ref = key_reader.deref();
 
         assert_ne!(key_ref.as_slice(), &[0u8; 32][..]);
@@ -200,7 +201,7 @@ mod tests {
     #[test]
     pub fn encrypt_decrypt() {
         static PASSWORD: &[u8] = b"password";
-        let password = MemSafe::new(PASSWORD.to_vec()).unwrap();
+        let password = SafeCell::new(PASSWORD.to_vec());
         let salt = generate_salt();
 
         let mut key = derive_seal_key(password, &salt);
@@ -212,12 +213,12 @@ mod tests {
             .unwrap();
         assert_ne!(buffer, b"secret data");
 
-        let mut buffer = MemSafe::new(buffer).unwrap();
+        let mut buffer = SafeCell::new(buffer);
 
         key.decrypt_in_place(&nonce, associated_data, &mut buffer)
             .unwrap();
 
-        let buffer = buffer.read().unwrap();
+        let buffer = buffer.read();
         assert_eq!(*buffer, b"secret data");
     }
 

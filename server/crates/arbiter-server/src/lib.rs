@@ -12,6 +12,7 @@ pub mod context;
 pub mod db;
 pub mod evm;
 pub mod grpc;
+pub mod safe_cell;
 
 const DEFAULT_CHANNEL_SIZE: usize = 1000;
 
@@ -24,5 +25,4 @@ impl Server {
         Self { context }
     }
 }
-
 

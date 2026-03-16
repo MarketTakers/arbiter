@@ -1,0 +1,79 @@
+use std::ops::{Deref, DerefMut};
+use std::{any::type_name, fmt};
+
+use memsafe::MemSafe;
+
+pub trait SafeCellHandle<T> {
+    type CellRead<'a>: Deref<Target = T>
+    where
+        Self: 'a,
+        T: 'a;
+    type CellWrite<'a>: Deref<Target = T> + DerefMut<Target = T>
+    where
+        Self: 'a,
+        T: 'a;
+
+    fn new(value: T) -> Self
+    where
+        Self: Sized;
+
+    fn read(&mut self) -> Self::CellRead<'_>;
+    fn write(&mut self) -> Self::CellWrite<'_>;
+}
+
+pub struct MemSafeCell<T>(MemSafe<T>);
+
+impl<T> fmt::Debug for MemSafeCell<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MemSafeCell")
+            .field("inner", &format_args!("<protected {}>", type_name::<T>()))
+            .finish()
+    }
+}
+
+impl<T> SafeCellHandle<T> for MemSafeCell<T> {
+    type CellRead<'a>
+        = memsafe::MemSafeRead<'a, T>
+    where
+        Self: 'a,
+        T: 'a;
+    type CellWrite<'a>
+        = memsafe::MemSafeWrite<'a, T>
+    where
+        Self: 'a,
+        T: 'a;
+
+    fn new(value: T) -> Self {
+        match MemSafe::new(value) {
+            Ok(inner) => Self(inner),
+            Err(err) => {
+                // If protected memory cannot be allocated, process integrity is compromised.
+                abort_memory_breach("safe cell allocation", &err)
+            }
+        }
+    }
+
+    fn read(&mut self) -> Self::CellRead<'_> {
+        match self.0.read() {
+            Ok(inner) => inner,
+            Err(err) => abort_memory_breach("safe cell read", &err),
+        }
+    }
+
+    fn write(&mut self) -> Self::CellWrite<'_> {
+        match self.0.write() {
+            Ok(inner) => inner,
+            Err(err) => {
+                // If protected memory becomes unwritable here, treat it as a fatal memory breach.
+                abort_memory_breach("safe cell write", &err)
+            }
+        }
+    }
+}
+
+fn abort_memory_breach(action: &str, err: &memsafe::error::MemoryError) -> ! {
+    eprintln!("fatal {action}: {err}");
+    std::process::abort();
+}
+
+pub type SafeCell<T> = MemSafeCell<T>;

@@ -4,14 +4,13 @@ use diesel::{
 };
 use diesel_async::RunQueryDsl;
 use kameo::{Actor, actor::ActorRef, messages};
-use memsafe::MemSafe;
 use rand::{SeedableRng, rng, rngs::StdRng};
 
 use crate::{
     actors::keyholder::{CreateNew, Decrypt, KeyHolder},
     db::{
         self, DatabasePool,
-        models::{self, EvmBasicGrant, SqliteTimestamp},
+        models::{self, SqliteTimestamp},
         schema,
     },
     evm::{
@@ -21,6 +20,7 @@ use crate::{
             ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
         },
     },
+    safe_cell::{SafeCell, SafeCellHandle as _},
 };
 
 pub use crate::evm::safe_signer;
@@ -110,8 +110,8 @@ impl EvmActor {
 
         // Move raw key bytes into a Vec<u8> MemSafe for KeyHolder
         let plaintext = {
-            let reader = key_cell.read().expect("MemSafe read");
-            MemSafe::new(reader.to_vec()).expect("MemSafe allocation")
+            let reader = key_cell.read();
+            SafeCell::new(reader.to_vec())
         };
 
         let aead_id: i32 = self
@@ -249,7 +249,7 @@ impl EvmActor {
             .ok_or(SignTransactionError::WalletNotFound)?;
         drop(conn);
 
-        let raw_key: MemSafe<Vec<u8>> = self
+        let raw_key: SafeCell<Vec<u8>> = self
             .keyholder
             .ask(Decrypt {
                 aead_id: wallet.aead_encrypted_id,
@@ -257,7 +257,7 @@ impl EvmActor {
             .await
             .map_err(|_| SignTransactionError::KeyholderSend)?;
 
-        let signer = safe_signer::SafeSigner::from_memsafe(raw_key)?;
+        let signer = safe_signer::SafeSigner::from_cell(raw_key)?;
 
         self.engine
             .evaluate_transaction(
