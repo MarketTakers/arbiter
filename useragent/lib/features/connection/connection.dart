@@ -4,15 +4,18 @@ import 'dart:convert';
 import 'package:arbiter/features/connection/server_info_storage.dart';
 import 'package:arbiter/features/identity/pk_manager.dart';
 import 'package:arbiter/proto/arbiter.pbgrpc.dart';
+import 'package:arbiter/proto/evm.pb.dart';
 import 'package:arbiter/proto/user_agent.pb.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:grpc/grpc.dart';
 import 'package:mtcore/markettakers.dart';
+import 'package:protobuf/well_known_types/google/protobuf/empty.pb.dart';
 
 class Connection {
   final ClientChannel channel;
   final StreamController<UserAgentRequest> _tx;
   final StreamIterator<UserAgentResponse> _rx;
+  Future<void> _requestQueue = Future<void>.value();
 
   Connection({
     required this.channel,
@@ -68,6 +71,48 @@ List<int> formatChallenge(AuthChallenge challenge, List<int> pubkey) {
 }
 
 const _vaultKeyAssociatedData = 'arbiter.vault.password';
+
+Future<List<WalletEntry>> listEvmWallets(Connection connection) async {
+  await connection.send(UserAgentRequest(evmWalletList: Empty()));
+
+  final response = await connection.receive();
+  if (!response.hasEvmWalletList()) {
+    throw Exception(
+      'Expected EVM wallet list response, got ${response.whichPayload()}',
+    );
+  }
+
+  final result = response.evmWalletList;
+  switch (result.whichResult()) {
+    case WalletListResponse_Result.wallets:
+      return result.wallets.wallets.toList(growable: false);
+    case WalletListResponse_Result.error:
+      throw Exception(_describeEvmError(result.error));
+    case WalletListResponse_Result.notSet:
+      throw Exception('EVM wallet list response was empty.');
+  }
+}
+
+Future<void> createEvmWallet(Connection connection) async {
+  await connection.send(UserAgentRequest(evmWalletCreate: Empty()));
+
+  final response = await connection.receive();
+  if (!response.hasEvmWalletCreate()) {
+    throw Exception(
+      'Expected EVM wallet create response, got ${response.whichPayload()}',
+    );
+  }
+
+  final result = response.evmWalletCreate;
+  switch (result.whichResult()) {
+    case WalletCreateResponse_Result.wallet:
+      return;
+    case WalletCreateResponse_Result.error:
+      throw Exception(_describeEvmError(result.error));
+    case WalletCreateResponse_Result.notSet:
+      throw Exception('Wallet creation returned no result.');
+  }
+}
 
 Future<BootstrapResult> bootstrapVault(
   Connection connection,
@@ -240,4 +285,14 @@ Future<Connection> connectAndAuthorize(
   } catch (e) {
     throw Exception('Failed to connect to server: $e');
   }
+}
+
+String _describeEvmError(EvmError error) {
+  return switch (error) {
+    EvmError.EVM_ERROR_VAULT_SEALED =>
+      'The vault is sealed. Unseal it before using EVM wallets.',
+    EvmError.EVM_ERROR_INTERNAL || EvmError.EVM_ERROR_UNSPECIFIED =>
+      'The server failed to process the EVM request.',
+    _ => 'The server failed to process the EVM request.',
+  };
 }

@@ -33,7 +33,7 @@ final class EvmProvider
   Evm create() => Evm();
 }
 
-String _$evmHash() => r'6d2e0baf7b78a0850d7b99b0be7abde206e088c7';
+String _$evmHash() => r'f5d05bfa7b820d0b96026a47ca47702a3793af5d';
 
 abstract class _$Evm extends $AsyncNotifier<List<WalletEntry>?> {
   FutureOr<List<WalletEntry>?> build();

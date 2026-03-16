@@ -5,7 +5,7 @@ import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
 
 const breakpoints = MaterialAdaptiveBreakpoints();
 
-final routes = [AboutRoute(), CalcRoute()];
+final routes = [EvmRoute(), AboutRoute()];
 
 @RoutePage()
 class DashboardRouter extends StatelessWidget {
@@ -24,17 +24,25 @@ class DashboardRouter extends StatelessWidget {
         final tabsRouter = AutoTabsRouter.of(context);
         final currentActive = tabsRouter.activeIndex;
         return AdaptiveScaffold(
-          destinations: [
-            NavigationDestination(icon: Icon(Icons.book), label: "About"),
-            NavigationDestination(icon: Icon(Icons.calculate), label: "Calc"),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.account_balance_wallet_outlined),
+              selectedIcon: Icon(Icons.account_balance_wallet),
+              label: "Wallets",
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.info_outline),
+              selectedIcon: Icon(Icons.info),
+              label: "About",
+            ),
           ],
           body: (ctx) => child,
           onSelectedIndexChange: (index) {
             tabsRouter.navigate(routes[index]);
           },
           selectedIndex: currentActive,
-          transitionDuration: Duration(milliseconds: 800),
-        internalAnimations: true,          
+          transitionDuration: const Duration(milliseconds: 800),
+          internalAnimations: true,
         );
       },
     );

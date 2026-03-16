@@ -10,9 +10,9 @@
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
 import 'package:arbiter/screens/bootstrap.dart' as _i2;
-import 'package:arbiter/screens/dashboard.dart' as _i4;
+import 'package:arbiter/screens/dashboard.dart' as _i3;
 import 'package:arbiter/screens/dashboard/about.dart' as _i1;
-import 'package:arbiter/screens/dashboard/calc.dart' as _i3;
+import 'package:arbiter/screens/dashboard/evm.dart' as _i4;
 import 'package:arbiter/screens/server_connection.dart' as _i5;
 import 'package:arbiter/screens/server_info_setup.dart' as _i6;
 import 'package:arbiter/screens/vault_setup.dart' as _i7;
@@ -52,23 +52,7 @@ class Bootstrap extends _i8.PageRouteInfo<void> {
 }
 
 /// generated route for
-/// [_i3.CalcScreen]
-class CalcRoute extends _i8.PageRouteInfo<void> {
-  const CalcRoute({List<_i8.PageRouteInfo>? children})
-    : super(CalcRoute.name, initialChildren: children);
-
-  static const String name = 'CalcRoute';
-
-  static _i8.PageInfo page = _i8.PageInfo(
-    name,
-    builder: (data) {
-      return const _i3.CalcScreen();
-    },
-  );
-}
-
-/// generated route for
-/// [_i4.DashboardRouter]
+/// [_i3.DashboardRouter]
 class DashboardRouter extends _i8.PageRouteInfo<void> {
   const DashboardRouter({List<_i8.PageRouteInfo>? children})
     : super(DashboardRouter.name, initialChildren: children);
@@ -78,7 +62,23 @@ class DashboardRouter extends _i8.PageRouteInfo<void> {
   static _i8.PageInfo page = _i8.PageInfo(
     name,
     builder: (data) {
-      return const _i4.DashboardRouter();
+      return const _i3.DashboardRouter();
+    },
+  );
+}
+
+/// generated route for
+/// [_i4.EvmScreen]
+class EvmRoute extends _i8.PageRouteInfo<void> {
+  const EvmRoute({List<_i8.PageRouteInfo>? children})
+    : super(EvmRoute.name, initialChildren: children);
+
+  static const String name = 'EvmRoute';
+
+  static _i8.PageInfo page = _i8.PageInfo(
+    name,
+    builder: (data) {
+      return const _i4.EvmScreen();
     },
   );
 }
