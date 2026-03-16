@@ -5,7 +5,10 @@ use arbiter_proto::proto::user_agent::{
     user_agent_response::Payload as UserAgentResponsePayload,
 };
 use arbiter_server::{
-    actors::{GlobalActors, user_agent::session::UserAgentSession},
+    actors::{
+        GlobalActors,
+        user_agent::{TransportResponseError, session::UserAgentSession},
+    },
     db,
 };
 
@@ -68,22 +71,15 @@ async fn test_sdk_client_approve_duplicate_returns_already_exists() {
         .await
         .unwrap();
 
-    let response = session
+    let err = session
         .process_transport_inbound(req)
         .await
-        .expect("second insert should not panic");
+        .expect_err("second insert should return typed TransportResponseError");
 
-    match response.payload.unwrap() {
-        UserAgentResponsePayload::SdkClientApprove(resp) => match resp.result.unwrap() {
-            sdk_client_approve_response::Result::Error(code) => {
-                assert_eq!(code, ProtoSdkClientError::AlreadyExists as i32);
-            }
-            sdk_client_approve_response::Result::Client(_) => {
-                panic!("Expected AlreadyExists error for duplicate pubkey")
-            }
-        },
-        other => panic!("Expected SdkClientApprove, got {other:?}"),
-    }
+    assert_eq!(
+        err,
+        TransportResponseError::SdkClientApprove(ProtoSdkClientError::AlreadyExists)
+    );
 }
 
 #[tokio::test]
@@ -203,26 +199,19 @@ async fn test_sdk_client_revoke_not_found_returns_error() {
     let db = db::create_test_pool().await;
     let mut session = make_session(&db).await;
 
-    let response = session
+    let err = session
         .process_transport_inbound(UserAgentRequest {
             payload: Some(UserAgentRequestPayload::SdkClientRevoke(
                 SdkClientRevokeRequest { client_id: 9999 },
             )),
         })
         .await
-        .unwrap();
+        .expect_err("missing client should return typed TransportResponseError");
 
-    match response.payload.unwrap() {
-        UserAgentResponsePayload::SdkClientRevoke(resp) => match resp.result.unwrap() {
-            sdk_client_revoke_response::Result::Error(code) => {
-                assert_eq!(code, ProtoSdkClientError::NotFound as i32);
-            }
-            sdk_client_revoke_response::Result::Ok(_) => {
-                panic!("Expected NotFound error for missing client_id")
-            }
-        },
-        other => panic!("Expected SdkClientRevoke, got {other:?}"),
-    }
+    assert_eq!(
+        err,
+        TransportResponseError::SdkClientRevoke(ProtoSdkClientError::NotFound)
+    );
 }
 
 #[tokio::test]

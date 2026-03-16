@@ -304,11 +304,9 @@ impl UserAgentSession {
         use sdk_client_approve_response::Result as ApproveResult;
 
         if req.pubkey.len() != 32 {
-            return Ok(response(UserAgentResponsePayload::SdkClientApprove(
-                SdkClientApproveResponse {
-                    result: Some(ApproveResult::Error(ProtoSdkClientError::Internal.into())),
-                },
-            )));
+            return Err(TransportResponseError::SdkClientApprove(
+                ProtoSdkClientError::Internal,
+            ));
         }
 
         let now = std::time::SystemTime::now()
@@ -320,11 +318,9 @@ impl UserAgentSession {
             Ok(c) => c,
             Err(e) => {
                 error!(?e, "Failed to get DB connection for sdk_client_approve");
-                return Ok(response(UserAgentResponsePayload::SdkClientApprove(
-                    SdkClientApproveResponse {
-                        result: Some(ApproveResult::Error(ProtoSdkClientError::Internal.into())),
-                    },
-                )));
+                return Err(TransportResponseError::SdkClientApprove(
+                    ProtoSdkClientError::Internal,
+                ));
             }
         };
 
@@ -363,33 +359,23 @@ impl UserAgentSession {
                     )),
                     Err(e) => {
                         error!(?e, "Failed to fetch inserted SDK client");
-                        Ok(response(UserAgentResponsePayload::SdkClientApprove(
-                            SdkClientApproveResponse {
-                                result: Some(ApproveResult::Error(
-                                    ProtoSdkClientError::Internal.into(),
-                                )),
-                            },
-                        )))
+                        Err(TransportResponseError::SdkClientApprove(
+                            ProtoSdkClientError::Internal,
+                        ))
                     }
                 }
             }
             Err(diesel::result::Error::DatabaseError(
                 diesel::result::DatabaseErrorKind::UniqueViolation,
                 _,
-            )) => Ok(response(UserAgentResponsePayload::SdkClientApprove(
-                SdkClientApproveResponse {
-                    result: Some(ApproveResult::Error(
-                        ProtoSdkClientError::AlreadyExists.into(),
-                    )),
-                },
-            ))),
+            )) => Err(TransportResponseError::SdkClientApprove(
+                ProtoSdkClientError::AlreadyExists,
+            )),
             Err(e) => {
                 error!(?e, "Failed to insert SDK client");
-                Ok(response(UserAgentResponsePayload::SdkClientApprove(
-                    SdkClientApproveResponse {
-                        result: Some(ApproveResult::Error(ProtoSdkClientError::Internal.into())),
-                    },
-                )))
+                Err(TransportResponseError::SdkClientApprove(
+                    ProtoSdkClientError::Internal,
+                ))
             }
         }
     }
@@ -399,13 +385,9 @@ impl UserAgentSession {
             Ok(c) => c,
             Err(e) => {
                 error!(?e, "Failed to get DB connection for sdk_client_list");
-                return Ok(response(UserAgentResponsePayload::SdkClientList(
-                    SdkClientListResponse {
-                        result: Some(sdk_client_list_response::Result::Error(
-                            ProtoSdkClientError::Internal.into(),
-                        )),
-                    },
-                )));
+                return Err(TransportResponseError::SdkClientList(
+                    ProtoSdkClientError::Internal,
+                ));
             }
         };
 
@@ -434,13 +416,9 @@ impl UserAgentSession {
             ))),
             Err(e) => {
                 error!(?e, "Failed to list SDK clients");
-                Ok(response(UserAgentResponsePayload::SdkClientList(
-                    SdkClientListResponse {
-                        result: Some(sdk_client_list_response::Result::Error(
-                            ProtoSdkClientError::Internal.into(),
-                        )),
-                    },
-                )))
+                Err(TransportResponseError::SdkClientList(
+                    ProtoSdkClientError::Internal,
+                ))
             }
         }
     }
@@ -452,11 +430,9 @@ impl UserAgentSession {
             Ok(c) => c,
             Err(e) => {
                 error!(?e, "Failed to get DB connection for sdk_client_revoke");
-                return Ok(response(UserAgentResponsePayload::SdkClientRevoke(
-                    SdkClientRevokeResponse {
-                        result: Some(RevokeResult::Error(ProtoSdkClientError::Internal.into())),
-                    },
-                )));
+                return Err(TransportResponseError::SdkClientRevoke(
+                    ProtoSdkClientError::Internal,
+                ));
             }
         };
 
@@ -465,11 +441,9 @@ impl UserAgentSession {
             .execute(&mut conn)
             .await
         {
-            Ok(0) => Ok(response(UserAgentResponsePayload::SdkClientRevoke(
-                SdkClientRevokeResponse {
-                    result: Some(RevokeResult::Error(ProtoSdkClientError::NotFound.into())),
-                },
-            ))),
+            Ok(0) => Err(TransportResponseError::SdkClientRevoke(
+                ProtoSdkClientError::NotFound,
+            )),
             Ok(_) => Ok(response(UserAgentResponsePayload::SdkClientRevoke(
                 SdkClientRevokeResponse {
                     result: Some(RevokeResult::Ok(())),
@@ -478,20 +452,14 @@ impl UserAgentSession {
             Err(diesel::result::Error::DatabaseError(
                 diesel::result::DatabaseErrorKind::ForeignKeyViolation,
                 _,
-            )) => Ok(response(UserAgentResponsePayload::SdkClientRevoke(
-                SdkClientRevokeResponse {
-                    result: Some(RevokeResult::Error(
-                        ProtoSdkClientError::HasRelatedData.into(),
-                    )),
-                },
-            ))),
+            )) => Err(TransportResponseError::SdkClientRevoke(
+                ProtoSdkClientError::HasRelatedData,
+            )),
             Err(e) => {
                 error!(?e, "Failed to delete SDK client");
-                Ok(response(UserAgentResponsePayload::SdkClientRevoke(
-                    SdkClientRevokeResponse {
-                        result: Some(RevokeResult::Error(ProtoSdkClientError::Internal.into())),
-                    },
-                )))
+                Err(TransportResponseError::SdkClientRevoke(
+                    ProtoSdkClientError::Internal,
+                ))
             }
         }
     }
@@ -558,8 +526,15 @@ impl Actor for UserAgentSession {
                                     }
                                 }
                                 Err(err) => {
-                                    let _ = self.props.transport.send(Err(err)).await;
-                                    return Some(kameo::mailbox::Signal::Stop);
+                                    let should_stop = err.is_terminal();
+                                    if self.props.transport.send(Err(err)).await.is_err() {
+                                        error!(actor = "useragent", reason = "channel closed", "send.failed");
+                                        return Some(kameo::mailbox::Signal::Stop);
+                                    }
+
+                                    if should_stop {
+                                        return Some(kameo::mailbox::Signal::Stop);
+                                    }
                                 }
                             }
                         }

@@ -2,7 +2,12 @@
 use arbiter_proto::{
     proto::{
         client::{ClientRequest, ClientResponse},
-        user_agent::{UserAgentRequest, UserAgentResponse},
+        user_agent::{
+            SdkClientApproveResponse, SdkClientListResponse, SdkClientRevokeResponse,
+            UserAgentRequest, UserAgentResponse, sdk_client_approve_response,
+            sdk_client_list_response, sdk_client_revoke_response,
+            user_agent_response::Payload as UserAgentResponsePayload,
+        },
     },
     transport::{IdentityRecvConverter, SendConverter, grpc},
 };
@@ -37,6 +42,27 @@ impl SendConverter for UserAgentGrpcSender {
     fn convert(&self, item: Self::Input) -> Self::Output {
         match item {
             Ok(message) => Ok(message),
+            Err(TransportResponseError::SdkClientApprove(code)) => Ok(UserAgentResponse {
+                payload: Some(UserAgentResponsePayload::SdkClientApprove(
+                    SdkClientApproveResponse {
+                        result: Some(sdk_client_approve_response::Result::Error(code.into())),
+                    },
+                )),
+            }),
+            Err(TransportResponseError::SdkClientList(code)) => Ok(UserAgentResponse {
+                payload: Some(UserAgentResponsePayload::SdkClientList(
+                    SdkClientListResponse {
+                        result: Some(sdk_client_list_response::Result::Error(code.into())),
+                    },
+                )),
+            }),
+            Err(TransportResponseError::SdkClientRevoke(code)) => Ok(UserAgentResponse {
+                payload: Some(UserAgentResponsePayload::SdkClientRevoke(
+                    SdkClientRevokeResponse {
+                        result: Some(sdk_client_revoke_response::Result::Error(code.into())),
+                    },
+                )),
+            }),
             Err(err) => Err(user_agent_error_status(err)),
         }
     }
@@ -102,6 +128,11 @@ fn user_agent_error_status(value: TransportResponseError) -> Status {
         TransportResponseError::StateTransitionFailed => Status::internal("State machine error"),
         TransportResponseError::KeyHolderActorUnreachable => {
             Status::internal("Vault is not available")
+        }
+        TransportResponseError::SdkClientApprove(_)
+        | TransportResponseError::SdkClientList(_)
+        | TransportResponseError::SdkClientRevoke(_) => {
+            Status::internal("SDK client operation failed")
         }
         TransportResponseError::Auth(ref err) => auth_error_status(err),
         TransportResponseError::ConnectionRegistrationFailed => {

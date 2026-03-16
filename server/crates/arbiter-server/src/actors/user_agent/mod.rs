@@ -1,5 +1,7 @@
 use arbiter_proto::{
-    proto::user_agent::{UserAgentRequest, UserAgentResponse},
+    proto::user_agent::{
+        SdkClientError as ProtoSdkClientError, UserAgentRequest, UserAgentResponse,
+    },
     transport::Bi,
 };
 use kameo::actor::Spawn as _;
@@ -24,10 +26,25 @@ pub enum TransportResponseError {
     StateTransitionFailed,
     #[error("Vault is not available")]
     KeyHolderActorUnreachable,
+    #[error("SDK client approve failed: {0:?}")]
+    SdkClientApprove(ProtoSdkClientError),
+    #[error("SDK client list failed: {0:?}")]
+    SdkClientList(ProtoSdkClientError),
+    #[error("SDK client revoke failed: {0:?}")]
+    SdkClientRevoke(ProtoSdkClientError),
     #[error(transparent)]
     Auth(#[from] auth::Error),
     #[error("Failed registering connection")]
     ConnectionRegistrationFailed,
+}
+
+impl TransportResponseError {
+    pub fn is_terminal(&self) -> bool {
+        !matches!(
+            self,
+            Self::SdkClientApprove(_) | Self::SdkClientList(_) | Self::SdkClientRevoke(_)
+        )
+    }
 }
 
 pub type Transport =
