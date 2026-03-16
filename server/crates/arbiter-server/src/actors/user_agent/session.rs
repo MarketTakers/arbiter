@@ -3,21 +3,22 @@ use std::{ops::DerefMut, sync::Mutex};
 use arbiter_proto::proto::{
     evm as evm_proto,
     user_agent::{
-        SdkClientApproveRequest, SdkClientApproveResponse, SdkClientEntry,
-        SdkClientError as ProtoSdkClientError, SdkClientList, SdkClientListResponse,
-        SdkClientRevokeRequest, SdkClientRevokeResponse, UnsealEncryptedKey, UnsealResult,
-        UnsealStart, UnsealStartResponse, UserAgentRequest, UserAgentResponse,
-        sdk_client_approve_response, sdk_client_list_response, sdk_client_revoke_response,
-        user_agent_request::Payload as UserAgentRequestPayload,
+        ClientConnectionCancel, ClientConnectionRequest, SdkClientApproveRequest,
+        SdkClientApproveResponse, SdkClientEntry, SdkClientError as ProtoSdkClientError,
+        SdkClientList, SdkClientListResponse, SdkClientRevokeRequest, SdkClientRevokeResponse,
+        UnsealEncryptedKey, UnsealResult, UnsealStart, UnsealStartResponse, UserAgentRequest,
+        UserAgentResponse, sdk_client_approve_response, sdk_client_list_response,
+        sdk_client_revoke_response, user_agent_request::Payload as UserAgentRequestPayload,
         user_agent_response::Payload as UserAgentResponsePayload,
     },
 };
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use diesel::{ExpressionMethods as _, QueryDsl as _, dsl::insert_into};
 use diesel_async::RunQueryDsl as _;
-use kameo::{Actor, error::SendError, prelude::Context};
+use ed25519_dalek::VerifyingKey;
+use kameo::{Actor, error::SendError, messages, prelude::Context};
 use memsafe::MemSafe;
-use tokio::select;
+use tokio::{select, sync::watch};
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
@@ -112,6 +113,52 @@ impl UserAgentSession {
             ctx.stop();
             Error::UnexpectedMessage
         })
+    }
+}
+
+#[messages]
+impl UserAgentSession {
+    // TODO: Think about refactoring it to state-machine based flow, as we already have one
+    #[message(ctx)]
+    pub async fn request_new_client_approval(
+        &mut self,
+        client_pubkey: VerifyingKey,
+        mut cancel_flag: watch::Receiver<()>,
+        ctx: &mut Context<Self, Result<bool, Error>>,
+    ) -> Result<bool, Error> {
+        self.send_msg(
+            UserAgentResponsePayload::ClientConnectionRequest(ClientConnectionRequest {
+                pubkey: client_pubkey.as_bytes().to_vec(),
+            }),
+            ctx,
+        )
+        .await?;
+
+        let extractor = |msg| {
+            if let UserAgentRequestPayload::ClientConnectionResponse(client_connection_response) =
+                msg
+            {
+                Some(client_connection_response)
+            } else {
+                None
+            }
+        };
+
+        tokio::select! {
+            _ = cancel_flag.changed() => {
+                info!(actor = "useragent", "client connection approval cancelled");
+                self.send_msg(
+                    UserAgentResponsePayload::ClientConnectionCancel(ClientConnectionCancel {}),
+                    ctx,
+                ).await?;
+                Ok(false)
+            }
+            result = self.expect_msg(extractor, ctx) => {
+                let result = result?;
+                info!(actor = "useragent", "received client connection approval result: approved={}", result.approved);
+                Ok(result.approved)
+            }
+        }
     }
 }
 
