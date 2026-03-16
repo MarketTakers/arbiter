@@ -8,12 +8,15 @@ use kameo::{Actor, Reply, messages};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
 
-use crate::{db::{
-    self,
-    models::{self, RootKeyHistory},
-    schema::{self},
-}, safe_cell::SafeCellHandle as _};
 use crate::safe_cell::SafeCell;
+use crate::{
+    db::{
+        self,
+        models::{self, RootKeyHistory},
+        schema::{self},
+    },
+    safe_cell::SafeCellHandle as _,
+};
 use encryption::v1::{self, KeyCell, Nonce};
 
 pub mod encryption;
@@ -148,16 +151,15 @@ impl KeyHolder {
         let root_key_nonce = v1::Nonce::default();
         let data_encryption_nonce = v1::Nonce::default();
 
-        let root_key_ciphertext: Vec<u8> = {
-            let root_key_reader = root_key.0.read();
-            let root_key_reader = root_key_reader.as_slice();
+        let root_key_ciphertext: Vec<u8> = root_key.0.read_inline(|reader| {
+            let root_key_reader = reader.as_slice();
             seal_key
                 .encrypt(&root_key_nonce, v1::ROOT_KEY_TAG, root_key_reader)
                 .map_err(|err| {
                     error!(?err, "Fatal bootstrap error");
                     Error::Encryption(err)
-                })?
-        };
+                })
+        })?;
 
         let mut conn = self.db.get().await?;
 
@@ -349,7 +351,10 @@ mod tests {
 
     use diesel_async::RunQueryDsl;
 
-    use crate::{db::{self}, safe_cell::SafeCell};
+    use crate::{
+        db::{self},
+        safe_cell::SafeCell,
+    };
 
     use super::*;
 

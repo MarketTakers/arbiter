@@ -62,26 +62,19 @@ impl TryFrom<SafeCell<Vec<u8>>> for KeyCell {
         if value.len() != size_of::<Key>() {
             return Err(());
         }
-        let mut cell = SafeCell::new(Key::default());
-        {
-            let mut cell_write = cell.write();
-            let cell_slice: &mut [u8] = cell_write.as_mut();
-            cell_slice.copy_from_slice(&value);
-        }
+        let cell = SafeCell::new_inline(|cell_write: &mut Key| {
+            cell_write.copy_from_slice(&value);
+        });
         Ok(Self(cell))
     }
 }
 
 impl KeyCell {
     pub fn new_secure_random() -> Self {
-        let mut key = SafeCell::new(Key::default());
-        {
-            let mut key_buffer = key.write();
-            let key_buffer: &mut [u8] = key_buffer.as_mut();
-
+        let key = SafeCell::new_inline(|key_buffer: &mut Key| {
             let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
             rng.fill_bytes(key_buffer);
-        }
+        });
 
         key.into()
     }
@@ -151,15 +144,14 @@ pub fn derive_seal_key(mut password: SafeCell<Vec<u8>>, salt: &Salt) -> KeyCell 
     let params = argon2::Params::new(262_144, 3, 4, None).unwrap();
     let hasher = Argon2::new(Algorithm::Argon2id, argon2::Version::V0x13, params);
     let mut key = SafeCell::new(Key::default());
-    {
-        let password_source = password.read();
+    password.read_inline(|password_source| {
         let mut key_buffer = key.write();
         let key_buffer: &mut [u8] = key_buffer.as_mut();
 
         hasher
             .hash_password_into(password_source.deref(), salt, key_buffer)
             .unwrap();
-    }
+    });
 
     key.into()
 }

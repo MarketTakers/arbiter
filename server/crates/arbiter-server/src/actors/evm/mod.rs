@@ -108,11 +108,7 @@ impl EvmActor {
     pub async fn generate(&mut self) -> Result<Address, Error> {
         let (mut key_cell, address) = safe_signer::generate(&mut self.rng);
 
-        // Move raw key bytes into a Vec<u8> MemSafe for KeyHolder
-        let plaintext = {
-            let reader = key_cell.read();
-            SafeCell::new(reader.to_vec())
-        };
+        let plaintext = key_cell.read_inline(|reader| SafeCell::new(reader.to_vec()));
 
         let aead_id: i32 = self
             .keyholder

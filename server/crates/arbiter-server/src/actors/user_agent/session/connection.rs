@@ -5,18 +5,23 @@ use kameo::error::SendError;
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-use crate::{actors::{
-    evm::{Generate, ListWallets, UseragentCreateGrant, UseragentDeleteGrant, UseragentListGrants},
-    keyholder::{self, Bootstrap, TryUnseal},
-    user_agent::{
-        BootstrapError, Request, Response, TransportResponseError, UnsealError, VaultState,
-        session::{
-            UserAgentSession,
-            state::{UnsealContext, UserAgentEvents, UserAgentStates},
+use crate::safe_cell::SafeCell;
+use crate::{
+    actors::{
+        evm::{
+            Generate, ListWallets, UseragentCreateGrant, UseragentDeleteGrant, UseragentListGrants,
+        },
+        keyholder::{self, Bootstrap, TryUnseal},
+        user_agent::{
+            BootstrapError, Request, Response, TransportResponseError, UnsealError, VaultState,
+            session::{
+                UserAgentSession,
+                state::{UnsealContext, UserAgentEvents, UserAgentStates},
+            },
         },
     },
-}, safe_cell::SafeCellHandle as _};
-use crate::safe_cell::SafeCell;
+    safe_cell::SafeCellHandle as _,
+};
 
 impl UserAgentSession {
     pub async fn process_transport_inbound(&mut self, req: Request) -> Output {
@@ -100,11 +105,9 @@ impl UserAgentSession {
 
         let mut key_buffer = SafeCell::new(ciphertext.to_vec());
 
-        let decryption_result = {
-            let mut write_handle = key_buffer.write();
-            let write_handle = write_handle.deref_mut();
+        let decryption_result = key_buffer.write_inline(|write_handle| {
             cipher.decrypt_in_place(nonce, associated_data, write_handle)
-        };
+        });
 
         match decryption_result {
             Ok(_) => Ok(key_buffer),

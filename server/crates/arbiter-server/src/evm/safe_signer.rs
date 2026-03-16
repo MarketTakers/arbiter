@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 
+use crate::safe_cell::{SafeCell, SafeCellHandle as _};
 use alloy::{
     consensus::SignableTransaction,
     network::{TxSigner, TxSignerSync},
@@ -8,7 +9,6 @@ use alloy::{
 };
 use async_trait::async_trait;
 use k256::ecdsa::{self, RecoveryId, SigningKey, signature::hazmat::PrehashSigner};
-use crate::safe_cell::{SafeCell, SafeCellHandle as _};
 
 /// An Ethereum signer that stores its secp256k1 secret key inside a
 /// hardware-protected [`MemSafe`] cell.
@@ -44,11 +44,10 @@ impl std::fmt::Debug for SafeSigner {
 /// Returns the protected key bytes and the derived Ethereum address.
 pub fn generate(rng: &mut impl rand::Rng) -> (SafeCell<[u8; 32]>, Address) {
     loop {
-        let mut cell = SafeCell::new([0u8; 32]);
-        {
-            let mut w = cell.write();
-            rng.fill_bytes(w.as_mut());
-        }
+        let mut cell = SafeCell::new_inline(|w: &mut [u8; 32]| {
+            rng.fill_bytes(w);
+        });
+
         let reader = cell.read();
         if let Ok(sk) = SigningKey::from_slice(reader.as_ref()) {
             let address = secret_key_to_address(&sk);

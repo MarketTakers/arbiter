@@ -10,6 +10,7 @@ protoc = "29.6"
 "cargo:cargo-shear" = "latest"
 "cargo:cargo-insta" = "1.46.3"
 python = "3.14.3"
+ast-grep = "0.42.0"
 
 [tasks.codegen]
 sources = ['protobufs/*.proto']

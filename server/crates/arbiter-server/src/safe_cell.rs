@@ -19,6 +19,36 @@ pub trait SafeCellHandle<T> {
 
     fn read(&mut self) -> Self::CellRead<'_>;
     fn write(&mut self) -> Self::CellWrite<'_>;
+
+    fn new_inline<F>(f: F) -> Self
+    where
+        Self: Sized,
+        T: Default,
+        F: for<'a> FnOnce(&'a mut T),
+    {
+        let mut cell = Self::new(T::default());
+        {
+            let mut handle = cell.write();
+            f(handle.deref_mut());
+        }
+        cell
+    }
+
+    #[inline(always)]
+    fn read_inline<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&T) -> R,
+    {
+        f(&*self.read())
+    }
+
+    #[inline(always)]
+    fn write_inline<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        f(&mut *self.write())
+    }
 }
 
 pub struct MemSafeCell<T>(MemSafe<T>);
@@ -53,6 +83,7 @@ impl<T> SafeCellHandle<T> for MemSafeCell<T> {
         }
     }
 
+    #[inline(always)]
     fn read(&mut self) -> Self::CellRead<'_> {
         match self.0.read() {
             Ok(inner) => inner,
@@ -60,6 +91,7 @@ impl<T> SafeCellHandle<T> for MemSafeCell<T> {
         }
     }
 
+    #[inline(always)]
     fn write(&mut self) -> Self::CellWrite<'_> {
         match self.0.write() {
             Ok(inner) => inner,

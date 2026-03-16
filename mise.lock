@@ -1,3 +1,12 @@
+[[tools.ast-grep]]
+version = "0.42.0"
+backend = "aqua:ast-grep/ast-grep"
+"platforms.linux-arm64" = { checksum = "sha256:5c830eae8456569e2f7212434ed9c238f58dca412d76045418ed6d394a755836", url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.0/app-aarch64-unknown-linux-gnu.zip"}
+"platforms.linux-x64" = { checksum = "sha256:e825a05603f0bcc4cd9076c4cc8c9abd6d008b7cd07d9aa3cc323ba4b8606651", url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.0/app-x86_64-unknown-linux-gnu.zip"}
+"platforms.macos-arm64" = { checksum = "sha256:fc300d5293b1c770a5aece03a8a193b92e71e87cec726c28096990691a582620", url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.0/app-aarch64-apple-darwin.zip"}
+"platforms.macos-x64" = { checksum = "sha256:979ffe611327056f4730a1ae71b0209b3b830f58b22c6ed194cda34f55400db2", url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.0/app-x86_64-apple-darwin.zip"}
+"platforms.windows-x64" = { checksum = "sha256:55836fa1b2c65dc7d61615a4d9368622a0d2371a76d28b9a165e5a3ab6ae32a4", url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.0/app-x86_64-pc-windows-msvc.zip"}
+
 [[tools."cargo:cargo-audit"]]
 version = "0.22.1"
 backend = "cargo:cargo-audit"
