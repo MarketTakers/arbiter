@@ -1,4 +1,4 @@
-import 'package:arbiter/features/connection/connection.dart';
+import 'package:arbiter/features/connection/evm.dart';
 import 'package:arbiter/proto/evm.pb.dart';
 import 'package:arbiter/providers/connection/connection_manager.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';

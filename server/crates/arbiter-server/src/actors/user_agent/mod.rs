@@ -1,11 +1,12 @@
 use alloy::primitives::Address;
-use arbiter_proto::transport::Bi;
+use arbiter_proto::{transport::Bi};
 use kameo::actor::Spawn as _;
 use tracing::{error, info};
 
 use crate::{
     actors::{GlobalActors, evm, user_agent::session::UserAgentSession},
-    db::{self, models::KeyType},
+    db::{self, models::KeyType}, evm::policies::{Grant, SpecificGrant},
+    evm::policies::SharedGrantSettings,
 };
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -109,6 +110,16 @@ pub enum Request {
     ClientConnectionResponse {
         approved: bool,
     },
+
+    ListGrants,
+    EvmGrantCreate {
+        client_id: i32,
+        shared: SharedGrantSettings,
+        specific: SpecificGrant,
+    },
+    EvmGrantDelete {
+        grant_id: i32,
+    },
 }
 
 #[derive(Debug)]
@@ -123,6 +134,10 @@ pub enum Response {
     ClientConnectionCancel,
     EvmWalletCreate(Result<(), evm::Error>),
     EvmWalletList(Vec<Address>),
+
+    ListGrants(Vec<Grant<SpecificGrant>>),
+    EvmGrantCreate(Result<i32, evm::Error>),
+    EvmGrantDelete(Result<(), evm::Error>),
 }
 
 pub type Transport = Box<dyn Bi<Request, Result<Response, TransportResponseError>> + Send>;

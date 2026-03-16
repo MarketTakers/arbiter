@@ -1,4 +1,4 @@
-import 'package:arbiter/features/connection/connection.dart';
+import 'package:arbiter/features/connection/vault.dart';
 import 'package:arbiter/proto/user_agent.pbenum.dart';
 import 'package:arbiter/providers/connection/connection_manager.dart';
 import 'package:arbiter/providers/vault_state.dart';

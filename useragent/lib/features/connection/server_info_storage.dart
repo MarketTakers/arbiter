@@ -37,6 +37,7 @@ class SecureServerInfoStorage implements ServerInfoStorage {
 
   @override
   Future<StoredServerInfo?> load() async {
+    return null;
     final rawValue = await _storage.read(key: _storageKey);
     if (rawValue == null) {
       return null;

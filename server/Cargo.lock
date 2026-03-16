@@ -727,6 +727,7 @@ dependencies = [
  "memsafe",
  "miette",
  "pem",
+ "prost-types",
  "rand 0.10.0",
  "rcgen",
  "restructed",

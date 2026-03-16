@@ -66,6 +66,7 @@ pub enum EvalViolation {
 
 pub type DatabaseID = i32;
 
+#[derive(Debug)]
 pub struct Grant<PolicySettings> {
     pub id: DatabaseID,
     pub shared_grant_id: DatabaseID, // ID of the basic grant for shared-logic checks like rate limits and validity periods
@@ -145,6 +146,7 @@ pub struct VolumeRateLimit {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SharedGrantSettings {
     pub wallet_id: i32,
+    pub client_id: i32,
     pub chain: ChainId,
 
     pub valid_from: Option<DateTime<Utc>>,
@@ -160,6 +162,7 @@ impl SharedGrantSettings {
     fn try_from_model(model: EvmBasicGrant) -> QueryResult<Self> {
         Ok(Self {
             wallet_id: model.wallet_id,
+            client_id: model.client_id,
             chain: model.chain_id as u64, // safe because chain_id is stored as i32 but is guaranteed to be a valid ChainId by the API when creating grants
             valid_from: model.valid_from.map(Into::into),
             valid_until: model.valid_until.map(Into::into),
@@ -197,6 +200,7 @@ impl SharedGrantSettings {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum SpecificGrant {
     EtherTransfer(ether_transfer::Settings),
     TokenTransfer(token_transfers::Settings),

@@ -93,6 +93,7 @@ fn shared() -> SharedGrantSettings {
         max_gas_fee_per_gas: None,
         max_priority_fee_per_gas: None,
         rate_limit: None,
+        client_id: CLIENT_ID,
     }
 }
 

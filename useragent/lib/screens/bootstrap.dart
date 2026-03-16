@@ -34,6 +34,6 @@ class Bootstrap extends HookConsumerWidget {
       [stages],
     );
 
-    return bootstrapper;
+    return Scaffold(body: bootstrapper);
   }
 }

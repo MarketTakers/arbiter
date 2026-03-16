@@ -7,7 +7,8 @@ use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::actors::{
-    evm::{Generate, ListWallets},
+    evm::{Generate, ListWallets, UseragentListGrants},
+    evm::{UseragentCreateGrant, UseragentDeleteGrant},
     keyholder::{self, Bootstrap, TryUnseal},
     user_agent::{
         BootstrapError, Request, Response, TransportResponseError, UnsealError, VaultState,
@@ -40,6 +41,7 @@ impl UserAgentSession {
                 self.handle_bootstrap_encrypted_key(nonce, ciphertext, associated_data)
                     .await
             }
+            Request::ListGrants => self.handle_grant_list().await,
             Request::QueryVaultState => self.handle_query_vault_state().await,
             Request::EvmWalletCreate => self.handle_evm_wallet_create().await,
             Request::EvmWalletList => self.handle_evm_wallet_list().await,
@@ -48,6 +50,12 @@ impl UserAgentSession {
             | Request::ClientConnectionResponse { .. } => {
                 Err(TransportResponseError::UnexpectedRequestPayload)
             }
+            Request::EvmGrantCreate {
+                client_id,
+                shared,
+                specific,
+            } => self.handle_grant_create(client_id, shared, specific).await,
+            Request::EvmGrantDelete { grant_id } => self.handle_grant_delete(grant_id).await,
         }
     }
 }
@@ -281,6 +289,59 @@ impl UserAgentSession {
             Ok(wallets) => Ok(Response::EvmWalletList(wallets)),
             Err(err) => {
                 error!(?err, "EVM wallet list failed");
+                Err(TransportResponseError::KeyHolderActorUnreachable)
+            }
+        }
+    }
+}
+
+impl UserAgentSession {
+    async fn handle_grant_list(&mut self) -> Output {
+        match self.props.actors.evm.ask(UseragentListGrants {}).await {
+            Ok(grants) => Ok(Response::ListGrants(grants)),
+            Err(err) => {
+                error!(?err, "EVM grant list failed");
+                Err(TransportResponseError::KeyHolderActorUnreachable)
+            }
+        }
+    }
+
+    async fn handle_grant_create(
+        &mut self,
+        client_id: i32,
+        basic: crate::evm::policies::SharedGrantSettings,
+        grant: crate::evm::policies::SpecificGrant,
+    ) -> Output {
+        match self
+            .props
+            .actors
+            .evm
+            .ask(UseragentCreateGrant {
+                client_id,
+                basic,
+                grant,
+            })
+            .await
+        {
+            Ok(grant_id) => Ok(Response::EvmGrantCreate(Ok(grant_id))),
+            Err(err) => {
+                error!(?err, "EVM grant create failed");
+                Err(TransportResponseError::KeyHolderActorUnreachable)
+            }
+        }
+    }
+
+    async fn handle_grant_delete(&mut self, grant_id: i32) -> Output {
+        match self
+            .props
+            .actors
+            .evm
+            .ask(UseragentDeleteGrant { grant_id })
+            .await
+        {
+            Ok(()) => Ok(Response::EvmGrantDelete(Ok(()))),
+            Err(err) => {
+                error!(?err, "EVM grant delete failed");
                 Err(TransportResponseError::KeyHolderActorUnreachable)
             }
         }

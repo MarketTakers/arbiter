@@ -34,7 +34,7 @@ smlang::statemachine!(
     custom_error: true,
     transitions: {
         *Init + AuthRequest(ChallengeRequest) / async prepare_challenge = SentChallenge(ChallengeContext),
-        Init + BootstrapAuthRequest(BootstrapAuthRequest) [async verify_bootstrap_token] / provide_key_bootstrap = AuthOk(AuthPublicKey),
+        Init + BootstrapAuthRequest(BootstrapAuthRequest) / async verify_bootstrap_token = AuthOk(AuthPublicKey),
         SentChallenge(ChallengeContext) + ReceivedSolution(ChallengeSolution) / async verify_solution = AuthOk(AuthPublicKey),
     }
 );
@@ -136,9 +136,9 @@ impl AuthStateMachineContext for AuthContext<'_> {
     #[allow(missing_docs)]
     #[allow(clippy::result_unit_err)]
     async fn verify_bootstrap_token(
-        &self,
-        BootstrapAuthRequest { pubkey, token }: &BootstrapAuthRequest,
-    ) -> Result<bool, Self::Error> {
+        &mut self,
+        BootstrapAuthRequest { pubkey, token }: BootstrapAuthRequest,
+    ) -> Result<AuthPublicKey, Self::Error> {
         let token_ok: bool = self
             .conn
             .actors
@@ -157,16 +157,15 @@ impl AuthStateMachineContext for AuthContext<'_> {
             return Err(Error::InvalidBootstrapToken);
         }
 
-        register_key(&self.conn.db, pubkey).await?;
+        register_key(&self.conn.db, &pubkey).await?;
 
-        Ok(true)
-    }
+        self.conn
+                .transport
+                .send(Ok(Response::AuthOk))
+                .await
+                .map_err(|_| Error::Transport)?;
 
-    fn provide_key_bootstrap(
-        &mut self,
-        event_data: BootstrapAuthRequest,
-    ) -> Result<AuthPublicKey, Self::Error> {
-        Ok(event_data.pubkey)
+        Ok(pubkey)
     }
 
     #[allow(missing_docs)]

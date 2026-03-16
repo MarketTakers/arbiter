@@ -15,9 +15,9 @@ use crate::{
         schema,
     },
     evm::{
-        self, RunKind,
+        self, ListGrantsError, RunKind,
         policies::{
-            FullGrant, SharedGrantSettings, SpecificGrant, SpecificMeaning,
+            FullGrant, Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning,
             ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
         },
     },
@@ -194,19 +194,12 @@ impl EvmActor {
     }
 
     #[message]
-    pub async fn useragent_list_grants(
-        &mut self,
-        wallet_id: Option<i32>,
-    ) -> Result<Vec<EvmBasicGrant>, Error> {
-        let mut conn = self.db.get().await?;
-        let mut query = schema::evm_basic_grant::table
-            .select(EvmBasicGrant::as_select())
-            .filter(schema::evm_basic_grant::revoked_at.is_null())
-            .into_boxed();
-        if let Some(wid) = wallet_id {
-            query = query.filter(schema::evm_basic_grant::wallet_id.eq(wid));
+    pub async fn useragent_list_grants(&mut self) -> Result<Vec<Grant<SpecificGrant>>, Error> {
+        match self.engine.list_all_grants().await {
+            Ok(grants) => Ok(grants),
+            Err(ListGrantsError::Database(db)) => Err(Error::Database(db)),
+            Err(ListGrantsError::Pool(pool)) => Err(Error::DatabasePool(pool)),
         }
-        Ok(query.load(&mut conn).await?)
     }
 
     #[message]

@@ -1,3 +1,4 @@
+import 'package:arbiter/features/connection/auth.dart';
 import 'package:arbiter/features/connection/connection.dart';
 import 'package:arbiter/providers/connection/bootstrap_token.dart';
 import 'package:arbiter/providers/key.dart';

@@ -51,9 +51,10 @@ impl From<Meaning> for SpecificMeaning {
 }
 
 // A grant for ether transfers, which can be scoped to specific target addresses and volume limits
+#[derive(Debug, Clone)]
 pub struct Settings {
-    target: Vec<Address>,
-    limit: VolumeRateLimit,
+    pub target: Vec<Address>,
+    pub limit: VolumeRateLimit,
 }
 
 impl From<Settings> for SpecificGrant {
