@@ -1,74 +1,82 @@
+use arbiter_proto::transport::Bi;
 use tracing::error;
 
 use crate::actors::user_agent::{
-    Request, UserAgentConnection,
+    AuthPublicKey, UserAgentConnection,
     auth::state::{AuthContext, AuthStateMachine},
-    AuthPublicKey,
-    session::UserAgentSession,
 };
-
-#[derive(thiserror::Error, Debug, PartialEq)]
-pub enum Error {
-    #[error("Unexpected message payload")]
-    UnexpectedMessagePayload,
-    #[error("Invalid client public key length")]
-    InvalidClientPubkeyLength,
-    #[error("Invalid client public key encoding")]
-    InvalidAuthPubkeyEncoding,
-    #[error("Database pool unavailable")]
-    DatabasePoolUnavailable,
-    #[error("Database operation failed")]
-    DatabaseOperationFailed,
-    #[error("Public key not registered")]
-    PublicKeyNotRegistered,
-    #[error("Transport error")]
-    Transport,
-    #[error("Invalid bootstrap token")]
-    InvalidBootstrapToken,
-    #[error("Bootstrapper actor unreachable")]
-    BootstrapperActorUnreachable,
-    #[error("Invalid challenge solution")]
-    InvalidChallengeSolution,
-}
 
 mod state;
 use state::*;
 
-fn parse_auth_event(payload: Request) -> Result<AuthEvents, Error> {
-    match payload {
-        Request::AuthChallengeRequest {
-            pubkey,
-            bootstrap_token: None,
-        } => Ok(AuthEvents::AuthRequest(ChallengeRequest { pubkey })),
-        Request::AuthChallengeRequest {
-            pubkey,
-            bootstrap_token: Some(token),
-        } => Ok(AuthEvents::BootstrapAuthRequest(BootstrapAuthRequest {
-            pubkey,
-            token,
-        })),
-        Request::AuthChallengeSolution { signature } => {
-            Ok(AuthEvents::ReceivedSolution(ChallengeSolution {
-                solution: signature,
-            }))
+#[derive(Debug, Clone)]
+pub enum Inbound {
+    AuthChallengeRequest {
+        pubkey: AuthPublicKey,
+        bootstrap_token: Option<String>,
+    },
+    AuthChallengeSolution {
+        signature: Vec<u8>,
+    },
+}
+
+#[derive(Debug)]
+pub enum Error {
+    UnregisteredPublicKey,
+    InvalidChallengeSolution,
+    InvalidBootstrapToken,
+    Internal { details: String },
+    Transport,
+}
+
+impl Error {
+    fn internal(details: impl Into<String>) -> Self {
+        Self::Internal {
+            details: details.into(),
         }
-        _ => Err(Error::UnexpectedMessagePayload),
     }
 }
 
-pub async fn authenticate(props: &mut UserAgentConnection) -> Result<AuthPublicKey, Error> {
-    let mut state = AuthStateMachine::new(AuthContext::new(props));
+#[derive(Debug, Clone)]
+pub enum Outbound {
+    AuthChallenge { nonce: i32 },
+    AuthSuccess,
+}
+
+fn parse_auth_event(payload: Inbound) -> AuthEvents {
+    match payload {
+        Inbound::AuthChallengeRequest {
+            pubkey,
+            bootstrap_token: None,
+        } => AuthEvents::AuthRequest(ChallengeRequest { pubkey }),
+        Inbound::AuthChallengeRequest {
+            pubkey,
+            bootstrap_token: Some(token),
+        } => AuthEvents::BootstrapAuthRequest(BootstrapAuthRequest { pubkey, token }),
+        Inbound::AuthChallengeSolution { signature } => {
+            AuthEvents::ReceivedSolution(ChallengeSolution {
+                solution: signature,
+            })
+        }
+    }
+}
+
+pub async fn authenticate<T>(
+    props: &mut UserAgentConnection,
+    transport: T,
+) -> Result<AuthPublicKey, Error>
+where
+    T: Bi<Inbound, Result<Outbound, Error>> + Send,
+{
+    let mut state = AuthStateMachine::new(AuthContext::new(props, transport));
 
     loop {
         // `state` holds a mutable reference to `props` so we can't access it directly here
-        let transport = state.context_mut().conn.transport.as_mut();
-        let Some(payload) = transport.recv().await else {
+        let Some(payload) = state.context_mut().transport.recv().await else {
             return Err(Error::Transport);
         };
 
-        let event = parse_auth_event(payload)?;
-
-        match state.process_event(event).await {
+        match state.process_event(parse_auth_event(payload)).await {
             Ok(AuthStates::AuthOk(key)) => return Ok(key.clone()),
             Err(AuthError::ActionFailed(err)) => {
                 error!(?err, "State machine action failed");
@@ -90,12 +98,4 @@ pub async fn authenticate(props: &mut UserAgentConnection) -> Result<AuthPublicK
             _ => (),
         }
     }
-}
-
-pub async fn authenticate_and_create(
-    mut props: UserAgentConnection,
-) -> Result<UserAgentSession, Error> {
-    let _key = authenticate(&mut props).await?;
-    let session = UserAgentSession::new(props);
-    Ok(session)
 }

@@ -1,14 +1,13 @@
 use arbiter_proto::{
     proto::client::{
-        AuthChallenge as ProtoAuthChallenge,
-        AuthChallengeRequest as ProtoAuthChallengeRequest,
+        AuthChallenge as ProtoAuthChallenge, AuthChallengeRequest as ProtoAuthChallengeRequest,
         AuthChallengeSolution as ProtoAuthChallengeSolution, AuthOk as ProtoAuthOk,
         ClientConnectError, ClientRequest, ClientResponse,
         client_connect_error::Code as ProtoClientConnectErrorCode,
         client_request::Payload as ClientRequestPayload,
         client_response::Payload as ClientResponsePayload,
     },
-    transport::{Bi, Error as TransportError},
+    transport::{Bi, Error as TransportError, Sender},
 };
 use async_trait::async_trait;
 use futures::StreamExt as _;
@@ -37,9 +36,9 @@ impl GrpcTransport {
             Some(ClientRequestPayload::AuthChallengeRequest(ProtoAuthChallengeRequest {
                 pubkey,
             })) => Ok(DomainRequest::AuthChallengeRequest { pubkey }),
-            Some(ClientRequestPayload::AuthChallengeSolution(
-                ProtoAuthChallengeSolution { signature },
-            )) => Ok(DomainRequest::AuthChallengeSolution { signature }),
+            Some(ClientRequestPayload::AuthChallengeSolution(ProtoAuthChallengeSolution {
+                signature,
+            })) => Ok(DomainRequest::AuthChallengeSolution { signature }),
             None => Err(Status::invalid_argument("Missing client request payload")),
         }
     }
@@ -86,8 +85,11 @@ impl GrpcTransport {
 }
 
 #[async_trait]
-impl Bi<DomainRequest, Result<DomainResponse, ClientError>> for GrpcTransport {
-    async fn send(&mut self, item: Result<DomainResponse, ClientError>) -> Result<(), TransportError> {
+impl Sender<Result<DomainResponse, ClientError>> for GrpcTransport {
+    async fn send(
+        &mut self,
+        item: Result<DomainResponse, ClientError>,
+    ) -> Result<(), TransportError> {
         let outbound = match item {
             Ok(message) => Ok(Self::response_to_proto(message)),
             Err(err) => Err(Self::error_to_status(err)),
@@ -98,7 +100,10 @@ impl Bi<DomainRequest, Result<DomainResponse, ClientError>> for GrpcTransport {
             .await
             .map_err(|_| TransportError::ChannelClosed)
     }
+}
 
+#[async_trait]
+impl Bi<DomainRequest, Result<DomainResponse, ClientError>> for GrpcTransport {
     async fn recv(&mut self) -> Option<DomainRequest> {
         match self.receiver.next().await {
             Some(Ok(item)) => match Self::request_to_domain(item) {

@@ -1,12 +1,14 @@
+use tokio::sync::mpsc;
+
 use arbiter_proto::{
     proto::{
-        self,
         evm::{
             EtherTransferSettings as ProtoEtherTransferSettings, EvmError as ProtoEvmError,
             EvmGrantCreateRequest, EvmGrantCreateResponse, EvmGrantDeleteRequest,
             EvmGrantDeleteResponse, EvmGrantList, EvmGrantListResponse, GrantEntry,
             SharedSettings as ProtoSharedSettings, SpecificGrant as ProtoSpecificGrant,
             TokenTransferSettings as ProtoTokenTransferSettings,
+            TransactionRateLimit as ProtoTransactionRateLimit,
             VolumeRateLimit as ProtoVolumeRateLimit, WalletCreateResponse, WalletEntry, WalletList,
             WalletListResponse, evm_grant_create_response::Result as EvmGrantCreateResult,
             evm_grant_delete_response::Result as EvmGrantDeleteResult,
@@ -16,494 +18,538 @@ use arbiter_proto::{
             wallet_list_response::Result as WalletListResult,
         },
         user_agent::{
-            AuthChallenge as ProtoAuthChallenge, AuthChallengeRequest as ProtoAuthChallengeRequest,
-            AuthChallengeSolution as ProtoAuthChallengeSolution, AuthOk as ProtoAuthOk,
             BootstrapEncryptedKey as ProtoBootstrapEncryptedKey,
             BootstrapResult as ProtoBootstrapResult, ClientConnectionCancel,
-            ClientConnectionRequest, ClientConnectionResponse, KeyType as ProtoKeyType,
-            UnsealEncryptedKey as ProtoUnsealEncryptedKey, UnsealResult as ProtoUnsealResult,
-            UnsealStart, UnsealStartResponse, UserAgentRequest, UserAgentResponse,
+            ClientConnectionRequest, UnsealEncryptedKey as ProtoUnsealEncryptedKey,
+            UnsealResult as ProtoUnsealResult, UnsealStart, UserAgentRequest, UserAgentResponse,
             VaultState as ProtoVaultState, user_agent_request::Payload as UserAgentRequestPayload,
             user_agent_response::Payload as UserAgentResponsePayload,
         },
     },
-    transport::{Bi, Error as TransportError},
+    transport::{Error as TransportError, Receiver, Sender, grpc::GrpcBi},
 };
 use async_trait::async_trait;
-use futures::StreamExt as _;
-use prost_types::Timestamp;
-use tokio::sync::mpsc;
-use tonic::{Status, Streaming};
+use chrono::{TimeZone, Utc};
+use kameo::{actor::{ActorRef, Spawn as _}, error::SendError};
+use tonic::Status;
+use tracing::{info, warn};
 
 use crate::{
-    actors::user_agent::{
-        self, AuthPublicKey, BootstrapError, Request as DomainRequest, Response as DomainResponse,
-        TransportResponseError, UnsealError, VaultState,
-    },
-    evm::{
-        policies::{Grant, SpecificGrant},
-        policies::{
-            SharedGrantSettings, TransactionRateLimit, VolumeRateLimit, ether_transfer,
-            token_transfers,
+    actors::{
+        keyholder::KeyHolderState,
+        user_agent::{
+            OutOfBand, UserAgentConnection, UserAgentSession,
+            session::{
+                BootstrapError, Error, HandleBootstrapEncryptedKey, HandleEvmWalletCreate, HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete, HandleGrantList, HandleQueryVaultState, HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError
+            },
         },
     },
+    evm::policies::{
+        Grant, SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit,
+        ether_transfer, token_transfers,
+    },
+    utils::defer,
 };
 use alloy::primitives::{Address, U256};
-use chrono::{DateTime, TimeZone, Utc};
+mod auth;
 
-pub struct GrpcTransport {
-    sender: mpsc::Sender<Result<UserAgentResponse, Status>>,
-    receiver: Streaming<UserAgentRequest>,
-}
-
-impl GrpcTransport {
-    pub fn new(
-        sender: mpsc::Sender<Result<UserAgentResponse, Status>>,
-        receiver: Streaming<UserAgentRequest>,
-    ) -> Self {
-        Self { sender, receiver }
-    }
-
-    fn request_to_domain(request: UserAgentRequest) -> Result<DomainRequest, Status> {
-        match request.payload {
-            Some(UserAgentRequestPayload::AuthChallengeRequest(ProtoAuthChallengeRequest {
-                pubkey,
-                bootstrap_token,
-                key_type,
-            })) => Ok(DomainRequest::AuthChallengeRequest {
-                pubkey: parse_auth_pubkey(key_type, pubkey)?,
-                bootstrap_token,
-            }),
-            Some(UserAgentRequestPayload::AuthChallengeSolution(ProtoAuthChallengeSolution {
-                signature,
-            })) => Ok(DomainRequest::AuthChallengeSolution { signature }),
-            Some(UserAgentRequestPayload::UnsealStart(UnsealStart { client_pubkey })) => {
-                let client_pubkey: [u8; 32] = client_pubkey
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| Status::invalid_argument("client_pubkey must be 32 bytes"))?;
-                Ok(DomainRequest::UnsealStart {
-                    client_pubkey: x25519_dalek::PublicKey::from(client_pubkey),
-                })
-            }
-            Some(UserAgentRequestPayload::UnsealEncryptedKey(ProtoUnsealEncryptedKey {
-                nonce,
-                ciphertext,
-                associated_data,
-            })) => Ok(DomainRequest::UnsealEncryptedKey {
-                nonce,
-                ciphertext,
-                associated_data,
-            }),
-            Some(UserAgentRequestPayload::BootstrapEncryptedKey(ProtoBootstrapEncryptedKey {
-                nonce,
-                ciphertext,
-                associated_data,
-            })) => Ok(DomainRequest::BootstrapEncryptedKey {
-                nonce,
-                ciphertext,
-                associated_data,
-            }),
-            Some(UserAgentRequestPayload::QueryVaultState(_)) => Ok(DomainRequest::QueryVaultState),
-            Some(UserAgentRequestPayload::EvmWalletCreate(_)) => Ok(DomainRequest::EvmWalletCreate),
-            Some(UserAgentRequestPayload::EvmWalletList(_)) => Ok(DomainRequest::EvmWalletList),
-            Some(UserAgentRequestPayload::ClientConnectionResponse(ClientConnectionResponse {
-                approved,
-            })) => Ok(DomainRequest::ClientConnectionResponse { approved }),
-
-            Some(UserAgentRequestPayload::EvmGrantList(_)) => Ok(DomainRequest::ListGrants),
-            Some(UserAgentRequestPayload::EvmGrantCreate(EvmGrantCreateRequest {
-                client_id,
-                shared,
-                specific,
-            })) => {
-                let shared = parse_shared_settings(client_id, shared)?;
-                let specific = parse_specific_grant(specific)?;
-                Ok(DomainRequest::EvmGrantCreate {
-                    client_id,
-                    shared,
-                    specific,
-                })
-            }
-            Some(UserAgentRequestPayload::EvmGrantDelete(EvmGrantDeleteRequest { grant_id })) => {
-                Ok(DomainRequest::EvmGrantDelete { grant_id })
-            }
-            None => Err(Status::invalid_argument(
-                "Missing user-agent request payload",
-            )),
-        }
-    }
-
-    fn response_to_proto(response: DomainResponse) -> UserAgentResponse {
-        let payload = match response {
-            DomainResponse::AuthChallenge { nonce } => {
-                UserAgentResponsePayload::AuthChallenge(ProtoAuthChallenge {
-                    pubkey: Vec::new(),
-                    nonce,
-                })
-            }
-            DomainResponse::AuthOk => UserAgentResponsePayload::AuthOk(ProtoAuthOk {}),
-            DomainResponse::UnsealStartResponse { server_pubkey } => {
-                UserAgentResponsePayload::UnsealStartResponse(UnsealStartResponse {
-                    server_pubkey: server_pubkey.as_bytes().to_vec(),
-                })
-            }
-            DomainResponse::UnsealResult(result) => UserAgentResponsePayload::UnsealResult(
-                match result {
-                    Ok(()) => ProtoUnsealResult::Success,
-                    Err(UnsealError::InvalidKey) => ProtoUnsealResult::InvalidKey,
-                    Err(UnsealError::Unbootstrapped) => ProtoUnsealResult::Unbootstrapped,
-                }
-                .into(),
-            ),
-            DomainResponse::BootstrapResult(result) => UserAgentResponsePayload::BootstrapResult(
-                match result {
-                    Ok(()) => ProtoBootstrapResult::Success,
-                    Err(BootstrapError::AlreadyBootstrapped) => {
-                        ProtoBootstrapResult::AlreadyBootstrapped
-                    }
-                    Err(BootstrapError::InvalidKey) => ProtoBootstrapResult::InvalidKey,
-                }
-                .into(),
-            ),
-            DomainResponse::VaultState(state) => UserAgentResponsePayload::VaultState(
-                match state {
-                    VaultState::Unbootstrapped => ProtoVaultState::Unbootstrapped,
-                    VaultState::Sealed => ProtoVaultState::Sealed,
-                    VaultState::Unsealed => ProtoVaultState::Unsealed,
-                }
-                .into(),
-            ),
-            DomainResponse::ClientConnectionRequest { pubkey } => {
-                UserAgentResponsePayload::ClientConnectionRequest(ClientConnectionRequest {
-                    pubkey: pubkey.to_bytes().to_vec(),
-                })
-            }
-            DomainResponse::ClientConnectionCancel => {
-                UserAgentResponsePayload::ClientConnectionCancel(ClientConnectionCancel {})
-            }
-            DomainResponse::EvmWalletCreate(result) => {
-                UserAgentResponsePayload::EvmWalletCreate(WalletCreateResponse {
-                    result: Some(match result {
-                        Ok(()) => WalletCreateResult::Wallet(WalletEntry {
-                            address: Vec::new(),
-                        }),
-                        Err(_) => WalletCreateResult::Error(ProtoEvmError::Internal.into()),
-                    }),
-                })
-            }
-            DomainResponse::EvmWalletList(wallets) => {
-                UserAgentResponsePayload::EvmWalletList(WalletListResponse {
-                    result: Some(WalletListResult::Wallets(WalletList {
-                        wallets: wallets
-                            .into_iter()
-                            .map(|addr| WalletEntry {
-                                address: addr.as_slice().to_vec(),
-                            })
-                            .collect(),
-                    })),
-                })
-            }
-            DomainResponse::ListGrants(grants) => {
-                UserAgentResponsePayload::EvmGrantList(EvmGrantListResponse {
-                    result: Some(EvmGrantListResult::Grants(EvmGrantList {
-                        grants: grants.into_iter().map(grant_to_proto).collect(),
-                    })),
-                })
-            }
-            DomainResponse::EvmGrantCreate(result) => {
-                UserAgentResponsePayload::EvmGrantCreate(EvmGrantCreateResponse {
-                    result: Some(match result {
-                        Ok(grant_id) => EvmGrantCreateResult::GrantId(grant_id),
-                        Err(_) => EvmGrantCreateResult::Error(ProtoEvmError::Internal.into()),
-                    }),
-                })
-            }
-            DomainResponse::EvmGrantDelete(result) => {
-                UserAgentResponsePayload::EvmGrantDelete(EvmGrantDeleteResponse {
-                    result: Some(match result {
-                        Ok(()) => EvmGrantDeleteResult::Ok(()),
-                        Err(_) => EvmGrantDeleteResult::Error(ProtoEvmError::Internal.into()),
-                    }),
-                })
-            }
-        };
-
-        UserAgentResponse {
-            payload: Some(payload),
-        }
-    }
-
-    fn error_to_status(value: TransportResponseError) -> Status {
-        match value {
-            TransportResponseError::UnexpectedRequestPayload => {
-                Status::invalid_argument("Expected message with payload")
-            }
-            TransportResponseError::InvalidStateForUnsealEncryptedKey => {
-                Status::failed_precondition("Invalid state for unseal encrypted key")
-            }
-            TransportResponseError::InvalidClientPubkeyLength => {
-                Status::invalid_argument("client_pubkey must be 32 bytes")
-            }
-            TransportResponseError::StateTransitionFailed => {
-                Status::internal("State machine error")
-            }
-            TransportResponseError::KeyHolderActorUnreachable => {
-                Status::internal("Vault is not available")
-            }
-            TransportResponseError::Auth(ref err) => auth_error_status(err),
-            TransportResponseError::ConnectionRegistrationFailed => {
-                Status::internal("Failed registering connection")
-            }
-        }
-    }
-}
+pub struct OutOfBandAdapter(mpsc::Sender<OutOfBand>);
 
 #[async_trait]
-impl Bi<DomainRequest, Result<DomainResponse, TransportResponseError>> for GrpcTransport {
-    async fn send(
-        &mut self,
-        item: Result<DomainResponse, TransportResponseError>,
-    ) -> Result<(), TransportError> {
-        let outbound = match item {
-            Ok(message) => Ok(Self::response_to_proto(message)),
-            Err(err) => Err(Self::error_to_status(err)),
+impl Sender<OutOfBand> for OutOfBandAdapter {
+    async fn send(&mut self, item: OutOfBand) -> Result<(), TransportError> {
+        self.0.send(item).await.map_err(|e| {
+            warn!(error = ?e, "Failed to send out-of-band message");
+            TransportError::ChannelClosed
+        })
+    }
+}
+
+async fn dispatch_loop(
+    mut bi: GrpcBi<UserAgentRequest, UserAgentResponse>,
+    actor: ActorRef<UserAgentSession>,
+    mut receiver: mpsc::Receiver<OutOfBand>,
+) {
+    loop {
+        tokio::select! {
+            oob = receiver.recv() => {
+                let Some(oob) = oob else {
+                    return;
+                };
+
+                if send_out_of_band(&mut bi, oob).await.is_err() {
+                    return;
+                }
+            }
+
+            conn = bi.recv() => {
+                let Some(conn) = conn else {
+                    return;
+                };
+
+                if dispatch_conn_message(&mut bi, &actor, conn).await.is_err() {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+async fn dispatch_conn_message(
+    bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
+    actor: &ActorRef<UserAgentSession>,
+    conn: Result<UserAgentRequest, Status>,
+) -> Result<(), ()> {
+    let conn = match conn {
+        Ok(conn) => conn,
+        Err(err) => {
+            warn!(error = ?err, "Failed to receive user agent request");
+            return Err(());
+        }
+    };
+
+    let Some(payload) = conn.payload else {
+        let _ = bi.send(Err(Status::invalid_argument("Missing user-agent request payload"))).await;
+        return Err(());
+    };
+
+    let payload = match payload {
+        UserAgentRequestPayload::UnsealStart(UnsealStart { client_pubkey }) => {
+            let client_pubkey = match <[u8; 32]>::try_from(client_pubkey) {
+                Ok(bytes) => x25519_dalek::PublicKey::from(bytes),
+                Err(_) => {
+                    let _ = bi.send(Err(Status::invalid_argument("Invalid X25519 public key"))).await;
+                    return Err(());
+                }
+            };
+
+            match actor.ask(HandleUnsealRequest { client_pubkey }).await {
+                Ok(response) => UserAgentResponsePayload::UnsealStartResponse(
+                    arbiter_proto::proto::user_agent::UnsealStartResponse {
+                        server_pubkey: response.server_pubkey.as_bytes().to_vec(),
+                    },
+                ),
+                Err(err) => {
+                    warn!(error = ?err, "Failed to handle unseal start request");
+                    let _ = bi.send(Err(Status::internal("Failed to start unseal flow"))).await;
+                    return Err(());
+                }
+            }
+        }
+        UserAgentRequestPayload::UnsealEncryptedKey(ProtoUnsealEncryptedKey {
+            nonce,
+            ciphertext,
+            associated_data,
+        }) => UserAgentResponsePayload::UnsealResult(
+            match actor
+                .ask(HandleUnsealEncryptedKey {
+                    nonce,
+                    ciphertext,
+                    associated_data,
+                })
+                .await
+            {
+                Ok(()) => ProtoUnsealResult::Success,
+                Err(SendError::HandlerError(UnsealError::InvalidKey)) => {
+                    ProtoUnsealResult::InvalidKey
+                }
+                Err(err) => {
+                    warn!(error = ?err, "Failed to handle unseal request");
+                    let _ = bi.send(Err(Status::internal("Failed to unseal vault"))).await;
+                    return Err(());
+                }
+            }
+            .into(),
+        ),
+        UserAgentRequestPayload::BootstrapEncryptedKey(ProtoBootstrapEncryptedKey {
+            nonce,
+            ciphertext,
+            associated_data,
+        }) => UserAgentResponsePayload::BootstrapResult(
+            match actor
+                .ask(HandleBootstrapEncryptedKey {
+                    nonce,
+                    ciphertext,
+                    associated_data,
+                })
+                .await
+            {
+                Ok(()) => ProtoBootstrapResult::Success,
+                Err(SendError::HandlerError(BootstrapError::InvalidKey)) => {
+                    ProtoBootstrapResult::InvalidKey
+                }
+                Err(SendError::HandlerError(
+                    BootstrapError::AlreadyBootstrapped,
+                )) => ProtoBootstrapResult::AlreadyBootstrapped,
+                Err(err) => {
+                    warn!(error = ?err, "Failed to handle bootstrap request");
+                    let _ = bi.send(Err(Status::internal("Failed to bootstrap vault"))).await;
+                    return Err(());
+                }
+            }
+            .into(),
+        ),
+        UserAgentRequestPayload::QueryVaultState(_) => UserAgentResponsePayload::VaultState(
+            match actor.ask(HandleQueryVaultState {}).await {
+                Ok(KeyHolderState::Unbootstrapped) => ProtoVaultState::Unbootstrapped,
+                Ok(KeyHolderState::Sealed) => ProtoVaultState::Sealed,
+                Ok(KeyHolderState::Unsealed) => ProtoVaultState::Unsealed,
+                Err(err) => {
+                    warn!(error = ?err, "Failed to query vault state");
+                    ProtoVaultState::Error
+                }
+            }
+            .into(),
+        ),
+        UserAgentRequestPayload::EvmWalletCreate(_) => UserAgentResponsePayload::EvmWalletCreate(
+            EvmGrantOrWallet::wallet_create_response(actor.ask(HandleEvmWalletCreate {}).await),
+        ),
+        UserAgentRequestPayload::EvmWalletList(_) => UserAgentResponsePayload::EvmWalletList(
+            EvmGrantOrWallet::wallet_list_response(actor.ask(HandleEvmWalletList {}).await),
+        ),
+        UserAgentRequestPayload::EvmGrantList(_) => UserAgentResponsePayload::EvmGrantList(
+            EvmGrantOrWallet::grant_list_response(actor.ask(HandleGrantList {}).await),
+        ),
+        UserAgentRequestPayload::EvmGrantCreate(EvmGrantCreateRequest {
+            client_id,
+            shared,
+            specific,
+        }) => {
+            let (basic, grant) = match parse_grant_request(shared, specific) {
+                Ok(values) => values,
+                Err(status) => {
+                    let _ = bi.send(Err(status)).await;
+                    return Err(());
+                }
+            };
+
+            UserAgentResponsePayload::EvmGrantCreate(EvmGrantOrWallet::grant_create_response(
+                actor.ask(HandleGrantCreate {
+                    client_id,
+                    basic,
+                    grant,
+                })
+                .await,
+            ))
+        }
+        UserAgentRequestPayload::EvmGrantDelete(EvmGrantDeleteRequest { grant_id }) => {
+            UserAgentResponsePayload::EvmGrantDelete(EvmGrantOrWallet::grant_delete_response(
+                actor.ask(HandleGrantDelete { grant_id }).await,
+            ))
+        }
+        payload => {
+            warn!(?payload, "Unsupported post-auth user agent request");
+            let _ = bi.send(Err(Status::invalid_argument("Unsupported user-agent request"))).await;
+            return Err(());
+        }
+    };
+
+    bi.send(Ok(UserAgentResponse {
+        payload: Some(payload),
+    }))
+    .await
+    .map_err(|_| ())
+}
+
+async fn send_out_of_band(
+    bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
+    oob: OutOfBand,
+) -> Result<(), ()> {
+    let payload = match oob {
+        OutOfBand::ClientConnectionRequest { pubkey } => {
+            UserAgentResponsePayload::ClientConnectionRequest(ClientConnectionRequest {
+                pubkey: pubkey.to_bytes().to_vec(),
+            })
+        }
+        OutOfBand::ClientConnectionCancel => {
+            UserAgentResponsePayload::ClientConnectionCancel(ClientConnectionCancel {})
+        }
+    };
+
+    bi.send(Ok(UserAgentResponse {
+        payload: Some(payload),
+    }))
+    .await
+    .map_err(|_| ())
+}
+
+fn parse_grant_request(
+    shared: Option<ProtoSharedSettings>,
+    specific: Option<ProtoSpecificGrant>,
+) -> Result<(SharedGrantSettings, SpecificGrant), Status> {
+    let shared = shared.ok_or_else(|| Status::invalid_argument("Missing shared grant settings"))?;
+    let specific =
+        specific.ok_or_else(|| Status::invalid_argument("Missing specific grant settings"))?;
+
+    Ok((shared_settings_from_proto(shared)?, specific_grant_from_proto(specific)?))
+}
+
+fn shared_settings_from_proto(shared: ProtoSharedSettings) -> Result<SharedGrantSettings, Status> {
+    Ok(SharedGrantSettings {
+        wallet_id: shared.wallet_id,
+        client_id: 0,
+        chain: shared.chain_id,
+        valid_from: shared
+            .valid_from
+            .map(proto_timestamp_to_utc)
+            .transpose()?,
+        valid_until: shared
+            .valid_until
+            .map(proto_timestamp_to_utc)
+            .transpose()?,
+        max_gas_fee_per_gas: shared
+            .max_gas_fee_per_gas
+            .as_deref()
+            .map(u256_from_proto_bytes)
+            .transpose()?,
+        max_priority_fee_per_gas: shared
+            .max_priority_fee_per_gas
+            .as_deref()
+            .map(u256_from_proto_bytes)
+            .transpose()?,
+        rate_limit: shared
+            .rate_limit
+            .map(|limit| TransactionRateLimit {
+                count: limit.count,
+                window: chrono::Duration::seconds(limit.window_secs),
+            }),
+    })
+}
+
+fn specific_grant_from_proto(specific: ProtoSpecificGrant) -> Result<SpecificGrant, Status> {
+    match specific.grant {
+        Some(ProtoSpecificGrantType::EtherTransfer(ProtoEtherTransferSettings {
+            targets,
+            limit,
+        })) => Ok(SpecificGrant::EtherTransfer(ether_transfer::Settings {
+            target: targets
+                .into_iter()
+                .map(address_from_bytes)
+                .collect::<Result<_, _>>()?,
+            limit: volume_rate_limit_from_proto(
+                limit.ok_or_else(|| {
+                    Status::invalid_argument("Missing ether transfer volume rate limit")
+                })?,
+            )?,
+        })),
+        Some(ProtoSpecificGrantType::TokenTransfer(ProtoTokenTransferSettings {
+            token_contract,
+            target,
+            volume_limits,
+        })) => Ok(SpecificGrant::TokenTransfer(token_transfers::Settings {
+            token_contract: address_from_bytes(token_contract)?,
+            target: target.map(address_from_bytes).transpose()?,
+            volume_limits: volume_limits
+                .into_iter()
+                .map(volume_rate_limit_from_proto)
+                .collect::<Result<_, _>>()?,
+        })),
+        None => Err(Status::invalid_argument("Missing specific grant kind")),
+    }
+}
+
+fn volume_rate_limit_from_proto(limit: ProtoVolumeRateLimit) -> Result<VolumeRateLimit, Status> {
+    Ok(VolumeRateLimit {
+        max_volume: u256_from_proto_bytes(&limit.max_volume)?,
+        window: chrono::Duration::seconds(limit.window_secs),
+    })
+}
+
+fn address_from_bytes(bytes: Vec<u8>) -> Result<Address, Status> {
+    if bytes.len() != 20 {
+        return Err(Status::invalid_argument("Invalid EVM address"));
+    }
+
+    Ok(Address::from_slice(&bytes))
+}
+
+fn u256_from_proto_bytes(bytes: &[u8]) -> Result<U256, Status> {
+    if bytes.len() > 32 {
+        return Err(Status::invalid_argument("Invalid U256 byte length"));
+    }
+
+    Ok(U256::from_be_slice(bytes))
+}
+
+fn proto_timestamp_to_utc(
+    timestamp: prost_types::Timestamp,
+) -> Result<chrono::DateTime<Utc>, Status> {
+    Utc.timestamp_opt(timestamp.seconds, timestamp.nanos as u32)
+        .single()
+        .ok_or_else(|| Status::invalid_argument("Invalid timestamp"))
+}
+
+fn shared_settings_to_proto(shared: SharedGrantSettings) -> ProtoSharedSettings {
+    ProtoSharedSettings {
+        wallet_id: shared.wallet_id,
+        chain_id: shared.chain,
+        valid_from: shared.valid_from.map(|time| prost_types::Timestamp {
+            seconds: time.timestamp(),
+            nanos: time.timestamp_subsec_nanos() as i32,
+        }),
+        valid_until: shared.valid_until.map(|time| prost_types::Timestamp {
+            seconds: time.timestamp(),
+            nanos: time.timestamp_subsec_nanos() as i32,
+        }),
+        max_gas_fee_per_gas: shared.max_gas_fee_per_gas.map(|value| {
+            value.to_be_bytes::<32>().to_vec()
+        }),
+        max_priority_fee_per_gas: shared.max_priority_fee_per_gas.map(|value| {
+            value.to_be_bytes::<32>().to_vec()
+        }),
+        rate_limit: shared.rate_limit.map(|limit| ProtoTransactionRateLimit {
+            count: limit.count,
+            window_secs: limit.window.num_seconds(),
+        }),
+    }
+}
+
+fn specific_grant_to_proto(grant: SpecificGrant) -> ProtoSpecificGrant {
+    let grant = match grant {
+        SpecificGrant::EtherTransfer(settings) => {
+            ProtoSpecificGrantType::EtherTransfer(ProtoEtherTransferSettings {
+                targets: settings.target.into_iter().map(|address| address.to_vec()).collect(),
+                limit: Some(ProtoVolumeRateLimit {
+                    max_volume: settings.limit.max_volume.to_be_bytes::<32>().to_vec(),
+                    window_secs: settings.limit.window.num_seconds(),
+                }),
+            })
+        }
+        SpecificGrant::TokenTransfer(settings) => {
+            ProtoSpecificGrantType::TokenTransfer(ProtoTokenTransferSettings {
+                token_contract: settings.token_contract.to_vec(),
+                target: settings.target.map(|address| address.to_vec()),
+                volume_limits: settings
+                    .volume_limits
+                    .into_iter()
+                    .map(|limit| ProtoVolumeRateLimit {
+                        max_volume: limit.max_volume.to_be_bytes::<32>().to_vec(),
+                        window_secs: limit.window.num_seconds(),
+                    })
+                    .collect(),
+            })
+        }
+    };
+
+    ProtoSpecificGrant { grant: Some(grant) }
+}
+
+struct EvmGrantOrWallet;
+
+impl EvmGrantOrWallet {
+    fn wallet_create_response<M>(
+        result: Result<Address, SendError<M, Error>>,
+    ) -> WalletCreateResponse {
+        let result = match result {
+            Ok(wallet) => WalletCreateResult::Wallet(WalletEntry {
+                address: wallet.to_vec(),
+            }),
+            Err(err) => {
+                warn!(error = ?err, "Failed to create EVM wallet");
+                WalletCreateResult::Error(ProtoEvmError::Internal.into())
+            }
         };
 
-        self.sender
-            .send(outbound)
-            .await
-            .map_err(|_| TransportError::ChannelClosed)
+        WalletCreateResponse { result: Some(result) }
     }
 
-    async fn recv(&mut self) -> Option<DomainRequest> {
-        match self.receiver.next().await {
-            Some(Ok(item)) => match Self::request_to_domain(item) {
-                Ok(request) => Some(request),
-                Err(status) => {
-                    let _ = self.sender.send(Err(status)).await;
-                    None
-                }
-            },
-            Some(Err(error)) => {
-                tracing::error!(error = ?error, "grpc user-agent recv failed; closing stream");
-                None
+    fn wallet_list_response<M>(
+        result: Result<Vec<Address>, SendError<M, Error>>,
+    ) -> WalletListResponse {
+        let result = match result {
+            Ok(wallets) => WalletListResult::Wallets(WalletList {
+                wallets: wallets
+                    .into_iter()
+                    .map(|wallet| WalletEntry {
+                        address: wallet.to_vec(),
+                    })
+                    .collect(),
+            }),
+            Err(err) => {
+                warn!(error = ?err, "Failed to list EVM wallets");
+                WalletListResult::Error(ProtoEvmError::Internal.into())
             }
-            None => None,
-        }
+        };
+
+        WalletListResponse { result: Some(result) }
+    }
+
+    fn grant_create_response<M>(
+        result: Result<i32, SendError<M, Error>>,
+    ) -> EvmGrantCreateResponse {
+        let result = match result {
+            Ok(grant_id) => EvmGrantCreateResult::GrantId(grant_id),
+            Err(err) => {
+                warn!(error = ?err, "Failed to create EVM grant");
+                EvmGrantCreateResult::Error(ProtoEvmError::Internal.into())
+            }
+        };
+
+        EvmGrantCreateResponse { result: Some(result) }
+    }
+
+    fn grant_delete_response<M>(
+        result: Result<(), SendError<M, Error>>,
+    ) -> EvmGrantDeleteResponse {
+        let result = match result {
+            Ok(()) => EvmGrantDeleteResult::Ok(()),
+            Err(err) => {
+                warn!(error = ?err, "Failed to delete EVM grant");
+                EvmGrantDeleteResult::Error(ProtoEvmError::Internal.into())
+            }
+        };
+
+        EvmGrantDeleteResponse { result: Some(result) }
+    }
+
+    fn grant_list_response<M>(
+        result: Result<Vec<Grant<SpecificGrant>>, SendError<M, Error>>,
+    ) -> EvmGrantListResponse {
+        let result = match result {
+            Ok(grants) => EvmGrantListResult::Grants(EvmGrantList {
+                grants: grants
+                    .into_iter()
+                    .map(|grant| GrantEntry {
+                        id: grant.id,
+                        client_id: grant.shared.client_id,
+                        shared: Some(shared_settings_to_proto(grant.shared)),
+                        specific: Some(specific_grant_to_proto(grant.settings)),
+                    })
+                    .collect(),
+            }),
+            Err(err) => {
+                warn!(error = ?err, "Failed to list EVM grants");
+                EvmGrantListResult::Error(ProtoEvmError::Internal.into())
+            }
+        };
+
+        EvmGrantListResponse { result: Some(result) }
     }
 }
 
-fn grant_to_proto(grant: Grant<SpecificGrant>) -> proto::evm::GrantEntry {
-    GrantEntry {
-        id: grant.id,
-        specific: Some(match grant.settings {
-            SpecificGrant::EtherTransfer(settings) => ProtoSpecificGrant {
-                grant: Some(ProtoSpecificGrantType::EtherTransfer(
-                    ProtoEtherTransferSettings {
-                        targets: settings
-                            .target
-                            .into_iter()
-                            .map(|addr| addr.as_slice().to_vec())
-                            .collect(),
-                        limit: Some(proto::evm::VolumeRateLimit {
-                            max_volume: settings.limit.max_volume.to_be_bytes_vec(),
-                            window_secs: settings.limit.window.num_seconds(),
-                        }),
-                    },
-                )),
-            },
-            SpecificGrant::TokenTransfer(settings) => ProtoSpecificGrant {
-                grant: Some(ProtoSpecificGrantType::TokenTransfer(
-                    ProtoTokenTransferSettings {
-                        token_contract: settings.token_contract.as_slice().to_vec(),
-                        target: settings.target.map(|addr| addr.as_slice().to_vec()),
-                        volume_limits: settings
-                            .volume_limits
-                            .into_iter()
-                            .map(|vrl| proto::evm::VolumeRateLimit {
-                                max_volume: vrl.max_volume.to_be_bytes_vec(),
-                                window_secs: vrl.window.num_seconds(),
-                            })
-                            .collect(),
-                    },
-                )),
-            },
-        }),
-        client_id: grant.shared.client_id,
-        shared: Some(proto::evm::SharedSettings {
-            wallet_id: grant.shared.wallet_id,
-            chain_id: grant.shared.chain,
-            valid_from: grant.shared.valid_from.map(|dt| Timestamp {
-                seconds: dt.timestamp(),
-                nanos: 0,
-            }),
-            valid_until: grant.shared.valid_until.map(|dt| Timestamp {
-                seconds: dt.timestamp(),
-                nanos: 0,
-            }),
-            max_gas_fee_per_gas: grant
-                .shared
-                .max_gas_fee_per_gas
-                .map(|fee| fee.to_be_bytes_vec()),
-            max_priority_fee_per_gas: grant
-                .shared
-                .max_priority_fee_per_gas
-                .map(|fee| fee.to_be_bytes_vec()),
-            rate_limit: grant
-                .shared
-                .rate_limit
-                .map(|limit| proto::evm::TransactionRateLimit {
-                    count: limit.count,
-                    window_secs: limit.window.num_seconds(),
-                }),
-        }),
-    }
-}
-
-fn parse_volume_rate_limit(vrl: ProtoVolumeRateLimit) -> Result<VolumeRateLimit, Status> {
-    Ok(VolumeRateLimit {
-        max_volume: U256::from_be_slice(&vrl.max_volume),
-        window: chrono::Duration::seconds(vrl.window_secs),
-    })
-}
-
-fn parse_shared_settings(
-    client_id: i32,
-    proto: Option<ProtoSharedSettings>,
-) -> Result<SharedGrantSettings, Status> {
-    let s = proto.ok_or_else(|| Status::invalid_argument("missing shared settings"))?;
-    let parse_u256 = |b: Vec<u8>| -> Result<U256, Status> {
-        if b.is_empty() {
-            Err(Status::invalid_argument("U256 bytes must not be empty"))
-        } else {
-            Ok(U256::from_be_slice(&b))
+pub async fn start(
+    mut conn: UserAgentConnection,
+    mut bi: GrpcBi<UserAgentRequest, UserAgentResponse>,
+) {
+    let pubkey = match auth::start(&mut conn, &mut bi).await {
+        Ok(pubkey) => pubkey,
+        Err(e) => {
+            warn!(error = ?e, "Authentication failed");
+            return;
         }
     };
-    let parse_ts = |ts: prost_types::Timestamp| -> Result<DateTime<Utc>, Status> {
-        Utc.timestamp_opt(ts.seconds, ts.nanos as u32)
-            .single()
-            .ok_or_else(|| Status::invalid_argument("invalid timestamp"))
-    };
-    Ok(SharedGrantSettings {
-        wallet_id: s.wallet_id,
-        client_id,
-        chain: s.chain_id,
-        valid_from: s.valid_from.map(parse_ts).transpose()?,
-        valid_until: s.valid_until.map(parse_ts).transpose()?,
-        max_gas_fee_per_gas: s.max_gas_fee_per_gas.map(parse_u256).transpose()?,
-        max_priority_fee_per_gas: s.max_priority_fee_per_gas.map(parse_u256).transpose()?,
-        rate_limit: s.rate_limit.map(|rl| TransactionRateLimit {
-            count: rl.count,
-            window: chrono::Duration::seconds(rl.window_secs),
-        }),
-    })
-}
 
-fn parse_specific_grant(proto: Option<proto::evm::SpecificGrant>) -> Result<SpecificGrant, Status> {
-    use proto::evm::specific_grant::Grant as ProtoGrant;
-    let g = proto
-        .and_then(|sg| sg.grant)
-        .ok_or_else(|| Status::invalid_argument("missing specific grant"))?;
-    match g {
-        ProtoGrant::EtherTransfer(s) => {
-            let limit = parse_volume_rate_limit(
-                s.limit
-                    .ok_or_else(|| Status::invalid_argument("missing ether transfer limit"))?,
-            )?;
-            let target = s
-                .targets
-                .into_iter()
-                .map(|b| {
-                    if b.len() == 20 {
-                        Ok(Address::from_slice(&b))
-                    } else {
-                        Err(Status::invalid_argument(
-                            "ether transfer target must be 20 bytes",
-                        ))
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(SpecificGrant::EtherTransfer(ether_transfer::Settings {
-                target,
-                limit,
-            }))
-        }
-        ProtoGrant::TokenTransfer(s) => {
-            if s.token_contract.len() != 20 {
-                return Err(Status::invalid_argument("token_contract must be 20 bytes"));
-            }
-            let target = s
-                .target
-                .map(|b| {
-                    if b.len() == 20 {
-                        Ok(Address::from_slice(&b))
-                    } else {
-                        Err(Status::invalid_argument(
-                            "token transfer target must be 20 bytes",
-                        ))
-                    }
-                })
-                .transpose()?;
-            let volume_limits = s
-                .volume_limits
-                .into_iter()
-                .map(parse_volume_rate_limit)
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(SpecificGrant::TokenTransfer(token_transfers::Settings {
-                token_contract: Address::from_slice(&s.token_contract),
-                target,
-                volume_limits,
-            }))
-        }
-    }
-}
+    let (oob_sender, oob_receiver) = mpsc::channel(16);
+    let oob_adapter = OutOfBandAdapter(oob_sender);
 
-fn parse_auth_pubkey(key_type: i32, pubkey: Vec<u8>) -> Result<AuthPublicKey, Status> {
-    match ProtoKeyType::try_from(key_type).unwrap_or(ProtoKeyType::Unspecified) {
-        ProtoKeyType::Unspecified | ProtoKeyType::Ed25519 => {
-            let bytes: [u8; 32] = pubkey
-                .as_slice()
-                .try_into()
-                .map_err(|_| Status::invalid_argument("invalid Ed25519 public key length"))?;
-            let key = ed25519_dalek::VerifyingKey::from_bytes(&bytes)
-                .map_err(|_| Status::invalid_argument("invalid Ed25519 public key encoding"))?;
-            Ok(AuthPublicKey::Ed25519(key))
-        }
-        ProtoKeyType::EcdsaSecp256k1 => {
-            let key = k256::ecdsa::VerifyingKey::from_sec1_bytes(&pubkey)
-                .map_err(|_| Status::invalid_argument("invalid secp256k1 public key encoding"))?;
-            Ok(AuthPublicKey::EcdsaSecp256k1(key))
-        }
-        ProtoKeyType::Rsa => {
-            use rsa::pkcs8::DecodePublicKey as _;
+    let actor = UserAgentSession::spawn(UserAgentSession::new(conn, Box::new(oob_adapter)));
+    let actor_for_cleanup = actor.clone();
 
-            let key = rsa::RsaPublicKey::from_public_key_der(&pubkey)
-                .map_err(|_| Status::invalid_argument("invalid RSA public key encoding"))?;
-            Ok(AuthPublicKey::Rsa(key))
-        }
-    }
-}
+    // when connection closes
+    let _ = defer(move || {
+        actor_for_cleanup.kill();
+    });
 
-fn auth_error_status(value: &user_agent::auth::Error) -> Status {
-    use user_agent::auth::Error;
-
-    match value {
-        Error::UnexpectedMessagePayload | Error::InvalidClientPubkeyLength => {
-            Status::invalid_argument(value.to_string())
-        }
-        Error::InvalidAuthPubkeyEncoding => {
-            Status::invalid_argument("Failed to convert pubkey to VerifyingKey")
-        }
-        Error::PublicKeyNotRegistered | Error::InvalidChallengeSolution => {
-            Status::unauthenticated(value.to_string())
-        }
-        Error::InvalidBootstrapToken => Status::invalid_argument("Invalid bootstrap token"),
-        Error::Transport => Status::internal("Transport error"),
-        Error::BootstrapperActorUnreachable => {
-            Status::internal("Bootstrap token consumption failed")
-        }
-        Error::DatabasePoolUnavailable => Status::internal("Database pool error"),
-        Error::DatabaseOperationFailed => Status::internal("Database error"),
-    }
+    info!(?pubkey, "User authenticated successfully");
+    dispatch_loop(bi, actor, oob_receiver).await;
 }

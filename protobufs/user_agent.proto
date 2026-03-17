@@ -2,8 +2,8 @@ syntax = "proto3";
 
 package arbiter.user_agent;
 
-import "google/protobuf/empty.proto";
 import "evm.proto";
+import "google/protobuf/empty.proto";
 
 enum KeyType {
   KEY_TYPE_UNSPECIFIED = 0;
@@ -19,15 +19,23 @@ message AuthChallengeRequest {
 }
 
 message AuthChallenge {
-  bytes pubkey = 1;
   int32 nonce = 2;
+  reserved 1;
 }
 
 message AuthChallengeSolution {
   bytes signature = 1;
 }
 
-message AuthOk {}
+enum AuthResult {
+  AUTH_RESULT_UNSPECIFIED = 0;
+  AUTH_RESULT_SUCCESS = 1;
+  AUTH_RESULT_INVALID_KEY = 2;
+  AUTH_RESULT_INVALID_SIGNATURE = 3;
+  AUTH_RESULT_BOOTSTRAP_REQUIRED = 4;
+  AUTH_RESULT_TOKEN_INVALID = 5;
+  AUTH_RESULT_INTERNAL = 6;
+}
 
 message UnsealStart {
   bytes client_pubkey = 1;
@@ -99,7 +107,7 @@ message UserAgentRequest {
 message UserAgentResponse {
   oneof payload {
     AuthChallenge auth_challenge = 1;
-    AuthOk auth_ok = 2;
+    AuthResult auth_result = 2;
     UnsealStartResponse unseal_start_response = 3;
     UnsealResult unseal_result = 4;
     VaultState vault_state = 5;

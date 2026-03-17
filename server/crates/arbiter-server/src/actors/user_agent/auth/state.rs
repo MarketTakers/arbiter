@@ -1,3 +1,5 @@
+use alloy::transports::Transport;
+use arbiter_proto::transport::Bi;
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, update};
 use diesel_async::RunQueryDsl;
 use tracing::error;
@@ -6,7 +8,7 @@ use super::Error;
 use crate::{
     actors::{
         bootstrap::ConsumeToken,
-        user_agent::{AuthPublicKey, Response, UserAgentConnection},
+        user_agent::{AuthPublicKey, OutOfBand, UserAgentConnection, auth::Outbound},
     },
     db::schema,
 };
@@ -42,7 +44,7 @@ smlang::statemachine!(
 async fn create_nonce(db: &crate::db::DatabasePool, pubkey_bytes: &[u8]) -> Result<i32, Error> {
     let mut db_conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
-        Error::DatabasePoolUnavailable
+        Error::internal("Database unavailable")
     })?;
     db_conn
         .exclusive_transaction(|conn| {
@@ -66,11 +68,11 @@ async fn create_nonce(db: &crate::db::DatabasePool, pubkey_bytes: &[u8]) -> Resu
         .optional()
         .map_err(|e| {
             error!(error = ?e, "Database error");
-            Error::DatabaseOperationFailed
+            Error::internal("Database operation failed")
         })?
         .ok_or_else(|| {
             error!(?pubkey_bytes, "Public key not found in database");
-            Error::PublicKeyNotRegistered
+            Error::UnregisteredPublicKey
         })
 }
 
@@ -79,7 +81,7 @@ async fn register_key(db: &crate::db::DatabasePool, pubkey: &AuthPublicKey) -> R
     let key_type = pubkey.key_type();
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
-        Error::DatabasePoolUnavailable
+        Error::internal("Database unavailable")
     })?;
 
     diesel::insert_into(schema::useragent_client::table)
@@ -92,23 +94,27 @@ async fn register_key(db: &crate::db::DatabasePool, pubkey: &AuthPublicKey) -> R
         .await
         .map_err(|e| {
             error!(error = ?e, "Database error");
-            Error::DatabaseOperationFailed
+            Error::internal("Database operation failed")
         })?;
 
     Ok(())
 }
 
-pub struct AuthContext<'a> {
+pub struct AuthContext<'a, T> {
     pub(super) conn: &'a mut UserAgentConnection,
+    pub(super) transport: T,
 }
 
-impl<'a> AuthContext<'a> {
-    pub fn new(conn: &'a mut UserAgentConnection) -> Self {
-        Self { conn }
+impl<'a, T> AuthContext<'a, T> {
+    pub fn new(conn: &'a mut UserAgentConnection, transport:  T) -> Self {
+        Self { conn, transport }
     }
 }
 
-impl AuthStateMachineContext for AuthContext<'_> {
+impl<T> AuthStateMachineContext for AuthContext<'_, T>
+where
+    T: Bi<super::Inbound, Result<super::Outbound, Error>> + Send,
+{
     type Error = Error;
 
     async fn prepare_challenge(
@@ -118,9 +124,9 @@ impl AuthStateMachineContext for AuthContext<'_> {
         let stored_bytes = pubkey.to_stored_bytes();
         let nonce = create_nonce(&self.conn.db, &stored_bytes).await?;
 
-        self.conn
+        self
             .transport
-            .send(Ok(Response::AuthChallenge { nonce }))
+            .send(Ok(Outbound::AuthChallenge { nonce }))
             .await
             .map_err(|e| {
                 error!(?e, "Failed to send auth challenge");
@@ -149,7 +155,7 @@ impl AuthStateMachineContext for AuthContext<'_> {
             .await
             .map_err(|e| {
                 error!(?e, "Failed to consume bootstrap token");
-                Error::BootstrapperActorUnreachable
+                Error::internal("Failed to consume bootstrap token")
             })?;
 
         if !token_ok {
@@ -159,11 +165,11 @@ impl AuthStateMachineContext for AuthContext<'_> {
 
         register_key(&self.conn.db, &pubkey).await?;
 
-        self.conn
-                .transport
-                .send(Ok(Response::AuthOk))
-                .await
-                .map_err(|_| Error::Transport)?;
+        self
+            .transport
+            .send(Ok(Outbound::AuthSuccess))
+            .await
+            .map_err(|_| Error::Transport)?;
 
         Ok(pubkey)
     }
@@ -172,7 +178,10 @@ impl AuthStateMachineContext for AuthContext<'_> {
     #[allow(clippy::unused_unit)]
     async fn verify_solution(
         &mut self,
-        ChallengeContext { challenge_nonce, key }: &ChallengeContext,
+        ChallengeContext {
+            challenge_nonce,
+            key,
+        }: &ChallengeContext,
         ChallengeSolution { solution }: ChallengeSolution,
     ) -> Result<AuthPublicKey, Self::Error> {
         let formatted = arbiter_proto::format_challenge(*challenge_nonce, &key.to_stored_bytes());
@@ -205,9 +214,9 @@ impl AuthStateMachineContext for AuthContext<'_> {
         };
 
         if valid {
-            self.conn
+            self
                 .transport
-                .send(Ok(Response::AuthOk))
+                .send(Ok(Outbound::AuthSuccess))
                 .await
                 .map_err(|_| Error::Transport)?;
         }

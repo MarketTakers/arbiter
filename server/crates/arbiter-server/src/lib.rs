@@ -13,6 +13,7 @@ pub mod db;
 pub mod evm;
 pub mod grpc;
 pub mod safe_cell;
+pub mod utils;
 
 const DEFAULT_CHANNEL_SIZE: usize = 1000;
 

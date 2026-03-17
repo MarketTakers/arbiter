@@ -1,7 +1,9 @@
-
-use arbiter_proto::proto::{
-    client::{ClientRequest, ClientResponse},
-    user_agent::{UserAgentRequest, UserAgentResponse},
+use arbiter_proto::{
+    proto::{
+        client::{ClientRequest, ClientResponse},
+        user_agent::{UserAgentRequest, UserAgentResponse},
+    },
+    transport::grpc::GrpcBi,
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -10,7 +12,11 @@ use tracing::info;
 
 use crate::{
     DEFAULT_CHANNEL_SIZE,
-    actors::{client::{ClientConnection, connect_client}, user_agent::{UserAgentConnection, connect_user_agent}},
+    actors::{
+        client::{ClientConnection, connect_client},
+        user_agent::UserAgentConnection,
+    },
+    grpc::{self, user_agent::start},
 };
 
 pub mod client;
@@ -48,18 +54,19 @@ impl arbiter_proto::proto::arbiter_service_server::ArbiterService for super::Ser
         request: Request<tonic::Streaming<UserAgentRequest>>,
     ) -> Result<Response<Self::UserAgentStream>, Status> {
         let req_stream = request.into_inner();
-        let (tx, rx) = mpsc::channel(DEFAULT_CHANNEL_SIZE);
 
-        let transport = user_agent::GrpcTransport::new(tx, req_stream);
-        let props = UserAgentConnection::new(
-            self.context.db.clone(),
-            self.context.actors.clone(),
-            Box::new(transport),
-        );
-        tokio::spawn(connect_user_agent(props));
+        let (bi, rx) = GrpcBi::from_bi_stream(req_stream);
+
+        tokio::spawn(start(
+            UserAgentConnection {
+                db: self.context.db.clone(),
+                actors: self.context.actors.clone(),
+            },
+            bi,
+        ));
 
         info!(event = "connection established", "grpc.user_agent");
 
-        Ok(Response::new(ReceiverStream::new(rx)))
+        Ok(Response::new(rx))
     }
 }

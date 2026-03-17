@@ -44,6 +44,14 @@ pub enum DatabaseSetupError {
     Pool(#[from] PoolInitError),
 }
 
+#[derive(Error, Debug)]
+pub enum DatabaseError {
+    #[error("Database connection error")]
+    Pool(#[from] PoolError),
+    #[error("Database query error")]
+    Connection(#[from] diesel::result::Error),
+}
+
 #[tracing::instrument(level = "info")]
 fn database_path() -> Result<std::path::PathBuf, DatabaseSetupError> {
     let arbiter_home = arbiter_proto::home_path().map_err(DatabaseSetupError::HomeDir)?;

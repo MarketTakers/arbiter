@@ -3,7 +3,7 @@ use arbiter_server::{
     actors::{
         GlobalActors,
         bootstrap::GetToken,
-        user_agent::{AuthPublicKey, Request, Response, UserAgentConnection, connect_user_agent},
+        user_agent::{AuthPublicKey, Request, OutOfBand, UserAgentConnection, connect_user_agent},
     },
     db::{self, schema},
 };
@@ -118,7 +118,7 @@ pub async fn test_challenge_auth() {
         .expect("should receive challenge");
     let challenge = match response {
         Ok(resp) => match resp {
-            Response::AuthChallenge { nonce } => nonce,
+            OutOfBand::AuthChallenge { nonce } => nonce,
             other => panic!("Expected AuthChallenge, got {other:?}"),
         },
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),

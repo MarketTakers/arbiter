@@ -63,16 +63,29 @@ where
     extractor(msg).ok_or(Error::UnexpectedMessage)
 }
 
+#[async_trait]
+pub trait Sender<Outbound>: Send + Sync {
+    async fn send(&mut self, item: Outbound) -> Result<(), Error>;
+}
+
+#[async_trait]
+pub trait Receiver<Inbound>: Send + Sync  {
+    async fn recv(&mut self) -> Option<Inbound>;
+}
+
 /// Minimal bidirectional transport abstraction used by protocol code.
 ///
 /// `Bi<Inbound, Outbound>` models a duplex channel with:
 /// - inbound items of type `Inbound` read via [`Bi::recv`]
 /// - outbound items of type `Outbound` written via [`Bi::send`]
-#[async_trait]
-pub trait Bi<Inbound, Outbound>: Send + Sync + 'static {
-    async fn send(&mut self, item: Outbound) -> Result<(), Error>;
+pub trait Bi<Inbound, Outbound>: Sender<Outbound> + Receiver<Inbound> + Send + Sync {}
 
-    async fn recv(&mut self) -> Option<Inbound>;
+pub trait SplittableBi<Inbound, Outbound>: Bi<Inbound, Outbound> {
+    type Sender: Sender<Outbound>;
+    type Receiver: Receiver<Inbound>;
+
+    fn split(self) -> (Self::Sender, Self::Receiver);
+    fn from_parts(sender: Self::Sender, receiver: Self::Receiver) -> Self;
 }
 
 /// No-op [`Bi`] transport for tests and manual actor usage.
@@ -83,22 +96,16 @@ pub struct DummyTransport<Inbound, Outbound> {
     _marker: PhantomData<(Inbound, Outbound)>,
 }
 
-impl<Inbound, Outbound> DummyTransport<Inbound, Outbound> {
-    pub fn new() -> Self {
+impl<Inbound, Outbound> Default for DummyTransport<Inbound, Outbound> {
+    fn default() -> Self {
         Self {
             _marker: PhantomData,
         }
     }
 }
 
-impl<Inbound, Outbound> Default for DummyTransport<Inbound, Outbound> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[async_trait]
-impl<Inbound, Outbound> Bi<Inbound, Outbound> for DummyTransport<Inbound, Outbound>
+impl<Inbound, Outbound> Sender<Outbound> for DummyTransport<Inbound, Outbound>
 where
     Inbound: Send + Sync + 'static,
     Outbound: Send + Sync + 'static,
@@ -106,9 +113,25 @@ where
     async fn send(&mut self, _item: Outbound) -> Result<(), Error> {
         Ok(())
     }
+}
 
+#[async_trait]
+impl<Inbound, Outbound> Receiver<Inbound> for DummyTransport<Inbound, Outbound>
+where
+    Inbound: Send + Sync + 'static,
+    Outbound: Send + Sync + 'static,
+{
     async fn recv(&mut self) -> Option<Inbound> {
         std::future::pending::<()>().await;
         None
     }
 }
+
+impl<Inbound, Outbound> Bi<Inbound, Outbound> for DummyTransport<Inbound, Outbound>
+where
+    Inbound: Send + Sync + 'static,
+    Outbound: Send + Sync + 'static,
+{
+}
+
+pub mod grpc;

@@ -2,7 +2,7 @@ use arbiter_server::{
     actors::{
         GlobalActors,
         keyholder::{Bootstrap, Seal},
-        user_agent::{Request, Response, UnsealError, session::UserAgentSession},
+        user_agent::{Request, OutOfBand, UnsealError, session::UserAgentSession},
     },
     db,
     safe_cell::{SafeCell, SafeCellHandle as _},
@@ -40,7 +40,7 @@ async fn client_dh_encrypt(user_agent: &mut UserAgentSession, key_to_send: &[u8]
         .unwrap();
 
     let server_pubkey = match response {
-        Response::UnsealStartResponse { server_pubkey } => server_pubkey,
+        OutOfBand::UnsealStartResponse { server_pubkey } => server_pubkey,
         other => panic!("Expected UnsealStartResponse, got {other:?}"),
     };
 
@@ -73,7 +73,7 @@ pub async fn test_unseal_success() {
         .await
         .unwrap();
 
-    assert!(matches!(response, Response::UnsealResult(Ok(()))));
+    assert!(matches!(response, OutOfBand::UnsealResult(Ok(()))));
 }
 
 #[tokio::test]
@@ -90,7 +90,7 @@ pub async fn test_unseal_wrong_seal_key() {
 
     assert!(matches!(
         response,
-        Response::UnsealResult(Err(UnsealError::InvalidKey))
+        OutOfBand::UnsealResult(Err(UnsealError::InvalidKey))
     ));
 }
 
@@ -120,7 +120,7 @@ pub async fn test_unseal_corrupted_ciphertext() {
 
     assert!(matches!(
         response,
-        Response::UnsealResult(Err(UnsealError::InvalidKey))
+        OutOfBand::UnsealResult(Err(UnsealError::InvalidKey))
     ));
 }
 
@@ -140,7 +140,7 @@ pub async fn test_unseal_retry_after_invalid_key() {
 
         assert!(matches!(
             response,
-            Response::UnsealResult(Err(UnsealError::InvalidKey))
+            OutOfBand::UnsealResult(Err(UnsealError::InvalidKey))
         ));
     }
 
@@ -152,6 +152,6 @@ pub async fn test_unseal_retry_after_invalid_key() {
             .await
             .unwrap();
 
-        assert!(matches!(response, Response::UnsealResult(Ok(()))));
+        assert!(matches!(response, OutOfBand::UnsealResult(Ok(()))));
     }
 }

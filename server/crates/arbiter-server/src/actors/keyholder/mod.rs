@@ -22,7 +22,7 @@ use encryption::v1::{self, KeyCell, Nonce};
 pub mod encryption;
 
 #[derive(Default, EnumDiscriminants)]
-#[strum_discriminants(derive(Reply), vis(pub))]
+#[strum_discriminants(derive(Reply), vis(pub), name(KeyHolderState))]
 enum State {
     #[default]
     Unbootstrapped,
@@ -325,7 +325,7 @@ impl KeyHolder {
     }
 
     #[message]
-    pub fn get_state(&self) -> StateDiscriminants {
+    pub fn get_state(&self) -> KeyHolderState {
         self.state.discriminant()
     }
 

@@ -1,32 +1,14 @@
 use alloy::primitives::Address;
-use arbiter_proto::transport::Bi;
+use arbiter_proto::transport::{Bi, Sender};
 use kameo::actor::Spawn as _;
 use tracing::{error, info};
 
 use crate::{
-    actors::{GlobalActors, evm, user_agent::session::UserAgentSession},
+    actors::{GlobalActors, evm},
     db::{self, models::KeyType},
     evm::policies::SharedGrantSettings,
     evm::policies::{Grant, SpecificGrant},
 };
-
-#[derive(Debug, thiserror::Error, PartialEq)]
-pub enum TransportResponseError {
-    #[error("Unexpected request payload")]
-    UnexpectedRequestPayload,
-    #[error("Invalid state for unseal encrypted key")]
-    InvalidStateForUnsealEncryptedKey,
-    #[error("client_pubkey must be 32 bytes")]
-    InvalidClientPubkeyLength,
-    #[error("State machine error")]
-    StateTransitionFailed,
-    #[error("Vault is not available")]
-    KeyHolderActorUnreachable,
-    #[error(transparent)]
-    Auth(#[from] auth::Error),
-    #[error("Failed registering connection")]
-    ConnectionRegistrationFailed,
-}
 
 /// Abstraction over Ed25519 / ECDSA-secp256k1 / RSA public keys used during the auth handshake.
 #[derive(Clone, Debug)]
@@ -65,119 +47,55 @@ impl AuthPublicKey {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnsealError {
-    InvalidKey,
-    Unbootstrapped,
+impl TryFrom<(KeyType, Vec<u8>)> for AuthPublicKey {
+    type Error = &'static str;
+
+    fn try_from(value: (KeyType, Vec<u8>)) -> Result<Self, Self::Error> {
+        let (key_type, bytes) = value;
+        match key_type {
+            KeyType::Ed25519 => {
+                let bytes: [u8; 32] = bytes.try_into().map_err(|_| "invalid Ed25519 key length")?;
+                let key = ed25519_dalek::VerifyingKey::from_bytes(&bytes)
+                    .map_err(|e| "invalid Ed25519 key")?;
+                Ok(AuthPublicKey::Ed25519(key))
+            }
+            KeyType::EcdsaSecp256k1 => {
+                let point =
+                    k256::EncodedPoint::from_bytes(&bytes).map_err(|e| "invalid ECDSA key")?;
+                let key = k256::ecdsa::VerifyingKey::from_encoded_point(&point)
+                    .map_err(|e| "invalid ECDSA key")?;
+                Ok(AuthPublicKey::EcdsaSecp256k1(key))
+            }
+            KeyType::Rsa => {
+                use rsa::pkcs8::DecodePublicKey as _;
+                let key = rsa::RsaPublicKey::from_public_key_der(&bytes)
+                    .map_err(|e| "invalid RSA key")?;
+                Ok(AuthPublicKey::Rsa(key))
+            }
+        }
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BootstrapError {
-    AlreadyBootstrapped,
-    InvalidKey,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VaultState {
-    Unbootstrapped,
-    Sealed,
-    Unsealed,
-}
-
-#[derive(Debug, Clone)]
-pub enum Request {
-    AuthChallengeRequest {
-        pubkey: AuthPublicKey,
-        bootstrap_token: Option<String>,
-    },
-    AuthChallengeSolution {
-        signature: Vec<u8>,
-    },
-    UnsealStart {
-        client_pubkey: x25519_dalek::PublicKey,
-    },
-    UnsealEncryptedKey {
-        nonce: Vec<u8>,
-        ciphertext: Vec<u8>,
-        associated_data: Vec<u8>,
-    },
-    BootstrapEncryptedKey {
-        nonce: Vec<u8>,
-        ciphertext: Vec<u8>,
-        associated_data: Vec<u8>,
-    },
-    QueryVaultState,
-    EvmWalletCreate,
-    EvmWalletList,
-    ClientConnectionResponse {
-        approved: bool,
-    },
-
-    ListGrants,
-    EvmGrantCreate {
-        client_id: i32,
-        shared: SharedGrantSettings,
-        specific: SpecificGrant,
-    },
-    EvmGrantDelete {
-        grant_id: i32,
-    },
-}
-
+// Messages, sent by user agent to connection client without having a request
 #[derive(Debug)]
-pub enum Response {
-    AuthChallenge {
-        nonce: i32,
-    },
-    AuthOk,
-    UnsealStartResponse {
-        server_pubkey: x25519_dalek::PublicKey,
-    },
-    UnsealResult(Result<(), UnsealError>),
-    BootstrapResult(Result<(), BootstrapError>),
-    VaultState(VaultState),
-    ClientConnectionRequest {
-        pubkey: ed25519_dalek::VerifyingKey,
-    },
+pub enum OutOfBand {
+    ClientConnectionRequest { pubkey: ed25519_dalek::VerifyingKey },
     ClientConnectionCancel,
-    EvmWalletCreate(Result<(), evm::Error>),
-    EvmWalletList(Vec<Address>),
-
-    ListGrants(Vec<Grant<SpecificGrant>>),
-    EvmGrantCreate(Result<i32, evm::Error>),
-    EvmGrantDelete(Result<(), evm::Error>),
 }
-
-pub type Transport = Box<dyn Bi<Request, Result<Response, TransportResponseError>> + Send>;
 
 pub struct UserAgentConnection {
-    db: db::DatabasePool,
-    actors: GlobalActors,
-    transport: Transport,
+    pub(crate) db: db::DatabasePool,
+    pub(crate) actors: GlobalActors,
 }
 
 impl UserAgentConnection {
-    pub fn new(db: db::DatabasePool, actors: GlobalActors, transport: Transport) -> Self {
-        Self {
-            db,
-            actors,
-            transport,
-        }
+    pub fn new(db: db::DatabasePool, actors: GlobalActors) -> Self {
+        Self { db, actors }
     }
 }
 
 pub mod auth;
 pub mod session;
 
-#[tracing::instrument(skip(props))]
-pub async fn connect_user_agent(props: UserAgentConnection) {
-    match auth::authenticate_and_create(props).await {
-        Ok(session) => {
-            UserAgentSession::spawn(session);
-            info!("User authenticated, session started");
-        }
-        Err(err) => {
-            error!(?err, "Authentication failed, closing connection");
-        }
-    }
-}
+pub use auth::authenticate;
+pub use session::UserAgentSession;
