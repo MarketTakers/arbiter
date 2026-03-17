@@ -91,6 +91,10 @@ impl TlsCa {
 
         let cert_key_pem = certified_issuer.key().serialize_pem();
 
+        #[allow(
+            clippy::unwrap_used,
+            reason = "Broken cert couldn't bootstrap server anyway"
+        )]
         let issuer = Issuer::from_ca_cert_pem(
             &certified_issuer.pem(),
             KeyPair::from_pem(cert_key_pem.as_ref()).unwrap(),

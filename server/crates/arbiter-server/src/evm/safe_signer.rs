@@ -83,6 +83,7 @@ impl SafeSigner {
     }
 
     fn sign_hash_inner(&self, hash: &B256) -> Result<Signature> {
+        #[allow(clippy::expect_used)]
         let mut cell = self.key.lock().expect("SafeSigner mutex poisoned");
         let reader = cell.read();
         let sig: (ecdsa::Signature, RecoveryId) = reader.sign_prehash(hash.as_ref())?;
@@ -95,7 +96,8 @@ impl SafeSigner {
         {
             return Err(Error::TransactionChainIdMismatch {
                 signer: chain_id,
-                tx: tx.chain_id().unwrap(),
+                #[allow(clippy::expect_used)]
+                tx: tx.chain_id().expect("Chain ID is guaranteed to be set"),
             });
         }
         self.sign_hash_inner(&tx.signature_hash())

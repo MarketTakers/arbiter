@@ -72,6 +72,10 @@ impl TryFrom<SafeCell<Vec<u8>>> for KeyCell {
 impl KeyCell {
     pub fn new_secure_random() -> Self {
         let key = SafeCell::new_inline(|key_buffer: &mut Key| {
+            #[allow(
+                clippy::unwrap_used,
+                reason = "Rng failure is unrecoverable and should panic"
+            )]
             let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
             rng.fill_bytes(key_buffer);
         });
@@ -133,6 +137,10 @@ pub type Salt = [u8; ArgonSalt::RECOMMENDED_LENGTH];
 
 pub fn generate_salt() -> Salt {
     let mut salt = Salt::default();
+    #[allow(
+        clippy::unwrap_used,
+        reason = "Rng failure is unrecoverable and should panic"
+    )]
     let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
     rng.fill_bytes(&mut salt);
     salt
@@ -141,6 +149,7 @@ pub fn generate_salt() -> Salt {
 /// User password might be of different length, have not enough entropy, etc...
 /// Derive a fixed-length key from the password using Argon2id, which is designed for password hashing and key derivation.
 pub fn derive_seal_key(mut password: SafeCell<Vec<u8>>, salt: &Salt) -> KeyCell {
+    #[allow(clippy::unwrap_used)]
     let params = argon2::Params::new(262_144, 3, 4, None).unwrap();
     let hasher = Argon2::new(Algorithm::Argon2id, argon2::Version::V0x13, params);
     let mut key = SafeCell::new(Key::default());
@@ -148,6 +157,10 @@ pub fn derive_seal_key(mut password: SafeCell<Vec<u8>>, salt: &Salt) -> KeyCell 
         let mut key_buffer = key.write();
         let key_buffer: &mut [u8] = key_buffer.as_mut();
 
+        #[allow(
+            clippy::unwrap_used,
+            reason = "Better fail completely than return a weak key"
+        )]
         hasher
             .hash_password_into(password_source.deref(), salt, key_buffer)
             .unwrap();

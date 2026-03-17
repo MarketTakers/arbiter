@@ -1,4 +1,4 @@
-use std::{ops::DerefMut, sync::Mutex};
+use std::sync::Mutex;
 
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use kameo::error::SendError;
@@ -76,6 +76,10 @@ impl UserAgentSession {
         };
 
         let ephemeral_secret = {
+            #[allow(
+                clippy::unwrap_used,
+                reason = "Mutex poison is unrecoverable and should panic"
+            )]
             let mut secret_lock = unseal_context.secret.lock().unwrap();
             let secret = secret_lock.take();
             match secret {

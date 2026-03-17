@@ -1,12 +1,13 @@
 use alloy::primitives::Address;
-use arbiter_proto::{transport::Bi};
+use arbiter_proto::transport::Bi;
 use kameo::actor::Spawn as _;
 use tracing::{error, info};
 
 use crate::{
     actors::{GlobalActors, evm, user_agent::session::UserAgentSession},
-    db::{self, models::KeyType}, evm::policies::{Grant, SpecificGrant},
+    db::{self, models::KeyType},
     evm::policies::SharedGrantSettings,
+    evm::policies::{Grant, SpecificGrant},
 };
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -47,6 +48,7 @@ impl AuthPublicKey {
             AuthPublicKey::EcdsaSecp256k1(k) => k.to_encoded_point(true).as_bytes().to_vec(),
             AuthPublicKey::Rsa(k) => {
                 use rsa::pkcs8::EncodePublicKey as _;
+                #[allow(clippy::expect_used)]
                 k.to_public_key_der()
                     .expect("rsa SPKI encoding is infallible")
                     .to_vec()
@@ -124,13 +126,19 @@ pub enum Request {
 
 #[derive(Debug)]
 pub enum Response {
-    AuthChallenge { nonce: i32 },
+    AuthChallenge {
+        nonce: i32,
+    },
     AuthOk,
-    UnsealStartResponse { server_pubkey: x25519_dalek::PublicKey },
+    UnsealStartResponse {
+        server_pubkey: x25519_dalek::PublicKey,
+    },
     UnsealResult(Result<(), UnsealError>),
     BootstrapResult(Result<(), BootstrapError>),
     VaultState(VaultState),
-    ClientConnectionRequest { pubkey: ed25519_dalek::VerifyingKey },
+    ClientConnectionRequest {
+        pubkey: ed25519_dalek::VerifyingKey,
+    },
     ClientConnectionCancel,
     EvmWalletCreate(Result<(), evm::Error>),
     EvmWalletList(Vec<Address>),
