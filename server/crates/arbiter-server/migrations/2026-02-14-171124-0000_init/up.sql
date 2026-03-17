@@ -157,3 +157,5 @@ create table if not exists evm_ether_transfer_grant_target (
 
 create unique index if not exists uniq_ether_transfer_target on evm_ether_transfer_grant_target(grant_id, address);
 
+CREATE UNIQUE INDEX program_client_public_key_unique
+    ON program_client (public_key);
