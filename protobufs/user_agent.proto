@@ -89,6 +89,7 @@ message ClientConnectionResponse {
 message ClientConnectionCancel {}
 
 message UserAgentRequest {
+  int32 id = 14;
   oneof payload {
     AuthChallengeRequest auth_challenge_request = 1;
     AuthChallengeSolution auth_challenge_solution = 2;
@@ -105,6 +106,7 @@ message UserAgentRequest {
   }
 }
 message UserAgentResponse {
+  optional int32 id = 14;
   oneof payload {
     AuthChallenge auth_challenge = 1;
     AuthResult auth_result = 2;

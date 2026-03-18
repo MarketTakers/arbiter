@@ -1,52 +1,56 @@
 use arbiter_proto::{
-    proto::{
-        self,
-        evm::{
-            EtherTransferSettings as ProtoEtherTransferSettings, EvmError as ProtoEvmError,
-            EvmGrantCreateRequest, EvmGrantCreateResponse, EvmGrantDeleteRequest,
-            EvmGrantDeleteResponse, EvmGrantList, EvmGrantListResponse, GrantEntry,
-            SharedSettings as ProtoSharedSettings, SpecificGrant as ProtoSpecificGrant,
-            TokenTransferSettings as ProtoTokenTransferSettings,
-            VolumeRateLimit as ProtoVolumeRateLimit, WalletCreateResponse, WalletEntry, WalletList,
-            WalletListResponse, evm_grant_create_response::Result as EvmGrantCreateResult,
-            evm_grant_delete_response::Result as EvmGrantDeleteResult,
-            evm_grant_list_response::Result as EvmGrantListResult,
-            specific_grant::Grant as ProtoSpecificGrantType,
-            wallet_create_response::Result as WalletCreateResult,
-            wallet_list_response::Result as WalletListResult,
-        },
-        user_agent::{
-            AuthChallenge as ProtoAuthChallenge, AuthChallengeRequest as ProtoAuthChallengeRequest,
-            AuthChallengeSolution as ProtoAuthChallengeSolution, AuthResult as ProtoAuthResult,
-            BootstrapEncryptedKey as ProtoBootstrapEncryptedKey,
-            BootstrapResult as ProtoBootstrapResult, ClientConnectionCancel,
-            ClientConnectionRequest, ClientConnectionResponse, KeyType as ProtoKeyType,
-            UnsealEncryptedKey as ProtoUnsealEncryptedKey, UnsealResult as ProtoUnsealResult,
-            UnsealStart, UnsealStartResponse, UserAgentRequest, UserAgentResponse,
-            VaultState as ProtoVaultState, user_agent_request::Payload as UserAgentRequestPayload,
-            user_agent_response::Payload as UserAgentResponsePayload,
-        },
+    proto::user_agent::{
+        AuthChallenge as ProtoAuthChallenge, AuthChallengeRequest as ProtoAuthChallengeRequest,
+        AuthChallengeSolution as ProtoAuthChallengeSolution, AuthResult as ProtoAuthResult,
+        KeyType as ProtoKeyType, UserAgentRequest, UserAgentResponse,
+        user_agent_request::Payload as UserAgentRequestPayload,
+        user_agent_response::Payload as UserAgentResponsePayload,
     },
     transport::{Bi, Error as TransportError, Receiver, Sender, grpc::GrpcBi},
 };
 use async_trait::async_trait;
-use tonic::{Status, Streaming};
-use tracing::{info, warn};
+use tonic::Status;
+use tracing::warn;
 
 use crate::{
-    actors::user_agent::{
-        self, AuthPublicKey, OutOfBand as DomainResponse, UserAgentConnection, auth,
-    },
+    actors::user_agent::{AuthPublicKey, UserAgentConnection, auth},
     db::models::KeyType,
-    evm::policies::{
-        Grant, SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit,
-        ether_transfer, token_transfers,
-    },
+    grpc::request_tracker::RequestTracker,
 };
-use alloy::primitives::{Address, U256};
-use chrono::{DateTime, TimeZone, Utc};
 
-pub struct AuthTransportAdapter<'a>(&'a mut GrpcBi<UserAgentRequest, UserAgentResponse>);
+pub struct AuthTransportAdapter<'a> {
+    bi: &'a mut GrpcBi<UserAgentRequest, UserAgentResponse>,
+    request_tracker: &'a mut RequestTracker,
+    response_id: &'a mut Option<i32>,
+}
+
+impl<'a> AuthTransportAdapter<'a> {
+    pub fn new(
+        bi: &'a mut GrpcBi<UserAgentRequest, UserAgentResponse>,
+        request_tracker: &'a mut RequestTracker,
+        response_id: &'a mut Option<i32>,
+    ) -> Self {
+        Self {
+            bi,
+            request_tracker,
+            response_id,
+        }
+    }
+
+    async fn send_user_agent_response(
+        &mut self,
+        payload: UserAgentResponsePayload,
+    ) -> Result<(), TransportError> {
+        let id = self.response_id.take();
+
+        self.bi
+            .send(Ok(UserAgentResponse {
+                id,
+                payload: Some(payload),
+            }))
+            .await
+    }
+}
 
 #[async_trait]
 impl Sender<Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {
@@ -55,39 +59,53 @@ impl Sender<Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {
         item: Result<auth::Outbound, auth::Error>,
     ) -> Result<(), TransportError> {
         use auth::{Error, Outbound};
-        let response = match item {
-            Ok(Outbound::AuthChallenge { nonce }) => Ok(UserAgentResponsePayload::AuthChallenge(
-                ProtoAuthChallenge { nonce },
-            )),
-            Ok(Outbound::AuthSuccess) => Ok(UserAgentResponsePayload::AuthResult(
-                ProtoAuthResult::Success.into(),
-            )),
-
-            Err(Error::UnregisteredPublicKey) => Ok(UserAgentResponsePayload::AuthResult(
-                ProtoAuthResult::InvalidKey.into(),
-            )),
-            Err(Error::InvalidChallengeSolution) => Ok(UserAgentResponsePayload::AuthResult(
-                ProtoAuthResult::InvalidSignature.into(),
-            )),
-            Err(Error::InvalidBootstrapToken) => Ok(UserAgentResponsePayload::BootstrapResult(
-                ProtoAuthResult::TokenInvalid.into(),
-            )),
-            Err(Error::Internal { details }) => Err(Status::internal(details)),
-            Err(Error::Transport) => Err(Status::unavailable("transport error")),
+        let payload = match item {
+            Ok(Outbound::AuthChallenge { nonce }) => {
+                UserAgentResponsePayload::AuthChallenge(ProtoAuthChallenge { nonce })
+            }
+            Ok(Outbound::AuthSuccess) => {
+                UserAgentResponsePayload::AuthResult(ProtoAuthResult::Success.into())
+            }
+            Err(Error::UnregisteredPublicKey) => {
+                UserAgentResponsePayload::AuthResult(ProtoAuthResult::InvalidKey.into())
+            }
+            Err(Error::InvalidChallengeSolution) => {
+                UserAgentResponsePayload::AuthResult(ProtoAuthResult::InvalidSignature.into())
+            }
+            Err(Error::InvalidBootstrapToken) => {
+                UserAgentResponsePayload::AuthResult(ProtoAuthResult::TokenInvalid.into())
+            }
+            Err(Error::Internal { details }) => return self.bi.send(Err(Status::internal(details))).await,
+            Err(Error::Transport) => {
+                return self.bi.send(Err(Status::unavailable("transport error"))).await;
+            }
         };
-        self.0
-            .send(response.map(|r| UserAgentResponse { payload: Some(r) }))
-            .await
+
+        self.send_user_agent_response(payload).await
     }
 }
 
 #[async_trait]
 impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
     async fn recv(&mut self) -> Option<auth::Inbound> {
-        let Ok(UserAgentRequest {
-            payload: Some(payload),
-        }) = self.0.recv().await?
-        else {
+        let request = match self.bi.recv().await? {
+            Ok(request) => request,
+            Err(error) => {
+                warn!(error = ?error, "Failed to receive user agent auth request");
+                return None;
+            }
+        };
+
+        let request_id = match self.request_tracker.request(request.id) {
+            Ok(request_id) => request_id,
+            Err(error) => {
+                let _ = self.bi.send(Err(error)).await;
+                return None;
+            }
+        };
+        *self.response_id = Some(request_id);
+
+        let Some(payload) = request.payload else {
             warn!(
                 event = "received request with empty payload",
                 "grpc.useragent.auth_adapter"
@@ -136,16 +154,27 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
             UserAgentRequestPayload::AuthChallengeSolution(ProtoAuthChallengeSolution {
                 signature,
             }) => Some(auth::Inbound::AuthChallengeSolution { signature }),
-            _ => None, // Ignore other request types for this adapter
+            _ => {
+                let _ = self
+                    .bi
+                    .send(Err(Status::invalid_argument(
+                        "Unsupported user-agent auth request",
+                    )))
+                    .await;
+                None
+            }
         }
     }
 }
+
 impl Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {}
 
 pub async fn start(
     conn: &mut UserAgentConnection,
     bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
+    request_tracker: &mut RequestTracker,
+    response_id: &mut Option<i32>,
 ) -> Result<AuthPublicKey, auth::Error> {
-    let mut transport = AuthTransportAdapter(bi);
+    let transport = AuthTransportAdapter::new(bi, request_tracker, response_id);
     auth::authenticate(conn, transport).await
 }

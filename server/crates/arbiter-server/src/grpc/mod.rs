@@ -17,6 +17,7 @@ use crate::{
 };
 
 pub mod client;
+mod request_tracker;
 pub mod user_agent;
 
 #[async_trait]

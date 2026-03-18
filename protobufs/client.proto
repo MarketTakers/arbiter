@@ -37,6 +37,7 @@ enum VaultState {
 }
 
 message ClientRequest {
+  int32 request_id = 4;
   oneof payload {
     AuthChallengeRequest auth_challenge_request = 1;
     AuthChallengeSolution auth_challenge_solution = 2;
@@ -45,6 +46,7 @@ message ClientRequest {
 }
 
 message ClientResponse {
+  optional int32 request_id = 7;
   oneof payload {
     AuthChallenge auth_challenge = 1;
     AuthResult auth_result = 2;
