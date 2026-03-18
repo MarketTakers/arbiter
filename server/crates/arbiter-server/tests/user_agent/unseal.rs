@@ -2,7 +2,7 @@ use arbiter_server::{
     actors::{
         GlobalActors,
         keyholder::{Bootstrap, Seal},
-        user_agent::{Request, OutOfBand, UnsealError, session::UserAgentSession},
+        user_agent::{OutOfBand, Request, UnsealError, session::UserAgentSession},
     },
     db,
     safe_cell::{SafeCell, SafeCellHandle as _},

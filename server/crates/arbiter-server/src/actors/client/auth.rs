@@ -1,30 +1,25 @@
-use arbiter_proto::{format_challenge, transport::expect_message};
+use arbiter_proto::{
+    format_challenge,
+    transport::{Bi, expect_message},
+};
 use diesel::{
     ExpressionMethods as _, OptionalExtension as _, QueryDsl as _, dsl::insert_into, update,
 };
 use diesel_async::RunQueryDsl as _;
-use ed25519_dalek::VerifyingKey;
+use ed25519_dalek::{Signature, VerifyingKey};
 use kameo::error::SendError;
 use tracing::error;
 
 use crate::{
     actors::{
-        client::{ClientConnection, ConnectErrorCode, Request, Response},
+        client::ClientConnection,
         router::{self, RequestClientApproval},
     },
     db::{self, schema::program_client},
 };
 
-use super::session::ClientSession;
-
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum Error {
-    #[error("Unexpected message payload")]
-    UnexpectedMessagePayload,
-    #[error("Invalid client public key length")]
-    InvalidClientPubkeyLength,
-    #[error("Invalid client public key encoding")]
-    InvalidAuthPubkeyEncoding,
     #[error("Database pool unavailable")]
     DatabasePoolUnavailable,
     #[error("Database operation failed")]
@@ -33,8 +28,6 @@ pub enum Error {
     InvalidChallengeSolution,
     #[error("Client approval request failed")]
     ApproveError(#[from] ApproveError),
-    #[error("Internal error")]
-    InternalError,
     #[error("Transport error")]
     Transport,
 }
@@ -47,6 +40,18 @@ pub enum ApproveError {
     Denied,
     #[error("Upstream error: {0}")]
     Upstream(router::ApprovalError),
+}
+
+#[derive(Debug, Clone)]
+pub enum Inbound {
+    AuthChallengeRequest { pubkey: VerifyingKey },
+    AuthChallengeSolution { signature: Signature },
+}
+
+#[derive(Debug, Clone)]
+pub enum Outbound {
+    AuthChallenge { pubkey: VerifyingKey, nonce: i32 },
+    AuthSuccess,
 }
 
 /// Atomically reads and increments the nonce for a known client.
@@ -141,27 +146,24 @@ async fn insert_client(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<(
     Ok(())
 }
 
-async fn challenge_client(
-    props: &mut ClientConnection,
+async fn challenge_client<T>(
+    transport: &mut T,
     pubkey: VerifyingKey,
     nonce: i32,
-) -> Result<(), Error> {
-    let challenge_pubkey = pubkey.as_bytes().to_vec();
-
-    props
-        .transport
-        .send(Ok(Response::AuthChallenge {
-            pubkey: challenge_pubkey.clone(),
-            nonce,
-        }))
+) -> Result<(), Error>
+where
+    T: Bi<Inbound, Result<Outbound, Error>> + ?Sized,
+{
+    transport
+        .send(Ok(Outbound::AuthChallenge { pubkey, nonce }))
         .await
         .map_err(|e| {
             error!(error = ?e, "Failed to send auth challenge");
             Error::Transport
         })?;
 
-    let signature = expect_message(&mut *props.transport, |req: Request| match req {
-        Request::AuthChallengeSolution { signature } => Some(signature),
+    let signature = expect_message(transport, |req: Inbound| match req {
+        Inbound::AuthChallengeSolution { signature } => Some(signature),
         _ => None,
     })
     .await
@@ -170,13 +172,9 @@ async fn challenge_client(
         Error::Transport
     })?;
 
-    let formatted = format_challenge(nonce, &challenge_pubkey);
-    let sig = signature.as_slice().try_into().map_err(|_| {
-        error!("Invalid signature length");
-        Error::InvalidChallengeSolution
-    })?;
+    let formatted = format_challenge(nonce, pubkey.as_bytes());
 
-    pubkey.verify_strict(&formatted, &sig).map_err(|_| {
+    pubkey.verify_strict(&formatted, &signature).map_err(|_| {
         error!("Challenge solution verification failed");
         Error::InvalidChallengeSolution
     })?;
@@ -184,29 +182,16 @@ async fn challenge_client(
     Ok(())
 }
 
-fn connect_error_code(err: &Error) -> ConnectErrorCode {
-    match err {
-        Error::ApproveError(ApproveError::Denied) => ConnectErrorCode::ApprovalDenied,
-        Error::ApproveError(ApproveError::Upstream(
-            router::ApprovalError::NoUserAgentsConnected,
-        )) => ConnectErrorCode::NoUserAgentsOnline,
-        _ => ConnectErrorCode::Unknown,
-    }
-}
-
-async fn authenticate(props: &mut ClientConnection) -> Result<VerifyingKey, Error> {
-    let Some(Request::AuthChallengeRequest {
-        pubkey: challenge_pubkey,
-    }) = props.transport.recv().await
-    else {
+pub async fn authenticate<T>(
+    props: &mut ClientConnection,
+    transport: &mut T,
+) -> Result<VerifyingKey, Error>
+where
+    T: Bi<Inbound, Result<Outbound, Error>> + Send + ?Sized,
+{
+    let Some(Inbound::AuthChallengeRequest { pubkey }) = transport.recv().await else {
         return Err(Error::Transport);
     };
-
-    let pubkey_bytes = challenge_pubkey
-        .as_array()
-        .ok_or(Error::InvalidClientPubkeyLength)?;
-    let pubkey =
-        VerifyingKey::from_bytes(pubkey_bytes).map_err(|_| Error::InvalidAuthPubkeyEncoding)?;
 
     let nonce = match get_nonce(&props.db, &pubkey).await? {
         Some(nonce) => nonce,
@@ -217,21 +202,14 @@ async fn authenticate(props: &mut ClientConnection) -> Result<VerifyingKey, Erro
         }
     };
 
-    challenge_client(props, pubkey, nonce).await?;
+    challenge_client(transport, pubkey, nonce).await?;
+    transport
+        .send(Ok(Outbound::AuthSuccess))
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "Failed to send auth success");
+            Error::Transport
+        })?;
 
     Ok(pubkey)
-}
-
-pub async fn authenticate_and_create(mut props: ClientConnection) -> Result<ClientSession, Error> {
-    match authenticate(&mut props).await {
-        Ok(_pubkey) => Ok(ClientSession::new(props)),
-        Err(err) => {
-            let code = connect_error_code(&err);
-            let _ = props
-                .transport
-                .send(Ok(Response::ClientConnectError { code }))
-                .await;
-            Err(err)
-        }
-    }
 }

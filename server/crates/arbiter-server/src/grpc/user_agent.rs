@@ -30,7 +30,10 @@ use arbiter_proto::{
 };
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
-use kameo::{actor::{ActorRef, Spawn as _}, error::SendError};
+use kameo::{
+    actor::{ActorRef, Spawn as _},
+    error::SendError,
+};
 use tonic::Status;
 use tracing::{info, warn};
 
@@ -40,7 +43,9 @@ use crate::{
         user_agent::{
             OutOfBand, UserAgentConnection, UserAgentSession,
             session::{
-                BootstrapError, Error, HandleBootstrapEncryptedKey, HandleEvmWalletCreate, HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete, HandleGrantList, HandleQueryVaultState, HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError
+                BootstrapError, Error, HandleBootstrapEncryptedKey, HandleEvmWalletCreate,
+                HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete, HandleGrantList,
+                HandleQueryVaultState, HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError,
             },
         },
     },
@@ -109,7 +114,11 @@ async fn dispatch_conn_message(
     };
 
     let Some(payload) = conn.payload else {
-        let _ = bi.send(Err(Status::invalid_argument("Missing user-agent request payload"))).await;
+        let _ = bi
+            .send(Err(Status::invalid_argument(
+                "Missing user-agent request payload",
+            )))
+            .await;
         return Err(());
     };
 
@@ -118,7 +127,9 @@ async fn dispatch_conn_message(
             let client_pubkey = match <[u8; 32]>::try_from(client_pubkey) {
                 Ok(bytes) => x25519_dalek::PublicKey::from(bytes),
                 Err(_) => {
-                    let _ = bi.send(Err(Status::invalid_argument("Invalid X25519 public key"))).await;
+                    let _ = bi
+                        .send(Err(Status::invalid_argument("Invalid X25519 public key")))
+                        .await;
                     return Err(());
                 }
             };
@@ -131,7 +142,9 @@ async fn dispatch_conn_message(
                 ),
                 Err(err) => {
                     warn!(error = ?err, "Failed to handle unseal start request");
-                    let _ = bi.send(Err(Status::internal("Failed to start unseal flow"))).await;
+                    let _ = bi
+                        .send(Err(Status::internal("Failed to start unseal flow")))
+                        .await;
                     return Err(());
                 }
             }
@@ -155,7 +168,9 @@ async fn dispatch_conn_message(
                 }
                 Err(err) => {
                     warn!(error = ?err, "Failed to handle unseal request");
-                    let _ = bi.send(Err(Status::internal("Failed to unseal vault"))).await;
+                    let _ = bi
+                        .send(Err(Status::internal("Failed to unseal vault")))
+                        .await;
                     return Err(());
                 }
             }
@@ -178,12 +193,14 @@ async fn dispatch_conn_message(
                 Err(SendError::HandlerError(BootstrapError::InvalidKey)) => {
                     ProtoBootstrapResult::InvalidKey
                 }
-                Err(SendError::HandlerError(
-                    BootstrapError::AlreadyBootstrapped,
-                )) => ProtoBootstrapResult::AlreadyBootstrapped,
+                Err(SendError::HandlerError(BootstrapError::AlreadyBootstrapped)) => {
+                    ProtoBootstrapResult::AlreadyBootstrapped
+                }
                 Err(err) => {
                     warn!(error = ?err, "Failed to handle bootstrap request");
-                    let _ = bi.send(Err(Status::internal("Failed to bootstrap vault"))).await;
+                    let _ = bi
+                        .send(Err(Status::internal("Failed to bootstrap vault")))
+                        .await;
                     return Err(());
                 }
             }
@@ -224,12 +241,13 @@ async fn dispatch_conn_message(
             };
 
             UserAgentResponsePayload::EvmGrantCreate(EvmGrantOrWallet::grant_create_response(
-                actor.ask(HandleGrantCreate {
-                    client_id,
-                    basic,
-                    grant,
-                })
-                .await,
+                actor
+                    .ask(HandleGrantCreate {
+                        client_id,
+                        basic,
+                        grant,
+                    })
+                    .await,
             ))
         }
         UserAgentRequestPayload::EvmGrantDelete(EvmGrantDeleteRequest { grant_id }) => {
@@ -239,7 +257,11 @@ async fn dispatch_conn_message(
         }
         payload => {
             warn!(?payload, "Unsupported post-auth user agent request");
-            let _ = bi.send(Err(Status::invalid_argument("Unsupported user-agent request"))).await;
+            let _ = bi
+                .send(Err(Status::invalid_argument(
+                    "Unsupported user-agent request",
+                )))
+                .await;
             return Err(());
         }
     };
@@ -281,7 +303,10 @@ fn parse_grant_request(
     let specific =
         specific.ok_or_else(|| Status::invalid_argument("Missing specific grant settings"))?;
 
-    Ok((shared_settings_from_proto(shared)?, specific_grant_from_proto(specific)?))
+    Ok((
+        shared_settings_from_proto(shared)?,
+        specific_grant_from_proto(specific)?,
+    ))
 }
 
 fn shared_settings_from_proto(shared: ProtoSharedSettings) -> Result<SharedGrantSettings, Status> {
@@ -289,14 +314,8 @@ fn shared_settings_from_proto(shared: ProtoSharedSettings) -> Result<SharedGrant
         wallet_id: shared.wallet_id,
         client_id: 0,
         chain: shared.chain_id,
-        valid_from: shared
-            .valid_from
-            .map(proto_timestamp_to_utc)
-            .transpose()?,
-        valid_until: shared
-            .valid_until
-            .map(proto_timestamp_to_utc)
-            .transpose()?,
+        valid_from: shared.valid_from.map(proto_timestamp_to_utc).transpose()?,
+        valid_until: shared.valid_until.map(proto_timestamp_to_utc).transpose()?,
         max_gas_fee_per_gas: shared
             .max_gas_fee_per_gas
             .as_deref()
@@ -307,12 +326,10 @@ fn shared_settings_from_proto(shared: ProtoSharedSettings) -> Result<SharedGrant
             .as_deref()
             .map(u256_from_proto_bytes)
             .transpose()?,
-        rate_limit: shared
-            .rate_limit
-            .map(|limit| TransactionRateLimit {
-                count: limit.count,
-                window: chrono::Duration::seconds(limit.window_secs),
-            }),
+        rate_limit: shared.rate_limit.map(|limit| TransactionRateLimit {
+            count: limit.count,
+            window: chrono::Duration::seconds(limit.window_secs),
+        }),
     })
 }
 
@@ -326,11 +343,9 @@ fn specific_grant_from_proto(specific: ProtoSpecificGrant) -> Result<SpecificGra
                 .into_iter()
                 .map(address_from_bytes)
                 .collect::<Result<_, _>>()?,
-            limit: volume_rate_limit_from_proto(
-                limit.ok_or_else(|| {
-                    Status::invalid_argument("Missing ether transfer volume rate limit")
-                })?,
-            )?,
+            limit: volume_rate_limit_from_proto(limit.ok_or_else(|| {
+                Status::invalid_argument("Missing ether transfer volume rate limit")
+            })?)?,
         })),
         Some(ProtoSpecificGrantType::TokenTransfer(ProtoTokenTransferSettings {
             token_contract,
@@ -391,12 +406,12 @@ fn shared_settings_to_proto(shared: SharedGrantSettings) -> ProtoSharedSettings 
             seconds: time.timestamp(),
             nanos: time.timestamp_subsec_nanos() as i32,
         }),
-        max_gas_fee_per_gas: shared.max_gas_fee_per_gas.map(|value| {
-            value.to_be_bytes::<32>().to_vec()
-        }),
-        max_priority_fee_per_gas: shared.max_priority_fee_per_gas.map(|value| {
-            value.to_be_bytes::<32>().to_vec()
-        }),
+        max_gas_fee_per_gas: shared
+            .max_gas_fee_per_gas
+            .map(|value| value.to_be_bytes::<32>().to_vec()),
+        max_priority_fee_per_gas: shared
+            .max_priority_fee_per_gas
+            .map(|value| value.to_be_bytes::<32>().to_vec()),
         rate_limit: shared.rate_limit.map(|limit| ProtoTransactionRateLimit {
             count: limit.count,
             window_secs: limit.window.num_seconds(),
@@ -408,7 +423,11 @@ fn specific_grant_to_proto(grant: SpecificGrant) -> ProtoSpecificGrant {
     let grant = match grant {
         SpecificGrant::EtherTransfer(settings) => {
             ProtoSpecificGrantType::EtherTransfer(ProtoEtherTransferSettings {
-                targets: settings.target.into_iter().map(|address| address.to_vec()).collect(),
+                targets: settings
+                    .target
+                    .into_iter()
+                    .map(|address| address.to_vec())
+                    .collect(),
                 limit: Some(ProtoVolumeRateLimit {
                     max_volume: settings.limit.max_volume.to_be_bytes::<32>().to_vec(),
                     window_secs: settings.limit.window.num_seconds(),
@@ -450,7 +469,9 @@ impl EvmGrantOrWallet {
             }
         };
 
-        WalletCreateResponse { result: Some(result) }
+        WalletCreateResponse {
+            result: Some(result),
+        }
     }
 
     fn wallet_list_response<M>(
@@ -471,7 +492,9 @@ impl EvmGrantOrWallet {
             }
         };
 
-        WalletListResponse { result: Some(result) }
+        WalletListResponse {
+            result: Some(result),
+        }
     }
 
     fn grant_create_response<M>(
@@ -485,12 +508,12 @@ impl EvmGrantOrWallet {
             }
         };
 
-        EvmGrantCreateResponse { result: Some(result) }
+        EvmGrantCreateResponse {
+            result: Some(result),
+        }
     }
 
-    fn grant_delete_response<M>(
-        result: Result<(), SendError<M, Error>>,
-    ) -> EvmGrantDeleteResponse {
+    fn grant_delete_response<M>(result: Result<(), SendError<M, Error>>) -> EvmGrantDeleteResponse {
         let result = match result {
             Ok(()) => EvmGrantDeleteResult::Ok(()),
             Err(err) => {
@@ -499,7 +522,9 @@ impl EvmGrantOrWallet {
             }
         };
 
-        EvmGrantDeleteResponse { result: Some(result) }
+        EvmGrantDeleteResponse {
+            result: Some(result),
+        }
     }
 
     fn grant_list_response<M>(
@@ -523,7 +548,9 @@ impl EvmGrantOrWallet {
             }
         };
 
-        EvmGrantListResponse { result: Some(result) }
+        EvmGrantListResponse {
+            result: Some(result),
+        }
     }
 }
 

@@ -1,12 +1,9 @@
-use kameo::Actor;
-use tokio::select;
-use tracing::{error, info};
+use kameo::{Actor, messages};
+use tracing::error;
 
 use crate::{
     actors::{
-        GlobalActors,
-        client::{ClientConnection, ClientError, Request, Response},
-        router::RegisterClient,
+        GlobalActors, client::ClientConnection, keyholder::KeyHolderState, router::RegisterClient,
     },
     db,
 };
@@ -19,19 +16,30 @@ impl ClientSession {
     pub(crate) fn new(props: ClientConnection) -> Self {
         Self { props }
     }
-
-    pub async fn process_transport_inbound(&mut self, req: Request) -> Output {
-        let _ = req;
-        Err(ClientError::UnexpectedRequestPayload)
-    }
 }
 
-type Output = Result<Response, ClientError>;
+#[messages]
+impl ClientSession {
+    #[message]
+    pub(crate) async fn handle_query_vault_state(&mut self) -> Result<KeyHolderState, Error> {
+        use crate::actors::keyholder::GetState;
+
+        let vault_state = match self.props.actors.key_holder.ask(GetState {}).await {
+            Ok(state) => state,
+            Err(err) => {
+                error!(?err, actor = "client", "keyholder.query.failed");
+                return Err(Error::Internal);
+            }
+        };
+
+        Ok(vault_state)
+    }
+}
 
 impl Actor for ClientSession {
     type Args = Self;
 
-    type Error = ClientError;
+    type Error = Error;
 
     async fn on_start(
         args: Self::Args,
@@ -42,52 +50,22 @@ impl Actor for ClientSession {
             .router
             .ask(RegisterClient { actor: this })
             .await
-            .map_err(|_| ClientError::ConnectionRegistrationFailed)?;
+            .map_err(|_| Error::ConnectionRegistrationFailed)?;
         Ok(args)
-    }
-
-    async fn next(
-        &mut self,
-        _actor_ref: kameo::prelude::WeakActorRef<Self>,
-        mailbox_rx: &mut kameo::prelude::MailboxReceiver<Self>,
-    ) -> Option<kameo::mailbox::Signal<Self>> {
-        loop {
-            select! {
-                signal = mailbox_rx.recv() => {
-                    return signal;
-                }
-                msg = self.props.transport.recv() => {
-                    match msg {
-                        Some(request) => {
-                            match self.process_transport_inbound(request).await {
-                                Ok(resp) => {
-                                    if self.props.transport.send(Ok(resp)).await.is_err() {
-                                        error!(actor = "client", reason = "channel closed", "send.failed");
-                                        return Some(kameo::mailbox::Signal::Stop);
-                                    }
-                                }
-                                Err(err) => {
-                                    let _ = self.props.transport.send(Err(err)).await;
-                                    return Some(kameo::mailbox::Signal::Stop);
-                                }
-                            }
-                        }
-                        None => {
-                            info!(actor = "client", "transport.closed");
-                            return Some(kameo::mailbox::Signal::Stop);
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
 impl ClientSession {
     pub fn new_test(db: db::DatabasePool, actors: GlobalActors) -> Self {
-        use arbiter_proto::transport::DummyTransport;
-        let transport: super::Transport = Box::new(DummyTransport::new());
-        let props = ClientConnection::new(db, transport, actors);
+        let props = ClientConnection::new(db, actors);
         Self { props }
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("Connection registration failed")]
+    ConnectionRegistrationFailed,
+    #[error("Internal error")]
+    Internal,
 }

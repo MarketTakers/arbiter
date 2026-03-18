@@ -106,7 +106,7 @@ pub struct AuthContext<'a, T> {
 }
 
 impl<'a, T> AuthContext<'a, T> {
-    pub fn new(conn: &'a mut UserAgentConnection, transport:  T) -> Self {
+    pub fn new(conn: &'a mut UserAgentConnection, transport: T) -> Self {
         Self { conn, transport }
     }
 }
@@ -124,8 +124,7 @@ where
         let stored_bytes = pubkey.to_stored_bytes();
         let nonce = create_nonce(&self.conn.db, &stored_bytes).await?;
 
-        self
-            .transport
+        self.transport
             .send(Ok(Outbound::AuthChallenge { nonce }))
             .await
             .map_err(|e| {
@@ -165,8 +164,7 @@ where
 
         register_key(&self.conn.db, &pubkey).await?;
 
-        self
-            .transport
+        self.transport
             .send(Ok(Outbound::AuthSuccess))
             .await
             .map_err(|_| Error::Transport)?;
@@ -214,8 +212,7 @@ where
         };
 
         if valid {
-            self
-                .transport
+            self.transport
                 .send(Ok(Outbound::AuthSuccess))
                 .await
                 .map_err(|_| Error::Transport)?;

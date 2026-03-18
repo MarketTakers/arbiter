@@ -3,7 +3,7 @@ use arbiter_server::{
     actors::{
         GlobalActors,
         bootstrap::GetToken,
-        user_agent::{AuthPublicKey, Request, OutOfBand, UserAgentConnection, connect_user_agent},
+        user_agent::{AuthPublicKey, OutOfBand, Request, UserAgentConnection, connect_user_agent},
     },
     db::{self, schema},
 };

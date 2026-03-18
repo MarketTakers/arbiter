@@ -12,10 +12,7 @@ use tracing::info;
 
 use crate::{
     DEFAULT_CHANNEL_SIZE,
-    actors::{
-        client::{ClientConnection, connect_client},
-        user_agent::UserAgentConnection,
-    },
+    actors::{client::ClientConnection, user_agent::UserAgentConnection},
     grpc::{self, user_agent::start},
 };
 
@@ -33,19 +30,13 @@ impl arbiter_proto::proto::arbiter_service_server::ArbiterService for super::Ser
         request: Request<tonic::Streaming<ClientRequest>>,
     ) -> Result<Response<Self::ClientStream>, Status> {
         let req_stream = request.into_inner();
-        let (tx, rx) = mpsc::channel(DEFAULT_CHANNEL_SIZE);
-
-        let transport = client::GrpcTransport::new(tx, req_stream);
-        let props = ClientConnection::new(
-            self.context.db.clone(),
-            Box::new(transport),
-            self.context.actors.clone(),
-        );
-        tokio::spawn(connect_client(props));
+        let (bi, rx) = GrpcBi::from_bi_stream(req_stream);
+        let props = ClientConnection::new(self.context.db.clone(), self.context.actors.clone());
+        tokio::spawn(client::start(props, bi));
 
         info!(event = "connection established", "grpc.client");
 
-        Ok(Response::new(ReceiverStream::new(rx)))
+        Ok(Response::new(rx))
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
