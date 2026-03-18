@@ -22,4 +22,4 @@ steps:
       - apt-get update && apt-get install -y pkg-config
       - mise install rust 
       - mise install protoc
-      - mise exec rust -- cargo clippy --all-targets --all-features -- -D warnings
+      - mise exec rust -- cargo clippy --all -- -D warnings

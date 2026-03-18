@@ -132,7 +132,6 @@ pub async fn start(conn: ClientConnection, mut bi: GrpcBi<ClientRequest, ClientR
             );
             let _ = transport.send(Err(e.clone())).await;
             warn!(error = ?e, "Authentication failed");
-            return;
         }
     }
 }

@@ -17,13 +17,10 @@ use crate::{
             Generate, ListWallets, UseragentCreateGrant, UseragentDeleteGrant, UseragentListGrants,
         },
         keyholder::{self, Bootstrap, TryUnseal},
-        user_agent::{
-            OutOfBand,
-            session::{
+        user_agent::session::{
                 UserAgentSession,
                 state::{UnsealContext, UserAgentEvents, UserAgentStates},
             },
-        },
     },
     safe_cell::SafeCellHandle as _,
 };
@@ -139,7 +136,7 @@ impl UserAgentSession {
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
                 return Err(UnsealError::InvalidKey);
             }
-            Err(err) => {
+            Err(_err) => {
                 return Err(Error::internal("Failed to take unseal secret").into());
             }
         };
@@ -263,7 +260,7 @@ impl UserAgentSession {
             Ok(state) => state,
             Err(err) => {
                 error!(?err, actor = "useragent", "keyholder.query.failed");
-                return Err(Error::internal("Vault is in broken state").into());
+                return Err(Error::internal("Vault is in broken state"));
             }
         };
 
@@ -276,13 +273,13 @@ impl UserAgentSession {
     #[message]
     pub(crate) async fn handle_evm_wallet_create(&mut self) -> Result<Address, Error> {
         match self.props.actors.evm.ask(Generate {}).await {
-            Ok(address) => return Ok(address),
+            Ok(address) => Ok(address),
             Err(SendError::HandlerError(err)) => Err(Error::internal(format!(
                 "EVM wallet generation failed: {err}"
             ))),
             Err(err) => {
                 error!(?err, "EVM actor unreachable during wallet create");
-                return Err(Error::internal("EVM actor unreachable"));
+                Err(Error::internal("EVM actor unreachable"))
             }
         }
     }

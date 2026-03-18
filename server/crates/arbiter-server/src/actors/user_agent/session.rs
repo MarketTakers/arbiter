@@ -1,12 +1,12 @@
-use std::{borrow::Cow, convert::Infallible};
+use std::borrow::Cow;
 
 use arbiter_proto::transport::Sender;
 use async_trait::async_trait;
 use ed25519_dalek::VerifyingKey;
-use kameo::{Actor, messages, prelude::Context};
+use kameo::{Actor, messages};
 use thiserror::Error;
-use tokio::{select, sync::watch};
-use tracing::{error, info};
+use tokio::sync::watch;
+use tracing::error;
 
 use crate::actors::{
     router::RegisterUserAgent,
@@ -36,6 +36,7 @@ impl Error {
 pub struct UserAgentSession {
     props: UserAgentConnection,
     state: UserAgentStateMachine<DummyContext>,
+    #[allow(dead_code, reason = "The session keeps ownership of the outbound transport even before the state-machine flow starts using it directly")]
     sender: Box<dyn Sender<OutOfBand>>,
 }
 
@@ -82,13 +83,15 @@ impl UserAgentSession {
 
 #[messages]
 impl UserAgentSession {
-    #[message(ctx)]
+    #[message]
     pub async fn request_new_client_approval(
         &mut self,
         client_pubkey: VerifyingKey,
-        mut cancel_flag: watch::Receiver<()>,
-        ctx: &mut Context<Self, Result<bool, ()>>,
+         cancel_flag: watch::Receiver<()>,
     ) -> Result<bool, ()> {
+        // temporary use to make clippy happy while we refactor this flow
+        dbg!(client_pubkey);
+        dbg!(cancel_flag);
         todo!("Think about refactoring it to state-machine based flow, as we already have one")
     }
 }

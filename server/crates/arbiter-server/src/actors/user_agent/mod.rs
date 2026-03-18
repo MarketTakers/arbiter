@@ -1,13 +1,7 @@
-use alloy::primitives::Address;
-use arbiter_proto::transport::{Bi, Sender};
-use kameo::actor::Spawn as _;
-use tracing::{error, info};
 
 use crate::{
-    actors::{GlobalActors, evm},
+    actors::GlobalActors,
     db::{self, models::KeyType},
-    evm::policies::SharedGrantSettings,
-    evm::policies::{Grant, SpecificGrant},
 };
 
 /// Abstraction over Ed25519 / ECDSA-secp256k1 / RSA public keys used during the auth handshake.
@@ -56,20 +50,20 @@ impl TryFrom<(KeyType, Vec<u8>)> for AuthPublicKey {
             KeyType::Ed25519 => {
                 let bytes: [u8; 32] = bytes.try_into().map_err(|_| "invalid Ed25519 key length")?;
                 let key = ed25519_dalek::VerifyingKey::from_bytes(&bytes)
-                    .map_err(|e| "invalid Ed25519 key")?;
+                    .map_err(|_e| "invalid Ed25519 key")?;
                 Ok(AuthPublicKey::Ed25519(key))
             }
             KeyType::EcdsaSecp256k1 => {
                 let point =
-                    k256::EncodedPoint::from_bytes(&bytes).map_err(|e| "invalid ECDSA key")?;
+                    k256::EncodedPoint::from_bytes(&bytes).map_err(|_e| "invalid ECDSA key")?;
                 let key = k256::ecdsa::VerifyingKey::from_encoded_point(&point)
-                    .map_err(|e| "invalid ECDSA key")?;
+                    .map_err(|_e| "invalid ECDSA key")?;
                 Ok(AuthPublicKey::EcdsaSecp256k1(key))
             }
             KeyType::Rsa => {
                 use rsa::pkcs8::DecodePublicKey as _;
                 let key = rsa::RsaPublicKey::from_public_key_der(&bytes)
-                    .map_err(|e| "invalid RSA key")?;
+                    .map_err(|_e| "invalid RSA key")?;
                 Ok(AuthPublicKey::Rsa(key))
             }
         }

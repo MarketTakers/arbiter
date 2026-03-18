@@ -5,15 +5,13 @@ use arbiter_proto::{
     },
     transport::grpc::GrpcBi,
 };
-use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, async_trait};
 use tracing::info;
 
 use crate::{
-    DEFAULT_CHANNEL_SIZE,
     actors::{client::ClientConnection, user_agent::UserAgentConnection},
-    grpc::{self, user_agent::start},
+    grpc::user_agent::start,
 };
 
 pub mod client;

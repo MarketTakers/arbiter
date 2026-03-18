@@ -1,4 +1,3 @@
-use alloy::transports::Transport;
 use arbiter_proto::transport::Bi;
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, update};
 use diesel_async::RunQueryDsl;
@@ -8,7 +7,7 @@ use super::Error;
 use crate::{
     actors::{
         bootstrap::ConsumeToken,
-        user_agent::{AuthPublicKey, OutOfBand, UserAgentConnection, auth::Outbound},
+        user_agent::{AuthPublicKey, UserAgentConnection, auth::Outbound},
     },
     db::schema,
 };

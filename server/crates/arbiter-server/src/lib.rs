@@ -11,6 +11,7 @@ pub mod grpc;
 pub mod safe_cell;
 pub mod utils;
 
+#[allow(dead_code, reason = "Reserved as the shared default channel size while server wiring is still being consolidated")]
 const DEFAULT_CHANNEL_SIZE: usize = 1000;
 
 pub struct Server {
