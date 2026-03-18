@@ -1,13 +1,4 @@
-use arbiter_proto::{
-    format_challenge,
-    proto::client::{
-        AuthChallenge, AuthChallengeSolution, ClientConnectError, ClientRequest, ClientResponse,
-        client_connect_error::Code as ConnectErrorCode,
-        client_request::Payload as ClientRequestPayload,
-        client_response::Payload as ClientResponsePayload,
-    },
-    transport::expect_message,
-};
+use arbiter_proto::{format_challenge, transport::expect_message};
 use diesel::{
     ExpressionMethods as _, OptionalExtension as _, QueryDsl as _, dsl::insert_into, update,
 };
@@ -18,7 +9,7 @@ use tracing::error;
 
 use crate::{
     actors::{
-        client::ClientConnection,
+        client::{ClientConnection, ConnectErrorCode, Request, Response},
         router::{self, RequestClientApproval},
     },
     db::{self, schema::program_client},
@@ -155,15 +146,13 @@ async fn challenge_client(
     pubkey: VerifyingKey,
     nonce: i32,
 ) -> Result<(), Error> {
-    let challenge = AuthChallenge {
-        pubkey: pubkey.as_bytes().to_vec(),
-        nonce,
-    };
+    let challenge_pubkey = pubkey.as_bytes().to_vec();
 
     props
         .transport
-        .send(Ok(ClientResponse {
-            payload: Some(ClientResponsePayload::AuthChallenge(challenge.clone())),
+        .send(Ok(Response::AuthChallenge {
+            pubkey: challenge_pubkey.clone(),
+            nonce,
         }))
         .await
         .map_err(|e| {
@@ -171,20 +160,17 @@ async fn challenge_client(
             Error::Transport
         })?;
 
-    let AuthChallengeSolution { signature } =
-        expect_message(&mut *props.transport, |req: ClientRequest| {
-            match req.payload? {
-                ClientRequestPayload::AuthChallengeSolution(s) => Some(s),
-                _ => None,
-            }
-        })
-        .await
-        .map_err(|e| {
-            error!(error = ?e, "Failed to receive challenge solution");
-            Error::Transport
-        })?;
+    let signature = expect_message(&mut *props.transport, |req: Request| match req {
+        Request::AuthChallengeSolution { signature } => Some(signature),
+        _ => None,
+    })
+    .await
+    .map_err(|e| {
+        error!(error = ?e, "Failed to receive challenge solution");
+        Error::Transport
+    })?;
 
-    let formatted = format_challenge(nonce, &challenge.pubkey);
+    let formatted = format_challenge(nonce, &challenge_pubkey);
     let sig = signature.as_slice().try_into().map_err(|_| {
         error!("Invalid signature length");
         Error::InvalidChallengeSolution
@@ -209,15 +195,14 @@ fn connect_error_code(err: &Error) -> ConnectErrorCode {
 }
 
 async fn authenticate(props: &mut ClientConnection) -> Result<VerifyingKey, Error> {
-    let Some(ClientRequest {
-        payload: Some(ClientRequestPayload::AuthChallengeRequest(challenge)),
+    let Some(Request::AuthChallengeRequest {
+        pubkey: challenge_pubkey,
     }) = props.transport.recv().await
     else {
         return Err(Error::Transport);
     };
 
-    let pubkey_bytes = challenge
-        .pubkey
+    let pubkey_bytes = challenge_pubkey
         .as_array()
         .ok_or(Error::InvalidClientPubkeyLength)?;
     let pubkey =
@@ -244,11 +229,7 @@ pub async fn authenticate_and_create(mut props: ClientConnection) -> Result<Clie
             let code = connect_error_code(&err);
             let _ = props
                 .transport
-                .send(Ok(ClientResponse {
-                    payload: Some(ClientResponsePayload::ClientConnectError(
-                        ClientConnectError { code: code.into() },
-                    )),
-                }))
+                .send(Ok(Response::ClientConnectError { code }))
                 .await;
             Err(err)
         }

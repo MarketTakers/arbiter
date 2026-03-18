@@ -1,7 +1,4 @@
-use arbiter_proto::{
-    proto::client::{ClientRequest, ClientResponse},
-    transport::Bi,
-};
+use arbiter_proto::transport::Bi;
 use kameo::actor::Spawn;
 use tracing::{error, info};
 
@@ -24,7 +21,27 @@ pub enum ClientError {
     Auth(#[from] auth::Error),
 }
 
-pub type Transport = Box<dyn Bi<ClientRequest, Result<ClientResponse, ClientError>> + Send>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectErrorCode {
+    Unknown,
+    ApprovalDenied,
+    NoUserAgentsOnline,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Request {
+    AuthChallengeRequest { pubkey: Vec<u8> },
+    AuthChallengeSolution { signature: Vec<u8> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Response {
+    AuthChallenge { pubkey: Vec<u8>, nonce: i32 },
+    AuthOk,
+    ClientConnectError { code: ConnectErrorCode },
+}
+
+pub type Transport = Box<dyn Bi<Request, Result<Response, ClientError>> + Send>;
 
 pub struct ClientConnection {
     pub(crate) db: db::DatabasePool,

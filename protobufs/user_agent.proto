@@ -42,11 +42,24 @@ message UnsealEncryptedKey {
   bytes associated_data = 3;
 }
 
+message BootstrapEncryptedKey {
+  bytes nonce = 1;
+  bytes ciphertext = 2;
+  bytes associated_data = 3;
+}
+
 enum UnsealResult {
   UNSEAL_RESULT_UNSPECIFIED = 0;
   UNSEAL_RESULT_SUCCESS = 1;
   UNSEAL_RESULT_INVALID_KEY = 2;
   UNSEAL_RESULT_UNBOOTSTRAPPED = 3;
+}
+
+enum BootstrapResult {
+  BOOTSTRAP_RESULT_UNSPECIFIED = 0;
+  BOOTSTRAP_RESULT_SUCCESS = 1;
+  BOOTSTRAP_RESULT_ALREADY_BOOTSTRAPPED = 2;
+  BOOTSTRAP_RESULT_INVALID_KEY = 3;
 }
 
 enum VaultState {
@@ -80,6 +93,7 @@ message UserAgentRequest {
     arbiter.evm.EvmGrantDeleteRequest evm_grant_delete = 9;
     arbiter.evm.EvmGrantListRequest evm_grant_list = 10;
     ClientConnectionResponse client_connection_response = 11;
+    BootstrapEncryptedKey bootstrap_encrypted_key = 12;
   }
 }
 message UserAgentResponse {
@@ -96,5 +110,6 @@ message UserAgentResponse {
     arbiter.evm.EvmGrantListResponse evm_grant_list = 10;
     ClientConnectionRequest client_connection_request = 11;
     ClientConnectionCancel client_connection_cancel = 12;
+    BootstrapResult bootstrap_result = 13;
   }
 }

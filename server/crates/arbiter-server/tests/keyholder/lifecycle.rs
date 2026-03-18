@@ -1,10 +1,10 @@
 use arbiter_server::{
     actors::keyholder::{Error, KeyHolder},
     db::{self, models, schema},
+    safe_cell::{SafeCell, SafeCellHandle as _},
 };
 use diesel::{QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
-use memsafe::MemSafe;
 
 use crate::common;
 
@@ -14,7 +14,7 @@ async fn test_bootstrap() {
     let db = db::create_test_pool().await;
     let mut actor = KeyHolder::new(db.clone()).await.unwrap();
 
-    let seal_key = MemSafe::new(b"test-seal-key".to_vec()).unwrap();
+    let seal_key = SafeCell::new(b"test-seal-key".to_vec());
     actor.bootstrap(seal_key).await.unwrap();
 
     let mut conn = db.get().await.unwrap();
@@ -43,7 +43,7 @@ async fn test_bootstrap_rejects_double() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_keyholder(&db).await;
 
-    let seal_key2 = MemSafe::new(b"test-seal-key".to_vec()).unwrap();
+    let seal_key2 = SafeCell::new(b"test-seal-key".to_vec());
     let err = actor.bootstrap(seal_key2).await.unwrap_err();
     assert!(matches!(err, Error::AlreadyBootstrapped));
 }
@@ -55,7 +55,7 @@ async fn test_create_new_before_bootstrap_fails() {
     let mut actor = KeyHolder::new(db).await.unwrap();
 
     let err = actor
-        .create_new(MemSafe::new(b"data".to_vec()).unwrap())
+        .create_new(SafeCell::new(b"data".to_vec()))
         .await
         .unwrap_err();
     assert!(matches!(err, Error::NotBootstrapped));
@@ -91,17 +91,17 @@ async fn test_unseal_correct_password() {
 
     let plaintext = b"survive a restart";
     let aead_id = actor
-        .create_new(MemSafe::new(plaintext.to_vec()).unwrap())
+        .create_new(SafeCell::new(plaintext.to_vec()))
         .await
         .unwrap();
     drop(actor);
 
     let mut actor = KeyHolder::new(db.clone()).await.unwrap();
-    let seal_key = MemSafe::new(b"test-seal-key".to_vec()).unwrap();
+    let seal_key = SafeCell::new(b"test-seal-key".to_vec());
     actor.try_unseal(seal_key).await.unwrap();
 
     let mut decrypted = actor.decrypt(aead_id).await.unwrap();
-    assert_eq!(*decrypted.read().unwrap(), plaintext);
+    assert_eq!(*decrypted.read(), plaintext);
 }
 
 #[tokio::test]
@@ -112,20 +112,20 @@ async fn test_unseal_wrong_then_correct_password() {
 
     let plaintext = b"important data";
     let aead_id = actor
-        .create_new(MemSafe::new(plaintext.to_vec()).unwrap())
+        .create_new(SafeCell::new(plaintext.to_vec()))
         .await
         .unwrap();
     drop(actor);
 
     let mut actor = KeyHolder::new(db.clone()).await.unwrap();
 
-    let bad_key = MemSafe::new(b"wrong-password".to_vec()).unwrap();
+    let bad_key = SafeCell::new(b"wrong-password".to_vec());
     let err = actor.try_unseal(bad_key).await.unwrap_err();
     assert!(matches!(err, Error::InvalidKey));
 
-    let good_key = MemSafe::new(b"test-seal-key".to_vec()).unwrap();
+    let good_key = SafeCell::new(b"test-seal-key".to_vec());
     actor.try_unseal(good_key).await.unwrap();
 
     let mut decrypted = actor.decrypt(aead_id).await.unwrap();
-    assert_eq!(*decrypted.read().unwrap(), plaintext);
+    assert_eq!(*decrypted.read(), plaintext);
 }

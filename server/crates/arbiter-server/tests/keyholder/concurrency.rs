@@ -3,11 +3,11 @@ use std::collections::{HashMap, HashSet};
 use arbiter_server::{
     actors::keyholder::{CreateNew, Error, KeyHolder},
     db::{self, models, schema},
+    safe_cell::{SafeCell, SafeCellHandle as _},
 };
 use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper, dsl::sql_query};
 use diesel_async::RunQueryDsl;
 use kameo::actor::{ActorRef, Spawn as _};
-use memsafe::MemSafe;
 use tokio::task::JoinSet;
 
 use crate::common;
@@ -24,7 +24,7 @@ async fn write_concurrently(
             let plaintext = format!("{prefix}-{i}").into_bytes();
             let id = actor
                 .ask(CreateNew {
-                    plaintext: MemSafe::new(plaintext.clone()).unwrap(),
+                    plaintext: SafeCell::new(plaintext.clone()),
                 })
                 .await
                 .unwrap();
@@ -118,7 +118,7 @@ async fn insert_failure_does_not_create_partial_row() {
     drop(conn);
 
     let err = actor
-        .create_new(MemSafe::new(b"should fail".to_vec()).unwrap())
+        .create_new(SafeCell::new(b"should fail".to_vec()))
         .await
         .unwrap_err();
     assert!(matches!(err, Error::DatabaseTransaction(_)));
@@ -162,12 +162,12 @@ async fn decrypt_roundtrip_after_high_concurrency() {
 
     let mut decryptor = KeyHolder::new(db.clone()).await.unwrap();
     decryptor
-        .try_unseal(MemSafe::new(b"test-seal-key".to_vec()).unwrap())
+        .try_unseal(SafeCell::new(b"test-seal-key".to_vec()))
         .await
         .unwrap();
 
     for (id, plaintext) in expected {
         let mut decrypted = decryptor.decrypt(id).await.unwrap();
-        assert_eq!(*decrypted.read().unwrap(), plaintext);
+        assert_eq!(*decrypted.read(), plaintext);
     }
 }

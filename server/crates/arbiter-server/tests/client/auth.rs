@@ -1,12 +1,7 @@
-use arbiter_proto::proto::client::{
-    AuthChallengeRequest, AuthChallengeSolution, ClientRequest,
-    client_request::Payload as ClientRequestPayload,
-    client_response::Payload as ClientResponsePayload,
-};
 use arbiter_proto::transport::Bi;
 use arbiter_server::actors::GlobalActors;
 use arbiter_server::{
-    actors::client::{ClientConnection, connect_client},
+    actors::client::{ClientConnection, Request, Response, connect_client},
     db::{self, schema},
 };
 use diesel::{ExpressionMethods as _, insert_into};
@@ -29,12 +24,8 @@ pub async fn test_unregistered_pubkey_rejected() {
     let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
 
     test_transport
-        .send(ClientRequest {
-            payload: Some(ClientRequestPayload::AuthChallengeRequest(
-                AuthChallengeRequest {
-                    pubkey: pubkey_bytes,
-                },
-            )),
+        .send(Request::AuthChallengeRequest {
+            pubkey: pubkey_bytes,
         })
         .await
         .unwrap();
@@ -68,12 +59,8 @@ pub async fn test_challenge_auth() {
 
     // Send challenge request
     test_transport
-        .send(ClientRequest {
-            payload: Some(ClientRequestPayload::AuthChallengeRequest(
-                AuthChallengeRequest {
-                    pubkey: pubkey_bytes,
-                },
-            )),
+        .send(Request::AuthChallengeRequest {
+            pubkey: pubkey_bytes,
         })
         .await
         .unwrap();
@@ -84,24 +71,20 @@ pub async fn test_challenge_auth() {
         .await
         .expect("should receive challenge");
     let challenge = match response {
-        Ok(resp) => match resp.payload {
-            Some(ClientResponsePayload::AuthChallenge(c)) => c,
+        Ok(resp) => match resp {
+            Response::AuthChallenge { pubkey, nonce } => (pubkey, nonce),
             other => panic!("Expected AuthChallenge, got {other:?}"),
         },
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };
 
     // Sign the challenge and send solution
-    let formatted_challenge = arbiter_proto::format_challenge(challenge.nonce, &challenge.pubkey);
+    let formatted_challenge = arbiter_proto::format_challenge(challenge.1, &challenge.0);
     let signature = new_key.sign(&formatted_challenge);
 
     test_transport
-        .send(ClientRequest {
-            payload: Some(ClientRequestPayload::AuthChallengeSolution(
-                AuthChallengeSolution {
-                    signature: signature.to_bytes().to_vec(),
-                },
-            )),
+        .send(Request::AuthChallengeSolution {
+            signature: signature.to_bytes().to_vec(),
         })
         .await
         .unwrap();

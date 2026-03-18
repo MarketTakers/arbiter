@@ -50,6 +50,7 @@ rsa.workspace = true
 sha2.workspace = true
 spki.workspace = true
 alloy.workspace = true
+prost-types.workspace = true
 arbiter-tokens-registry.path = "../arbiter-tokens-registry"
 
 [dev-dependencies]
