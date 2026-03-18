@@ -1,0 +1,18 @@
+when:
+  - event: pull_request
+    path:
+      include: ['.woodpecker/useragent-*.yaml', 'useragent/**']
+  - event: push
+    branch: main
+    path:
+      include: ['.woodpecker/useragent-*.yaml', 'useragent/**']
+
+steps:
+  - name: analyze
+    image: jdxcode/mise:latest
+    commands:
+      - mise install flutter 
+      - mise install protoc
+      # Reruns codegen to catch protocol drift
+      - mise codegen 
+      - cd useragent/ && flutter analyze
