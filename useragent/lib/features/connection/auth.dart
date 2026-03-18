@@ -9,13 +9,49 @@ import 'package:arbiter/proto/user_agent.pb.dart';
 import 'package:grpc/grpc.dart';
 import 'package:mtcore/markettakers.dart';
 
+class AuthorizationException implements Exception {
+  const AuthorizationException(this.result);
+
+  final AuthResult result;
+
+  String get message => switch (result) {
+    AuthResult.AUTH_RESULT_INVALID_KEY =>
+      'Authentication failed: this device key is not registered on the server.',
+    AuthResult.AUTH_RESULT_INVALID_SIGNATURE =>
+      'Authentication failed: the server rejected the signature for this device key.',
+    AuthResult.AUTH_RESULT_BOOTSTRAP_REQUIRED =>
+      'Authentication failed: the server requires bootstrap before this device can connect.',
+    AuthResult.AUTH_RESULT_TOKEN_INVALID =>
+      'Authentication failed: the bootstrap token is invalid.',
+    AuthResult.AUTH_RESULT_INTERNAL =>
+      'Authentication failed: the server hit an internal error.',
+    AuthResult.AUTH_RESULT_UNSPECIFIED =>
+      'Authentication failed: the server returned an unspecified auth error.',
+    AuthResult.AUTH_RESULT_SUCCESS => 'Authentication succeeded.',
+    _ => 'Authentication failed: ${result.name}.',
+  };
+
+  @override
+  String toString() => message;
+}
+
+class ConnectionException implements Exception {
+  const ConnectionException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 Future<Connection> connectAndAuthorize(
   StoredServerInfo serverInfo,
   KeyHandle key, {
   String? bootstrapToken,
 }) async {
+  Connection? connection;
   try {
-    final connection = await _connect(serverInfo);
+    connection = await _connect(serverInfo);
     talker.info(
       'Connected to server at ${serverInfo.address}:${serverInfo.port}',
     );
@@ -40,14 +76,14 @@ Future<Connection> connectAndAuthorize(
 
     if (response.hasAuthResult()) {
       if (response.authResult != AuthResult.AUTH_RESULT_SUCCESS) {
-        throw Exception('Authentication failed: ${response.authResult}');
+        throw AuthorizationException(response.authResult);
       }
       talker.info('Authentication successful, connection established');
       return connection;
     }
 
     if (!response.hasAuthChallenge()) {
-      throw Exception(
+      throw ConnectionException(
         'Expected AuthChallengeResponse, got ${response.whichPayload()}',
       );
     }
@@ -65,18 +101,28 @@ Future<Connection> connectAndAuthorize(
     talker.info('Sent auth challenge solution, waiting for server response...');
 
     if (!solutionResponse.hasAuthResult()) {
-      throw Exception(
+      throw ConnectionException(
         'Expected AuthChallengeSolutionResponse, got ${solutionResponse.whichPayload()}',
       );
     }
     if (solutionResponse.authResult != AuthResult.AUTH_RESULT_SUCCESS) {
-      throw Exception('Authentication failed: ${solutionResponse.authResult}');
+      throw AuthorizationException(solutionResponse.authResult);
     }
 
     talker.info('Authentication successful, connection established');
     return connection;
+  } on AuthorizationException {
+    await connection?.close();
+    rethrow;
+  } on GrpcError catch (error) {
+    await connection?.close();
+    throw ConnectionException('Failed to connect to server: ${error.message}');
   } catch (e) {
-    throw Exception('Failed to connect to server: $e');
+    await connection?.close();
+    if (e is ConnectionException) {
+      rethrow;
+    }
+    throw ConnectionException('Failed to connect to server: $e');
   }
 }
 
