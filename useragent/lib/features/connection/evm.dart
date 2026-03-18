@@ -4,9 +4,9 @@ import 'package:arbiter/proto/user_agent.pb.dart';
 import 'package:protobuf/well_known_types/google/protobuf/empty.pb.dart';
 
 Future<List<WalletEntry>> listEvmWallets(Connection connection) async {
-  await connection.send(UserAgentRequest(evmWalletList: Empty()));
-
-  final response = await connection.receive();
+  final response = await connection.request(
+    UserAgentRequest(evmWalletList: Empty()),
+  );
   if (!response.hasEvmWalletList()) {
     throw Exception(
       'Expected EVM wallet list response, got ${response.whichPayload()}',
@@ -25,9 +25,9 @@ Future<List<WalletEntry>> listEvmWallets(Connection connection) async {
 }
 
 Future<void> createEvmWallet(Connection connection) async {
-  await connection.send(UserAgentRequest(evmWalletCreate: Empty()));
-
-  final response = await connection.receive();
+  final response = await connection.request(
+    UserAgentRequest(evmWalletCreate: Empty()),
+  );
   if (!response.hasEvmWalletCreate()) {
     throw Exception(
       'Expected EVM wallet create response, got ${response.whichPayload()}',

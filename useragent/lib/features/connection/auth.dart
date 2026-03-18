@@ -30,15 +30,18 @@ Future<Connection> connectAndAuthorize(
         KeyAlgorithm.ed25519 => KeyType.KEY_TYPE_ED25519,
       },
     );
-    await connection.send(UserAgentRequest(authChallengeRequest: req));
+    final response = await connection.request(
+      UserAgentRequest(authChallengeRequest: req),
+    );
     talker.info(
       "Sent auth challenge request with pubkey ${base64Encode(pubkey)}",
     );
-
-    final response = await connection.receive();
     talker.info('Received response from server, checking auth flow...');
 
-    if (response.hasAuthOk()) {
+    if (response.hasAuthResult()) {
+      if (response.authResult != AuthResult.AUTH_RESULT_SUCCESS) {
+        throw Exception('Authentication failed: ${response.authResult}');
+      }
       talker.info('Authentication successful, connection established');
       return connection;
     }
@@ -55,17 +58,19 @@ Future<Connection> connectAndAuthorize(
     );
 
     final signature = await key.sign(challenge);
-    await connection.send(
+    final solutionResponse = await connection.request(
       UserAgentRequest(authChallengeSolution: AuthChallengeSolution(signature: signature)),
     );
 
     talker.info('Sent auth challenge solution, waiting for server response...');
 
-    final solutionResponse = await connection.receive();
-    if (!solutionResponse.hasAuthOk()) {
+    if (!solutionResponse.hasAuthResult()) {
       throw Exception(
         'Expected AuthChallengeSolutionResponse, got ${solutionResponse.whichPayload()}',
       );
+    }
+    if (solutionResponse.authResult != AuthResult.AUTH_RESULT_SUCCESS) {
+      throw Exception('Authentication failed: ${solutionResponse.authResult}');
     }
 
     talker.info('Authentication successful, connection established');

@@ -10,7 +10,7 @@ Future<BootstrapResult> bootstrapVault(
 ) async {
   final encryptedKey = await _encryptVaultKeyMaterial(connection, password);
 
-  await connection.send(
+  final response = await connection.request(
     UserAgentRequest(
       bootstrapEncryptedKey: BootstrapEncryptedKey(
         nonce: encryptedKey.nonce,
@@ -19,8 +19,6 @@ Future<BootstrapResult> bootstrapVault(
       ),
     ),
   );
-
-  final response = await connection.receive();
   if (!response.hasBootstrapResult()) {
     throw Exception(
       'Expected bootstrap result, got ${response.whichPayload()}',
@@ -33,7 +31,7 @@ Future<BootstrapResult> bootstrapVault(
 Future<UnsealResult> unsealVault(Connection connection, String password) async {
   final encryptedKey = await _encryptVaultKeyMaterial(connection, password);
 
-  await connection.send(
+  final response = await connection.request(
     UserAgentRequest(
       unsealEncryptedKey: UnsealEncryptedKey(
         nonce: encryptedKey.nonce,
@@ -42,8 +40,6 @@ Future<UnsealResult> unsealVault(Connection connection, String password) async {
       ),
     ),
   );
-
-  final response = await connection.receive();
   if (!response.hasUnsealResult()) {
     throw Exception('Expected unseal result, got ${response.whichPayload()}');
   }
@@ -60,11 +56,9 @@ Future<_EncryptedVaultKey> _encryptVaultKeyMaterial(
   final clientKeyPair = await keyExchange.newKeyPair();
   final clientPublicKey = await clientKeyPair.extractPublicKey();
 
-  await connection.send(
+  final handshakeResponse = await connection.request(
     UserAgentRequest(unsealStart: UnsealStart(clientPubkey: clientPublicKey.bytes)),
   );
-
-  final handshakeResponse = await connection.receive();
   if (!handshakeResponse.hasUnsealStartResponse()) {
     throw Exception(
       'Expected unseal handshake response, got ${handshakeResponse.whichPayload()}',

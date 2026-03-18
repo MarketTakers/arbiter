@@ -46,4 +46,4 @@ final class VaultStateProvider
   }
 }
 
-String _$vaultStateHash() => r'1fd975a9661de1f62beef9eb1c7c439f377a8b88';
+String _$vaultStateHash() => r'97085e49bc3a296e36fa6c04a8f4c9abafac0835';

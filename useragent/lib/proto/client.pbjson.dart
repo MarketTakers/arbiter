@@ -15,6 +15,46 @@ import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
+@$core.Deprecated('Use authResultDescriptor instead')
+const AuthResult$json = {
+  '1': 'AuthResult',
+  '2': [
+    {'1': 'AUTH_RESULT_UNSPECIFIED', '2': 0},
+    {'1': 'AUTH_RESULT_SUCCESS', '2': 1},
+    {'1': 'AUTH_RESULT_INVALID_KEY', '2': 2},
+    {'1': 'AUTH_RESULT_INVALID_SIGNATURE', '2': 3},
+    {'1': 'AUTH_RESULT_APPROVAL_DENIED', '2': 4},
+    {'1': 'AUTH_RESULT_NO_USER_AGENTS_ONLINE', '2': 5},
+    {'1': 'AUTH_RESULT_INTERNAL', '2': 6},
+  ],
+};
+
+/// Descriptor for `AuthResult`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List authResultDescriptor = $convert.base64Decode(
+    'CgpBdXRoUmVzdWx0EhsKF0FVVEhfUkVTVUxUX1VOU1BFQ0lGSUVEEAASFwoTQVVUSF9SRVNVTF'
+    'RfU1VDQ0VTUxABEhsKF0FVVEhfUkVTVUxUX0lOVkFMSURfS0VZEAISIQodQVVUSF9SRVNVTFRf'
+    'SU5WQUxJRF9TSUdOQVRVUkUQAxIfChtBVVRIX1JFU1VMVF9BUFBST1ZBTF9ERU5JRUQQBBIlCi'
+    'FBVVRIX1JFU1VMVF9OT19VU0VSX0FHRU5UU19PTkxJTkUQBRIYChRBVVRIX1JFU1VMVF9JTlRF'
+    'Uk5BTBAG');
+
+@$core.Deprecated('Use vaultStateDescriptor instead')
+const VaultState$json = {
+  '1': 'VaultState',
+  '2': [
+    {'1': 'VAULT_STATE_UNSPECIFIED', '2': 0},
+    {'1': 'VAULT_STATE_UNBOOTSTRAPPED', '2': 1},
+    {'1': 'VAULT_STATE_SEALED', '2': 2},
+    {'1': 'VAULT_STATE_UNSEALED', '2': 3},
+    {'1': 'VAULT_STATE_ERROR', '2': 4},
+  ],
+};
+
+/// Descriptor for `VaultState`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List vaultStateDescriptor = $convert.base64Decode(
+    'CgpWYXVsdFN0YXRlEhsKF1ZBVUxUX1NUQVRFX1VOU1BFQ0lGSUVEEAASHgoaVkFVTFRfU1RBVE'
+    'VfVU5CT09UU1RSQVBQRUQQARIWChJWQVVMVF9TVEFURV9TRUFMRUQQAhIYChRWQVVMVF9TVEFU'
+    'RV9VTlNFQUxFRBADEhUKEVZBVUxUX1NUQVRFX0VSUk9SEAQ=');
+
 @$core.Deprecated('Use authChallengeRequestDescriptor instead')
 const AuthChallengeRequest$json = {
   '1': 'AuthChallengeRequest',
@@ -54,19 +94,11 @@ const AuthChallengeSolution$json = {
 final $typed_data.Uint8List authChallengeSolutionDescriptor = $convert.base64Decode(
     'ChVBdXRoQ2hhbGxlbmdlU29sdXRpb24SHAoJc2lnbmF0dXJlGAEgASgMUglzaWduYXR1cmU=');
 
-@$core.Deprecated('Use authOkDescriptor instead')
-const AuthOk$json = {
-  '1': 'AuthOk',
-};
-
-/// Descriptor for `AuthOk`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List authOkDescriptor =
-    $convert.base64Decode('CgZBdXRoT2s=');
-
 @$core.Deprecated('Use clientRequestDescriptor instead')
 const ClientRequest$json = {
   '1': 'ClientRequest',
   '2': [
+    {'1': 'request_id', '3': 4, '4': 1, '5': 5, '10': 'requestId'},
     {
       '1': 'auth_challenge_request',
       '3': 1,
@@ -85,6 +117,15 @@ const ClientRequest$json = {
       '9': 0,
       '10': 'authChallengeSolution'
     },
+    {
+      '1': 'query_vault_state',
+      '3': 3,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Empty',
+      '9': 0,
+      '10': 'queryVaultState'
+    },
   ],
   '8': [
     {'1': 'payload'},
@@ -93,47 +134,26 @@ const ClientRequest$json = {
 
 /// Descriptor for `ClientRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List clientRequestDescriptor = $convert.base64Decode(
-    'Cg1DbGllbnRSZXF1ZXN0ElwKFmF1dGhfY2hhbGxlbmdlX3JlcXVlc3QYASABKAsyJC5hcmJpdG'
-    'VyLmNsaWVudC5BdXRoQ2hhbGxlbmdlUmVxdWVzdEgAUhRhdXRoQ2hhbGxlbmdlUmVxdWVzdBJf'
-    'ChdhdXRoX2NoYWxsZW5nZV9zb2x1dGlvbhgCIAEoCzIlLmFyYml0ZXIuY2xpZW50LkF1dGhDaG'
-    'FsbGVuZ2VTb2x1dGlvbkgAUhVhdXRoQ2hhbGxlbmdlU29sdXRpb25CCQoHcGF5bG9hZA==');
-
-@$core.Deprecated('Use clientConnectErrorDescriptor instead')
-const ClientConnectError$json = {
-  '1': 'ClientConnectError',
-  '2': [
-    {
-      '1': 'code',
-      '3': 1,
-      '4': 1,
-      '5': 14,
-      '6': '.arbiter.client.ClientConnectError.Code',
-      '10': 'code'
-    },
-  ],
-  '4': [ClientConnectError_Code$json],
-};
-
-@$core.Deprecated('Use clientConnectErrorDescriptor instead')
-const ClientConnectError_Code$json = {
-  '1': 'Code',
-  '2': [
-    {'1': 'UNKNOWN', '2': 0},
-    {'1': 'APPROVAL_DENIED', '2': 1},
-    {'1': 'NO_USER_AGENTS_ONLINE', '2': 2},
-  ],
-};
-
-/// Descriptor for `ClientConnectError`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List clientConnectErrorDescriptor = $convert.base64Decode(
-    'ChJDbGllbnRDb25uZWN0RXJyb3ISOwoEY29kZRgBIAEoDjInLmFyYml0ZXIuY2xpZW50LkNsaW'
-    'VudENvbm5lY3RFcnJvci5Db2RlUgRjb2RlIkMKBENvZGUSCwoHVU5LTk9XThAAEhMKD0FQUFJP'
-    'VkFMX0RFTklFRBABEhkKFU5PX1VTRVJfQUdFTlRTX09OTElORRAC');
+    'Cg1DbGllbnRSZXF1ZXN0Eh0KCnJlcXVlc3RfaWQYBCABKAVSCXJlcXVlc3RJZBJcChZhdXRoX2'
+    'NoYWxsZW5nZV9yZXF1ZXN0GAEgASgLMiQuYXJiaXRlci5jbGllbnQuQXV0aENoYWxsZW5nZVJl'
+    'cXVlc3RIAFIUYXV0aENoYWxsZW5nZVJlcXVlc3QSXwoXYXV0aF9jaGFsbGVuZ2Vfc29sdXRpb2'
+    '4YAiABKAsyJS5hcmJpdGVyLmNsaWVudC5BdXRoQ2hhbGxlbmdlU29sdXRpb25IAFIVYXV0aENo'
+    'YWxsZW5nZVNvbHV0aW9uEkQKEXF1ZXJ5X3ZhdWx0X3N0YXRlGAMgASgLMhYuZ29vZ2xlLnByb3'
+    'RvYnVmLkVtcHR5SABSD3F1ZXJ5VmF1bHRTdGF0ZUIJCgdwYXlsb2Fk');
 
 @$core.Deprecated('Use clientResponseDescriptor instead')
 const ClientResponse$json = {
   '1': 'ClientResponse',
   '2': [
+    {
+      '1': 'request_id',
+      '3': 7,
+      '4': 1,
+      '5': 5,
+      '9': 1,
+      '10': 'requestId',
+      '17': true
+    },
     {
       '1': 'auth_challenge',
       '3': 1,
@@ -144,22 +164,13 @@ const ClientResponse$json = {
       '10': 'authChallenge'
     },
     {
-      '1': 'auth_ok',
+      '1': 'auth_result',
       '3': 2,
       '4': 1,
-      '5': 11,
-      '6': '.arbiter.client.AuthOk',
+      '5': 14,
+      '6': '.arbiter.client.AuthResult',
       '9': 0,
-      '10': 'authOk'
-    },
-    {
-      '1': 'client_connect_error',
-      '3': 5,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.client.ClientConnectError',
-      '9': 0,
-      '10': 'clientConnectError'
+      '10': 'authResult'
     },
     {
       '1': 'evm_sign_transaction',
@@ -179,19 +190,30 @@ const ClientResponse$json = {
       '9': 0,
       '10': 'evmAnalyzeTransaction'
     },
+    {
+      '1': 'vault_state',
+      '3': 6,
+      '4': 1,
+      '5': 14,
+      '6': '.arbiter.client.VaultState',
+      '9': 0,
+      '10': 'vaultState'
+    },
   ],
   '8': [
     {'1': 'payload'},
+    {'1': '_request_id'},
   ],
 };
 
 /// Descriptor for `ClientResponse`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List clientResponseDescriptor = $convert.base64Decode(
-    'Cg5DbGllbnRSZXNwb25zZRJGCg5hdXRoX2NoYWxsZW5nZRgBIAEoCzIdLmFyYml0ZXIuY2xpZW'
-    '50LkF1dGhDaGFsbGVuZ2VIAFINYXV0aENoYWxsZW5nZRIxCgdhdXRoX29rGAIgASgLMhYuYXJi'
-    'aXRlci5jbGllbnQuQXV0aE9rSABSBmF1dGhPaxJWChRjbGllbnRfY29ubmVjdF9lcnJvchgFIA'
-    'EoCzIiLmFyYml0ZXIuY2xpZW50LkNsaWVudENvbm5lY3RFcnJvckgAUhJjbGllbnRDb25uZWN0'
-    'RXJyb3ISWwoUZXZtX3NpZ25fdHJhbnNhY3Rpb24YAyABKAsyJy5hcmJpdGVyLmV2bS5Fdm1TaW'
-    'duVHJhbnNhY3Rpb25SZXNwb25zZUgAUhJldm1TaWduVHJhbnNhY3Rpb24SZAoXZXZtX2FuYWx5'
-    'emVfdHJhbnNhY3Rpb24YBCABKAsyKi5hcmJpdGVyLmV2bS5Fdm1BbmFseXplVHJhbnNhY3Rpb2'
-    '5SZXNwb25zZUgAUhVldm1BbmFseXplVHJhbnNhY3Rpb25CCQoHcGF5bG9hZA==');
+    'Cg5DbGllbnRSZXNwb25zZRIiCgpyZXF1ZXN0X2lkGAcgASgFSAFSCXJlcXVlc3RJZIgBARJGCg'
+    '5hdXRoX2NoYWxsZW5nZRgBIAEoCzIdLmFyYml0ZXIuY2xpZW50LkF1dGhDaGFsbGVuZ2VIAFIN'
+    'YXV0aENoYWxsZW5nZRI9CgthdXRoX3Jlc3VsdBgCIAEoDjIaLmFyYml0ZXIuY2xpZW50LkF1dG'
+    'hSZXN1bHRIAFIKYXV0aFJlc3VsdBJbChRldm1fc2lnbl90cmFuc2FjdGlvbhgDIAEoCzInLmFy'
+    'Yml0ZXIuZXZtLkV2bVNpZ25UcmFuc2FjdGlvblJlc3BvbnNlSABSEmV2bVNpZ25UcmFuc2FjdG'
+    'lvbhJkChdldm1fYW5hbHl6ZV90cmFuc2FjdGlvbhgEIAEoCzIqLmFyYml0ZXIuZXZtLkV2bUFu'
+    'YWx5emVUcmFuc2FjdGlvblJlc3BvbnNlSABSFWV2bUFuYWx5emVUcmFuc2FjdGlvbhI9Cgt2YX'
+    'VsdF9zdGF0ZRgGIAEoDjIaLmFyYml0ZXIuY2xpZW50LlZhdWx0U3RhdGVIAFIKdmF1bHRTdGF0'
+    'ZUIJCgdwYXlsb2FkQg0KC19yZXF1ZXN0X2lk');

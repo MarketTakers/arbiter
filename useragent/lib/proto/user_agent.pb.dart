@@ -105,11 +105,9 @@ class AuthChallengeRequest extends $pb.GeneratedMessage {
 
 class AuthChallenge extends $pb.GeneratedMessage {
   factory AuthChallenge({
-    $core.List<$core.int>? pubkey,
     $core.int? nonce,
   }) {
     final result = create();
-    if (pubkey != null) result.pubkey = pubkey;
     if (nonce != null) result.nonce = nonce;
     return result;
   }
@@ -128,8 +126,6 @@ class AuthChallenge extends $pb.GeneratedMessage {
       package:
           const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.user_agent'),
       createEmptyInstance: create)
-    ..a<$core.List<$core.int>>(
-        1, _omitFieldNames ? '' : 'pubkey', $pb.PbFieldType.OY)
     ..aI(2, _omitFieldNames ? '' : 'nonce')
     ..hasRequiredFields = false;
 
@@ -152,21 +148,12 @@ class AuthChallenge extends $pb.GeneratedMessage {
       $pb.GeneratedMessage.$_defaultFor<AuthChallenge>(create);
   static AuthChallenge? _defaultInstance;
 
-  @$pb.TagNumber(1)
-  $core.List<$core.int> get pubkey => $_getN(0);
-  @$pb.TagNumber(1)
-  set pubkey($core.List<$core.int> value) => $_setBytes(0, value);
-  @$pb.TagNumber(1)
-  $core.bool hasPubkey() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearPubkey() => $_clearField(1);
-
   @$pb.TagNumber(2)
-  $core.int get nonce => $_getIZ(1);
+  $core.int get nonce => $_getIZ(0);
   @$pb.TagNumber(2)
-  set nonce($core.int value) => $_setSignedInt32(1, value);
+  set nonce($core.int value) => $_setSignedInt32(0, value);
   @$pb.TagNumber(2)
-  $core.bool hasNonce() => $_has(1);
+  $core.bool hasNonce() => $_has(0);
   @$pb.TagNumber(2)
   void clearNonce() => $_clearField(2);
 }
@@ -226,44 +213,6 @@ class AuthChallengeSolution extends $pb.GeneratedMessage {
   $core.bool hasSignature() => $_has(0);
   @$pb.TagNumber(1)
   void clearSignature() => $_clearField(1);
-}
-
-class AuthOk extends $pb.GeneratedMessage {
-  factory AuthOk() => create();
-
-  AuthOk._();
-
-  factory AuthOk.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory AuthOk.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'AuthOk',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.user_agent'),
-      createEmptyInstance: create)
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  AuthOk clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  AuthOk copyWith(void Function(AuthOk) updates) =>
-      super.copyWith((message) => updates(message as AuthOk)) as AuthOk;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static AuthOk create() => AuthOk._();
-  @$core.override
-  AuthOk createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static AuthOk getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<AuthOk>(create);
-  static AuthOk? _defaultInstance;
 }
 
 class UnsealStart extends $pb.GeneratedMessage {
@@ -726,6 +675,7 @@ class UserAgentRequest extends $pb.GeneratedMessage {
     $1.EvmGrantListRequest? evmGrantList,
     ClientConnectionResponse? clientConnectionResponse,
     BootstrapEncryptedKey? bootstrapEncryptedKey,
+    $core.int? id,
   }) {
     final result = create();
     if (authChallengeRequest != null)
@@ -745,6 +695,7 @@ class UserAgentRequest extends $pb.GeneratedMessage {
       result.clientConnectionResponse = clientConnectionResponse;
     if (bootstrapEncryptedKey != null)
       result.bootstrapEncryptedKey = bootstrapEncryptedKey;
+    if (id != null) result.id = id;
     return result;
   }
 
@@ -807,6 +758,7 @@ class UserAgentRequest extends $pb.GeneratedMessage {
     ..aOM<BootstrapEncryptedKey>(
         12, _omitFieldNames ? '' : 'bootstrapEncryptedKey',
         subBuilder: BootstrapEncryptedKey.create)
+    ..aI(14, _omitFieldNames ? '' : 'id')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -990,11 +942,20 @@ class UserAgentRequest extends $pb.GeneratedMessage {
   void clearBootstrapEncryptedKey() => $_clearField(12);
   @$pb.TagNumber(12)
   BootstrapEncryptedKey ensureBootstrapEncryptedKey() => $_ensure(11);
+
+  @$pb.TagNumber(14)
+  $core.int get id => $_getIZ(12);
+  @$pb.TagNumber(14)
+  set id($core.int value) => $_setSignedInt32(12, value);
+  @$pb.TagNumber(14)
+  $core.bool hasId() => $_has(12);
+  @$pb.TagNumber(14)
+  void clearId() => $_clearField(14);
 }
 
 enum UserAgentResponse_Payload {
   authChallenge,
-  authOk,
+  authResult,
   unsealStartResponse,
   unsealResult,
   vaultState,
@@ -1012,7 +973,7 @@ enum UserAgentResponse_Payload {
 class UserAgentResponse extends $pb.GeneratedMessage {
   factory UserAgentResponse({
     AuthChallenge? authChallenge,
-    AuthOk? authOk,
+    AuthResult? authResult,
     UnsealStartResponse? unsealStartResponse,
     UnsealResult? unsealResult,
     VaultState? vaultState,
@@ -1024,10 +985,11 @@ class UserAgentResponse extends $pb.GeneratedMessage {
     ClientConnectionRequest? clientConnectionRequest,
     ClientConnectionCancel? clientConnectionCancel,
     BootstrapResult? bootstrapResult,
+    $core.int? id,
   }) {
     final result = create();
     if (authChallenge != null) result.authChallenge = authChallenge;
-    if (authOk != null) result.authOk = authOk;
+    if (authResult != null) result.authResult = authResult;
     if (unsealStartResponse != null)
       result.unsealStartResponse = unsealStartResponse;
     if (unsealResult != null) result.unsealResult = unsealResult;
@@ -1042,6 +1004,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
     if (clientConnectionCancel != null)
       result.clientConnectionCancel = clientConnectionCancel;
     if (bootstrapResult != null) result.bootstrapResult = bootstrapResult;
+    if (id != null) result.id = id;
     return result;
   }
 
@@ -1057,7 +1020,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
   static const $core.Map<$core.int, UserAgentResponse_Payload>
       _UserAgentResponse_PayloadByTag = {
     1: UserAgentResponse_Payload.authChallenge,
-    2: UserAgentResponse_Payload.authOk,
+    2: UserAgentResponse_Payload.authResult,
     3: UserAgentResponse_Payload.unsealStartResponse,
     4: UserAgentResponse_Payload.unsealResult,
     5: UserAgentResponse_Payload.vaultState,
@@ -1079,7 +1042,8 @@ class UserAgentResponse extends $pb.GeneratedMessage {
     ..oo(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
     ..aOM<AuthChallenge>(1, _omitFieldNames ? '' : 'authChallenge',
         subBuilder: AuthChallenge.create)
-    ..aOM<AuthOk>(2, _omitFieldNames ? '' : 'authOk', subBuilder: AuthOk.create)
+    ..aE<AuthResult>(2, _omitFieldNames ? '' : 'authResult',
+        enumValues: AuthResult.values)
     ..aOM<UnsealStartResponse>(3, _omitFieldNames ? '' : 'unsealStartResponse',
         subBuilder: UnsealStartResponse.create)
     ..aE<UnsealResult>(4, _omitFieldNames ? '' : 'unsealResult',
@@ -1104,6 +1068,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
         subBuilder: ClientConnectionCancel.create)
     ..aE<BootstrapResult>(13, _omitFieldNames ? '' : 'bootstrapResult',
         enumValues: BootstrapResult.values)
+    ..aI(14, _omitFieldNames ? '' : 'id')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1167,15 +1132,13 @@ class UserAgentResponse extends $pb.GeneratedMessage {
   AuthChallenge ensureAuthChallenge() => $_ensure(0);
 
   @$pb.TagNumber(2)
-  AuthOk get authOk => $_getN(1);
+  AuthResult get authResult => $_getN(1);
   @$pb.TagNumber(2)
-  set authOk(AuthOk value) => $_setField(2, value);
+  set authResult(AuthResult value) => $_setField(2, value);
   @$pb.TagNumber(2)
-  $core.bool hasAuthOk() => $_has(1);
+  $core.bool hasAuthResult() => $_has(1);
   @$pb.TagNumber(2)
-  void clearAuthOk() => $_clearField(2);
-  @$pb.TagNumber(2)
-  AuthOk ensureAuthOk() => $_ensure(1);
+  void clearAuthResult() => $_clearField(2);
 
   @$pb.TagNumber(3)
   UnsealStartResponse get unsealStartResponse => $_getN(2);
@@ -1293,6 +1256,15 @@ class UserAgentResponse extends $pb.GeneratedMessage {
   $core.bool hasBootstrapResult() => $_has(12);
   @$pb.TagNumber(13)
   void clearBootstrapResult() => $_clearField(13);
+
+  @$pb.TagNumber(14)
+  $core.int get id => $_getIZ(13);
+  @$pb.TagNumber(14)
+  set id($core.int value) => $_setSignedInt32(13, value);
+  @$pb.TagNumber(14)
+  $core.bool hasId() => $_has(13);
+  @$pb.TagNumber(14)
+  void clearId() => $_clearField(14);
 }
 
 const $core.bool _omitFieldNames =

@@ -13,9 +13,10 @@
 import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
+import 'package:protobuf/well_known_types/google/protobuf/empty.pb.dart' as $0;
 
 import 'client.pbenum.dart';
-import 'evm.pb.dart' as $0;
+import 'evm.pb.dart' as $1;
 
 export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
 
@@ -199,46 +200,10 @@ class AuthChallengeSolution extends $pb.GeneratedMessage {
   void clearSignature() => $_clearField(1);
 }
 
-class AuthOk extends $pb.GeneratedMessage {
-  factory AuthOk() => create();
-
-  AuthOk._();
-
-  factory AuthOk.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory AuthOk.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'AuthOk',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.client'),
-      createEmptyInstance: create)
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  AuthOk clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  AuthOk copyWith(void Function(AuthOk) updates) =>
-      super.copyWith((message) => updates(message as AuthOk)) as AuthOk;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static AuthOk create() => AuthOk._();
-  @$core.override
-  AuthOk createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static AuthOk getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<AuthOk>(create);
-  static AuthOk? _defaultInstance;
-}
-
 enum ClientRequest_Payload {
   authChallengeRequest,
   authChallengeSolution,
+  queryVaultState,
   notSet
 }
 
@@ -246,12 +211,16 @@ class ClientRequest extends $pb.GeneratedMessage {
   factory ClientRequest({
     AuthChallengeRequest? authChallengeRequest,
     AuthChallengeSolution? authChallengeSolution,
+    $0.Empty? queryVaultState,
+    $core.int? requestId,
   }) {
     final result = create();
     if (authChallengeRequest != null)
       result.authChallengeRequest = authChallengeRequest;
     if (authChallengeSolution != null)
       result.authChallengeSolution = authChallengeSolution;
+    if (queryVaultState != null) result.queryVaultState = queryVaultState;
+    if (requestId != null) result.requestId = requestId;
     return result;
   }
 
@@ -268,19 +237,23 @@ class ClientRequest extends $pb.GeneratedMessage {
       _ClientRequest_PayloadByTag = {
     1: ClientRequest_Payload.authChallengeRequest,
     2: ClientRequest_Payload.authChallengeSolution,
+    3: ClientRequest_Payload.queryVaultState,
     0: ClientRequest_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'ClientRequest',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.client'),
       createEmptyInstance: create)
-    ..oo(0, [1, 2])
+    ..oo(0, [1, 2, 3])
     ..aOM<AuthChallengeRequest>(
         1, _omitFieldNames ? '' : 'authChallengeRequest',
         subBuilder: AuthChallengeRequest.create)
     ..aOM<AuthChallengeSolution>(
         2, _omitFieldNames ? '' : 'authChallengeSolution',
         subBuilder: AuthChallengeSolution.create)
+    ..aOM<$0.Empty>(3, _omitFieldNames ? '' : 'queryVaultState',
+        subBuilder: $0.Empty.create)
+    ..aI(4, _omitFieldNames ? '' : 'requestId')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -304,10 +277,12 @@ class ClientRequest extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(1)
   @$pb.TagNumber(2)
+  @$pb.TagNumber(3)
   ClientRequest_Payload whichPayload() =>
       _ClientRequest_PayloadByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(1)
   @$pb.TagNumber(2)
+  @$pb.TagNumber(3)
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -332,89 +307,55 @@ class ClientRequest extends $pb.GeneratedMessage {
   void clearAuthChallengeSolution() => $_clearField(2);
   @$pb.TagNumber(2)
   AuthChallengeSolution ensureAuthChallengeSolution() => $_ensure(1);
-}
 
-class ClientConnectError extends $pb.GeneratedMessage {
-  factory ClientConnectError({
-    ClientConnectError_Code? code,
-  }) {
-    final result = create();
-    if (code != null) result.code = code;
-    return result;
-  }
+  @$pb.TagNumber(3)
+  $0.Empty get queryVaultState => $_getN(2);
+  @$pb.TagNumber(3)
+  set queryVaultState($0.Empty value) => $_setField(3, value);
+  @$pb.TagNumber(3)
+  $core.bool hasQueryVaultState() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearQueryVaultState() => $_clearField(3);
+  @$pb.TagNumber(3)
+  $0.Empty ensureQueryVaultState() => $_ensure(2);
 
-  ClientConnectError._();
-
-  factory ClientConnectError.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory ClientConnectError.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'ClientConnectError',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.client'),
-      createEmptyInstance: create)
-    ..aE<ClientConnectError_Code>(1, _omitFieldNames ? '' : 'code',
-        enumValues: ClientConnectError_Code.values)
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  ClientConnectError clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  ClientConnectError copyWith(void Function(ClientConnectError) updates) =>
-      super.copyWith((message) => updates(message as ClientConnectError))
-          as ClientConnectError;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static ClientConnectError create() => ClientConnectError._();
-  @$core.override
-  ClientConnectError createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static ClientConnectError getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<ClientConnectError>(create);
-  static ClientConnectError? _defaultInstance;
-
-  @$pb.TagNumber(1)
-  ClientConnectError_Code get code => $_getN(0);
-  @$pb.TagNumber(1)
-  set code(ClientConnectError_Code value) => $_setField(1, value);
-  @$pb.TagNumber(1)
-  $core.bool hasCode() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearCode() => $_clearField(1);
+  @$pb.TagNumber(4)
+  $core.int get requestId => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set requestId($core.int value) => $_setSignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasRequestId() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearRequestId() => $_clearField(4);
 }
 
 enum ClientResponse_Payload {
   authChallenge,
-  authOk,
+  authResult,
   evmSignTransaction,
   evmAnalyzeTransaction,
-  clientConnectError,
+  vaultState,
   notSet
 }
 
 class ClientResponse extends $pb.GeneratedMessage {
   factory ClientResponse({
     AuthChallenge? authChallenge,
-    AuthOk? authOk,
-    $0.EvmSignTransactionResponse? evmSignTransaction,
-    $0.EvmAnalyzeTransactionResponse? evmAnalyzeTransaction,
-    ClientConnectError? clientConnectError,
+    AuthResult? authResult,
+    $1.EvmSignTransactionResponse? evmSignTransaction,
+    $1.EvmAnalyzeTransactionResponse? evmAnalyzeTransaction,
+    VaultState? vaultState,
+    $core.int? requestId,
   }) {
     final result = create();
     if (authChallenge != null) result.authChallenge = authChallenge;
-    if (authOk != null) result.authOk = authOk;
+    if (authResult != null) result.authResult = authResult;
     if (evmSignTransaction != null)
       result.evmSignTransaction = evmSignTransaction;
     if (evmAnalyzeTransaction != null)
       result.evmAnalyzeTransaction = evmAnalyzeTransaction;
-    if (clientConnectError != null)
-      result.clientConnectError = clientConnectError;
+    if (vaultState != null) result.vaultState = vaultState;
+    if (requestId != null) result.requestId = requestId;
     return result;
   }
 
@@ -430,28 +371,30 @@ class ClientResponse extends $pb.GeneratedMessage {
   static const $core.Map<$core.int, ClientResponse_Payload>
       _ClientResponse_PayloadByTag = {
     1: ClientResponse_Payload.authChallenge,
-    2: ClientResponse_Payload.authOk,
+    2: ClientResponse_Payload.authResult,
     3: ClientResponse_Payload.evmSignTransaction,
     4: ClientResponse_Payload.evmAnalyzeTransaction,
-    5: ClientResponse_Payload.clientConnectError,
+    6: ClientResponse_Payload.vaultState,
     0: ClientResponse_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'ClientResponse',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.client'),
       createEmptyInstance: create)
-    ..oo(0, [1, 2, 3, 4, 5])
+    ..oo(0, [1, 2, 3, 4, 6])
     ..aOM<AuthChallenge>(1, _omitFieldNames ? '' : 'authChallenge',
         subBuilder: AuthChallenge.create)
-    ..aOM<AuthOk>(2, _omitFieldNames ? '' : 'authOk', subBuilder: AuthOk.create)
-    ..aOM<$0.EvmSignTransactionResponse>(
+    ..aE<AuthResult>(2, _omitFieldNames ? '' : 'authResult',
+        enumValues: AuthResult.values)
+    ..aOM<$1.EvmSignTransactionResponse>(
         3, _omitFieldNames ? '' : 'evmSignTransaction',
-        subBuilder: $0.EvmSignTransactionResponse.create)
-    ..aOM<$0.EvmAnalyzeTransactionResponse>(
+        subBuilder: $1.EvmSignTransactionResponse.create)
+    ..aOM<$1.EvmAnalyzeTransactionResponse>(
         4, _omitFieldNames ? '' : 'evmAnalyzeTransaction',
-        subBuilder: $0.EvmAnalyzeTransactionResponse.create)
-    ..aOM<ClientConnectError>(5, _omitFieldNames ? '' : 'clientConnectError',
-        subBuilder: ClientConnectError.create)
+        subBuilder: $1.EvmAnalyzeTransactionResponse.create)
+    ..aE<VaultState>(6, _omitFieldNames ? '' : 'vaultState',
+        enumValues: VaultState.values)
+    ..aI(7, _omitFieldNames ? '' : 'requestId')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -477,14 +420,14 @@ class ClientResponse extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   @$pb.TagNumber(3)
   @$pb.TagNumber(4)
-  @$pb.TagNumber(5)
+  @$pb.TagNumber(6)
   ClientResponse_Payload whichPayload() =>
       _ClientResponse_PayloadByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(1)
   @$pb.TagNumber(2)
   @$pb.TagNumber(3)
   @$pb.TagNumber(4)
-  @$pb.TagNumber(5)
+  @$pb.TagNumber(6)
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -499,50 +442,55 @@ class ClientResponse extends $pb.GeneratedMessage {
   AuthChallenge ensureAuthChallenge() => $_ensure(0);
 
   @$pb.TagNumber(2)
-  AuthOk get authOk => $_getN(1);
+  AuthResult get authResult => $_getN(1);
   @$pb.TagNumber(2)
-  set authOk(AuthOk value) => $_setField(2, value);
+  set authResult(AuthResult value) => $_setField(2, value);
   @$pb.TagNumber(2)
-  $core.bool hasAuthOk() => $_has(1);
+  $core.bool hasAuthResult() => $_has(1);
   @$pb.TagNumber(2)
-  void clearAuthOk() => $_clearField(2);
-  @$pb.TagNumber(2)
-  AuthOk ensureAuthOk() => $_ensure(1);
+  void clearAuthResult() => $_clearField(2);
 
   @$pb.TagNumber(3)
-  $0.EvmSignTransactionResponse get evmSignTransaction => $_getN(2);
+  $1.EvmSignTransactionResponse get evmSignTransaction => $_getN(2);
   @$pb.TagNumber(3)
-  set evmSignTransaction($0.EvmSignTransactionResponse value) =>
+  set evmSignTransaction($1.EvmSignTransactionResponse value) =>
       $_setField(3, value);
   @$pb.TagNumber(3)
   $core.bool hasEvmSignTransaction() => $_has(2);
   @$pb.TagNumber(3)
   void clearEvmSignTransaction() => $_clearField(3);
   @$pb.TagNumber(3)
-  $0.EvmSignTransactionResponse ensureEvmSignTransaction() => $_ensure(2);
+  $1.EvmSignTransactionResponse ensureEvmSignTransaction() => $_ensure(2);
 
   @$pb.TagNumber(4)
-  $0.EvmAnalyzeTransactionResponse get evmAnalyzeTransaction => $_getN(3);
+  $1.EvmAnalyzeTransactionResponse get evmAnalyzeTransaction => $_getN(3);
   @$pb.TagNumber(4)
-  set evmAnalyzeTransaction($0.EvmAnalyzeTransactionResponse value) =>
+  set evmAnalyzeTransaction($1.EvmAnalyzeTransactionResponse value) =>
       $_setField(4, value);
   @$pb.TagNumber(4)
   $core.bool hasEvmAnalyzeTransaction() => $_has(3);
   @$pb.TagNumber(4)
   void clearEvmAnalyzeTransaction() => $_clearField(4);
   @$pb.TagNumber(4)
-  $0.EvmAnalyzeTransactionResponse ensureEvmAnalyzeTransaction() => $_ensure(3);
+  $1.EvmAnalyzeTransactionResponse ensureEvmAnalyzeTransaction() => $_ensure(3);
 
-  @$pb.TagNumber(5)
-  ClientConnectError get clientConnectError => $_getN(4);
-  @$pb.TagNumber(5)
-  set clientConnectError(ClientConnectError value) => $_setField(5, value);
-  @$pb.TagNumber(5)
-  $core.bool hasClientConnectError() => $_has(4);
-  @$pb.TagNumber(5)
-  void clearClientConnectError() => $_clearField(5);
-  @$pb.TagNumber(5)
-  ClientConnectError ensureClientConnectError() => $_ensure(4);
+  @$pb.TagNumber(6)
+  VaultState get vaultState => $_getN(4);
+  @$pb.TagNumber(6)
+  set vaultState(VaultState value) => $_setField(6, value);
+  @$pb.TagNumber(6)
+  $core.bool hasVaultState() => $_has(4);
+  @$pb.TagNumber(6)
+  void clearVaultState() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.int get requestId => $_getIZ(5);
+  @$pb.TagNumber(7)
+  set requestId($core.int value) => $_setSignedInt32(5, value);
+  @$pb.TagNumber(7)
+  $core.bool hasRequestId() => $_has(5);
+  @$pb.TagNumber(7)
+  void clearRequestId() => $_clearField(7);
 }
 
 const $core.bool _omitFieldNames =

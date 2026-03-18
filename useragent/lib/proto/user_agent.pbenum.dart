@@ -39,6 +39,40 @@ class KeyType extends $pb.ProtobufEnum {
   const KeyType._(super.value, super.name);
 }
 
+class AuthResult extends $pb.ProtobufEnum {
+  static const AuthResult AUTH_RESULT_UNSPECIFIED =
+      AuthResult._(0, _omitEnumNames ? '' : 'AUTH_RESULT_UNSPECIFIED');
+  static const AuthResult AUTH_RESULT_SUCCESS =
+      AuthResult._(1, _omitEnumNames ? '' : 'AUTH_RESULT_SUCCESS');
+  static const AuthResult AUTH_RESULT_INVALID_KEY =
+      AuthResult._(2, _omitEnumNames ? '' : 'AUTH_RESULT_INVALID_KEY');
+  static const AuthResult AUTH_RESULT_INVALID_SIGNATURE =
+      AuthResult._(3, _omitEnumNames ? '' : 'AUTH_RESULT_INVALID_SIGNATURE');
+  static const AuthResult AUTH_RESULT_BOOTSTRAP_REQUIRED =
+      AuthResult._(4, _omitEnumNames ? '' : 'AUTH_RESULT_BOOTSTRAP_REQUIRED');
+  static const AuthResult AUTH_RESULT_TOKEN_INVALID =
+      AuthResult._(5, _omitEnumNames ? '' : 'AUTH_RESULT_TOKEN_INVALID');
+  static const AuthResult AUTH_RESULT_INTERNAL =
+      AuthResult._(6, _omitEnumNames ? '' : 'AUTH_RESULT_INTERNAL');
+
+  static const $core.List<AuthResult> values = <AuthResult>[
+    AUTH_RESULT_UNSPECIFIED,
+    AUTH_RESULT_SUCCESS,
+    AUTH_RESULT_INVALID_KEY,
+    AUTH_RESULT_INVALID_SIGNATURE,
+    AUTH_RESULT_BOOTSTRAP_REQUIRED,
+    AUTH_RESULT_TOKEN_INVALID,
+    AUTH_RESULT_INTERNAL,
+  ];
+
+  static final $core.List<AuthResult?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 6);
+  static AuthResult? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const AuthResult._(super.value, super.name);
+}
+
 class UnsealResult extends $pb.ProtobufEnum {
   static const UnsealResult UNSEAL_RESULT_UNSPECIFIED =
       UnsealResult._(0, _omitEnumNames ? '' : 'UNSEAL_RESULT_UNSPECIFIED');
@@ -65,14 +99,15 @@ class UnsealResult extends $pb.ProtobufEnum {
 }
 
 class BootstrapResult extends $pb.ProtobufEnum {
-  static const BootstrapResult BOOTSTRAP_RESULT_UNSPECIFIED =
-      BootstrapResult._(0, _omitEnumNames ? '' : 'BOOTSTRAP_RESULT_UNSPECIFIED');
+  static const BootstrapResult BOOTSTRAP_RESULT_UNSPECIFIED = BootstrapResult._(
+      0, _omitEnumNames ? '' : 'BOOTSTRAP_RESULT_UNSPECIFIED');
   static const BootstrapResult BOOTSTRAP_RESULT_SUCCESS =
       BootstrapResult._(1, _omitEnumNames ? '' : 'BOOTSTRAP_RESULT_SUCCESS');
   static const BootstrapResult BOOTSTRAP_RESULT_ALREADY_BOOTSTRAPPED =
-      BootstrapResult._(2, _omitEnumNames ? '' : 'BOOTSTRAP_RESULT_ALREADY_BOOTSTRAPPED');
-  static const BootstrapResult BOOTSTRAP_RESULT_INVALID_KEY =
-      BootstrapResult._(3, _omitEnumNames ? '' : 'BOOTSTRAP_RESULT_INVALID_KEY');
+      BootstrapResult._(
+          2, _omitEnumNames ? '' : 'BOOTSTRAP_RESULT_ALREADY_BOOTSTRAPPED');
+  static const BootstrapResult BOOTSTRAP_RESULT_INVALID_KEY = BootstrapResult._(
+      3, _omitEnumNames ? '' : 'BOOTSTRAP_RESULT_INVALID_KEY');
 
   static const $core.List<BootstrapResult> values = <BootstrapResult>[
     BOOTSTRAP_RESULT_UNSPECIFIED,

@@ -13,9 +13,9 @@ Future<List<GrantEntry>> listEvmGrants(
     request.walletId = walletId;
   }
 
-  await connection.send(UserAgentRequest(evmGrantList: request));
-
-  final response = await connection.receive();
+  final response = await connection.request(
+    UserAgentRequest(evmGrantList: request),
+  );
   if (!response.hasEvmGrantList()) {
     throw Exception(
       'Expected EVM grant list response, got ${response.whichPayload()}',
@@ -45,7 +45,7 @@ Future<int> createEvmGrant(
   TransactionRateLimit? rateLimit,
   required SpecificGrant specific,
 }) async {
-  await connection.send(
+  final response = await connection.request(
     UserAgentRequest(
       evmGrantCreate: EvmGrantCreateRequest(
         clientId: clientId,
@@ -62,8 +62,6 @@ Future<int> createEvmGrant(
       ),
     ),
   );
-
-  final response = await connection.receive();
   if (!response.hasEvmGrantCreate()) {
     throw Exception(
       'Expected EVM grant create response, got ${response.whichPayload()}',
@@ -82,11 +80,9 @@ Future<int> createEvmGrant(
 }
 
 Future<void> deleteEvmGrant(Connection connection, int grantId) async {
-  await connection.send(
+  final response = await connection.request(
     UserAgentRequest(evmGrantDelete: EvmGrantDeleteRequest(grantId: grantId)),
   );
-
-  final response = await connection.receive();
   if (!response.hasEvmGrantDelete()) {
     throw Exception(
       'Expected EVM grant delete response, got ${response.whichPayload()}',
