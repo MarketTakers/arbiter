@@ -1,29 +1,49 @@
 //! Transport-facing abstractions shared by protocol/session code.
 //!
-//! This module defines a small duplex interface, [`Bi`], that actors and other
+//! This module defines a small set of transport traits that actors and other
 //! protocol code can depend on without knowing anything about the concrete
 //! transport underneath.
 //!
-//! [`Bi`] is intentionally minimal and transport-agnostic:
-//! - [`Bi::recv`] yields inbound messages
-//! - [`Bi::send`] accepts outbound messages
+//! The abstraction is split into:
+//! - [`Sender`] for outbound delivery
+//! - [`Receiver`] for inbound delivery
+//! - [`Bi`] as the combined duplex form (`Sender + Receiver`)
+//!
+//! This split lets code depend only on the half it actually needs. For
+//! example, some actor/session code only sends out-of-band messages, while
+//! auth/state-machine code may need full duplex access.
+//!
+//! [`Bi`] remains intentionally minimal and transport-agnostic:
+//! - [`Receiver::recv`] yields inbound messages
+//! - [`Sender::send`] accepts outbound messages
 //!
 //! Transport-specific adapters, including protobuf or gRPC bridges, live in the
 //! crates that own those boundaries rather than in `arbiter-proto`.
+//!
+//! [`Bi`] deliberately does not model request/response correlation. Some
+//! transports may carry multiplexed request/response traffic, some may emit
+//! out-of-band messages, and some may be one-message-at-a-time state machines.
+//! Correlation concerns such as request IDs, pending response maps, and
+//! out-of-band routing belong in the adapter or connection layer built on top
+//! of [`Bi`], not in this abstraction itself.
 //!
 //! # Generic Ordering Rule
 //!
 //! This module consistently uses `Inbound` first and `Outbound` second in
 //! generic parameter lists.
 //!
-//! For [`Bi`], that means `Bi<Inbound, Outbound>`:
+//! For [`Receiver`], [`Sender`], and [`Bi`], this means:
+//! - `Receiver<Inbound>`
+//! - `Sender<Outbound>`
+//! - `Bi<Inbound, Outbound>`
+//!
+//! Concretely, for [`Bi`]:
 //! - `recv() -> Option<Inbound>`
 //! - `send(Outbound)`
 //!
-//! [`expect_message`] is a small helper for request/response style flows: it
-//! reads one inbound message from a transport and extracts a typed value from
-//! it, failing if the channel closes or the message shape is not what the
-//! caller expected.
+//! [`expect_message`] is a small helper for linear protocol steps: it reads one
+//! inbound message from a transport and extracts a typed value from it, failing
+//! if the channel closes or the message shape is not what the caller expected.
 //!
 //! [`DummyTransport`] is a no-op implementation useful for tests and local
 //! actor execution where no real stream exists.
@@ -75,9 +95,15 @@ pub trait Receiver<Inbound>: Send + Sync  {
 
 /// Minimal bidirectional transport abstraction used by protocol code.
 ///
-/// `Bi<Inbound, Outbound>` models a duplex channel with:
+/// `Bi<Inbound, Outbound>` is the combined duplex form of [`Sender`] and
+/// [`Receiver`].
+///
+/// It models a channel with:
 /// - inbound items of type `Inbound` read via [`Bi::recv`]
 /// - outbound items of type `Outbound` written via [`Bi::send`]
+///
+/// It does not imply request/response sequencing, one-at-a-time exchange, or
+/// any built-in correlation mechanism between inbound and outbound items.
 pub trait Bi<Inbound, Outbound>: Sender<Outbound> + Receiver<Inbound> + Send + Sync {}
 
 pub trait SplittableBi<Inbound, Outbound>: Bi<Inbound, Outbound> {
