@@ -1,6 +1,7 @@
 use std::{borrow::Cow, convert::Infallible};
 
 use arbiter_proto::transport::Sender;
+use async_trait::async_trait;
 use ed25519_dalek::VerifyingKey;
 use kameo::{Actor, messages, prelude::Context};
 use thiserror::Error;
@@ -42,8 +43,8 @@ mod connection;
 pub(crate) use connection::{
     BootstrapError, HandleBootstrapEncryptedKey, HandleEvmWalletCreate, HandleEvmWalletList,
     HandleGrantCreate, HandleGrantDelete, HandleGrantList, HandleQueryVaultState,
-    HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError,
 };
+pub use connection::{HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError};
 
 impl UserAgentSession {
     pub(crate) fn new(props: UserAgentConnection, sender: Box<dyn Sender<OutOfBand>>) -> Self {
@@ -52,6 +53,22 @@ impl UserAgentSession {
             state: UserAgentStateMachine::new(DummyContext),
             sender,
         }
+    }
+
+    pub fn new_test(db: crate::db::DatabasePool, actors: crate::actors::GlobalActors) -> Self {
+        struct DummySender;
+
+        #[async_trait]
+        impl Sender<OutOfBand> for DummySender {
+            async fn send(
+                &mut self,
+                _item: OutOfBand,
+            ) -> Result<(), arbiter_proto::transport::Error> {
+                Ok(())
+            }
+        }
+
+        Self::new(UserAgentConnection::new(db, actors), Box::new(DummySender))
     }
 
     fn transition(&mut self, event: UserAgentEvents) -> Result<(), Error> {

@@ -109,7 +109,7 @@ pub enum BootstrapError {
 #[messages]
 impl UserAgentSession {
     #[message]
-    pub(crate) async fn handle_unseal_request(
+    pub async fn handle_unseal_request(
         &mut self,
         client_pubkey: x25519_dalek::PublicKey,
     ) -> Result<UnsealStartResponse, Error> {
@@ -127,7 +127,7 @@ impl UserAgentSession {
     }
 
     #[message]
-    pub(crate) async fn handle_unseal_encrypted_key(
+    pub async fn handle_unseal_encrypted_key(
         &mut self,
         nonce: Vec<u8>,
         ciphertext: Vec<u8>,
