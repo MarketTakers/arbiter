@@ -145,6 +145,9 @@ enum ClientSignError {
 
     #[error("Remote signing was rejected")]
     Rejected,
+
+    #[error("Wallet address is not configured")]
+    WalletAddressNotConfigured,
 }
 
 struct ClientTransport {
@@ -171,32 +174,27 @@ impl ClientTransport {
 
 pub struct ArbiterSigner {
     transport: Mutex<ClientTransport>,
-    address: Address,
+    address: Option<Address>,
     chain_id: Option<ChainId>,
 }
 
 impl ArbiterSigner {
-    pub async fn connect_grpc(
-        url: ArbiterUrl,
-        address: Address,
-    ) -> std::result::Result<Self, ConnectError> {
+    pub async fn connect_grpc(url: ArbiterUrl) -> std::result::Result<Self, ConnectError> {
         let storage = FileSigningKeyStorage::from_default_location()?;
-        Self::connect_grpc_with_storage(url, address, &storage).await
+        Self::connect_grpc_with_storage(url, &storage).await
     }
 
     pub async fn connect_grpc_with_storage<S: SigningKeyStorage>(
         url: ArbiterUrl,
-        address: Address,
         storage: &S,
     ) -> std::result::Result<Self, ConnectError> {
         let key = storage.load_or_create()?;
-        Self::connect_grpc_with_key(url, key, address).await
+        Self::connect_grpc_with_key(url, key).await
     }
 
     pub async fn connect_grpc_with_key(
         url: ArbiterUrl,
         key: ed25519_dalek::SigningKey,
-        address: Address,
     ) -> std::result::Result<Self, ConnectError> {
         let anchor = webpki::anchor_from_trusted_cert(&url.ca_cert)?.to_owned();
         let tls = ClientTlsConfig::new().trust_anchor(anchor);
@@ -221,9 +219,27 @@ impl ArbiterSigner {
 
         Ok(Self {
             transport: Mutex::new(transport),
-            address,
+            address: None,
             chain_id: None,
         })
+    }
+
+    pub fn wallet_address(&self) -> Option<Address> {
+        self.address
+    }
+
+    pub fn set_wallet_address(&mut self, address: Option<Address>) {
+        self.address = address;
+    }
+
+    pub fn with_wallet_address(mut self, address: Address) -> Self {
+        self.address = Some(address);
+        self
+    }
+
+    pub fn with_chain_id(mut self, chain_id: ChainId) -> Self {
+        self.chain_id = Some(chain_id);
+        self
     }
 
     async fn sign_transaction_via_arbiter(
@@ -242,10 +258,14 @@ impl ArbiterSigner {
         let mut rlp_transaction = Vec::new();
         tx.encode_for_signing(&mut rlp_transaction);
 
+        let wallet_address = self
+            .address
+            .ok_or_else(|| Error::other(ClientSignError::WalletAddressNotConfigured))?;
+
         let request = ClientRequest {
             payload: Some(ClientRequestPayload::EvmSignTransaction(
                 EvmSignTransactionRequest {
-                    wallet_address: self.address.as_slice().to_vec(),
+                    wallet_address: wallet_address.as_slice().to_vec(),
                     rlp_transaction,
                 },
             )),
@@ -342,7 +362,7 @@ impl Signer for ArbiterSigner {
     }
 
     fn address(&self) -> Address {
-        self.address
+        self.address.unwrap_or(Address::ZERO)
     }
 
     fn chain_id(&self) -> Option<ChainId> {
@@ -357,7 +377,7 @@ impl Signer for ArbiterSigner {
 #[async_trait]
 impl TxSigner<Signature> for ArbiterSigner {
     fn address(&self) -> Address {
-        self.address
+        self.address.unwrap_or(Address::ZERO)
     }
 
     async fn sign_transaction(
