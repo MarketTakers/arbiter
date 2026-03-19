@@ -25,6 +25,8 @@ use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::ClientTlsConfig;
 
+const BUFFER_LENGTH: usize = 16;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectError {
     #[error("Could not establish connection")]
@@ -112,7 +114,7 @@ impl ArbiterSigner {
             .await?;
 
         let mut client = ArbiterServiceClient::new(channel);
-        let (tx, rx) = mpsc::channel(16);
+        let (tx, rx) = mpsc::channel(BUFFER_LENGTH);
         let response_stream = client.client(ReceiverStream::new(rx)).await?.into_inner();
 
         let mut transport = ClientTransport {
