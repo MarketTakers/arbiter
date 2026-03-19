@@ -99,6 +99,7 @@ async fn request_client_approval(
     while let Some(result) = pool.join_next().await {
         match result {
             Ok(Ok(approved)) => {
+                // cancel other pending requests
                 let _ = cancel_tx.send(());
                 return Ok(approved);
             }
@@ -153,7 +154,7 @@ impl MessageRouter {
         ctx: &mut Context<Self, DelegatedReply<Result<bool, ApprovalError>>>,
     ) -> DelegatedReply<Result<bool, ApprovalError>> {
         let (reply, Some(reply_sender)) = ctx.reply_sender() else {
-            panic!("Exptected `request_client_approval` to have callback channel");
+            panic!("Expected `request_client_approval` to have callback channel");
         };
 
         let weak_refs = self
