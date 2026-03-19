@@ -5,7 +5,7 @@ use alloy::{
     signers::{Error, Result, Signer},
 };
 use arbiter_proto::{
-    format_challenge,
+    format_challenge, home_path,
     proto::{
         arbiter_service_client::ArbiterServiceClient,
         client::{
@@ -21,6 +21,7 @@ use arbiter_proto::{
 };
 use async_trait::async_trait;
 use ed25519_dalek::Signer as _;
+use std::path::{Path, PathBuf};
 use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::ClientTlsConfig;
@@ -52,6 +53,83 @@ pub enum ConnectError {
 
     #[error("Unexpected auth response payload")]
     UnexpectedAuthResponse,
+
+    #[error("Signing key storage error")]
+    Storage(#[from] StorageError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum StorageError {
+    #[error("I/O error")]
+    Io(#[from] std::io::Error),
+
+    #[error("Invalid signing key length in storage: expected {expected} bytes, got {actual} bytes")]
+    InvalidKeyLength { expected: usize, actual: usize },
+}
+
+pub trait SigningKeyStorage {
+    fn load_or_create(&self) -> std::result::Result<ed25519_dalek::SigningKey, StorageError>;
+}
+
+#[derive(Debug, Clone)]
+pub struct FileSigningKeyStorage {
+    path: PathBuf,
+}
+
+impl FileSigningKeyStorage {
+    pub const DEFAULT_FILE_NAME: &str = "sdk_client_ed25519.key";
+
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+
+    pub fn from_default_location() -> std::result::Result<Self, StorageError> {
+        Ok(Self::new(home_path()?.join(Self::DEFAULT_FILE_NAME)))
+    }
+
+    fn read_key(path: &Path) -> std::result::Result<ed25519_dalek::SigningKey, StorageError> {
+        let bytes = std::fs::read(path)?;
+        let raw: [u8; 32] =
+            bytes
+                .try_into()
+                .map_err(|v: Vec<u8>| StorageError::InvalidKeyLength {
+                    expected: 32,
+                    actual: v.len(),
+                })?;
+        Ok(ed25519_dalek::SigningKey::from_bytes(&raw))
+    }
+}
+
+impl SigningKeyStorage for FileSigningKeyStorage {
+    fn load_or_create(&self) -> std::result::Result<ed25519_dalek::SigningKey, StorageError> {
+        if let Some(parent) = self.path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        if self.path.exists() {
+            return Self::read_key(&self.path);
+        }
+
+        let key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
+        let raw_key = key.to_bytes();
+
+        // Use create_new to prevent accidental overwrite if another process creates the key first.
+        match std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&self.path)
+        {
+            Ok(mut file) => {
+                use std::io::Write as _;
+                file.write_all(&raw_key)?;
+                Ok(key)
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                Self::read_key(&self.path)
+            }
+            Err(err) => Err(StorageError::Io(err)),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -100,6 +178,23 @@ pub struct ArbiterSigner {
 impl ArbiterSigner {
     pub async fn connect_grpc(
         url: ArbiterUrl,
+        address: Address,
+    ) -> std::result::Result<Self, ConnectError> {
+        let storage = FileSigningKeyStorage::from_default_location()?;
+        Self::connect_grpc_with_storage(url, address, &storage).await
+    }
+
+    pub async fn connect_grpc_with_storage<S: SigningKeyStorage>(
+        url: ArbiterUrl,
+        address: Address,
+        storage: &S,
+    ) -> std::result::Result<Self, ConnectError> {
+        let key = storage.load_or_create()?;
+        Self::connect_grpc_with_key(url, key, address).await
+    }
+
+    pub async fn connect_grpc_with_key(
+        url: ArbiterUrl,
         key: ed25519_dalek::SigningKey,
         address: Address,
     ) -> std::result::Result<Self, ConnectError> {
@@ -122,7 +217,7 @@ impl ArbiterSigner {
             receiver: response_stream,
         };
 
-        authenticate(&mut transport, key).await?;
+        authenticate(&mut transport, &key).await?;
 
         Ok(Self {
             transport: Mutex::new(transport),
@@ -185,7 +280,7 @@ impl ArbiterSigner {
 
 async fn authenticate(
     transport: &mut ClientTransport,
-    key: ed25519_dalek::SigningKey,
+    key: &ed25519_dalek::SigningKey,
 ) -> std::result::Result<(), ConnectError> {
     transport
         .send(ClientRequest {
@@ -270,5 +365,61 @@ impl TxSigner<Signature> for ArbiterSigner {
         tx: &mut dyn SignableTransaction<Signature>,
     ) -> Result<Signature> {
         self.sign_transaction_via_arbiter(tx).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FileSigningKeyStorage, SigningKeyStorage, StorageError};
+
+    fn unique_temp_key_path() -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock should be after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "arbiter-client-key-{}-{}.bin",
+            std::process::id(),
+            nanos
+        ))
+    }
+
+    #[test]
+    fn file_storage_creates_and_reuses_key() {
+        let path = unique_temp_key_path();
+        let storage = FileSigningKeyStorage::new(path.clone());
+
+        let key_a = storage
+            .load_or_create()
+            .expect("first load_or_create should create key");
+        let key_b = storage
+            .load_or_create()
+            .expect("second load_or_create should read same key");
+
+        assert_eq!(key_a.to_bytes(), key_b.to_bytes());
+        assert!(path.exists());
+
+        std::fs::remove_file(path).expect("temp key file should be removable");
+    }
+
+    #[test]
+    fn file_storage_rejects_invalid_key_length() {
+        let path = unique_temp_key_path();
+        std::fs::write(&path, [42u8; 31]).expect("should write invalid key file");
+        let storage = FileSigningKeyStorage::new(path.clone());
+
+        let err = storage
+            .load_or_create()
+            .expect_err("storage should reject non-32-byte key file");
+
+        match err {
+            StorageError::InvalidKeyLength { expected, actual } => {
+                assert_eq!(expected, 32);
+                assert_eq!(actual, 31);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        std::fs::remove_file(path).expect("temp key file should be removable");
     }
 }
