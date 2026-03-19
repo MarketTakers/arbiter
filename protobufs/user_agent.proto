@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package arbiter.user_agent;
 
+import "client.proto";
 import "evm.proto";
 import "google/protobuf/empty.proto";
 
@@ -80,6 +81,7 @@ enum VaultState {
 
 message ClientConnectionRequest {
   bytes pubkey = 1;
+  arbiter.client.ClientInfo info = 2;
 }
 
 message ClientConnectionResponse {

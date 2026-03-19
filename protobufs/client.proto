@@ -5,8 +5,15 @@ package arbiter.client;
 import "evm.proto";
 import "google/protobuf/empty.proto";
 
+message ClientInfo {
+  string name = 1;
+  string description = 2;
+  string version = 3;
+}
+
 message AuthChallengeRequest {
   bytes pubkey = 1;
+  ClientInfo client_info = 2;
 }
 
 message AuthChallenge {

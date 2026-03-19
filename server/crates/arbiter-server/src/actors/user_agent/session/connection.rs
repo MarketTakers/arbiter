@@ -18,9 +18,9 @@ use crate::{
         },
         keyholder::{self, Bootstrap, TryUnseal},
         user_agent::session::{
-                UserAgentSession,
-                state::{UnsealContext, UserAgentEvents, UserAgentStates},
-            },
+            UserAgentSession,
+            state::{UnsealContext, UserAgentEvents, UserAgentStates},
+        },
     },
     safe_cell::SafeCellHandle as _,
 };
@@ -312,7 +312,6 @@ impl UserAgentSession {
     #[message]
     pub(crate) async fn handle_grant_create(
         &mut self,
-        client_id: i32,
         basic: crate::evm::policies::SharedGrantSettings,
         grant: crate::evm::policies::SpecificGrant,
     ) -> Result<i32, Error> {
@@ -320,11 +319,7 @@ impl UserAgentSession {
             .props
             .actors
             .evm
-            .ask(UseragentCreateGrant {
-                client_id,
-                basic,
-                grant,
-            })
+            .ask(UseragentCreateGrant { basic, grant })
             .await
         {
             Ok(grant_id) => Ok(grant_id),

@@ -209,8 +209,7 @@ impl Policy for TokenTransfer {
 
         let grant: Option<(EvmBasicGrant, EvmTokenTransferGrant)> = grant_join()
             .filter(evm_basic_grant::revoked_at.is_null())
-            .filter(evm_basic_grant::wallet_id.eq(context.wallet_id))
-            .filter(evm_basic_grant::client_id.eq(context.client_id))
+            .filter(evm_basic_grant::visibility_id.eq(context.target.id))
             .filter(evm_token_transfer_grant::token_contract.eq(&token_contract_bytes))
             .select((
                 EvmBasicGrant::as_select(),

@@ -241,11 +241,7 @@ async fn dispatch_conn_message(
         UserAgentRequestPayload::EvmGrantList(_) => UserAgentResponsePayload::EvmGrantList(
             EvmGrantOrWallet::grant_list_response(actor.ask(HandleGrantList {}).await),
         ),
-        UserAgentRequestPayload::EvmGrantCreate(EvmGrantCreateRequest {
-            client_id,
-            shared,
-            specific,
-        }) => {
+        UserAgentRequestPayload::EvmGrantCreate(EvmGrantCreateRequest { shared, specific }) => {
             let (basic, grant) = match parse_grant_request(shared, specific) {
                 Ok(values) => values,
                 Err(status) => {
@@ -255,13 +251,7 @@ async fn dispatch_conn_message(
             };
 
             UserAgentResponsePayload::EvmGrantCreate(EvmGrantOrWallet::grant_create_response(
-                actor
-                    .ask(HandleGrantCreate {
-                        client_id,
-                        basic,
-                        grant,
-                    })
-                    .await,
+                actor.ask(HandleGrantCreate { basic, grant }).await,
             ))
         }
         UserAgentRequestPayload::EvmGrantDelete(EvmGrantDeleteRequest { grant_id }) => {
@@ -296,6 +286,7 @@ async fn send_out_of_band(
         OutOfBand::ClientConnectionRequest { pubkey } => {
             UserAgentResponsePayload::ClientConnectionRequest(ClientConnectionRequest {
                 pubkey: pubkey.to_bytes().to_vec(),
+                info: None,
             })
         }
         OutOfBand::ClientConnectionCancel => {
@@ -327,8 +318,7 @@ fn parse_grant_request(
 
 fn shared_settings_from_proto(shared: ProtoSharedSettings) -> Result<SharedGrantSettings, Status> {
     Ok(SharedGrantSettings {
-        wallet_id: shared.wallet_id,
-        client_id: 0,
+        visibility_id: shared.visibility_id,
         chain: shared.chain_id,
         valid_from: shared.valid_from.map(proto_timestamp_to_utc).transpose()?,
         valid_until: shared.valid_until.map(proto_timestamp_to_utc).transpose()?,
@@ -412,7 +402,7 @@ fn proto_timestamp_to_utc(
 
 fn shared_settings_to_proto(shared: SharedGrantSettings) -> ProtoSharedSettings {
     ProtoSharedSettings {
-        wallet_id: shared.wallet_id,
+        visibility_id: shared.visibility_id,
         chain_id: shared.chain,
         valid_from: shared.valid_from.map(|time| prost_types::Timestamp {
             seconds: time.timestamp(),
@@ -552,7 +542,7 @@ impl EvmGrantOrWallet {
                     .into_iter()
                     .map(|grant| GrantEntry {
                         id: grant.id,
-                        client_id: grant.shared.client_id,
+                        visibility_id: grant.shared.visibility_id,
                         shared: Some(shared_settings_to_proto(grant.shared)),
                         specific: Some(specific_grant_to_proto(grant.settings)),
                     })
@@ -575,15 +565,8 @@ pub async fn start(
     mut bi: GrpcBi<UserAgentRequest, UserAgentResponse>,
 ) {
     let mut request_tracker = RequestTracker::default();
-    let mut response_id = None;
 
-    let pubkey = match auth::start(
-        &mut conn,
-        &mut bi,
-        &mut request_tracker,
-        &mut response_id,
-    )
-    .await
+    let pubkey = match auth::start(&mut conn, &mut bi, &mut request_tracker).await
     {
         Ok(pubkey) => pubkey,
         Err(e) => {

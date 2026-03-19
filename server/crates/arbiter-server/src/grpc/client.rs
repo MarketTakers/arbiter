@@ -110,9 +110,8 @@ async fn dispatch_conn_message(
 pub async fn start(conn: ClientConnection, mut bi: GrpcBi<ClientRequest, ClientResponse>) {
     let mut conn = conn;
     let mut request_tracker = RequestTracker::default();
-    let mut response_id = None;
 
-    match auth::start(&mut conn, &mut bi, &mut request_tracker, &mut response_id).await {
+    match auth::start(&mut conn, &mut bi, &mut request_tracker).await {
         Ok(_) => {
             let actor =
                 client::session::ClientSession::spawn(client::session::ClientSession::new(conn));
@@ -125,11 +124,7 @@ pub async fn start(conn: ClientConnection, mut bi: GrpcBi<ClientRequest, ClientR
             dispatch_loop(bi, actor, request_tracker).await;
         }
         Err(e) => {
-            let mut transport = auth::AuthTransportAdapter::new(
-                &mut bi,
-                &mut request_tracker,
-                &mut response_id,
-            );
+            let mut transport = auth::AuthTransportAdapter::new(&mut bi, &mut request_tracker);
             let _ = transport.send(Err(e.clone())).await;
             warn!(error = ?e, "Authentication failed");
         }

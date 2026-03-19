@@ -6,13 +6,16 @@ use alloy::{
     primitives::{TxKind, U256},
 };
 use chrono::Utc;
-use diesel::{ExpressionMethods as _, QueryDsl, QueryResult, insert_into, sqlite::Sqlite};
+use diesel::{ExpressionMethods as _, QueryDsl as _, QueryResult, insert_into, sqlite::Sqlite};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 
 use crate::{
     db::{
         self,
-        models::{EvmBasicGrant, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp},
+        models::{
+            EvmBasicGrant, EvmWalletVisibility, NewEvmBasicGrant, NewEvmTransactionLog,
+            SqliteTimestamp,
+        },
         schema::{self, evm_transaction_log},
     },
     evm::policies::{
@@ -184,8 +187,7 @@ impl Engine {
                     let log_id: i32 = insert_into(evm_transaction_log::table)
                         .values(&NewEvmTransactionLog {
                             grant_id: grant.shared_grant_id,
-                            client_id: context.client_id,
-                            wallet_id: context.wallet_id,
+                            visibility_id: context.target.id,
                             chain_id: context.chain as i32,
                             eth_value: utils::u256_to_bytes(context.value).to_vec(),
                             signed_at: Utc::now().into(),
@@ -213,7 +215,6 @@ impl Engine {
 
     pub async fn create_grant<P: Policy>(
         &self,
-        client_id: i32,
         full_grant: FullGrant<P::Settings>,
     ) -> Result<i32, CreationError> {
         let mut conn = self.db.get().await?;
@@ -225,9 +226,8 @@ impl Engine {
 
                     let basic_grant: EvmBasicGrant = insert_into(evm_basic_grant::table)
                         .values(&NewEvmBasicGrant {
-                            wallet_id: full_grant.basic.wallet_id,
                             chain_id: full_grant.basic.chain as i32,
-                            client_id,
+                            visibility_id: full_grant.basic.visibility_id,
                             valid_from: full_grant.basic.valid_from.map(SqliteTimestamp),
                             valid_until: full_grant.basic.valid_until.map(SqliteTimestamp),
                             max_gas_fee_per_gas: full_grant
@@ -295,8 +295,7 @@ impl Engine {
 
     pub async fn evaluate_transaction(
         &self,
-        wallet_id: i32,
-        client_id: i32,
+        target: EvmWalletVisibility,
         transaction: TxEip1559,
         run_kind: RunKind,
     ) -> Result<SpecificMeaning, VetError> {
@@ -304,8 +303,7 @@ impl Engine {
             return Err(VetError::ContractCreationNotSupported);
         };
         let context = policies::EvalContext {
-            wallet_id,
-            client_id,
+            target,
             chain: transaction.chain_id,
             to,
             value: transaction.value,

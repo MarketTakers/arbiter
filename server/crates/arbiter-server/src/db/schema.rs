@@ -21,10 +21,28 @@ diesel::table! {
 }
 
 diesel::table! {
+    client_metadata (id) {
+        id -> Integer,
+        name -> Text,
+        description -> Nullable<Text>,
+        version -> Nullable<Text>,
+        created_at -> Integer,
+    }
+}
+
+diesel::table! {
+    client_metadata_history (id) {
+        id -> Integer,
+        metadata_id -> Integer,
+        client_id -> Integer,
+        created_at -> Integer,
+    }
+}
+
+diesel::table! {
     evm_basic_grant (id) {
         id -> Integer,
-        wallet_id -> Integer,
-        client_id -> Integer,
+        visibility_id -> Integer,
         chain_id -> Integer,
         valid_from -> Nullable<Integer>,
         valid_until -> Nullable<Integer>,
@@ -95,9 +113,8 @@ diesel::table! {
 diesel::table! {
     evm_transaction_log (id) {
         id -> Integer,
+        visibility_id -> Integer,
         grant_id -> Integer,
-        client_id -> Integer,
-        wallet_id -> Integer,
         chain_id -> Integer,
         eth_value -> Binary,
         signed_at -> Integer,
@@ -114,10 +131,20 @@ diesel::table! {
 }
 
 diesel::table! {
+    evm_wallet_visibility (id) {
+        id -> Integer,
+        wallet_id -> Integer,
+        client_id -> Integer,
+        created_at -> Integer,
+    }
+}
+
+diesel::table! {
     program_client (id) {
         id -> Integer,
         nonce -> Integer,
         public_key -> Binary,
+        metadata_id -> Integer,
         created_at -> Integer,
         updated_at -> Integer,
     }
@@ -151,17 +178,18 @@ diesel::table! {
         id -> Integer,
         nonce -> Integer,
         public_key -> Binary,
+        key_type -> Integer,
         created_at -> Integer,
         updated_at -> Integer,
-        key_type -> Integer,
     }
 }
 
 diesel::joinable!(aead_encrypted -> root_key_history (associated_root_key_id));
 diesel::joinable!(arbiter_settings -> root_key_history (root_key_id));
 diesel::joinable!(arbiter_settings -> tls_history (tls_id));
-diesel::joinable!(evm_basic_grant -> evm_wallet (wallet_id));
-diesel::joinable!(evm_basic_grant -> program_client (client_id));
+diesel::joinable!(client_metadata_history -> client_metadata (metadata_id));
+diesel::joinable!(client_metadata_history -> program_client (client_id));
+diesel::joinable!(evm_basic_grant -> evm_wallet_visibility (visibility_id));
 diesel::joinable!(evm_ether_transfer_grant -> evm_basic_grant (basic_grant_id));
 diesel::joinable!(evm_ether_transfer_grant -> evm_ether_transfer_limit (limit_id));
 diesel::joinable!(evm_ether_transfer_grant_target -> evm_ether_transfer_grant (grant_id));
@@ -169,11 +197,18 @@ diesel::joinable!(evm_token_transfer_grant -> evm_basic_grant (basic_grant_id));
 diesel::joinable!(evm_token_transfer_log -> evm_token_transfer_grant (grant_id));
 diesel::joinable!(evm_token_transfer_log -> evm_transaction_log (log_id));
 diesel::joinable!(evm_token_transfer_volume_limit -> evm_token_transfer_grant (grant_id));
+diesel::joinable!(evm_transaction_log -> evm_basic_grant (grant_id));
+diesel::joinable!(evm_transaction_log -> evm_wallet_visibility (visibility_id));
 diesel::joinable!(evm_wallet -> aead_encrypted (aead_encrypted_id));
+diesel::joinable!(evm_wallet_visibility -> evm_wallet (wallet_id));
+diesel::joinable!(evm_wallet_visibility -> program_client (client_id));
+diesel::joinable!(program_client -> client_metadata (metadata_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     aead_encrypted,
     arbiter_settings,
+    client_metadata,
+    client_metadata_history,
     evm_basic_grant,
     evm_ether_transfer_grant,
     evm_ether_transfer_grant_target,
@@ -183,6 +218,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     evm_token_transfer_volume_limit,
     evm_transaction_log,
     evm_wallet,
+    evm_wallet_visibility,
     program_client,
     root_key_history,
     tls_history,

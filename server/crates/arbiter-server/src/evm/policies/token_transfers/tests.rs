@@ -6,7 +6,7 @@ use diesel_async::RunQueryDsl;
 
 use crate::db::{
     self, DatabaseConnection,
-    models::{EvmBasicGrant, NewEvmBasicGrant, SqliteTimestamp},
+    models::{EvmBasicGrant, EvmWalletVisibility, NewEvmBasicGrant, SqliteTimestamp},
     schema::evm_basic_grant,
 };
 use crate::evm::{
@@ -21,8 +21,7 @@ use super::{Settings, TokenTransfer};
 const CHAIN_ID: u64 = 1;
 const DAI: Address = address!("6B175474E89094C44Da98b954EedeAC495271d0F");
 
-const WALLET_ID: i32 = 1;
-const CLIENT_ID: i32 = 2;
+const VISIBILITY_ID: i32 = 1;
 
 const RECIPIENT: Address = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 const OTHER: Address = address!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
@@ -38,8 +37,12 @@ fn transfer_calldata(to: Address, value: U256) -> Bytes {
 
 fn ctx(to: Address, calldata: Bytes) -> EvalContext {
     EvalContext {
-        wallet_id: WALLET_ID,
-        client_id: CLIENT_ID,
+        target: EvmWalletVisibility {
+            id: VISIBILITY_ID,
+            wallet_id: 10,
+            client_id: 20,
+            created_at: SqliteTimestamp(Utc::now()),
+        },
         chain: CHAIN_ID,
         to,
         value: U256::ZERO,
@@ -52,8 +55,7 @@ fn ctx(to: Address, calldata: Bytes) -> EvalContext {
 async fn insert_basic(conn: &mut DatabaseConnection, revoked: bool) -> EvmBasicGrant {
     insert_into(evm_basic_grant::table)
         .values(NewEvmBasicGrant {
-            wallet_id: WALLET_ID,
-            client_id: CLIENT_ID,
+            visibility_id: VISIBILITY_ID,
             chain_id: CHAIN_ID as i32,
             valid_from: None,
             valid_until: None,
@@ -86,14 +88,13 @@ fn make_settings(target: Option<Address>, max_volume: Option<u64>) -> Settings {
 
 fn shared() -> SharedGrantSettings {
     SharedGrantSettings {
-        wallet_id: WALLET_ID,
+        visibility_id: VISIBILITY_ID,
         chain: CHAIN_ID,
         valid_from: None,
         valid_until: None,
         max_gas_fee_per_gas: None,
         max_priority_fee_per_gas: None,
         rate_limit: None,
-        client_id: CLIENT_ID,
     }
 }
 

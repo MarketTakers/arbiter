@@ -2,8 +2,10 @@ use arbiter_proto::{
     format_challenge,
     transport::{Bi, expect_message},
 };
+use chrono::Utc;
 use diesel::{
-    ExpressionMethods as _, OptionalExtension as _, QueryDsl as _, dsl::insert_into, update,
+    ExpressionMethods as _, OptionalExtension as _, QueryDsl as _, SelectableHelper as _,
+    dsl::insert_into, update,
 };
 use diesel_async::RunQueryDsl as _;
 use ed25519_dalek::{Signature, VerifyingKey};
@@ -15,8 +17,19 @@ use crate::{
         client::ClientConnection,
         router::{self, RequestClientApproval},
     },
-    db::{self, schema::program_client},
+    db::{
+        self,
+        models::{ProgramClientMetadata, SqliteTimestamp},
+        schema::program_client,
+    },
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientMetadata {
+    pub name: String,
+    pub description: Option<String>,
+    pub version: Option<String>,
+}
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -44,8 +57,13 @@ pub enum ApproveError {
 
 #[derive(Debug, Clone)]
 pub enum Inbound {
-    AuthChallengeRequest { pubkey: VerifyingKey },
-    AuthChallengeSolution { signature: Signature },
+    AuthChallengeRequest {
+        pubkey: VerifyingKey,
+        metadata: ClientMetadata,
+    },
+    AuthChallengeSolution {
+        signature: Signature,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -118,23 +136,37 @@ async fn approve_new_client(
     }
 }
 
-async fn insert_client(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<(), Error> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i32;
+async fn insert_client(
+    db: &db::DatabasePool,
+    pubkey: &VerifyingKey,
+    metadata: &ClientMetadata,
+) -> Result<(), Error> {
+    use crate::db::schema::client_metadata;
 
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
         Error::DatabasePoolUnavailable
     })?;
 
+    let metadata_id = insert_into(client_metadata::table)
+        .values((
+            client_metadata::name.eq(&metadata.name),
+            client_metadata::description.eq(&metadata.description),
+            client_metadata::version.eq(&metadata.version),
+        ))
+        .returning(client_metadata::id)
+        .get_result::<i32>(&mut conn)
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "Failed to insert client metadata");
+            Error::DatabaseOperationFailed
+        })?;
+
     insert_into(program_client::table)
         .values((
             program_client::public_key.eq(pubkey.as_bytes().to_vec()),
+            program_client::metadata_id.eq(metadata_id),
             program_client::nonce.eq(1), // pre-incremented; challenge uses 0
-            program_client::created_at.eq(now),
-            program_client::updated_at.eq(now),
         ))
         .execute(&mut conn)
         .await
@@ -144,6 +176,95 @@ async fn insert_client(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<(
         })?;
 
     Ok(())
+}
+
+async fn get_client_id(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<Option<i32>, Error> {
+    let mut conn = db.get().await.map_err(|e| {
+        error!(error = ?e, "Database pool error");
+        Error::DatabasePoolUnavailable
+    })?;
+
+    program_client::table
+        .filter(program_client::public_key.eq(pubkey.as_bytes().to_vec()))
+        .select(program_client::id)
+        .first::<i32>(&mut conn)
+        .await
+        .optional()
+        .map_err(|e| {
+            error!(error = ?e, "Database error");
+            Error::DatabaseOperationFailed
+        })
+}
+
+async fn sync_client_metadata(
+    db: &db::DatabasePool,
+    client_id: i32,
+    metadata: &ClientMetadata,
+) -> Result<(), Error> {
+    use crate::db::schema::{client_metadata, client_metadata_history};
+
+    let now = SqliteTimestamp(Utc::now());
+
+    let mut conn = db.get().await.map_err(|e| {
+        error!(error = ?e, "Database pool error");
+        Error::DatabasePoolUnavailable
+    })?;
+
+    conn.exclusive_transaction(|conn| {
+        let metadata = metadata.clone();
+        Box::pin(async move {
+            let (current_metadata_id, current): (i32, ProgramClientMetadata) =
+                program_client::table
+                    .find(client_id)
+                    .inner_join(client_metadata::table)
+                    .select((
+                        program_client::metadata_id,
+                        ProgramClientMetadata::as_select(),
+                    ))
+                    .first(conn)
+                    .await?;
+
+            let unchanged = current.name == metadata.name
+                && current.description == metadata.description
+                && current.version == metadata.version;
+            if unchanged {
+                return Ok(());
+            }
+
+            insert_into(client_metadata_history::table)
+                .values((
+                    client_metadata_history::metadata_id.eq(current_metadata_id),
+                    client_metadata_history::client_id.eq(client_id),
+                ))
+                .execute(conn)
+                .await?;
+
+            let metadata_id = insert_into(client_metadata::table)
+                .values((
+                    client_metadata::name.eq(&metadata.name),
+                    client_metadata::description.eq(&metadata.description),
+                    client_metadata::version.eq(&metadata.version),
+                ))
+                .returning(client_metadata::id)
+                .get_result::<i32>(conn)
+                .await?;
+
+            update(program_client::table.find(client_id))
+                .set((
+                    program_client::metadata_id.eq(metadata_id),
+                    program_client::updated_at.eq(now),
+                ))
+                .execute(conn)
+                .await?;
+
+            Ok::<(), diesel::result::Error>(())
+        })
+    })
+    .await
+    .map_err(|e| {
+        error!(error = ?e, "Database error");
+        Error::DatabaseOperationFailed
+    })
 }
 
 async fn challenge_client<T>(
@@ -189,7 +310,7 @@ pub async fn authenticate<T>(
 where
     T: Bi<Inbound, Result<Outbound, Error>> + Send + ?Sized,
 {
-    let Some(Inbound::AuthChallengeRequest { pubkey }) = transport.recv().await else {
+    let Some(Inbound::AuthChallengeRequest { pubkey, metadata }) = transport.recv().await else {
         return Err(Error::Transport);
     };
 
@@ -197,10 +318,15 @@ where
         Some(nonce) => nonce,
         None => {
             approve_new_client(&props.actors, pubkey).await?;
-            insert_client(&props.db, &pubkey).await?;
+            insert_client(&props.db, &pubkey, &metadata).await?;
             0
         }
     };
+
+    let client_id = get_client_id(&props.db, &pubkey)
+        .await?
+        .ok_or(Error::DatabaseOperationFailed)?;
+    sync_client_metadata(&props.db, client_id, &metadata).await?;
 
     challenge_client(transport, pubkey, nonce).await?;
     transport

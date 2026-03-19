@@ -46,7 +46,7 @@ message VolumeRateLimit {
 }
 
 message SharedSettings {
-  int32 wallet_id = 1;
+  int32 visibility_id = 1;
   uint64 chain_id = 2;
   optional google.protobuf.Timestamp valid_from = 3;
   optional google.protobuf.Timestamp valid_until = 4;
@@ -139,9 +139,8 @@ message TransactionEvalError {
 
 // --- UserAgent grant management ---
 message EvmGrantCreateRequest {
-  int32 client_id = 1;
-  SharedSettings shared = 2;
-  SpecificGrant specific = 3;
+  SharedSettings shared = 1;
+  SpecificGrant specific = 2;
 }
 
 message EvmGrantCreateResponse {
@@ -165,13 +164,13 @@ message EvmGrantDeleteResponse {
 // Basic grant info returned in grant listings
 message GrantEntry {
   int32 id = 1;
-  int32 client_id = 2;
+  int32 visibility_id = 2;
   SharedSettings shared = 3;
   SpecificGrant specific = 4;
 }
 
 message EvmGrantListRequest {
-  optional int32 wallet_id = 1;
+  optional int32 visibility_id = 1;
 }
 
 message EvmGrantListResponse {

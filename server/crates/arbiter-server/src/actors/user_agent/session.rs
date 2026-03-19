@@ -36,7 +36,10 @@ impl Error {
 pub struct UserAgentSession {
     props: UserAgentConnection,
     state: UserAgentStateMachine<DummyContext>,
-    #[allow(dead_code, reason = "The session keeps ownership of the outbound transport even before the state-machine flow starts using it directly")]
+    #[allow(
+        dead_code,
+        reason = "The session keeps ownership of the outbound transport even before the state-machine flow starts using it directly"
+    )]
     sender: Box<dyn Sender<OutOfBand>>,
 }
 
@@ -87,7 +90,7 @@ impl UserAgentSession {
     pub async fn request_new_client_approval(
         &mut self,
         client_pubkey: VerifyingKey,
-         cancel_flag: watch::Receiver<()>,
+        cancel_flag: watch::Receiver<()>,
     ) -> Result<bool, ()> {
         // temporary use to make clippy happy while we refactor this flow
         dbg!(client_pubkey);

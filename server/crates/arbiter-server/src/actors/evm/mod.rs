@@ -148,31 +148,24 @@ impl EvmActor {
     #[message]
     pub async fn useragent_create_grant(
         &mut self,
-        client_id: i32,
         basic: SharedGrantSettings,
         grant: SpecificGrant,
     ) -> Result<i32, evm::CreationError> {
         match grant {
             SpecificGrant::EtherTransfer(settings) => {
                 self.engine
-                    .create_grant::<EtherTransfer>(
-                        client_id,
-                        FullGrant {
-                            basic,
-                            specific: settings,
-                        },
-                    )
+                    .create_grant::<EtherTransfer>(FullGrant {
+                        basic,
+                        specific: settings,
+                    })
                     .await
             }
             SpecificGrant::TokenTransfer(settings) => {
                 self.engine
-                    .create_grant::<TokenTransfer>(
-                        client_id,
-                        FullGrant {
-                            basic,
-                            specific: settings,
-                        },
-                    )
+                    .create_grant::<TokenTransfer>(FullGrant {
+                        basic,
+                        specific: settings,
+                    })
                     .await
             }
         }
@@ -213,16 +206,19 @@ impl EvmActor {
             .await
             .optional()?
             .ok_or(SignTransactionError::WalletNotFound)?;
+        let visibility = schema::evm_wallet_visibility::table
+            .select(models::EvmWalletVisibility::as_select())
+            .filter(schema::evm_wallet_visibility::wallet_id.eq(wallet.id))
+            .filter(schema::evm_wallet_visibility::client_id.eq(client_id))
+            .first(&mut conn)
+            .await
+            .optional()?
+            .ok_or(SignTransactionError::WalletNotFound)?;
         drop(conn);
 
         let meaning = self
             .engine
-            .evaluate_transaction(
-                wallet.id,
-                client_id,
-                transaction.clone(),
-                RunKind::Execution,
-            )
+            .evaluate_transaction(visibility, transaction.clone(), RunKind::Execution)
             .await?;
 
         Ok(meaning)
@@ -243,6 +239,14 @@ impl EvmActor {
             .await
             .optional()?
             .ok_or(SignTransactionError::WalletNotFound)?;
+        let visibility = schema::evm_wallet_visibility::table
+            .select(models::EvmWalletVisibility::as_select())
+            .filter(schema::evm_wallet_visibility::wallet_id.eq(wallet.id))
+            .filter(schema::evm_wallet_visibility::client_id.eq(client_id))
+            .first(&mut conn)
+            .await
+            .optional()?
+            .ok_or(SignTransactionError::WalletNotFound)?;
         drop(conn);
 
         let raw_key: SafeCell<Vec<u8>> = self
@@ -256,12 +260,7 @@ impl EvmActor {
         let signer = safe_signer::SafeSigner::from_cell(raw_key)?;
 
         self.engine
-            .evaluate_transaction(
-                wallet.id,
-                client_id,
-                transaction.clone(),
-                RunKind::Execution,
-            )
+            .evaluate_transaction(visibility, transaction.clone(), RunKind::Execution)
             .await?;
 
         use alloy::network::TxSignerSync as _;

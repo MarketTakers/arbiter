@@ -89,7 +89,7 @@ pub trait Sender<Outbound>: Send + Sync {
 }
 
 #[async_trait]
-pub trait Receiver<Inbound>: Send + Sync  {
+pub trait Receiver<Inbound>: Send + Sync {
     async fn recv(&mut self) -> Option<Inbound>;
 }
 

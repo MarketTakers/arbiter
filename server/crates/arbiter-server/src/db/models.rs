@@ -21,7 +21,7 @@ pub mod types {
         sqlite::{Sqlite, SqliteType},
     };
 
-    #[derive(Debug, FromSqlRow, AsExpression)]
+    #[derive(Debug, FromSqlRow, AsExpression, Clone)]
     #[diesel(sql_type = Integer)]
     #[repr(transparent)] // hint compiler to optimize the wrapper struct away
     pub struct SqliteTimestamp(pub DateTime<Utc>);
@@ -185,12 +185,41 @@ pub struct EvmWallet {
     pub created_at: SqliteTimestamp,
 }
 
-#[derive(Queryable, Debug, Insertable, Selectable)]
+#[derive(Models, Queryable, Debug, Insertable, Selectable, Clone)]
+#[diesel(table_name = schema::evm_wallet_visibility, check_for_backend(Sqlite))]
+pub struct EvmWalletVisibility {
+    pub id: i32,
+    pub wallet_id: i32,
+    pub client_id: i32,
+    pub created_at: SqliteTimestamp,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = schema::client_metadata, check_for_backend(Sqlite))]
+pub struct ProgramClientMetadata {
+    pub id: i32,
+    pub name: String,
+    pub description: Option<String>,
+    pub version: Option<String>,
+    pub created_at: SqliteTimestamp,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = schema::client_metadata_history, check_for_backend(Sqlite))]
+pub struct ProgramClientMetadataHistory {
+    pub id: i32,
+    pub metadata_id: i32,
+    pub client_id: i32,
+    pub created_at: SqliteTimestamp,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
 #[diesel(table_name = schema::program_client, check_for_backend(Sqlite))]
 pub struct ProgramClient {
     pub id: i32,
     pub nonce: i32,
     pub public_key: Vec<u8>,
+    pub metadata_id: i32,
     pub created_at: SqliteTimestamp,
     pub updated_at: SqliteTimestamp,
 }
@@ -230,8 +259,7 @@ pub struct EvmEtherTransferLimit {
 )]
 pub struct EvmBasicGrant {
     pub id: i32,
-    pub wallet_id: i32, // references evm_wallet.id
-    pub client_id: i32, // references program_client.id
+    pub visibility_id: i32, // references evm_wallet_visibility.id
     pub chain_id: i32,
     pub valid_from: Option<SqliteTimestamp>,
     pub valid_until: Option<SqliteTimestamp>,
@@ -254,8 +282,7 @@ pub struct EvmBasicGrant {
 pub struct EvmTransactionLog {
     pub id: i32,
     pub grant_id: i32,
-    pub client_id: i32,
-    pub wallet_id: i32,
+    pub visibility_id: i32,
     pub chain_id: i32,
     pub eth_value: Vec<u8>,
     pub signed_at: SqliteTimestamp,
