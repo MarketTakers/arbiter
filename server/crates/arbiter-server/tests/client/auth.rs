@@ -114,6 +114,15 @@ pub async fn test_challenge_auth() {
         .await
         .unwrap();
 
+    let response = test_transport.recv().await.expect("should receive auth ok");
+    match response {
+        Ok(resp) => match resp.payload {
+            Some(ClientResponsePayload::AuthOk(_)) => {}
+            other => panic!("Expected AuthOk, got {other:?}"),
+        },
+        Err(err) => panic!("Expected Ok response, got Err({err:?})"),
+    }
+
     // Auth completes, session spawned
     task.await.unwrap();
 }
@@ -177,6 +186,15 @@ pub async fn test_evm_sign_request_payload_is_handled() {
         })
         .await
         .unwrap();
+
+    let response = test_transport.recv().await.expect("should receive auth ok");
+    match response {
+        Ok(resp) => match resp.payload {
+            Some(ClientResponsePayload::AuthOk(_)) => {}
+            other => panic!("Expected AuthOk, got {other:?}"),
+        },
+        Err(err) => panic!("Expected Ok response, got Err({err:?})"),
+    }
 
     task.await.unwrap();
 

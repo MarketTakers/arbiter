@@ -367,7 +367,9 @@ async fn receive_auth_confirmation(
         .await
         .map_err(|_| ConnectError::UnexpectedAuthResponse)?;
 
-    let payload = response.payload.ok_or(ConnectError::UnexpectedAuthResponse)?;
+    let payload = response
+        .payload
+        .ok_or(ConnectError::UnexpectedAuthResponse)?;
     match payload {
         ClientResponsePayload::AuthOk(_) => Ok(()),
         ClientResponsePayload::ClientConnectError(err) => Err(map_connect_error(err.code)),
