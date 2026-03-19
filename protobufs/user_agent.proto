@@ -106,15 +106,15 @@ enum VaultState {
   VAULT_STATE_ERROR = 4;
 }
 
-message ClientConnectionRequest {
+message SdkClientConnectionRequest {
   bytes pubkey = 1;
 }
 
-message ClientConnectionResponse {
+message SdkClientConnectionResponse {
   bool approved = 1;
 }
 
-message ClientConnectionCancel {}
+message SdkClientConnectionCancel {}
 
 message UserAgentRequest {
   oneof payload {
@@ -128,7 +128,7 @@ message UserAgentRequest {
     arbiter.evm.EvmGrantCreateRequest evm_grant_create = 8;
     arbiter.evm.EvmGrantDeleteRequest evm_grant_delete = 9;
     arbiter.evm.EvmGrantListRequest evm_grant_list = 10;
-    ClientConnectionResponse client_connection_response = 11;
+    SdkClientConnectionResponse sdk_client_connection_response = 11;
     SdkClientApproveRequest sdk_client_approve = 12;
     SdkClientRevokeRequest sdk_client_revoke = 13;
     google.protobuf.Empty sdk_client_list = 14;
@@ -146,8 +146,8 @@ message UserAgentResponse {
     arbiter.evm.EvmGrantCreateResponse evm_grant_create = 8;
     arbiter.evm.EvmGrantDeleteResponse evm_grant_delete = 9;
     arbiter.evm.EvmGrantListResponse evm_grant_list = 10;
-    ClientConnectionRequest client_connection_request = 11;
-    ClientConnectionCancel client_connection_cancel = 12;
+    SdkClientConnectionRequest sdk_client_connection_request = 11;
+    SdkClientConnectionCancel sdk_client_connection_cancel = 12;
     SdkClientApproveResponse sdk_client_approve = 13;
     SdkClientRevokeResponse sdk_client_revoke = 14;
     SdkClientListResponse sdk_client_list = 15;

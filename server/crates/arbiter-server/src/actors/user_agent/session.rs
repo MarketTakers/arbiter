@@ -3,8 +3,8 @@ use std::{ops::DerefMut, sync::Mutex};
 use arbiter_proto::proto::{
     evm as evm_proto,
     user_agent::{
-        ClientConnectionCancel, ClientConnectionRequest, SdkClientApproveRequest,
-        SdkClientApproveResponse, SdkClientEntry, SdkClientError as ProtoSdkClientError,
+        SdkClientApproveRequest, SdkClientApproveResponse, SdkClientConnectionCancel,
+        SdkClientConnectionRequest, SdkClientEntry, SdkClientError as ProtoSdkClientError,
         SdkClientList, SdkClientListResponse, SdkClientRevokeRequest, SdkClientRevokeResponse,
         UnsealEncryptedKey, UnsealResult, UnsealStart, UnsealStartResponse, UserAgentRequest,
         UserAgentResponse, sdk_client_approve_response, sdk_client_list_response,
@@ -127,7 +127,7 @@ impl UserAgentSession {
         ctx: &mut Context<Self, Result<bool, Error>>,
     ) -> Result<bool, Error> {
         self.send_msg(
-            UserAgentResponsePayload::ClientConnectionRequest(ClientConnectionRequest {
+            UserAgentResponsePayload::SdkClientConnectionRequest(SdkClientConnectionRequest {
                 pubkey: client_pubkey.as_bytes().to_vec(),
             }),
             ctx,
@@ -135,8 +135,9 @@ impl UserAgentSession {
         .await?;
 
         let extractor = |msg| {
-            if let UserAgentRequestPayload::ClientConnectionResponse(client_connection_response) =
-                msg
+            if let UserAgentRequestPayload::SdkClientConnectionResponse(
+                client_connection_response,
+            ) = msg
             {
                 Some(client_connection_response)
             } else {
@@ -148,7 +149,7 @@ impl UserAgentSession {
             _ = cancel_flag.changed() => {
                 info!(actor = "useragent", "client connection approval cancelled");
                 self.send_msg(
-                    UserAgentResponsePayload::ClientConnectionCancel(ClientConnectionCancel {}),
+                    UserAgentResponsePayload::SdkClientConnectionCancel(SdkClientConnectionCancel {}),
                     ctx,
                 ).await?;
                 Ok(false)
