@@ -27,6 +27,7 @@ rustls.workspace = true
 smlang.workspace = true
 miette.workspace = true
 thiserror.workspace = true
+fatality = "0.1.1"
 diesel_migrations = { version = "2.3.1", features = ["sqlite"] }
 async-trait.workspace = true
 secrecy = "0.10.3"

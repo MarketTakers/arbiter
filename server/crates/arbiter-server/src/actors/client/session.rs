@@ -15,7 +15,7 @@ use tracing::{error, info};
 use crate::{
     actors::{
         GlobalActors,
-        client::{ClientConnection, ClientError},
+        client::{ClientConnection, ClientError, auth::ClientId},
         evm::ClientSignTransaction,
         router::RegisterClient,
     },
@@ -24,11 +24,11 @@ use crate::{
 
 pub struct ClientSession {
     props: ClientConnection,
-    client_id: i32,
+    client_id: ClientId,
 }
 
 impl ClientSession {
-    pub(crate) fn new(props: ClientConnection, client_id: i32) -> Self {
+    pub(crate) fn new(props: ClientConnection, client_id: ClientId) -> Self {
         Self { props, client_id }
     }
 
@@ -54,7 +54,7 @@ impl ClientSession {
                     .actors
                     .evm
                     .ask(ClientSignTransaction {
-                        client_id: self.client_id,
+                        client_id: self.client_id.as_i32(),
                         wallet_address: Address::from_slice(&wallet_address),
                         transaction: tx,
                     })
@@ -145,7 +145,7 @@ impl ClientSession {
         let props = ClientConnection::new(db, transport, actors);
         Self {
             props,
-            client_id: 0,
+            client_id: ClientId::new(0),
         }
     }
 }

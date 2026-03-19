@@ -4,6 +4,7 @@ use arbiter_proto::{
     },
     transport::Bi,
 };
+use fatality::Fatality;
 use kameo::actor::Spawn as _;
 use tracing::{error, info};
 
@@ -38,8 +39,8 @@ pub enum TransportResponseError {
     ConnectionRegistrationFailed,
 }
 
-impl TransportResponseError {
-    pub fn is_terminal(&self) -> bool {
+impl Fatality for TransportResponseError {
+    fn is_fatal(&self) -> bool {
         !matches!(
             self,
             Self::SdkClientApprove(_) | Self::SdkClientList(_) | Self::SdkClientRevoke(_)
