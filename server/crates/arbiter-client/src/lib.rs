@@ -242,10 +242,10 @@ impl ArbiterSigner {
         self
     }
 
-    async fn sign_transaction_via_arbiter(
+    fn build_sign_transaction_request(
         &self,
         tx: &mut dyn SignableTransaction<Signature>,
-    ) -> Result<Signature> {
+    ) -> Result<ClientRequest> {
         if let Some(chain_id) = self.chain_id
             && !tx.set_chain_id_checked(chain_id)
         {
@@ -262,15 +262,17 @@ impl ArbiterSigner {
             .address
             .ok_or_else(|| Error::other(ClientSignError::WalletAddressNotConfigured))?;
 
-        let request = ClientRequest {
+        Ok(ClientRequest {
             payload: Some(ClientRequestPayload::EvmSignTransaction(
                 EvmSignTransactionRequest {
                     wallet_address: wallet_address.as_slice().to_vec(),
                     rlp_transaction,
                 },
             )),
-        };
+        })
+    }
 
+    async fn execute_sign_transaction_request(&self, request: ClientRequest) -> Result<Signature> {
         let mut transport = self.transport.lock().await;
         transport.send(request).await.map_err(Error::other)?;
         let response = transport.recv().await.map_err(Error::other)?;
@@ -298,7 +300,16 @@ impl ArbiterSigner {
     }
 }
 
-async fn authenticate(
+fn map_connect_error(code: i32) -> ConnectError {
+    match client_connect_error::Code::try_from(code).unwrap_or(client_connect_error::Code::Unknown)
+    {
+        client_connect_error::Code::ApprovalDenied => ConnectError::ApprovalDenied,
+        client_connect_error::Code::NoUserAgentsOnline => ConnectError::NoUserAgentsOnline,
+        client_connect_error::Code::Unknown => ConnectError::UnexpectedAuthResponse,
+    }
+}
+
+async fn send_auth_challenge_request(
     transport: &mut ClientTransport,
     key: &ed25519_dalek::SigningKey,
 ) -> std::result::Result<(), ConnectError> {
@@ -311,8 +322,12 @@ async fn authenticate(
             )),
         })
         .await
-        .map_err(|_| ConnectError::UnexpectedAuthResponse)?;
+        .map_err(|_| ConnectError::UnexpectedAuthResponse)
+}
 
+async fn receive_auth_challenge(
+    transport: &mut ClientTransport,
+) -> std::result::Result<arbiter_proto::proto::client::AuthChallenge, ConnectError> {
     let response = transport
         .recv()
         .await
@@ -320,37 +335,54 @@ async fn authenticate(
 
     let payload = response.payload.ok_or(ConnectError::MissingAuthChallenge)?;
     match payload {
-        ClientResponsePayload::AuthChallenge(challenge) => {
-            let challenge_payload = format_challenge(challenge.nonce, &challenge.pubkey);
-            let signature = key.sign(&challenge_payload).to_bytes().to_vec();
-
-            transport
-                .send(ClientRequest {
-                    payload: Some(ClientRequestPayload::AuthChallengeSolution(
-                        AuthChallengeSolution { signature },
-                    )),
-                })
-                .await
-                .map_err(|_| ConnectError::UnexpectedAuthResponse)?;
-
-            // Current server flow does not emit `AuthOk` for SDK clients, so we proceed after
-            // sending the solution. If authentication fails, the first business request will return
-            // a `ClientConnectError` or the stream will close.
-            Ok(())
-        }
-        ClientResponsePayload::ClientConnectError(err) => {
-            match client_connect_error::Code::try_from(err.code)
-                .unwrap_or(client_connect_error::Code::Unknown)
-            {
-                client_connect_error::Code::ApprovalDenied => Err(ConnectError::ApprovalDenied),
-                client_connect_error::Code::NoUserAgentsOnline => {
-                    Err(ConnectError::NoUserAgentsOnline)
-                }
-                client_connect_error::Code::Unknown => Err(ConnectError::UnexpectedAuthResponse),
-            }
-        }
+        ClientResponsePayload::AuthChallenge(challenge) => Ok(challenge),
+        ClientResponsePayload::ClientConnectError(err) => Err(map_connect_error(err.code)),
         _ => Err(ConnectError::UnexpectedAuthResponse),
     }
+}
+
+async fn send_auth_challenge_solution(
+    transport: &mut ClientTransport,
+    key: &ed25519_dalek::SigningKey,
+    challenge: arbiter_proto::proto::client::AuthChallenge,
+) -> std::result::Result<(), ConnectError> {
+    let challenge_payload = format_challenge(challenge.nonce, &challenge.pubkey);
+    let signature = key.sign(&challenge_payload).to_bytes().to_vec();
+
+    transport
+        .send(ClientRequest {
+            payload: Some(ClientRequestPayload::AuthChallengeSolution(
+                AuthChallengeSolution { signature },
+            )),
+        })
+        .await
+        .map_err(|_| ConnectError::UnexpectedAuthResponse)
+}
+
+async fn receive_auth_confirmation(
+    transport: &mut ClientTransport,
+) -> std::result::Result<(), ConnectError> {
+    let response = transport
+        .recv()
+        .await
+        .map_err(|_| ConnectError::UnexpectedAuthResponse)?;
+
+    let payload = response.payload.ok_or(ConnectError::UnexpectedAuthResponse)?;
+    match payload {
+        ClientResponsePayload::AuthOk(_) => Ok(()),
+        ClientResponsePayload::ClientConnectError(err) => Err(map_connect_error(err.code)),
+        _ => Err(ConnectError::UnexpectedAuthResponse),
+    }
+}
+
+async fn authenticate(
+    transport: &mut ClientTransport,
+    key: &ed25519_dalek::SigningKey,
+) -> std::result::Result<(), ConnectError> {
+    send_auth_challenge_request(transport, key).await?;
+    let challenge = receive_auth_challenge(transport).await?;
+    send_auth_challenge_solution(transport, key, challenge).await?;
+    receive_auth_confirmation(transport).await
 }
 
 #[async_trait]
@@ -384,7 +416,8 @@ impl TxSigner<Signature> for ArbiterSigner {
         &self,
         tx: &mut dyn SignableTransaction<Signature>,
     ) -> Result<Signature> {
-        self.sign_transaction_via_arbiter(tx).await
+        let request = self.build_sign_transaction_request(tx)?;
+        self.execute_sign_transaction_request(request).await
     }
 }
 
