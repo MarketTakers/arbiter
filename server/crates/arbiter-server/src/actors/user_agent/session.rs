@@ -16,6 +16,7 @@ use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use diesel::{ExpressionMethods as _, QueryDsl as _, dsl::insert_into};
 use diesel_async::RunQueryDsl as _;
 use ed25519_dalek::VerifyingKey;
+use fatality::Fatality;
 use kameo::{Actor, error::SendError, messages, prelude::Context};
 use memsafe::MemSafe;
 use tokio::{select, sync::watch};
@@ -380,39 +381,24 @@ impl UserAgentSession {
                 program_client::created_at.eq(now),
                 program_client::updated_at.eq(now),
             ))
-            .execute(&mut conn)
+            .returning((
+                program_client::id,
+                program_client::public_key,
+                program_client::created_at,
+            ))
+            .get_result::<(i32, Vec<u8>, i32)>(&mut conn)
             .await;
 
         match insert_result {
-            Ok(_) => {
-                match program_client::table
-                    .filter(program_client::public_key.eq(&pubkey_bytes))
-                    .order(program_client::id.desc())
-                    .select((
-                        program_client::id,
-                        program_client::public_key,
-                        program_client::created_at,
-                    ))
-                    .first::<(i32, Vec<u8>, i32)>(&mut conn)
-                    .await
-                {
-                    Ok((id, pubkey, created_at)) => Ok(response(
-                        UserAgentResponsePayload::SdkClientApprove(SdkClientApproveResponse {
-                            result: Some(ApproveResult::Client(SdkClientEntry {
-                                id,
-                                pubkey,
-                                created_at,
-                            })),
-                        }),
-                    )),
-                    Err(e) => {
-                        error!(?e, "Failed to fetch inserted SDK client");
-                        Err(TransportResponseError::SdkClientApprove(
-                            ProtoSdkClientError::Internal,
-                        ))
-                    }
-                }
-            }
+            Ok((id, pubkey, created_at)) => Ok(response(
+                UserAgentResponsePayload::SdkClientApprove(SdkClientApproveResponse {
+                    result: Some(ApproveResult::Client(SdkClientEntry {
+                        id,
+                        pubkey,
+                        created_at,
+                    })),
+                }),
+            )),
             Err(diesel::result::Error::DatabaseError(
                 diesel::result::DatabaseErrorKind::UniqueViolation,
                 _,
@@ -574,7 +560,7 @@ impl Actor for UserAgentSession {
                                     }
                                 }
                                 Err(err) => {
-                                    let should_stop = err.is_terminal();
+                                    let should_stop = err.is_fatal();
                                     if self.props.transport.send(Err(err)).await.is_err() {
                                         error!(actor = "useragent", reason = "channel closed", "send.failed");
                                         return Some(kameo::mailbox::Signal::Stop);
