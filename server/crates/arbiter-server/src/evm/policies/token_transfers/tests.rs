@@ -6,7 +6,7 @@ use diesel_async::RunQueryDsl;
 
 use crate::db::{
     self, DatabaseConnection,
-    models::{EvmBasicGrant, EvmWalletVisibility, NewEvmBasicGrant, SqliteTimestamp},
+    models::{EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, SqliteTimestamp},
     schema::evm_basic_grant,
 };
 use crate::evm::{
@@ -21,7 +21,7 @@ use super::{Settings, TokenTransfer};
 const CHAIN_ID: u64 = 1;
 const DAI: Address = address!("6B175474E89094C44Da98b954EedeAC495271d0F");
 
-const VISIBILITY_ID: i32 = 1;
+const WALLET_ACCESS_ID: i32 = 1;
 
 const RECIPIENT: Address = address!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 const OTHER: Address = address!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
@@ -37,8 +37,8 @@ fn transfer_calldata(to: Address, value: U256) -> Bytes {
 
 fn ctx(to: Address, calldata: Bytes) -> EvalContext {
     EvalContext {
-        target: EvmWalletVisibility {
-            id: VISIBILITY_ID,
+        target: EvmWalletAccess {
+            id: WALLET_ACCESS_ID,
             wallet_id: 10,
             client_id: 20,
             created_at: SqliteTimestamp(Utc::now()),
@@ -55,7 +55,7 @@ fn ctx(to: Address, calldata: Bytes) -> EvalContext {
 async fn insert_basic(conn: &mut DatabaseConnection, revoked: bool) -> EvmBasicGrant {
     insert_into(evm_basic_grant::table)
         .values(NewEvmBasicGrant {
-            visibility_id: VISIBILITY_ID,
+            wallet_access_id: WALLET_ACCESS_ID,
             chain_id: CHAIN_ID as i32,
             valid_from: None,
             valid_until: None,
@@ -88,7 +88,7 @@ fn make_settings(target: Option<Address>, max_volume: Option<u64>) -> Settings {
 
 fn shared() -> SharedGrantSettings {
     SharedGrantSettings {
-        visibility_id: VISIBILITY_ID,
+        wallet_access_id: WALLET_ACCESS_ID,
         chain: CHAIN_ID,
         valid_from: None,
         valid_until: None,

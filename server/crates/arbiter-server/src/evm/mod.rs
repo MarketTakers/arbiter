@@ -13,8 +13,7 @@ use crate::{
     db::{
         self,
         models::{
-            EvmBasicGrant, EvmWalletVisibility, NewEvmBasicGrant, NewEvmTransactionLog,
-            SqliteTimestamp,
+            EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp,
         },
         schema::{self, evm_transaction_log},
     },
@@ -187,7 +186,7 @@ impl Engine {
                     let log_id: i32 = insert_into(evm_transaction_log::table)
                         .values(&NewEvmTransactionLog {
                             grant_id: grant.shared_grant_id,
-                            visibility_id: context.target.id,
+                            wallet_access_id: context.target.id,
                             chain_id: context.chain as i32,
                             eth_value: utils::u256_to_bytes(context.value).to_vec(),
                             signed_at: Utc::now().into(),
@@ -227,7 +226,7 @@ impl Engine {
                     let basic_grant: EvmBasicGrant = insert_into(evm_basic_grant::table)
                         .values(&NewEvmBasicGrant {
                             chain_id: full_grant.basic.chain as i32,
-                            visibility_id: full_grant.basic.visibility_id,
+                            wallet_access_id: full_grant.basic.wallet_access_id,
                             valid_from: full_grant.basic.valid_from.map(SqliteTimestamp),
                             valid_until: full_grant.basic.valid_until.map(SqliteTimestamp),
                             max_gas_fee_per_gas: full_grant
@@ -295,7 +294,7 @@ impl Engine {
 
     pub async fn evaluate_transaction(
         &self,
-        target: EvmWalletVisibility,
+        target: EvmWalletAccess,
         transaction: TxEip1559,
         run_kind: RunKind,
     ) -> Result<SpecificMeaning, VetError> {

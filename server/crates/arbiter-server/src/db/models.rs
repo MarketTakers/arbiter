@@ -186,8 +186,8 @@ pub struct EvmWallet {
 }
 
 #[derive(Models, Queryable, Debug, Insertable, Selectable, Clone)]
-#[diesel(table_name = schema::evm_wallet_visibility, check_for_backend(Sqlite))]
-pub struct EvmWalletVisibility {
+#[diesel(table_name = schema::evm_wallet_access, check_for_backend(Sqlite))]
+pub struct EvmWalletAccess {
     pub id: i32,
     pub wallet_id: i32,
     pub client_id: i32,
@@ -259,7 +259,7 @@ pub struct EvmEtherTransferLimit {
 )]
 pub struct EvmBasicGrant {
     pub id: i32,
-    pub visibility_id: i32, // references evm_wallet_visibility.id
+    pub wallet_access_id: i32, // references evm_wallet_access.id
     pub chain_id: i32,
     pub valid_from: Option<SqliteTimestamp>,
     pub valid_until: Option<SqliteTimestamp>,
@@ -282,7 +282,7 @@ pub struct EvmBasicGrant {
 pub struct EvmTransactionLog {
     pub id: i32,
     pub grant_id: i32,
-    pub visibility_id: i32,
+    pub wallet_access_id: i32,
     pub chain_id: i32,
     pub eth_value: Vec<u8>,
     pub signed_at: SqliteTimestamp,

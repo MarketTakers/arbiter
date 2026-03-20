@@ -196,7 +196,7 @@ impl Policy for EtherTransfer {
             .inner_join(evm_basic_grant::table)
             .inner_join(evm_ether_transfer_grant_target::table)
             .filter(
-                evm_basic_grant::visibility_id
+                evm_basic_grant::wallet_access_id
                     .eq(context.target.id)
                     .and(evm_basic_grant::revoked_at.is_null())
                     .and(evm_ether_transfer_grant_target::address.eq(&target_bytes)),

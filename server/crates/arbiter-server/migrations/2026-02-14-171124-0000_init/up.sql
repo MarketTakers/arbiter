@@ -93,14 +93,14 @@ create unique index if not exists uniq_evm_wallet_address on evm_wallet (address
 
 create unique index if not exists uniq_evm_wallet_aead on evm_wallet (aead_encrypted_id);
 
-create table if not exists evm_wallet_visibility (
+create table if not exists evm_wallet_access (
     id integer not null primary key,
     wallet_id integer not null references evm_wallet (id) on delete cascade,
     client_id integer not null references program_client (id) on delete cascade,
     created_at integer not null default(unixepoch ('now'))
 ) STRICT;
 
-create unique index if not exists uniq_wallet_visibility on evm_wallet_visibility (wallet_id, client_id);
+create unique index if not exists uniq_wallet_access on evm_wallet_access (wallet_id, client_id);
 
 create table if not exists evm_ether_transfer_limit (
     id integer not null primary key,
@@ -111,7 +111,7 @@ create table if not exists evm_ether_transfer_limit (
 -- Shared grant properties: client scope, timeframe, fee caps, and rate limit
 create table if not exists evm_basic_grant (
     id integer not null primary key,
-    visibility_id integer not null references evm_wallet_visibility (id) on delete restrict,
+    wallet_access_id integer not null references evm_wallet_access (id) on delete restrict,
     chain_id integer not null, -- EIP-155 chain ID
     valid_from integer, -- unix timestamp (seconds), null = no lower bound
     valid_until integer, -- unix timestamp (seconds), null = no upper bound
@@ -126,14 +126,14 @@ create table if not exists evm_basic_grant (
 -- Shared transaction log for all EVM grants, used for rate limit tracking and auditing
 create table if not exists evm_transaction_log (
     id integer not null primary key,
-    visibility_id integer not null references evm_wallet_visibility (id) on delete restrict,
+    wallet_access_id integer not null references evm_wallet_access (id) on delete restrict,
     grant_id integer not null references evm_basic_grant (id) on delete restrict,
     chain_id integer not null,
     eth_value blob not null, -- always present on any EVM tx
     signed_at integer not null default(unixepoch ('now'))
 ) STRICT;
 
-create index if not exists idx_evm_basic_grant_wallet_chain on evm_basic_grant (visibility_id, chain_id);
+create index if not exists idx_evm_basic_grant_access_chain on evm_basic_grant (wallet_access_id, chain_id);
 
 -- ===============================
 -- ERC20 token transfer grant

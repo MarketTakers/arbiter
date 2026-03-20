@@ -206,10 +206,10 @@ impl EvmActor {
             .await
             .optional()?
             .ok_or(SignTransactionError::WalletNotFound)?;
-        let visibility = schema::evm_wallet_visibility::table
-            .select(models::EvmWalletVisibility::as_select())
-            .filter(schema::evm_wallet_visibility::wallet_id.eq(wallet.id))
-            .filter(schema::evm_wallet_visibility::client_id.eq(client_id))
+        let wallet_access = schema::evm_wallet_access::table
+            .select(models::EvmWalletAccess::as_select())
+            .filter(schema::evm_wallet_access::wallet_id.eq(wallet.id))
+            .filter(schema::evm_wallet_access::client_id.eq(client_id))
             .first(&mut conn)
             .await
             .optional()?
@@ -218,7 +218,7 @@ impl EvmActor {
 
         let meaning = self
             .engine
-            .evaluate_transaction(visibility, transaction.clone(), RunKind::Execution)
+            .evaluate_transaction(wallet_access, transaction.clone(), RunKind::Execution)
             .await?;
 
         Ok(meaning)
@@ -239,10 +239,10 @@ impl EvmActor {
             .await
             .optional()?
             .ok_or(SignTransactionError::WalletNotFound)?;
-        let visibility = schema::evm_wallet_visibility::table
-            .select(models::EvmWalletVisibility::as_select())
-            .filter(schema::evm_wallet_visibility::wallet_id.eq(wallet.id))
-            .filter(schema::evm_wallet_visibility::client_id.eq(client_id))
+        let wallet_access = schema::evm_wallet_access::table
+            .select(models::EvmWalletAccess::as_select())
+            .filter(schema::evm_wallet_access::wallet_id.eq(wallet.id))
+            .filter(schema::evm_wallet_access::client_id.eq(client_id))
             .first(&mut conn)
             .await
             .optional()?
@@ -260,7 +260,7 @@ impl EvmActor {
         let signer = safe_signer::SafeSigner::from_cell(raw_key)?;
 
         self.engine
-            .evaluate_transaction(visibility, transaction.clone(), RunKind::Execution)
+            .evaluate_transaction(wallet_access, transaction.clone(), RunKind::Execution)
             .await?;
 
         use alloy::network::TxSignerSync as _;

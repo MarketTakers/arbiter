@@ -153,9 +153,7 @@ pub async fn test_metadata_unchanged_does_not_append_history() {
     let requested = metadata("client", Some("desc"), Some("1.0.0"));
 
     {
-        use arbiter_server::db::schema::{
-            client_metadata, program_client,
-        };
+        use arbiter_server::db::schema::{client_metadata, program_client};
         let mut conn = db.get().await.unwrap();
         let metadata_id: i32 = insert_into(client_metadata::table)
             .values((
@@ -232,9 +230,7 @@ pub async fn test_metadata_change_appends_history_and_repoints_binding() {
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
 
     {
-        use arbiter_server::db::schema::{
-            client_metadata, program_client,
-        };
+        use arbiter_server::db::schema::{client_metadata, program_client};
         let mut conn = db.get().await.unwrap();
         let metadata_id: i32 = insert_into(client_metadata::table)
             .values((

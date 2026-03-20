@@ -318,7 +318,7 @@ fn parse_grant_request(
 
 fn shared_settings_from_proto(shared: ProtoSharedSettings) -> Result<SharedGrantSettings, Status> {
     Ok(SharedGrantSettings {
-        visibility_id: shared.visibility_id,
+        wallet_access_id: shared.wallet_access_id,
         chain: shared.chain_id,
         valid_from: shared.valid_from.map(proto_timestamp_to_utc).transpose()?,
         valid_until: shared.valid_until.map(proto_timestamp_to_utc).transpose()?,
@@ -402,7 +402,7 @@ fn proto_timestamp_to_utc(
 
 fn shared_settings_to_proto(shared: SharedGrantSettings) -> ProtoSharedSettings {
     ProtoSharedSettings {
-        visibility_id: shared.visibility_id,
+        wallet_access_id: shared.wallet_access_id,
         chain_id: shared.chain,
         valid_from: shared.valid_from.map(|time| prost_types::Timestamp {
             seconds: time.timestamp(),
@@ -542,7 +542,7 @@ impl EvmGrantOrWallet {
                     .into_iter()
                     .map(|grant| GrantEntry {
                         id: grant.id,
-                        visibility_id: grant.shared.visibility_id,
+                        wallet_access_id: grant.shared.wallet_access_id,
                         shared: Some(shared_settings_to_proto(grant.shared)),
                         specific: Some(specific_grant_to_proto(grant.settings)),
                     })
@@ -566,8 +566,7 @@ pub async fn start(
 ) {
     let mut request_tracker = RequestTracker::default();
 
-    let pubkey = match auth::start(&mut conn, &mut bi, &mut request_tracker).await
-    {
+    let pubkey = match auth::start(&mut conn, &mut bi, &mut request_tracker).await {
         Ok(pubkey) => pubkey,
         Err(e) => {
             warn!(error = ?e, "Authentication failed");

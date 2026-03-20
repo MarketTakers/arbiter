@@ -6,7 +6,7 @@ use diesel_async::RunQueryDsl;
 use crate::db::{
     self, DatabaseConnection,
     models::{
-        EvmBasicGrant, EvmWalletVisibility, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp,
+        EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp,
     },
     schema::{evm_basic_grant, evm_transaction_log},
 };
@@ -17,7 +17,7 @@ use crate::evm::{
 
 use super::{EtherTransfer, Settings};
 
-const VISIBILITY_ID: i32 = 1;
+const WALLET_ACCESS_ID: i32 = 1;
 const CHAIN_ID: u64 = 1;
 
 const ALLOWED: Address = address!("1111111111111111111111111111111111111111");
@@ -25,8 +25,8 @@ const OTHER: Address = address!("2222222222222222222222222222222222222222");
 
 fn ctx(to: Address, value: U256) -> EvalContext {
     EvalContext {
-        target: EvmWalletVisibility {
-            id: VISIBILITY_ID,
+        target: EvmWalletAccess {
+            id: WALLET_ACCESS_ID,
             wallet_id: 10,
             client_id: 20,
             created_at: SqliteTimestamp(Utc::now()),
@@ -43,7 +43,7 @@ fn ctx(to: Address, value: U256) -> EvalContext {
 async fn insert_basic(conn: &mut DatabaseConnection, revoked: bool) -> EvmBasicGrant {
     insert_into(evm_basic_grant::table)
         .values(NewEvmBasicGrant {
-            visibility_id: VISIBILITY_ID,
+            wallet_access_id: WALLET_ACCESS_ID,
             chain_id: CHAIN_ID as i32,
             valid_from: None,
             valid_until: None,
@@ -71,7 +71,7 @@ fn make_settings(targets: Vec<Address>, max_volume: u64) -> Settings {
 
 fn shared() -> SharedGrantSettings {
     SharedGrantSettings {
-        visibility_id: VISIBILITY_ID,
+        wallet_access_id: WALLET_ACCESS_ID,
         chain: CHAIN_ID,
         valid_from: None,
         valid_until: None,
@@ -156,7 +156,7 @@ async fn evaluate_passes_when_volume_within_limit() {
     insert_into(evm_transaction_log::table)
         .values(NewEvmTransactionLog {
             grant_id,
-            visibility_id: VISIBILITY_ID,
+            wallet_access_id: WALLET_ACCESS_ID,
             chain_id: CHAIN_ID as i32,
             eth_value: utils::u256_to_bytes(U256::from(500u64)).to_vec(),
             signed_at: SqliteTimestamp(Utc::now()),
@@ -196,7 +196,7 @@ async fn evaluate_rejects_volume_over_limit() {
     insert_into(evm_transaction_log::table)
         .values(NewEvmTransactionLog {
             grant_id,
-            visibility_id: VISIBILITY_ID,
+            wallet_access_id: WALLET_ACCESS_ID,
             chain_id: CHAIN_ID as i32,
             eth_value: utils::u256_to_bytes(U256::from(1_001u64)).to_vec(),
             signed_at: SqliteTimestamp(Utc::now()),
@@ -237,7 +237,7 @@ async fn evaluate_passes_at_exactly_volume_limit() {
     insert_into(evm_transaction_log::table)
         .values(NewEvmTransactionLog {
             grant_id,
-            visibility_id: VISIBILITY_ID,
+            wallet_access_id: WALLET_ACCESS_ID,
             chain_id: CHAIN_ID as i32,
             eth_value: utils::u256_to_bytes(U256::from(1_000u64)).to_vec(),
             signed_at: SqliteTimestamp(Utc::now()),

@@ -10,7 +10,7 @@ use miette::Diagnostic;
 use thiserror::Error;
 
 use crate::{
-    db::models::{self, EvmBasicGrant, EvmWalletVisibility},
+    db::models::{self, EvmBasicGrant, EvmWalletAccess},
     evm::utils,
 };
 
@@ -20,7 +20,7 @@ pub mod token_transfers;
 #[derive(Debug, Clone)]
 pub struct EvalContext {
     // Which wallet is this transaction for and who requested it
-    pub target: EvmWalletVisibility,
+    pub target: EvmWalletAccess,
 
     // The transaction data
     pub chain: ChainId,
@@ -144,7 +144,7 @@ pub struct VolumeRateLimit {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SharedGrantSettings {
-    pub visibility_id: i32,
+    pub wallet_access_id: i32,
     pub chain: ChainId,
 
     pub valid_from: Option<DateTime<Utc>>,
@@ -159,7 +159,7 @@ pub struct SharedGrantSettings {
 impl SharedGrantSettings {
     fn try_from_model(model: EvmBasicGrant) -> QueryResult<Self> {
         Ok(Self {
-            visibility_id: model.visibility_id,
+            wallet_access_id: model.wallet_access_id,
             chain: model.chain_id as u64, // safe because chain_id is stored as i32 but is guaranteed to be a valid ChainId by the API when creating grants
             valid_from: model.valid_from.map(Into::into),
             valid_until: model.valid_until.map(Into::into),
