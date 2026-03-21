@@ -7,8 +7,8 @@ import "google/protobuf/empty.proto";
 
 message ClientInfo {
   string name = 1;
-  string description = 2;
-  string version = 3;
+  optional string description = 2;
+  optional string version = 3;
 }
 
 message AuthChallengeRequest {

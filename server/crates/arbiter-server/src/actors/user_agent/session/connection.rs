@@ -4,9 +4,11 @@ use alloy::primitives::Address;
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use kameo::error::SendError;
 use kameo::messages;
+use kameo::prelude::Context;
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
+use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
 use crate::actors::keyholder::KeyHolderState;
 use crate::actors::user_agent::session::Error;
 use crate::evm::policies::{Grant, SpecificGrant};
@@ -345,5 +347,40 @@ impl UserAgentSession {
                 Err(Error::internal("Failed to delete EVM grant"))
             }
         }
+    }
+}
+
+#[messages]
+impl UserAgentSession {
+    #[message(ctx)]
+    pub(crate) async fn handle_new_client_approve(
+        &mut self,
+        approved: bool,
+        pubkey: ed25519_dalek::VerifyingKey,
+        ctx: &mut Context<Self, Result<(), Error>>,
+    ) -> Result<(), Error> {
+        let pending_approval = match self.pending_client_approvals.remove(&pubkey) {
+            Some(approval) => approval,
+            None => {
+                error!("Received client connection response for unknown client");
+                return Err(Error::internal("Unknown client in connection response"));
+            }
+        };
+
+        pending_approval
+            .controller
+            .tell(ClientApprovalAnswer { approved })
+            .await
+            .map_err(|err| {
+                error!(
+                    ?err,
+                    "Failed to send client approval response to controller"
+                );
+                Error::internal("Failed to send client approval response to controller")
+            })?;
+
+        ctx.actor_ref().unlink(&pending_approval.controller).await;
+
+        Ok(())
     }
 }

@@ -2,6 +2,7 @@ use tokio::sync::mpsc;
 
 use arbiter_proto::{
     proto::{
+        client::ClientInfo as ProtoClientMetadata,
         evm::{
             EtherTransferSettings as ProtoEtherTransferSettings, EvmError as ProtoEvmError,
             EvmGrantCreateRequest, EvmGrantCreateResponse, EvmGrantDeleteRequest,
@@ -45,7 +46,8 @@ use crate::{
             session::{
                 BootstrapError, Error, HandleBootstrapEncryptedKey, HandleEvmWalletCreate,
                 HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete, HandleGrantList,
-                HandleQueryVaultState, HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError,
+                HandleNewClientApprove, HandleQueryVaultState, HandleUnsealEncryptedKey,
+                HandleUnsealRequest, UnsealError,
             },
         },
     },
@@ -259,7 +261,41 @@ async fn dispatch_conn_message(
                 actor.ask(HandleGrantDelete { grant_id }).await,
             ))
         }
-        payload => {
+        UserAgentRequestPayload::ClientConnectionResponse(resp) => {
+            let pubkey_bytes: [u8; 32] = match resp.pubkey.try_into() {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    let _ = bi
+                        .send(Err(Status::invalid_argument("Invalid Ed25519 public key length")))
+                        .await;
+                    return Err(());
+                }
+            };
+            let pubkey = match ed25519_dalek::VerifyingKey::from_bytes(&pubkey_bytes) {
+                Ok(key) => key,
+                Err(_) => {
+                    let _ = bi
+                        .send(Err(Status::invalid_argument("Invalid Ed25519 public key")))
+                        .await;
+                    return Err(());
+                }
+            };
+
+            if let Err(err) = actor
+                .ask(HandleNewClientApprove {
+                    approved: resp.approved,
+                    pubkey,
+                })
+                .await
+            {
+                warn!(?err, "Failed to process client connection response");
+                let _ = bi.send(Err(Status::internal("Failed to process response"))).await;
+                return Err(());
+            }
+
+            return Ok(());
+        }
+        UserAgentRequestPayload::AuthChallengeRequest(..) | UserAgentRequestPayload::AuthChallengeSolution(..) => {
             warn!(?payload, "Unsupported post-auth user agent request");
             let _ = bi
                 .send(Err(Status::invalid_argument(
@@ -268,6 +304,7 @@ async fn dispatch_conn_message(
                 .await;
             return Err(());
         }
+      
     };
 
     bi.send(Ok(UserAgentResponse {
@@ -283,14 +320,20 @@ async fn send_out_of_band(
     oob: OutOfBand,
 ) -> Result<(), ()> {
     let payload = match oob {
-        OutOfBand::ClientConnectionRequest { pubkey } => {
+        OutOfBand::ClientConnectionRequest { profile } => {
             UserAgentResponsePayload::ClientConnectionRequest(ClientConnectionRequest {
-                pubkey: pubkey.to_bytes().to_vec(),
-                info: None,
+                pubkey: profile.pubkey.to_bytes().to_vec(),
+                info: Some(ProtoClientMetadata {
+                    name: profile.metadata.name,
+                    description: profile.metadata.description,
+                    version: profile.metadata.version,
+                }),
             })
         }
-        OutOfBand::ClientConnectionCancel => {
-            UserAgentResponsePayload::ClientConnectionCancel(ClientConnectionCancel {})
+        OutOfBand::ClientConnectionCancel { pubkey } => {
+            UserAgentResponsePayload::ClientConnectionCancel(ClientConnectionCancel {
+                pubkey: pubkey.to_bytes().to_vec(),
+            })
         }
     };
 

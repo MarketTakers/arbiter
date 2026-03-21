@@ -86,9 +86,12 @@ message ClientConnectionRequest {
 
 message ClientConnectionResponse {
   bool approved = 1;
+  bytes pubkey = 2;
 }
 
-message ClientConnectionCancel {}
+message ClientConnectionCancel {
+  bytes pubkey = 1;
+}
 
 message UserAgentRequest {
   int32 id = 14;

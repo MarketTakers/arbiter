@@ -173,8 +173,8 @@ impl Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> for AuthTransportAda
 fn client_metadata_from_proto(metadata: ProtoClientInfo) -> auth::ClientMetadata {
     auth::ClientMetadata {
         name: metadata.name,
-        description: (!metadata.description.is_empty()).then_some(metadata.description),
-        version: (!metadata.version.is_empty()).then_some(metadata.version),
+        description: metadata.description,
+        version: metadata.version,
     }
 }
 

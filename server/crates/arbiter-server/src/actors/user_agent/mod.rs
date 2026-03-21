@@ -1,5 +1,5 @@
 use crate::{
-    actors::GlobalActors,
+    actors::{GlobalActors, client::ClientProfile},
     db::{self, models::KeyType},
 };
 
@@ -72,8 +72,8 @@ impl TryFrom<(KeyType, Vec<u8>)> for AuthPublicKey {
 // Messages, sent by user agent to connection client without having a request
 #[derive(Debug)]
 pub enum OutOfBand {
-    ClientConnectionRequest { pubkey: ed25519_dalek::VerifyingKey },
-    ClientConnectionCancel,
+    ClientConnectionRequest { profile: ClientProfile },
+    ClientConnectionCancel { pubkey: ed25519_dalek::VerifyingKey },
 }
 
 pub struct UserAgentConnection {

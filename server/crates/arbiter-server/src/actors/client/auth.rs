@@ -14,7 +14,7 @@ use tracing::error;
 
 use crate::{
     actors::{
-        client::ClientConnection,
+        client::{ClientConnection, ClientProfile},
         flow_coordinator::{self, RequestClientApproval},
     },
     db::{
@@ -113,13 +113,11 @@ async fn get_nonce(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<Optio
 
 async fn approve_new_client(
     actors: &crate::actors::GlobalActors,
-    pubkey: VerifyingKey,
+    profile: ClientProfile,
 ) -> Result<(), Error> {
     let result = actors
         .flow_coordinator
-        .ask(RequestClientApproval {
-            client_pubkey: pubkey,
-        })
+        .ask(RequestClientApproval { client: profile })
         .await;
 
     match result {
@@ -317,7 +315,14 @@ where
     let nonce = match get_nonce(&props.db, &pubkey).await? {
         Some(nonce) => nonce,
         None => {
-            approve_new_client(&props.actors, pubkey).await?;
+            approve_new_client(
+                &props.actors,
+                ClientProfile {
+                    pubkey,
+                    metadata: metadata.clone(),
+                },
+            )
+            .await?;
             insert_client(&props.db, &pubkey, &metadata).await?;
             0
         }

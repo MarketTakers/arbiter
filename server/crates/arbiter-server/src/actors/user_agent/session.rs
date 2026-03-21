@@ -1,15 +1,15 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashMap};
 
 use arbiter_proto::transport::Sender;
 use async_trait::async_trait;
 use ed25519_dalek::VerifyingKey;
-use kameo::{Actor, messages};
+use kameo::{Actor, actor::ActorRef, messages, prelude::Context};
 use thiserror::Error;
-use tokio::sync::watch;
 use tracing::error;
 
 use crate::actors::{
-    flow_coordinator::RegisterUserAgent,
+    client::ClientProfile,
+    flow_coordinator::{RegisterUserAgent, client_connect_approval::ClientApprovalController},
     user_agent::{OutOfBand, UserAgentConnection},
 };
 
@@ -33,20 +33,23 @@ impl Error {
     }
 }
 
+pub struct PendingClientApproval {
+    controller: ActorRef<ClientApprovalController>,
+}
+
 pub struct UserAgentSession {
     props: UserAgentConnection,
     state: UserAgentStateMachine<DummyContext>,
-    #[allow(
-        dead_code,
-        reason = "The session keeps ownership of the outbound transport even before the state-machine flow starts using it directly"
-    )]
     sender: Box<dyn Sender<OutOfBand>>,
+
+    pending_client_approvals: HashMap<VerifyingKey, PendingClientApproval>,
 }
 
 mod connection;
 pub(crate) use connection::{
     BootstrapError, HandleBootstrapEncryptedKey, HandleEvmWalletCreate, HandleEvmWalletList,
-    HandleGrantCreate, HandleGrantDelete, HandleGrantList, HandleQueryVaultState,
+    HandleGrantCreate, HandleGrantDelete, HandleGrantList, HandleNewClientApprove,
+    HandleQueryVaultState,
 };
 pub use connection::{HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError};
 
@@ -56,6 +59,7 @@ impl UserAgentSession {
             props,
             state: UserAgentStateMachine::new(DummyContext),
             sender,
+            pending_client_approvals: Default::default(),
         }
     }
 
@@ -87,15 +91,28 @@ impl UserAgentSession {
 #[messages]
 impl UserAgentSession {
     #[message]
-    pub async fn request_new_client_approval(
+    pub async fn begin_new_client_approval(
         &mut self,
-        client_pubkey: VerifyingKey,
-        cancel_flag: watch::Receiver<()>,
-    ) -> Result<bool, ()> {
-        // temporary use to make clippy happy while we refactor this flow
-        dbg!(client_pubkey);
-        dbg!(cancel_flag);
-        todo!("Think about refactoring it to state-machine based flow, as we already have one")
+        client: ClientProfile,
+        controller: ActorRef<ClientApprovalController>,
+    ) {
+        if let Err(e) = self
+            .sender
+            .send(OutOfBand::ClientConnectionRequest {
+                profile: client.clone(),
+            })
+            .await
+        {
+            error!(
+                ?e,
+                actor = "user_agent",
+                event = "failed to announce new client connection"
+            );
+            return;
+        }
+
+        self.pending_client_approvals
+            .insert(client.pubkey, PendingClientApproval { controller });
     }
 }
 
@@ -116,9 +133,42 @@ impl Actor for UserAgentSession {
             })
             .await
             .map_err(|err| {
-                error!(?err, "Failed to register user agent connection with flow coordinator");
+                error!(
+                    ?err,
+                    "Failed to register user agent connection with flow coordinator"
+                );
                 Error::internal("Failed to register user agent connection with flow coordinator")
             })?;
         Ok(args)
+    }
+
+    async fn on_link_died(
+        &mut self,
+        _: kameo::prelude::WeakActorRef<Self>,
+        id: kameo::prelude::ActorId,
+        _: kameo::prelude::ActorStopReason,
+    ) -> Result<std::ops::ControlFlow<kameo::prelude::ActorStopReason>, Self::Error> {
+        let cancelled_pubkey = self
+            .pending_client_approvals
+            .iter()
+            .find_map(|(k, v)| (v.controller.id() == id).then_some(*k));
+
+        if let Some(pubkey) = cancelled_pubkey {
+            self.pending_client_approvals.remove(&pubkey);
+
+            if let Err(e) = self
+                .sender
+                .send(OutOfBand::ClientConnectionCancel { pubkey })
+                .await
+            {
+                error!(
+                    ?e,
+                    actor = "user_agent",
+                    event = "failed to announce client connection cancellation"
+                );
+            }
+        }
+
+        Ok(std::ops::ControlFlow::Continue(()))
     }
 }

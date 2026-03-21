@@ -3,9 +3,15 @@ use kameo::actor::Spawn;
 use tracing::{error, info};
 
 use crate::{
-    actors::{GlobalActors, client::session::ClientSession},
+    actors::{GlobalActors, client::{auth::ClientMetadata, session::ClientSession}},
     db,
 };
+
+#[derive(Debug, Clone)]
+pub struct ClientProfile {
+    pub pubkey: ed25519_dalek::VerifyingKey,
+    pub metadata: ClientMetadata,
+}
 
 pub struct ClientConnection {
     pub(crate) db: db::DatabasePool,
