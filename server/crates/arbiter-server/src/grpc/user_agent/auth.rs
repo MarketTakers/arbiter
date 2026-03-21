@@ -1,0 +1,180 @@
+use arbiter_proto::{
+    proto::user_agent::{
+        AuthChallenge as ProtoAuthChallenge, AuthChallengeRequest as ProtoAuthChallengeRequest,
+        AuthChallengeSolution as ProtoAuthChallengeSolution, AuthResult as ProtoAuthResult,
+        KeyType as ProtoKeyType, UserAgentRequest, UserAgentResponse,
+        user_agent_request::Payload as UserAgentRequestPayload,
+        user_agent_response::Payload as UserAgentResponsePayload,
+    },
+    transport::{Bi, Error as TransportError, Receiver, Sender, grpc::GrpcBi},
+};
+use async_trait::async_trait;
+use tonic::Status;
+use tracing::warn;
+
+use crate::{
+    actors::user_agent::{AuthPublicKey, UserAgentConnection, auth},
+    db::models::KeyType,
+    grpc::request_tracker::RequestTracker,
+};
+
+pub struct AuthTransportAdapter<'a> {
+    bi: &'a mut GrpcBi<UserAgentRequest, UserAgentResponse>,
+    request_tracker: &'a mut RequestTracker,
+    response_id: &'a mut Option<i32>,
+}
+
+impl<'a> AuthTransportAdapter<'a> {
+    pub fn new(
+        bi: &'a mut GrpcBi<UserAgentRequest, UserAgentResponse>,
+        request_tracker: &'a mut RequestTracker,
+        response_id: &'a mut Option<i32>,
+    ) -> Self {
+        Self {
+            bi,
+            request_tracker,
+            response_id,
+        }
+    }
+
+    async fn send_user_agent_response(
+        &mut self,
+        payload: UserAgentResponsePayload,
+    ) -> Result<(), TransportError> {
+        let id = self.response_id.take();
+
+        self.bi
+            .send(Ok(UserAgentResponse {
+                id,
+                payload: Some(payload),
+            }))
+            .await
+    }
+}
+
+#[async_trait]
+impl Sender<Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {
+    async fn send(
+        &mut self,
+        item: Result<auth::Outbound, auth::Error>,
+    ) -> Result<(), TransportError> {
+        use auth::{Error, Outbound};
+        let payload = match item {
+            Ok(Outbound::AuthChallenge { nonce }) => {
+                UserAgentResponsePayload::AuthChallenge(ProtoAuthChallenge { nonce })
+            }
+            Ok(Outbound::AuthSuccess) => {
+                UserAgentResponsePayload::AuthResult(ProtoAuthResult::Success.into())
+            }
+            Err(Error::UnregisteredPublicKey) => {
+                UserAgentResponsePayload::AuthResult(ProtoAuthResult::InvalidKey.into())
+            }
+            Err(Error::InvalidChallengeSolution) => {
+                UserAgentResponsePayload::AuthResult(ProtoAuthResult::InvalidSignature.into())
+            }
+            Err(Error::InvalidBootstrapToken) => {
+                UserAgentResponsePayload::AuthResult(ProtoAuthResult::TokenInvalid.into())
+            }
+            Err(Error::Internal { details }) => return self.bi.send(Err(Status::internal(details))).await,
+            Err(Error::Transport) => {
+                return self.bi.send(Err(Status::unavailable("transport error"))).await;
+            }
+        };
+
+        self.send_user_agent_response(payload).await
+    }
+}
+
+#[async_trait]
+impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
+    async fn recv(&mut self) -> Option<auth::Inbound> {
+        let request = match self.bi.recv().await? {
+            Ok(request) => request,
+            Err(error) => {
+                warn!(error = ?error, "Failed to receive user agent auth request");
+                return None;
+            }
+        };
+
+        let request_id = match self.request_tracker.request(request.id) {
+            Ok(request_id) => request_id,
+            Err(error) => {
+                let _ = self.bi.send(Err(error)).await;
+                return None;
+            }
+        };
+        *self.response_id = Some(request_id);
+
+        let Some(payload) = request.payload else {
+            warn!(
+                event = "received request with empty payload",
+                "grpc.useragent.auth_adapter"
+            );
+            return None;
+        };
+
+        match payload {
+            UserAgentRequestPayload::AuthChallengeRequest(ProtoAuthChallengeRequest {
+                pubkey,
+                bootstrap_token,
+                key_type,
+            }) => {
+                let Ok(key_type) = ProtoKeyType::try_from(key_type) else {
+                    warn!(
+                        event = "received request with invalid key type",
+                        "grpc.useragent.auth_adapter"
+                    );
+                    return None;
+                };
+                let key_type = match key_type {
+                    ProtoKeyType::Ed25519 => KeyType::Ed25519,
+                    ProtoKeyType::EcdsaSecp256k1 => KeyType::EcdsaSecp256k1,
+                    ProtoKeyType::Rsa => KeyType::Rsa,
+                    ProtoKeyType::Unspecified => {
+                        warn!(
+                            event = "received request with unspecified key type",
+                            "grpc.useragent.auth_adapter"
+                        );
+                        return None;
+                    }
+                };
+                let Ok(pubkey) = AuthPublicKey::try_from((key_type, pubkey)) else {
+                    warn!(
+                        event = "received request with invalid public key",
+                        "grpc.useragent.auth_adapter"
+                    );
+                    return None;
+                };
+
+                Some(auth::Inbound::AuthChallengeRequest {
+                    pubkey,
+                    bootstrap_token,
+                })
+            }
+            UserAgentRequestPayload::AuthChallengeSolution(ProtoAuthChallengeSolution {
+                signature,
+            }) => Some(auth::Inbound::AuthChallengeSolution { signature }),
+            _ => {
+                let _ = self
+                    .bi
+                    .send(Err(Status::invalid_argument(
+                        "Unsupported user-agent auth request",
+                    )))
+                    .await;
+                None
+            }
+        }
+    }
+}
+
+impl Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {}
+
+pub async fn start(
+    conn: &mut UserAgentConnection,
+    bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
+    request_tracker: &mut RequestTracker,
+    response_id: &mut Option<i32>,
+) -> Result<AuthPublicKey, auth::Error> {
+    let transport = AuthTransportAdapter::new(bi, request_tracker, response_id);
+    auth::authenticate(conn, transport).await
+}

@@ -20,7 +20,7 @@ tokio = { version = "1.49.0", features = ["full"] }
 ed25519-dalek = { version = "3.0.0-pre.6", features = ["rand_core"] }
 chrono = { version = "0.4.43", features = ["serde"] }
 rand = "0.10.0"
-rustls = "0.23.36"
+rustls = { version = "0.23.36", features = ["aws-lc-rs"] }
 smlang = "0.8.0"
 miette = { version = "7.6.0", features = ["fancy", "serde"] }
 thiserror = "2.0.18"

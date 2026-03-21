@@ -1,83 +1,94 @@
-use arbiter_proto::{
-    proto::user_agent::{
-        SdkClientError as ProtoSdkClientError, UserAgentRequest, UserAgentResponse,
-    },
-    transport::Bi,
-};
-use fatality::Fatality;
-use kameo::actor::Spawn as _;
-use tracing::{error, info};
-
 use crate::{
-    actors::{GlobalActors, user_agent::session::UserAgentSession},
-    db::{self},
+    actors::GlobalActors,
+    db::{self, models::KeyType},
 };
 
-#[derive(Debug, thiserror::Error, PartialEq)]
-pub enum TransportResponseError {
-    #[error("Expected message with payload")]
-    MissingRequestPayload,
-    #[error("Unexpected request payload")]
-    UnexpectedRequestPayload,
-    #[error("Invalid state for unseal encrypted key")]
-    InvalidStateForUnsealEncryptedKey,
-    #[error("client_pubkey must be 32 bytes")]
-    InvalidClientPubkeyLength,
-    #[error("State machine error")]
-    StateTransitionFailed,
-    #[error("Vault is not available")]
-    KeyHolderActorUnreachable,
-    #[error("SDK client approve failed: {0:?}")]
-    SdkClientApprove(ProtoSdkClientError),
-    #[error("SDK client list failed: {0:?}")]
-    SdkClientList(ProtoSdkClientError),
-    #[error("SDK client revoke failed: {0:?}")]
-    SdkClientRevoke(ProtoSdkClientError),
-    #[error(transparent)]
-    Auth(#[from] auth::Error),
-    #[error("Failed registering connection")]
-    ConnectionRegistrationFailed,
+/// Abstraction over Ed25519 / ECDSA-secp256k1 / RSA public keys used during the auth handshake.
+#[derive(Clone, Debug)]
+pub enum AuthPublicKey {
+    Ed25519(ed25519_dalek::VerifyingKey),
+    /// Compressed SEC1 public key; signature bytes are raw 64-byte (r||s).
+    EcdsaSecp256k1(k256::ecdsa::VerifyingKey),
+    /// RSA-2048+ public key (Windows Hello / KeyCredentialManager); signature bytes are PSS+SHA-256.
+    Rsa(rsa::RsaPublicKey),
 }
 
-impl Fatality for TransportResponseError {
-    fn is_fatal(&self) -> bool {
-        !matches!(
-            self,
-            Self::SdkClientApprove(_) | Self::SdkClientList(_) | Self::SdkClientRevoke(_)
-        )
+impl AuthPublicKey {
+    /// Canonical bytes stored in DB and echoed back in the challenge.
+    /// Ed25519: raw 32 bytes. ECDSA: SEC1 compressed 33 bytes. RSA: DER-encoded SPKI.
+    pub fn to_stored_bytes(&self) -> Vec<u8> {
+        match self {
+            AuthPublicKey::Ed25519(k) => k.to_bytes().to_vec(),
+            // SEC1 compressed (33 bytes) is the natural compact format for secp256k1
+            AuthPublicKey::EcdsaSecp256k1(k) => k.to_encoded_point(true).as_bytes().to_vec(),
+            AuthPublicKey::Rsa(k) => {
+                use rsa::pkcs8::EncodePublicKey as _;
+                #[allow(clippy::expect_used)]
+                k.to_public_key_der()
+                    .expect("rsa SPKI encoding is infallible")
+                    .to_vec()
+            }
+        }
+    }
+
+    pub fn key_type(&self) -> KeyType {
+        match self {
+            AuthPublicKey::Ed25519(_) => KeyType::Ed25519,
+            AuthPublicKey::EcdsaSecp256k1(_) => KeyType::EcdsaSecp256k1,
+            AuthPublicKey::Rsa(_) => KeyType::Rsa,
+        }
     }
 }
 
-pub type Transport =
-    Box<dyn Bi<UserAgentRequest, Result<UserAgentResponse, TransportResponseError>> + Send>;
+impl TryFrom<(KeyType, Vec<u8>)> for AuthPublicKey {
+    type Error = &'static str;
+
+    fn try_from(value: (KeyType, Vec<u8>)) -> Result<Self, Self::Error> {
+        let (key_type, bytes) = value;
+        match key_type {
+            KeyType::Ed25519 => {
+                let bytes: [u8; 32] = bytes.try_into().map_err(|_| "invalid Ed25519 key length")?;
+                let key = ed25519_dalek::VerifyingKey::from_bytes(&bytes)
+                    .map_err(|_e| "invalid Ed25519 key")?;
+                Ok(AuthPublicKey::Ed25519(key))
+            }
+            KeyType::EcdsaSecp256k1 => {
+                let point =
+                    k256::EncodedPoint::from_bytes(&bytes).map_err(|_e| "invalid ECDSA key")?;
+                let key = k256::ecdsa::VerifyingKey::from_encoded_point(&point)
+                    .map_err(|_e| "invalid ECDSA key")?;
+                Ok(AuthPublicKey::EcdsaSecp256k1(key))
+            }
+            KeyType::Rsa => {
+                use rsa::pkcs8::DecodePublicKey as _;
+                let key = rsa::RsaPublicKey::from_public_key_der(&bytes)
+                    .map_err(|_e| "invalid RSA key")?;
+                Ok(AuthPublicKey::Rsa(key))
+            }
+        }
+    }
+}
+
+// Messages, sent by user agent to connection client without having a request
+#[derive(Debug)]
+pub enum OutOfBand {
+    ClientConnectionRequest { pubkey: ed25519_dalek::VerifyingKey },
+    ClientConnectionCancel,
+}
 
 pub struct UserAgentConnection {
-    db: db::DatabasePool,
-    actors: GlobalActors,
-    transport: Transport,
+    pub(crate) db: db::DatabasePool,
+    pub(crate) actors: GlobalActors,
 }
 
 impl UserAgentConnection {
-    pub fn new(db: db::DatabasePool, actors: GlobalActors, transport: Transport) -> Self {
-        Self {
-            db,
-            actors,
-            transport,
-        }
+    pub fn new(db: db::DatabasePool, actors: GlobalActors) -> Self {
+        Self { db, actors }
     }
 }
 
 pub mod auth;
 pub mod session;
 
-pub async fn connect_user_agent(props: UserAgentConnection) {
-    match auth::authenticate_and_create(props).await {
-        Ok(session) => {
-            UserAgentSession::spawn(session);
-            info!("User authenticated, session started");
-        }
-        Err(err) => {
-            error!(?err, "Authentication failed, closing connection");
-        }
-    }
-}
+pub use auth::authenticate;
+pub use session::UserAgentSession;

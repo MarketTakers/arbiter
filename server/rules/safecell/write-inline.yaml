@@ -1,0 +1,13 @@
+id: safecell-write-inline
+language: Rust
+rule:
+  pattern: |
+    {
+        let mut $WRITE = $CELL.write();
+        $$$BODY
+    }
+fix: 
+  template: | 
+    $CELL.write_inline(|$WRITE| { 
+      $$$BODY 
+    });

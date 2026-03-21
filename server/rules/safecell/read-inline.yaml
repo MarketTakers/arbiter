@@ -1,0 +1,17 @@
+id: safecell-read-inline
+language: Rust
+rule:
+  pattern: 
+    context: |
+      {
+          let $READ = $CELL.read();
+          $$$BODY
+      }
+    selector: block
+  inside:
+    kind: block
+fix: 
+  template: | 
+    $CELL.read_inline(|$READ| { 
+      $$$BODY 
+    });

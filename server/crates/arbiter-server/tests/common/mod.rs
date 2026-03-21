@@ -1,19 +1,19 @@
-use arbiter_proto::transport::{Bi, Error};
+use arbiter_proto::transport::{Bi, Error, Receiver, Sender};
 use arbiter_server::{
     actors::keyholder::KeyHolder,
     db::{self, schema},
+    safe_cell::{SafeCell, SafeCellHandle as _},
 };
 use async_trait::async_trait;
 use diesel::QueryDsl;
 use diesel_async::RunQueryDsl;
-use memsafe::MemSafe;
 use tokio::sync::mpsc;
 
 #[allow(dead_code)]
 pub async fn bootstrapped_keyholder(db: &db::DatabasePool) -> KeyHolder {
     let mut actor = KeyHolder::new(db.clone()).await.unwrap();
     actor
-        .bootstrap(MemSafe::new(b"test-seal-key".to_vec()).unwrap())
+        .bootstrap(SafeCell::new(b"test-seal-key".to_vec()))
         .await
         .unwrap();
     actor
@@ -55,10 +55,10 @@ impl<T, Y> ChannelTransport<T, Y> {
 }
 
 #[async_trait]
-impl<T, Y> Bi<T, Y> for ChannelTransport<T, Y>
+impl<T, Y> Sender<Y> for ChannelTransport<T, Y>
 where
-    T: Send + 'static,
-    Y: Send + 'static,
+    T: Send + Sync + 'static,
+    Y: Send + Sync + 'static,
 {
     async fn send(&mut self, item: Y) -> Result<(), Error> {
         self.sender
@@ -66,8 +66,22 @@ where
             .await
             .map_err(|_| Error::ChannelClosed)
     }
+}
 
+#[async_trait]
+impl<T, Y> Receiver<T> for ChannelTransport<T, Y>
+where
+    T: Send + Sync + 'static,
+    Y: Send + Sync + 'static,
+{
     async fn recv(&mut self) -> Option<T> {
         self.receiver.recv().await
     }
+}
+
+impl<T, Y> Bi<T, Y> for ChannelTransport<T, Y>
+where
+    T: Send + Sync + 'static,
+    Y: Send + Sync + 'static,
+{
 }

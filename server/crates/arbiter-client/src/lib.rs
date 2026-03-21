@@ -9,12 +9,9 @@ use arbiter_proto::{
     proto::{
         arbiter_service_client::ArbiterServiceClient,
         client::{
-            AuthChallengeRequest, AuthChallengeSolution, ClientRequest, ClientResponse,
-            client_connect_error, client_request::Payload as ClientRequestPayload,
+            AuthChallengeRequest, AuthChallengeSolution, AuthResult, ClientRequest, ClientResponse,
+            client_request::Payload as ClientRequestPayload,
             client_response::Payload as ClientResponsePayload,
-        },
-        evm::{
-            EvmSignTransactionRequest, evm_sign_transaction_response::Result as SignResponseResult,
         },
     },
     url::ArbiterUrl,
@@ -22,11 +19,17 @@ use arbiter_proto::{
 use async_trait::async_trait;
 use ed25519_dalek::Signer as _;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicI32, Ordering};
 use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::ClientTlsConfig;
 
 const BUFFER_LENGTH: usize = 16;
+static NEXT_REQUEST_ID: AtomicI32 = AtomicI32::new(1);
+
+fn next_request_id() -> i32 {
+    NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed)
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectError {
@@ -140,12 +143,6 @@ enum ClientSignError {
     #[error("Connection closed by server")]
     ConnectionClosed,
 
-    #[error("Invalid response payload")]
-    InvalidResponse,
-
-    #[error("Remote signing was rejected")]
-    Rejected,
-
     #[error("Wallet address is not configured")]
     WalletAddressNotConfigured,
 }
@@ -242,10 +239,7 @@ impl ArbiterSigner {
         self
     }
 
-    fn build_sign_transaction_request(
-        &self,
-        tx: &mut dyn SignableTransaction<Signature>,
-    ) -> Result<ClientRequest> {
+    fn validate_chain_id(&self, tx: &mut dyn SignableTransaction<Signature>) -> Result<()> {
         if let Some(chain_id) = self.chain_id
             && !tx.set_chain_id_checked(chain_id)
         {
@@ -255,57 +249,27 @@ impl ArbiterSigner {
             });
         }
 
-        let mut rlp_transaction = Vec::new();
-        tx.encode_for_signing(&mut rlp_transaction);
+        Ok(())
+    }
 
+    fn ensure_wallet_address(&self) -> Result<Address> {
         let wallet_address = self
             .address
             .ok_or_else(|| Error::other(ClientSignError::WalletAddressNotConfigured))?;
 
-        Ok(ClientRequest {
-            payload: Some(ClientRequestPayload::EvmSignTransaction(
-                EvmSignTransactionRequest {
-                    wallet_address: wallet_address.as_slice().to_vec(),
-                    rlp_transaction,
-                },
-            )),
-        })
-    }
-
-    async fn execute_sign_transaction_request(&self, request: ClientRequest) -> Result<Signature> {
-        let mut transport = self.transport.lock().await;
-        transport.send(request).await.map_err(Error::other)?;
-        let response = transport.recv().await.map_err(Error::other)?;
-
-        let payload = response
-            .payload
-            .ok_or_else(|| Error::other(ClientSignError::InvalidResponse))?;
-
-        let ClientResponsePayload::EvmSignTransaction(sign_response) = payload else {
-            return Err(Error::other(ClientSignError::InvalidResponse));
-        };
-
-        let Some(result) = sign_response.result else {
-            return Err(Error::other(ClientSignError::InvalidResponse));
-        };
-
-        match result {
-            SignResponseResult::Signature(bytes) => {
-                Signature::try_from(bytes.as_slice()).map_err(Error::other)
-            }
-            SignResponseResult::EvalError(_) | SignResponseResult::Error(_) => {
-                Err(Error::other(ClientSignError::Rejected))
-            }
-        }
+        Ok(wallet_address)
     }
 }
 
-fn map_connect_error(code: i32) -> ConnectError {
-    match client_connect_error::Code::try_from(code).unwrap_or(client_connect_error::Code::Unknown)
-    {
-        client_connect_error::Code::ApprovalDenied => ConnectError::ApprovalDenied,
-        client_connect_error::Code::NoUserAgentsOnline => ConnectError::NoUserAgentsOnline,
-        client_connect_error::Code::Unknown => ConnectError::UnexpectedAuthResponse,
+fn map_auth_result(code: i32) -> ConnectError {
+    match AuthResult::try_from(code).unwrap_or(AuthResult::Unspecified) {
+        AuthResult::ApprovalDenied => ConnectError::ApprovalDenied,
+        AuthResult::NoUserAgentsOnline => ConnectError::NoUserAgentsOnline,
+        AuthResult::Unspecified
+        | AuthResult::Success
+        | AuthResult::InvalidKey
+        | AuthResult::InvalidSignature
+        | AuthResult::Internal => ConnectError::UnexpectedAuthResponse,
     }
 }
 
@@ -315,6 +279,7 @@ async fn send_auth_challenge_request(
 ) -> std::result::Result<(), ConnectError> {
     transport
         .send(ClientRequest {
+            request_id: next_request_id(),
             payload: Some(ClientRequestPayload::AuthChallengeRequest(
                 AuthChallengeRequest {
                     pubkey: key.verifying_key().to_bytes().to_vec(),
@@ -336,7 +301,7 @@ async fn receive_auth_challenge(
     let payload = response.payload.ok_or(ConnectError::MissingAuthChallenge)?;
     match payload {
         ClientResponsePayload::AuthChallenge(challenge) => Ok(challenge),
-        ClientResponsePayload::ClientConnectError(err) => Err(map_connect_error(err.code)),
+        ClientResponsePayload::AuthResult(result) => Err(map_auth_result(result)),
         _ => Err(ConnectError::UnexpectedAuthResponse),
     }
 }
@@ -351,6 +316,7 @@ async fn send_auth_challenge_solution(
 
     transport
         .send(ClientRequest {
+            request_id: next_request_id(),
             payload: Some(ClientRequestPayload::AuthChallengeSolution(
                 AuthChallengeSolution { signature },
             )),
@@ -371,8 +337,12 @@ async fn receive_auth_confirmation(
         .payload
         .ok_or(ConnectError::UnexpectedAuthResponse)?;
     match payload {
-        ClientResponsePayload::AuthOk(_) => Ok(()),
-        ClientResponsePayload::ClientConnectError(err) => Err(map_connect_error(err.code)),
+        ClientResponsePayload::AuthResult(result)
+            if AuthResult::try_from(result).ok() == Some(AuthResult::Success) =>
+        {
+            Ok(())
+        }
+        ClientResponsePayload::AuthResult(result) => Err(map_auth_result(result)),
         _ => Err(ConnectError::UnexpectedAuthResponse),
     }
 }
@@ -418,8 +388,13 @@ impl TxSigner<Signature> for ArbiterSigner {
         &self,
         tx: &mut dyn SignableTransaction<Signature>,
     ) -> Result<Signature> {
-        let request = self.build_sign_transaction_request(tx)?;
-        self.execute_sign_transaction_request(request).await
+        let _transport = self.transport.lock().await;
+        self.validate_chain_id(tx)?;
+        let _ = self.ensure_wallet_address()?;
+
+        Err(Error::other(
+            "transaction signing is not supported by current arbiter.client protocol",
+        ))
     }
 }
 

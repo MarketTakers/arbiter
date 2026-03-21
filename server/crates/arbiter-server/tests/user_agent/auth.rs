@@ -1,14 +1,9 @@
-use arbiter_proto::proto::user_agent::{
-    AuthChallengeRequest, AuthChallengeSolution, KeyType as ProtoKeyType, UserAgentRequest,
-    user_agent_request::Payload as UserAgentRequestPayload,
-    user_agent_response::Payload as UserAgentResponsePayload,
-};
-use arbiter_proto::transport::Bi;
+use arbiter_proto::transport::{Receiver, Sender};
 use arbiter_server::{
     actors::{
         GlobalActors,
         bootstrap::GetToken,
-        user_agent::{UserAgentConnection, connect_user_agent},
+        user_agent::{AuthPublicKey, UserAgentConnection, auth},
     },
     db::{self, schema},
 };
@@ -26,26 +21,31 @@ pub async fn test_bootstrap_token_auth() {
     let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
-    let props = UserAgentConnection::new(db.clone(), actors, Box::new(server_transport));
-    let task = tokio::spawn(connect_user_agent(props));
+    let db_for_task = db.clone();
+    let task = tokio::spawn(async move {
+        let mut props = UserAgentConnection::new(db_for_task, actors);
+        auth::authenticate(&mut props, server_transport).await
+    });
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
-    let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
-
     test_transport
-        .send(UserAgentRequest {
-            payload: Some(UserAgentRequestPayload::AuthChallengeRequest(
-                AuthChallengeRequest {
-                    pubkey: pubkey_bytes,
-                    bootstrap_token: Some(token),
-                    key_type: ProtoKeyType::Ed25519.into(),
-                },
-            )),
+        .send(auth::Inbound::AuthChallengeRequest {
+            pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+            bootstrap_token: Some(token),
         })
         .await
         .unwrap();
 
-    task.await.unwrap();
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive auth result");
+    match response {
+        Ok(auth::Outbound::AuthSuccess) => {}
+        other => panic!("Expected AuthSuccess, got {other:?}"),
+    }
+
+    task.await.unwrap().unwrap();
 
     let mut conn = db.get().await.unwrap();
     let stored_pubkey: Vec<u8> = schema::useragent_client::table
@@ -63,27 +63,25 @@ pub async fn test_bootstrap_invalid_token_auth() {
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
-    let props = UserAgentConnection::new(db.clone(), actors, Box::new(server_transport));
-    let task = tokio::spawn(connect_user_agent(props));
+    let db_for_task = db.clone();
+    let task = tokio::spawn(async move {
+        let mut props = UserAgentConnection::new(db_for_task, actors);
+        auth::authenticate(&mut props, server_transport).await
+    });
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
-    let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
-
     test_transport
-        .send(UserAgentRequest {
-            payload: Some(UserAgentRequestPayload::AuthChallengeRequest(
-                AuthChallengeRequest {
-                    pubkey: pubkey_bytes,
-                    bootstrap_token: Some("invalid_token".to_string()),
-                    key_type: ProtoKeyType::Ed25519.into(),
-                },
-            )),
+        .send(auth::Inbound::AuthChallengeRequest {
+            pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+            bootstrap_token: Some("invalid_token".to_string()),
         })
         .await
         .unwrap();
 
-    // Auth fails, connect_user_agent returns, transport drops
-    task.await.unwrap();
+    assert!(matches!(
+        task.await.unwrap(),
+        Err(auth::Error::InvalidBootstrapToken)
+    ));
 
     // Verify no key was registered
     let mut conn = db.get().await.unwrap();
@@ -118,19 +116,17 @@ pub async fn test_challenge_auth() {
     }
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
-    let props = UserAgentConnection::new(db.clone(), actors, Box::new(server_transport));
-    let task = tokio::spawn(connect_user_agent(props));
+    let db_for_task = db.clone();
+    let task = tokio::spawn(async move {
+        let mut props = UserAgentConnection::new(db_for_task, actors);
+        auth::authenticate(&mut props, server_transport).await
+    });
 
     // Send challenge request
     test_transport
-        .send(UserAgentRequest {
-            payload: Some(UserAgentRequestPayload::AuthChallengeRequest(
-                AuthChallengeRequest {
-                    pubkey: pubkey_bytes,
-                    bootstrap_token: None,
-                    key_type: ProtoKeyType::Ed25519.into(),
-                },
-            )),
+        .send(auth::Inbound::AuthChallengeRequest {
+            pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+            bootstrap_token: None,
         })
         .await
         .unwrap();
@@ -141,28 +137,31 @@ pub async fn test_challenge_auth() {
         .await
         .expect("should receive challenge");
     let challenge = match response {
-        Ok(resp) => match resp.payload {
-            Some(UserAgentResponsePayload::AuthChallenge(c)) => c,
+        Ok(resp) => match resp {
+            auth::Outbound::AuthChallenge { nonce } => nonce,
             other => panic!("Expected AuthChallenge, got {other:?}"),
         },
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };
 
-    // Sign the challenge and send solution
-    let formatted_challenge = arbiter_proto::format_challenge(challenge.nonce, &challenge.pubkey);
+    let formatted_challenge = arbiter_proto::format_challenge(challenge, &pubkey_bytes);
     let signature = new_key.sign(&formatted_challenge);
 
     test_transport
-        .send(UserAgentRequest {
-            payload: Some(UserAgentRequestPayload::AuthChallengeSolution(
-                AuthChallengeSolution {
-                    signature: signature.to_bytes().to_vec(),
-                },
-            )),
+        .send(auth::Inbound::AuthChallengeSolution {
+            signature: signature.to_bytes().to_vec(),
         })
         .await
         .unwrap();
 
-    // Auth completes, session spawned
-    task.await.unwrap();
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive auth result");
+    match response {
+        Ok(auth::Outbound::AuthSuccess) => {}
+        other => panic!("Expected AuthSuccess, got {other:?}"),
+    }
+
+    task.await.unwrap().unwrap();
 }

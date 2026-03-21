@@ -44,6 +44,14 @@ pub enum DatabaseSetupError {
     Pool(#[from] PoolInitError),
 }
 
+#[derive(Error, Debug)]
+pub enum DatabaseError {
+    #[error("Database connection error")]
+    Pool(#[from] PoolError),
+    #[error("Database query error")]
+    Connection(#[from] diesel::result::Error),
+}
+
 #[tracing::instrument(level = "info")]
 fn database_path() -> Result<std::path::PathBuf, DatabaseSetupError> {
     let arbiter_home = arbiter_proto::home_path().map_err(DatabaseSetupError::HomeDir)?;
@@ -92,6 +100,7 @@ fn initialize_database(url: &str) -> Result<(), DatabaseSetupError> {
 #[tracing::instrument(level = "info")]
 pub async fn create_pool(url: Option<&str>) -> Result<DatabasePool, DatabaseSetupError> {
     let database_url = url.map(String::from).unwrap_or(
+        #[allow(clippy::expect_used)]
         database_path()?
             .to_str()
             .expect("database path is not valid UTF-8")
@@ -135,11 +144,13 @@ pub async fn create_test_pool() -> DatabasePool {
     let tempfile_name = Alphanumeric.sample_string(&mut rand::rng(), 16);
 
     let file = std::env::temp_dir().join(tempfile_name);
+    #[allow(clippy::expect_used)]
     let url = file
         .to_str()
         .expect("temp file path is not valid UTF-8")
         .to_string();
 
+    #[allow(clippy::expect_used)]
     create_pool(Some(&url))
         .await
         .expect("Failed to create test database pool")

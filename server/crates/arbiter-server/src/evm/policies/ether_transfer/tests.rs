@@ -9,9 +9,7 @@ use crate::db::{
     schema::{evm_basic_grant, evm_transaction_log},
 };
 use crate::evm::{
-    policies::{
-        EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings, VolumeRateLimit,
-    },
+    policies::{EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings, VolumeRateLimit},
     utils,
 };
 
@@ -76,6 +74,7 @@ fn shared() -> SharedGrantSettings {
         max_gas_fee_per_gas: None,
         max_priority_fee_per_gas: None,
         rate_limit: None,
+        client_id: CLIENT_ID,
     }
 }
 

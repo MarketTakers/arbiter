@@ -1,78 +1,59 @@
-//! Transport-facing abstractions for protocol/session code.
+//! Transport-facing abstractions shared by protocol/session code.
 //!
-//! This module separates three concerns:
+//! This module defines a small set of transport traits that actors and other
+//! protocol code can depend on without knowing anything about the concrete
+//! transport underneath.
 //!
-//! - protocol/session logic wants a small duplex interface ([`Bi`])
-//! - transport adapters push concrete stream items to an underlying IO layer
-//! - transport boundaries translate between protocol-facing and transport-facing
-//!   item types via direction-specific converters
+//! The abstraction is split into:
+//! - [`Sender`] for outbound delivery
+//! - [`Receiver`] for inbound delivery
+//! - [`Bi`] as the combined duplex form (`Sender + Receiver`)
 //!
-//! [`Bi`] is intentionally minimal and transport-agnostic:
-//! - [`Bi::recv`] yields inbound protocol messages
-//! - [`Bi::send`] accepts outbound protocol/domain items
+//! This split lets code depend only on the half it actually needs. For
+//! example, some actor/session code only sends out-of-band messages, while
+//! auth/state-machine code may need full duplex access.
+//!
+//! [`Bi`] remains intentionally minimal and transport-agnostic:
+//! - [`Receiver::recv`] yields inbound messages
+//! - [`Sender::send`] accepts outbound messages
+//!
+//! Transport-specific adapters, including protobuf or gRPC bridges, live in the
+//! crates that own those boundaries rather than in `arbiter-proto`.
+//!
+//! [`Bi`] deliberately does not model request/response correlation. Some
+//! transports may carry multiplexed request/response traffic, some may emit
+//! out-of-band messages, and some may be one-message-at-a-time state machines.
+//! Correlation concerns such as request IDs, pending response maps, and
+//! out-of-band routing belong in the adapter or connection layer built on top
+//! of [`Bi`], not in this abstraction itself.
 //!
 //! # Generic Ordering Rule
 //!
-//! This module uses a single convention consistently: when a type or trait is
-//! parameterized by protocol message directions, the generic parameters are
-//! declared as `Inbound` first, then `Outbound`.
+//! This module consistently uses `Inbound` first and `Outbound` second in
+//! generic parameter lists.
 //!
-//! For [`Bi`], that means `Bi<Inbound, Outbound>`:
+//! For [`Receiver`], [`Sender`], and [`Bi`], this means:
+//! - `Receiver<Inbound>`
+//! - `Sender<Outbound>`
+//! - `Bi<Inbound, Outbound>`
+//!
+//! Concretely, for [`Bi`]:
 //! - `recv() -> Option<Inbound>`
 //! - `send(Outbound)`
 //!
-//! For adapter types that are parameterized by direction-specific converters,
-//! inbound-related converter parameters are declared before outbound-related
-//! converter parameters.
+//! [`expect_message`] is a small helper for linear protocol steps: it reads one
+//! inbound message from a transport and extracts a typed value from it, failing
+//! if the channel closes or the message shape is not what the caller expected.
 //!
-//! [`RecvConverter`] and [`SendConverter`] are infallible conversion traits used
-//! by adapters to map between protocol-facing and transport-facing item types.
-//! The traits themselves are not result-aware; adapters decide how transport
-//! errors are handled before (or instead of) conversion.
-//!
-//! [`grpc::GrpcAdapter`] combines:
-//! - a tonic inbound stream
-//! - a Tokio sender for outbound transport items
-//! - a [`RecvConverter`] for the receive path
-//! - a [`SendConverter`] for the send path
-//!
-//! [`DummyTransport`] is a no-op implementation useful for tests and local actor
-//! execution where no real network stream exists.
-//!
-//! # Component Interaction
-//!
-//! ```text
-//! inbound (network -> protocol)
-//! ============================
-//!
-//! tonic::Streaming<RecvTransport>
-//!     -> grpc::GrpcAdapter::recv()
-//!          |
-//!          +--> on `Ok(item)`: RecvConverter::convert(RecvTransport) -> Inbound
-//!          +--> on `Err(status)`: log error and close stream (`None`)
-//!     -> Bi::recv()
-//!     -> protocol/session actor
-//!
-//! outbound (protocol -> network)
-//! ==============================
-//!
-//! protocol/session actor
-//!     -> Bi::send(Outbound)
-//!     -> grpc::GrpcAdapter::send()
-//!          |
-//!          +--> SendConverter::convert(Outbound) -> SendTransport
-//!     -> Tokio mpsc::Sender<SendTransport>
-//!     -> tonic response stream
-//! ```
+//! [`DummyTransport`] is a no-op implementation useful for tests and local
+//! actor execution where no real stream exists.
 //!
 //! # Design Notes
 //!
-//! - `send()` returns [`Error`] only for transport delivery failures (for
-//!   example, when the outbound channel is closed).
-//! - [`grpc::GrpcAdapter`] logs tonic receive errors and treats them as stream
-//!   closure (`None`).
-//! - When protocol-facing and transport-facing types are identical, use
-//!   [`IdentityRecvConverter`] / [`IdentitySendConverter`].
+//! - [`Bi::send`] returns [`Error`] only for transport delivery failures, such
+//!   as a closed outbound channel.
+//! - [`Bi::recv`] returns `None` when the underlying transport closes.
+//! - Message translation is intentionally out of scope for this module.
 
 use std::marker::PhantomData;
 
@@ -102,172 +83,35 @@ where
     extractor(msg).ok_or(Error::UnexpectedMessage)
 }
 
-/// Minimal bidirectional transport abstraction used by protocol code.
-///
-/// `Bi<Inbound, Outbound>` models a duplex channel with:
-/// - inbound items of type `Inbound` read via [`Bi::recv`]
-/// - outbound items of type `Outbound` written via [`Bi::send`]
 #[async_trait]
-pub trait Bi<Inbound, Outbound>: Send + Sync + 'static {
+pub trait Sender<Outbound>: Send + Sync {
     async fn send(&mut self, item: Outbound) -> Result<(), Error>;
+}
 
+#[async_trait]
+pub trait Receiver<Inbound>: Send + Sync  {
     async fn recv(&mut self) -> Option<Inbound>;
 }
 
-/// Converts transport-facing inbound items into protocol-facing inbound items.
-pub trait RecvConverter: Send + Sync + 'static {
-    type Input;
-    type Output;
+/// Minimal bidirectional transport abstraction used by protocol code.
+///
+/// `Bi<Inbound, Outbound>` is the combined duplex form of [`Sender`] and
+/// [`Receiver`].
+///
+/// It models a channel with:
+/// - inbound items of type `Inbound` read via [`Bi::recv`]
+/// - outbound items of type `Outbound` written via [`Bi::send`]
+///
+/// It does not imply request/response sequencing, one-at-a-time exchange, or
+/// any built-in correlation mechanism between inbound and outbound items.
+pub trait Bi<Inbound, Outbound>: Sender<Outbound> + Receiver<Inbound> + Send + Sync {}
 
-    fn convert(&self, item: Self::Input) -> Self::Output;
-}
+pub trait SplittableBi<Inbound, Outbound>: Bi<Inbound, Outbound> {
+    type Sender: Sender<Outbound>;
+    type Receiver: Receiver<Inbound>;
 
-/// Converts protocol/domain outbound items into transport-facing outbound items.
-pub trait SendConverter: Send + Sync + 'static {
-    type Input;
-    type Output;
-
-    fn convert(&self, item: Self::Input) -> Self::Output;
-}
-
-/// A [`RecvConverter`] that forwards values unchanged.
-pub struct IdentityRecvConverter<T> {
-    _marker: PhantomData<T>,
-}
-
-impl<T> IdentityRecvConverter<T> {
-    pub fn new() -> Self {
-        Self {
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<T> Default for IdentityRecvConverter<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T> RecvConverter for IdentityRecvConverter<T>
-where
-    T: Send + Sync + 'static,
-{
-    type Input = T;
-    type Output = T;
-
-    fn convert(&self, item: Self::Input) -> Self::Output {
-        item
-    }
-}
-
-/// A [`SendConverter`] that forwards values unchanged.
-pub struct IdentitySendConverter<T> {
-    _marker: PhantomData<T>,
-}
-
-impl<T> IdentitySendConverter<T> {
-    pub fn new() -> Self {
-        Self {
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<T> Default for IdentitySendConverter<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T> SendConverter for IdentitySendConverter<T>
-where
-    T: Send + Sync + 'static,
-{
-    type Input = T;
-    type Output = T;
-
-    fn convert(&self, item: Self::Input) -> Self::Output {
-        item
-    }
-}
-
-/// gRPC-specific transport adapters and helpers.
-pub mod grpc {
-    use async_trait::async_trait;
-    use futures::StreamExt;
-    use tokio::sync::mpsc;
-    use tonic::Streaming;
-
-    use super::{Bi, Error, RecvConverter, SendConverter};
-
-    /// [`Bi`] adapter backed by a tonic gRPC bidirectional stream.
-    ///
-    /// Tonic receive errors are logged and treated as stream closure (`None`).
-    /// The receive converter is only invoked for successful inbound transport
-    /// items.
-    pub struct GrpcAdapter<InboundConverter, OutboundConverter>
-    where
-        InboundConverter: RecvConverter,
-        OutboundConverter: SendConverter,
-    {
-        sender: mpsc::Sender<OutboundConverter::Output>,
-        receiver: Streaming<InboundConverter::Input>,
-        inbound_converter: InboundConverter,
-        outbound_converter: OutboundConverter,
-    }
-
-    impl<InboundTransport, Inbound, InboundConverter, OutboundConverter>
-        GrpcAdapter<InboundConverter, OutboundConverter>
-    where
-        InboundConverter: RecvConverter<Input = InboundTransport, Output = Inbound>,
-        OutboundConverter: SendConverter,
-    {
-        pub fn new(
-            sender: mpsc::Sender<OutboundConverter::Output>,
-            receiver: Streaming<InboundTransport>,
-            inbound_converter: InboundConverter,
-            outbound_converter: OutboundConverter,
-        ) -> Self {
-            Self {
-                sender,
-                receiver,
-                inbound_converter,
-                outbound_converter,
-            }
-        }
-    }
-
-    #[async_trait]
-    impl<InboundConverter, OutboundConverter> Bi<InboundConverter::Output, OutboundConverter::Input>
-        for GrpcAdapter<InboundConverter, OutboundConverter>
-    where
-        InboundConverter: RecvConverter,
-        OutboundConverter: SendConverter,
-        OutboundConverter::Input: Send + 'static,
-        OutboundConverter::Output: Send + 'static,
-    {
-        #[tracing::instrument(level = "trace", skip(self, item))]
-        async fn send(&mut self, item: OutboundConverter::Input) -> Result<(), Error> {
-            let outbound = self.outbound_converter.convert(item);
-            self.sender
-                .send(outbound)
-                .await
-                .map_err(|_| Error::ChannelClosed)
-        }
-
-        #[tracing::instrument(level = "trace", skip(self))]
-        async fn recv(&mut self) -> Option<InboundConverter::Output> {
-            match self.receiver.next().await {
-                Some(Ok(item)) => Some(self.inbound_converter.convert(item)),
-                Some(Err(error)) => {
-                    tracing::error!(error = ?error, "grpc transport recv failed; closing stream");
-                    None
-                }
-                None => None,
-            }
-        }
-    }
+    fn split(self) -> (Self::Sender, Self::Receiver);
+    fn from_parts(sender: Self::Sender, receiver: Self::Receiver) -> Self;
 }
 
 /// No-op [`Bi`] transport for tests and manual actor usage.
@@ -278,22 +122,16 @@ pub struct DummyTransport<Inbound, Outbound> {
     _marker: PhantomData<(Inbound, Outbound)>,
 }
 
-impl<Inbound, Outbound> DummyTransport<Inbound, Outbound> {
-    pub fn new() -> Self {
+impl<Inbound, Outbound> Default for DummyTransport<Inbound, Outbound> {
+    fn default() -> Self {
         Self {
             _marker: PhantomData,
         }
     }
 }
 
-impl<Inbound, Outbound> Default for DummyTransport<Inbound, Outbound> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[async_trait]
-impl<Inbound, Outbound> Bi<Inbound, Outbound> for DummyTransport<Inbound, Outbound>
+impl<Inbound, Outbound> Sender<Outbound> for DummyTransport<Inbound, Outbound>
 where
     Inbound: Send + Sync + 'static,
     Outbound: Send + Sync + 'static,
@@ -301,9 +139,25 @@ where
     async fn send(&mut self, _item: Outbound) -> Result<(), Error> {
         Ok(())
     }
+}
 
+#[async_trait]
+impl<Inbound, Outbound> Receiver<Inbound> for DummyTransport<Inbound, Outbound>
+where
+    Inbound: Send + Sync + 'static,
+    Outbound: Send + Sync + 'static,
+{
     async fn recv(&mut self) -> Option<Inbound> {
         std::future::pending::<()>().await;
         None
     }
 }
+
+impl<Inbound, Outbound> Bi<Inbound, Outbound> for DummyTransport<Inbound, Outbound>
+where
+    Inbound: Send + Sync + 'static,
+    Outbound: Send + Sync + 'static,
+{
+}
+
+pub mod grpc;

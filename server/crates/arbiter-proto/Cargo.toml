@@ -21,6 +21,7 @@ base64 = "0.22.1"
 prost-types.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
+tokio-stream.workspace = true
 
 [build-dependencies]
 tonic-prost-build = "0.14.3"
@@ -33,5 +34,3 @@ rcgen.workspace = true
 
 [package.metadata.cargo-shear]
 ignored = ["tonic-prost", "prost", "kameo"]
-
-

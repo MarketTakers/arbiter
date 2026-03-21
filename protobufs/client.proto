@@ -3,6 +3,7 @@ syntax = "proto3";
 package arbiter.client;
 
 import "evm.proto";
+import "google/protobuf/empty.proto";
 
 message AuthChallengeRequest {
   bytes pubkey = 1;
@@ -17,31 +18,40 @@ message AuthChallengeSolution {
   bytes signature = 1;
 }
 
-message AuthOk {}
+enum AuthResult {
+  AUTH_RESULT_UNSPECIFIED = 0;
+  AUTH_RESULT_SUCCESS = 1;
+  AUTH_RESULT_INVALID_KEY = 2;
+  AUTH_RESULT_INVALID_SIGNATURE = 3;
+  AUTH_RESULT_APPROVAL_DENIED = 4;
+  AUTH_RESULT_NO_USER_AGENTS_ONLINE = 5;
+  AUTH_RESULT_INTERNAL = 6;
+}
+
+enum VaultState {
+  VAULT_STATE_UNSPECIFIED = 0;
+  VAULT_STATE_UNBOOTSTRAPPED = 1;
+  VAULT_STATE_SEALED = 2;
+  VAULT_STATE_UNSEALED = 3;
+  VAULT_STATE_ERROR = 4;
+}
 
 message ClientRequest {
+  int32 request_id = 4;
   oneof payload {
     AuthChallengeRequest auth_challenge_request = 1;
     AuthChallengeSolution auth_challenge_solution = 2;
-    arbiter.evm.EvmSignTransactionRequest evm_sign_transaction = 3;
+    google.protobuf.Empty query_vault_state = 3;
   }
-}
-
-message ClientConnectError {
-  enum Code {
-    UNKNOWN = 0;
-    APPROVAL_DENIED = 1;
-    NO_USER_AGENTS_ONLINE = 2;
-  }
-  Code code = 1;
 }
 
 message ClientResponse {
+  optional int32 request_id = 7;
   oneof payload {
     AuthChallenge auth_challenge = 1;
-    AuthOk auth_ok = 2;
-    ClientConnectError client_connect_error = 5;
+    AuthResult auth_result = 2;
     arbiter.evm.EvmSignTransactionResponse evm_sign_transaction = 3;
     arbiter.evm.EvmAnalyzeTransactionResponse evm_analyze_transaction = 4;
+    VaultState vault_state = 6;
   }
 }

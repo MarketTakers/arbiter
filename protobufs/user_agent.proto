@@ -2,8 +2,8 @@ syntax = "proto3";
 
 package arbiter.user_agent;
 
-import "google/protobuf/empty.proto";
 import "evm.proto";
+import "google/protobuf/empty.proto";
 
 enum KeyType {
   KEY_TYPE_UNSPECIFIED = 0;
@@ -68,15 +68,23 @@ message AuthChallengeRequest {
 }
 
 message AuthChallenge {
-  bytes pubkey = 1;
   int32 nonce = 2;
+  reserved 1;
 }
 
 message AuthChallengeSolution {
   bytes signature = 1;
 }
 
-message AuthOk {}
+enum AuthResult {
+  AUTH_RESULT_UNSPECIFIED = 0;
+  AUTH_RESULT_SUCCESS = 1;
+  AUTH_RESULT_INVALID_KEY = 2;
+  AUTH_RESULT_INVALID_SIGNATURE = 3;
+  AUTH_RESULT_BOOTSTRAP_REQUIRED = 4;
+  AUTH_RESULT_TOKEN_INVALID = 5;
+  AUTH_RESULT_INTERNAL = 6;
+}
 
 message UnsealStart {
   bytes client_pubkey = 1;
@@ -91,11 +99,24 @@ message UnsealEncryptedKey {
   bytes associated_data = 3;
 }
 
+message BootstrapEncryptedKey {
+  bytes nonce = 1;
+  bytes ciphertext = 2;
+  bytes associated_data = 3;
+}
+
 enum UnsealResult {
   UNSEAL_RESULT_UNSPECIFIED = 0;
   UNSEAL_RESULT_SUCCESS = 1;
   UNSEAL_RESULT_INVALID_KEY = 2;
   UNSEAL_RESULT_UNBOOTSTRAPPED = 3;
+}
+
+enum BootstrapResult {
+  BOOTSTRAP_RESULT_UNSPECIFIED = 0;
+  BOOTSTRAP_RESULT_SUCCESS = 1;
+  BOOTSTRAP_RESULT_ALREADY_BOOTSTRAPPED = 2;
+  BOOTSTRAP_RESULT_INVALID_KEY = 3;
 }
 
 enum VaultState {
@@ -117,6 +138,7 @@ message SdkClientConnectionResponse {
 message SdkClientConnectionCancel {}
 
 message UserAgentRequest {
+  int32 id = 16;
   oneof payload {
     AuthChallengeRequest auth_challenge_request = 1;
     AuthChallengeSolution auth_challenge_solution = 2;
@@ -132,12 +154,14 @@ message UserAgentRequest {
     SdkClientApproveRequest sdk_client_approve = 12;
     SdkClientRevokeRequest sdk_client_revoke = 13;
     google.protobuf.Empty sdk_client_list = 14;
+    BootstrapEncryptedKey bootstrap_encrypted_key = 15;
   }
 }
 message UserAgentResponse {
+  optional int32 id = 16;
   oneof payload {
     AuthChallenge auth_challenge = 1;
-    AuthOk auth_ok = 2;
+    AuthResult auth_result = 2;
     UnsealStartResponse unseal_start_response = 3;
     UnsealResult unseal_result = 4;
     VaultState vault_state = 5;
@@ -146,10 +170,10 @@ message UserAgentResponse {
     arbiter.evm.EvmGrantCreateResponse evm_grant_create = 8;
     arbiter.evm.EvmGrantDeleteResponse evm_grant_delete = 9;
     arbiter.evm.EvmGrantListResponse evm_grant_list = 10;
-    SdkClientConnectionRequest sdk_client_connection_request = 11;
-    SdkClientConnectionCancel sdk_client_connection_cancel = 12;
-    SdkClientApproveResponse sdk_client_approve = 13;
-    SdkClientRevokeResponse sdk_client_revoke = 14;
-    SdkClientListResponse sdk_client_list = 15;
+    SdkClientConnectionResponse sdk_client_connection_response = 11;
+    SdkClientApproveResponse sdk_client_approve_response = 12;
+    SdkClientRevokeResponse sdk_client_revoke_response = 13;
+    SdkClientListResponse sdk_client_list_response = 14;
+    BootstrapResult bootstrap_result = 15;
   }
 }

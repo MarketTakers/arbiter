@@ -1,14 +1,14 @@
 use std::sync::Mutex;
 
+use crate::safe_cell::{SafeCell, SafeCellHandle as _};
 use alloy::{
     consensus::SignableTransaction,
     network::{TxSigner, TxSignerSync},
-    primitives::{Address, ChainId, Signature, B256},
+    primitives::{Address, B256, ChainId, Signature},
     signers::{Error, Result, Signer, SignerSync, utils::secret_key_to_address},
 };
 use async_trait::async_trait;
-use k256::ecdsa::{self, signature::hazmat::PrehashSigner, RecoveryId, SigningKey};
-use memsafe::MemSafe;
+use k256::ecdsa::{self, RecoveryId, SigningKey, signature::hazmat::PrehashSigner};
 
 /// An Ethereum signer that stores its secp256k1 secret key inside a
 /// hardware-protected [`MemSafe`] cell.
@@ -20,7 +20,7 @@ use memsafe::MemSafe;
 /// Because [`MemSafe::read`] requires `&mut self` while the [`Signer`] trait
 /// requires `&self`, the cell is wrapped in a [`Mutex`].
 pub struct SafeSigner {
-    key: Mutex<MemSafe<SigningKey>>,
+    key: Mutex<SafeCell<SigningKey>>,
     address: Address,
     chain_id: Option<ChainId>,
 }
@@ -42,14 +42,13 @@ impl std::fmt::Debug for SafeSigner {
 /// rejection, but we retry to be correct).
 ///
 /// Returns the protected key bytes and the derived Ethereum address.
-pub fn generate(rng: &mut impl rand::Rng) -> (MemSafe<[u8; 32]>, Address) {
+pub fn generate(rng: &mut impl rand::Rng) -> (SafeCell<[u8; 32]>, Address) {
     loop {
-        let mut cell = MemSafe::new([0u8; 32]).expect("MemSafe allocation");
-        {
-            let mut w = cell.write().expect("MemSafe write");
-            rng.fill_bytes(w.as_mut());
-        }
-        let reader = cell.read().expect("MemSafe read");
+        let mut cell = SafeCell::new_inline(|w: &mut [u8; 32]| {
+            rng.fill_bytes(w);
+        });
+
+        let reader = cell.read();
         if let Ok(sk) = SigningKey::from_slice(reader.as_ref()) {
             let address = secret_key_to_address(&sk);
             drop(reader);
@@ -64,8 +63,8 @@ impl SafeSigner {
     /// The key bytes are read from protected memory, parsed as a secp256k1
     /// scalar, and immediately moved into a new [`MemSafe`] cell. The raw
     /// bytes are never exposed outside this function.
-    pub fn from_memsafe(mut cell: MemSafe<Vec<u8>>) -> Result<Self> {
-        let reader = cell.read().map_err(Error::other)?;
+    pub fn from_cell(mut cell: SafeCell<Vec<u8>>) -> Result<Self> {
+        let reader = cell.read();
         let sk = SigningKey::from_slice(reader.as_slice()).map_err(Error::other)?;
         drop(reader);
         Self::new(sk)
@@ -75,7 +74,7 @@ impl SafeSigner {
     /// memory region.
     pub fn new(key: SigningKey) -> Result<Self> {
         let address = secret_key_to_address(&key);
-        let cell = MemSafe::new(key).map_err(Error::other)?;
+        let cell = SafeCell::new(key);
         Ok(Self {
             key: Mutex::new(cell),
             address,
@@ -84,25 +83,25 @@ impl SafeSigner {
     }
 
     fn sign_hash_inner(&self, hash: &B256) -> Result<Signature> {
+        #[allow(clippy::expect_used)]
         let mut cell = self.key.lock().expect("SafeSigner mutex poisoned");
-        let reader = cell.read().map_err(Error::other)?;
+        let reader = cell.read();
         let sig: (ecdsa::Signature, RecoveryId) = reader.sign_prehash(hash.as_ref())?;
         Ok(sig.into())
     }
 
-    fn sign_tx_inner(
-        &self,
-        tx: &mut dyn SignableTransaction<Signature>,
-    ) -> Result<Signature> {
+    fn sign_tx_inner(&self, tx: &mut dyn SignableTransaction<Signature>) -> Result<Signature> {
         if let Some(chain_id) = self.chain_id
             && !tx.set_chain_id_checked(chain_id)
         {
             return Err(Error::TransactionChainIdMismatch {
                 signer: chain_id,
-                tx: tx.chain_id().unwrap(),
+                #[allow(clippy::expect_used)]
+                tx: tx.chain_id().expect("Chain ID is guaranteed to be set"),
             });
         }
-        self.sign_hash_inner(&tx.signature_hash()).map_err(Error::other)
+        self.sign_hash_inner(&tx.signature_hash())
+            .map_err(Error::other)
     }
 }
 

@@ -1,114 +1,82 @@
-use arbiter_proto::proto::user_agent::{
-    AuthChallengeRequest, AuthChallengeSolution, KeyType as ProtoKeyType, UserAgentRequest,
-    user_agent_request::Payload as UserAgentRequestPayload,
-};
+use arbiter_proto::transport::Bi;
 use tracing::error;
 
 use crate::actors::user_agent::{
-    UserAgentConnection,
-    auth::state::{AuthContext, AuthPublicKey, AuthStateMachine},
-    session::UserAgentSession,
+    AuthPublicKey, UserAgentConnection,
+    auth::state::{AuthContext, AuthStateMachine},
 };
-
-#[derive(thiserror::Error, Debug, PartialEq)]
-pub enum Error {
-    #[error("Unexpected message payload")]
-    UnexpectedMessagePayload,
-    #[error("Invalid client public key length")]
-    InvalidClientPubkeyLength,
-    #[error("Invalid client public key encoding")]
-    InvalidAuthPubkeyEncoding,
-    #[error("Database pool unavailable")]
-    DatabasePoolUnavailable,
-    #[error("Database operation failed")]
-    DatabaseOperationFailed,
-    #[error("Public key not registered")]
-    PublicKeyNotRegistered,
-    #[error("Transport error")]
-    Transport,
-    #[error("Invalid bootstrap token")]
-    InvalidBootstrapToken,
-    #[error("Bootstrapper actor unreachable")]
-    BootstrapperActorUnreachable,
-    #[error("Invalid challenge solution")]
-    InvalidChallengeSolution,
-}
 
 mod state;
 use state::*;
 
-fn parse_pubkey(key_type: ProtoKeyType, pubkey: Vec<u8>) -> Result<AuthPublicKey, Error> {
-    match key_type {
-        // UNSPECIFIED treated as Ed25519 for backward compatibility
-        ProtoKeyType::Unspecified | ProtoKeyType::Ed25519 => {
-            let pubkey_bytes = pubkey.as_array().ok_or(Error::InvalidClientPubkeyLength)?;
-            let key = ed25519_dalek::VerifyingKey::from_bytes(pubkey_bytes)
-                .map_err(|_| Error::InvalidAuthPubkeyEncoding)?;
-            Ok(AuthPublicKey::Ed25519(key))
-        }
-        ProtoKeyType::EcdsaSecp256k1 => {
-            // Public key is sent as 33-byte SEC1 compressed point
-            let key = k256::ecdsa::VerifyingKey::from_sec1_bytes(&pubkey)
-                .map_err(|_| Error::InvalidAuthPubkeyEncoding)?;
-            Ok(AuthPublicKey::EcdsaSecp256k1(key))
-        }
-        ProtoKeyType::Rsa => {
-            use rsa::pkcs8::DecodePublicKey as _;
-            let key = rsa::RsaPublicKey::from_public_key_der(&pubkey)
-                .map_err(|_| Error::InvalidAuthPubkeyEncoding)?;
-            Ok(AuthPublicKey::Rsa(key))
+#[derive(Debug, Clone)]
+pub enum Inbound {
+    AuthChallengeRequest {
+        pubkey: AuthPublicKey,
+        bootstrap_token: Option<String>,
+    },
+    AuthChallengeSolution {
+        signature: Vec<u8>,
+    },
+}
+
+#[derive(Debug)]
+pub enum Error {
+    UnregisteredPublicKey,
+    InvalidChallengeSolution,
+    InvalidBootstrapToken,
+    Internal { details: String },
+    Transport,
+}
+
+impl Error {
+    fn internal(details: impl Into<String>) -> Self {
+        Self::Internal {
+            details: details.into(),
         }
     }
 }
 
-fn parse_auth_event(payload: UserAgentRequestPayload) -> Result<AuthEvents, Error> {
+#[derive(Debug, Clone)]
+pub enum Outbound {
+    AuthChallenge { nonce: i32 },
+    AuthSuccess,
+}
+
+fn parse_auth_event(payload: Inbound) -> AuthEvents {
     match payload {
-        UserAgentRequestPayload::AuthChallengeRequest(AuthChallengeRequest {
+        Inbound::AuthChallengeRequest {
             pubkey,
             bootstrap_token: None,
-            key_type,
-        }) => {
-            let kt = ProtoKeyType::try_from(key_type).unwrap_or(ProtoKeyType::Unspecified);
-            Ok(AuthEvents::AuthRequest(ChallengeRequest {
-                pubkey: parse_pubkey(kt, pubkey)?,
-            }))
-        }
-        UserAgentRequestPayload::AuthChallengeRequest(AuthChallengeRequest {
+        } => AuthEvents::AuthRequest(ChallengeRequest { pubkey }),
+        Inbound::AuthChallengeRequest {
             pubkey,
             bootstrap_token: Some(token),
-            key_type,
-        }) => {
-            let kt = ProtoKeyType::try_from(key_type).unwrap_or(ProtoKeyType::Unspecified);
-            Ok(AuthEvents::BootstrapAuthRequest(BootstrapAuthRequest {
-                pubkey: parse_pubkey(kt, pubkey)?,
-                token,
-            }))
-        }
-        UserAgentRequestPayload::AuthChallengeSolution(AuthChallengeSolution { signature }) => {
-            Ok(AuthEvents::ReceivedSolution(ChallengeSolution {
+        } => AuthEvents::BootstrapAuthRequest(BootstrapAuthRequest { pubkey, token }),
+        Inbound::AuthChallengeSolution { signature } => {
+            AuthEvents::ReceivedSolution(ChallengeSolution {
                 solution: signature,
-            }))
+            })
         }
-        _ => Err(Error::UnexpectedMessagePayload),
     }
 }
 
-pub async fn authenticate(props: &mut UserAgentConnection) -> Result<AuthPublicKey, Error> {
-    let mut state = AuthStateMachine::new(AuthContext::new(props));
+pub async fn authenticate<T>(
+    props: &mut UserAgentConnection,
+    transport: T,
+) -> Result<AuthPublicKey, Error>
+where
+    T: Bi<Inbound, Result<Outbound, Error>> + Send,
+{
+    let mut state = AuthStateMachine::new(AuthContext::new(props, transport));
 
     loop {
         // `state` holds a mutable reference to `props` so we can't access it directly here
-        let transport = state.context_mut().conn.transport.as_mut();
-        let Some(UserAgentRequest {
-            payload: Some(payload),
-        }) = transport.recv().await
-        else {
+        let Some(payload) = state.context_mut().transport.recv().await else {
             return Err(Error::Transport);
         };
 
-        let event = parse_auth_event(payload)?;
-
-        match state.process_event(event).await {
+        match state.process_event(parse_auth_event(payload)).await {
             Ok(AuthStates::AuthOk(key)) => return Ok(key.clone()),
             Err(AuthError::ActionFailed(err)) => {
                 error!(?err, "State machine action failed");
@@ -130,12 +98,4 @@ pub async fn authenticate(props: &mut UserAgentConnection) -> Result<AuthPublicK
             _ => (),
         }
     }
-}
-
-pub async fn authenticate_and_create(
-    mut props: UserAgentConnection,
-) -> Result<UserAgentSession, Error> {
-    let _key = authenticate(&mut props).await?;
-    let session = UserAgentSession::new(props);
-    Ok(session)
 }

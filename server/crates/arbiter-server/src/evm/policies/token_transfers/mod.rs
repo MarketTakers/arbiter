@@ -58,10 +58,11 @@ impl From<Meaning> for SpecificMeaning {
 }
 
 // A grant for token transfers, which can be scoped to specific target addresses and volume limits
+#[derive(Debug, Clone)]
 pub struct Settings {
-    token_contract: Address,
-    target: Option<Address>,
-    volume_limits: Vec<VolumeRateLimit>,
+    pub token_contract: Address,
+    pub target: Option<Address>,
+    pub volume_limits: Vec<VolumeRateLimit>,
 }
 impl From<Settings> for SpecificGrant {
     fn from(val: Settings) -> SpecificGrant {

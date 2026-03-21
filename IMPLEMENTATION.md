@@ -6,6 +6,20 @@ This document covers concrete technology choices and dependencies. For the archi
 
 ## Client Connection Flow
 
+### Authentication Result Semantics
+
+Authentication no longer uses an implicit success-only response shape. Both `client` and `user-agent` return explicit auth status enums over the wire.
+
+- **Client:** `AuthResult` may return `SUCCESS`, `INVALID_KEY`, `INVALID_SIGNATURE`, `APPROVAL_DENIED`, `NO_USER_AGENTS_ONLINE`, or `INTERNAL`
+- **User-agent:** `AuthResult` may return `SUCCESS`, `INVALID_KEY`, `INVALID_SIGNATURE`, `BOOTSTRAP_REQUIRED`, `TOKEN_INVALID`, or `INTERNAL`
+
+This makes transport-level failures and actor/domain-level auth failures distinct:
+
+- **Transport/protocol failures** are surfaced as stream/status errors
+- **Authentication failures** are surfaced as successful protocol responses carrying an explicit auth status
+
+Clients are expected to handle these status codes directly and present the concrete failure reason to the user.
+
 ### New Client Approval
 
 When a client whose public key is not yet in the database connects, all connected user agents are asked to approve the connection. The first agent to respond determines the outcome; remaining requests are cancelled via a watch channel.
@@ -68,8 +82,20 @@ The `program_client.nonce` column stores the **next usable nonce** — i.e. it i
 ## Communication
 
 - **Protocol:** gRPC with Protocol Buffers
+- **Request/response matching:** multiplexed over a single bidirectional stream using per-connection request IDs
 - **Server identity distribution:** `ServerInfo` protobuf struct containing the TLS public key fingerprint
 - **Future consideration:** grpc-web lacks bidirectional stream support, so a browser-based wallet may require protojson over WebSocket
+
+### Request Multiplexing
+
+Both `client` and `user-agent` connections support multiple in-flight requests over one gRPC bidi stream.
+
+- Every request carries a monotonically increasing request ID
+- Every normal response echoes the request ID it corresponds to
+- Out-of-band server messages omit the response ID entirely
+- The server rejects already-seen request IDs at the transport adapter boundary before business logic sees the message
+
+This keeps request correlation entirely in transport/client connection code while leaving actor and domain handlers unaware of request IDs.
 
 ---
 

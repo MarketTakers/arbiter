@@ -154,7 +154,7 @@ impl MessageRouter {
         ctx: &mut Context<Self, DelegatedReply<Result<bool, ApprovalError>>>,
     ) -> DelegatedReply<Result<bool, ApprovalError>> {
         let (reply, Some(reply_sender)) = ctx.reply_sender() else {
-            panic!("Expected `request_client_approval` to have callback channel");
+            unreachable!("Expected `request_client_approval` to have callback channel");
         };
 
         let weak_refs = self

@@ -1,0 +1,10 @@
+id: safecell-new-inline
+language: Rust
+rule:
+  pattern: $CELL.write_inline(|$W| $BODY);
+  follows:
+    pattern: let mut $CELL = SafeCell::new($INIT);
+fix: 
+  template: let mut $CELL = SafeCell::new_inline(|$W| $BODY);
+  expandStart:
+    pattern: let mut $CELL = SafeCell::new($INIT)
