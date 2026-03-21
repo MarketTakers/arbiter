@@ -10,7 +10,7 @@ tonic.workspace = true
 tokio.workspace = true
 futures.workspace = true
 hex = "0.4.3"
-tonic-prost = "0.14.3"
+tonic-prost = "0.14.5"
 prost = "0.14.3"
 kameo.workspace = true
 url = "2.5.8"
@@ -24,7 +24,7 @@ async-trait.workspace = true
 tokio-stream.workspace = true
 
 [build-dependencies]
-tonic-prost-build = "0.14.3"
+tonic-prost-build = "0.14.5"
 protoc-bin-vendored = "3"
 
 [dev-dependencies]
