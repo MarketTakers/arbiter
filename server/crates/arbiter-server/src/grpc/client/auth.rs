@@ -55,7 +55,7 @@ impl<'a> AuthTransportAdapter<'a> {
                     ProtoAuthResult::ApprovalDenied
                 }
                 auth::Error::ApproveError(auth::ApproveError::Upstream(
-                    crate::actors::router::ApprovalError::NoUserAgentsConnected,
+                    crate::actors::flow_coordinator::ApprovalError::NoUserAgentsConnected,
                 )) => ProtoAuthResult::NoUserAgentsOnline,
                 auth::Error::ApproveError(auth::ApproveError::Internal)
                 | auth::Error::DatabasePoolUnavailable

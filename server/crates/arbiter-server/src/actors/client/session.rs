@@ -3,7 +3,8 @@ use tracing::error;
 
 use crate::{
     actors::{
-        GlobalActors, client::ClientConnection, keyholder::KeyHolderState, router::RegisterClient,
+        GlobalActors, client::ClientConnection, flow_coordinator::RegisterClient,
+        keyholder::KeyHolderState,
     },
     db,
 };
@@ -47,7 +48,7 @@ impl Actor for ClientSession {
     ) -> Result<Self, Self::Error> {
         args.props
             .actors
-            .router
+            .flow_coordinator
             .ask(RegisterClient { actor: this })
             .await
             .map_err(|_| Error::ConnectionRegistrationFailed)?;

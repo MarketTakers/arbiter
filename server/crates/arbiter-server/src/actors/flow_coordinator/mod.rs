@@ -17,12 +17,12 @@ use crate::actors::{
 };
 
 #[derive(Default)]
-pub struct MessageRouter {
+pub struct FlowCoordinator {
     pub user_agents: HashMap<ActorId, ActorRef<UserAgentSession>>,
     pub clients: HashMap<ActorId, ActorRef<ClientSession>>,
 }
 
-impl Actor for MessageRouter {
+impl Actor for FlowCoordinator {
     type Args = Self;
 
     type Error = ();
@@ -40,15 +40,15 @@ impl Actor for MessageRouter {
         if self.user_agents.remove(&id).is_some() {
             info!(
                 ?id,
-                actor = "MessageRouter",
+                actor = "FlowCoordinator",
                 event = "useragent.disconnected"
             );
         } else if self.clients.remove(&id).is_some() {
-            info!(?id, actor = "MessageRouter", event = "client.disconnected");
+            info!(?id, actor = "FlowCoordinator", event = "client.disconnected");
         } else {
             info!(
                 ?id,
-                actor = "MessageRouter",
+                actor = "FlowCoordinator",
                 event = "unknown.actor.disconnected"
             );
         }
@@ -89,7 +89,7 @@ async fn request_client_approval(
             None => {
                 warn!(
                     id = weak_ref.id().to_string(),
-                    actor = "MessageRouter",
+                    actor = "FlowCoordinator",
                     event = "useragent.disconnected_before_approval"
                 );
             }
@@ -106,14 +106,14 @@ async fn request_client_approval(
             Ok(Err(err)) => {
                 warn!(
                     ?err,
-                    actor = "MessageRouter",
+                    actor = "FlowCoordinator",
                     event = "useragent.approval_error"
                 );
             }
             Err(err) => {
                 warn!(
                     ?err,
-                    actor = "MessageRouter",
+                    actor = "FlowCoordinator",
                     event = "useragent.approval_task_failed"
                 );
             }
@@ -124,14 +124,14 @@ async fn request_client_approval(
 }
 
 #[messages]
-impl MessageRouter {
+impl FlowCoordinator {
     #[message(ctx)]
     pub async fn register_user_agent(
         &mut self,
         actor: ActorRef<UserAgentSession>,
         ctx: &mut Context<Self, ()>,
     ) {
-        info!(id = %actor.id(), actor = "MessageRouter", event = "useragent.connected");
+        info!(id = %actor.id(), actor = "FlowCoordinator", event = "useragent.connected");
         ctx.actor_ref().link(&actor).await;
         self.user_agents.insert(actor.id(), actor);
     }
@@ -142,7 +142,7 @@ impl MessageRouter {
         actor: ActorRef<ClientSession>,
         ctx: &mut Context<Self, ()>,
     ) {
-        info!(id = %actor.id(), actor = "MessageRouter", event = "client.connected");
+        info!(id = %actor.id(), actor = "FlowCoordinator", event = "client.connected");
         ctx.actor_ref().link(&actor).await;
         self.clients.insert(actor.id(), actor);
     }

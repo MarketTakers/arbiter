@@ -15,7 +15,7 @@ use tracing::error;
 use crate::{
     actors::{
         client::ClientConnection,
-        router::{self, RequestClientApproval},
+        flow_coordinator::{self, RequestClientApproval},
     },
     db::{
         self,
@@ -52,7 +52,7 @@ pub enum ApproveError {
     #[error("Client connection denied by user agents")]
     Denied,
     #[error("Upstream error: {0}")]
-    Upstream(router::ApprovalError),
+    Upstream(flow_coordinator::ApprovalError),
 }
 
 #[derive(Debug, Clone)]
@@ -116,7 +116,7 @@ async fn approve_new_client(
     pubkey: VerifyingKey,
 ) -> Result<(), Error> {
     let result = actors
-        .router
+        .flow_coordinator
         .ask(RequestClientApproval {
             client_pubkey: pubkey,
         })
@@ -130,7 +130,7 @@ async fn approve_new_client(
             Err(Error::ApproveError(ApproveError::Upstream(e)))
         }
         Err(e) => {
-            error!(error = ?e, "Approval request to router failed");
+            error!(error = ?e, "Approval request to flow coordinator failed");
             Err(Error::ApproveError(ApproveError::Internal))
         }
     }

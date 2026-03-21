@@ -9,7 +9,7 @@ use tokio::sync::watch;
 use tracing::error;
 
 use crate::actors::{
-    router::RegisterUserAgent,
+    flow_coordinator::RegisterUserAgent,
     user_agent::{OutOfBand, UserAgentConnection},
 };
 
@@ -110,14 +110,14 @@ impl Actor for UserAgentSession {
     ) -> Result<Self, Self::Error> {
         args.props
             .actors
-            .router
+            .flow_coordinator
             .ask(RegisterUserAgent {
                 actor: this.clone(),
             })
             .await
             .map_err(|err| {
-                error!(?err, "Failed to register user agent connection with router");
-                Error::internal("Failed to register user agent connection with router")
+                error!(?err, "Failed to register user agent connection with flow coordinator");
+                Error::internal("Failed to register user agent connection with flow coordinator")
             })?;
         Ok(args)
     }
