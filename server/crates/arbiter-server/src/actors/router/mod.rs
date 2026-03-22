@@ -163,7 +163,6 @@ impl MessageRouter {
             .map(|agent| agent.downgrade())
             .collect::<Vec<_>>();
 
-        // handle in subtask to not to lock the actor
         tokio::task::spawn(async move {
             let result = request_client_approval(&weak_refs, client_pubkey).await;
             reply_sender.send(result);

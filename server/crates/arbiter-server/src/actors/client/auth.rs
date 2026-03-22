@@ -67,10 +67,10 @@ async fn get_nonce(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<Optio
     conn.exclusive_transaction(|conn| {
         let pubkey_bytes = pubkey_bytes.clone();
         Box::pin(async move {
-            let Some(current_nonce) = program_client::table
+            let Some((client_id, current_nonce)) = program_client::table
                 .filter(program_client::public_key.eq(&pubkey_bytes))
-                .select(program_client::nonce)
-                .first::<i32>(conn)
+                .select((program_client::id, program_client::nonce))
+                .first::<(i32, i32)>(conn)
                 .await
                 .optional()?
             else {
@@ -83,6 +83,7 @@ async fn get_nonce(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<Optio
                 .execute(conn)
                 .await?;
 
+            let _ = client_id;
             Ok(Some(current_nonce))
         })
     })
@@ -118,7 +119,15 @@ async fn approve_new_client(
     }
 }
 
-async fn insert_client(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<(), Error> {
+enum InsertClientResult {
+    Inserted,
+    AlreadyExists,
+}
+
+async fn insert_client(
+    db: &db::DatabasePool,
+    pubkey: &VerifyingKey,
+) -> Result<InsertClientResult, Error> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -129,7 +138,7 @@ async fn insert_client(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<(
         Error::DatabasePoolUnavailable
     })?;
 
-    insert_into(program_client::table)
+    match insert_into(program_client::table)
         .values((
             program_client::public_key.eq(pubkey.as_bytes().to_vec()),
             program_client::nonce.eq(1), // pre-incremented; challenge uses 0
@@ -138,12 +147,31 @@ async fn insert_client(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<(
         ))
         .execute(&mut conn)
         .await
-        .map_err(|e| {
+    {
+        Ok(_) => {}
+        Err(diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::UniqueViolation,
+            _,
+        )) => return Ok(InsertClientResult::AlreadyExists),
+        Err(e) => {
             error!(error = ?e, "Failed to insert new client");
+            return Err(Error::DatabaseOperationFailed);
+        }
+    }
+
+    let client_id = program_client::table
+        .filter(program_client::public_key.eq(pubkey.as_bytes().to_vec()))
+        .order(program_client::id.desc())
+        .select(program_client::id)
+        .first::<i32>(&mut conn)
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "Failed to load inserted client id");
             Error::DatabaseOperationFailed
         })?;
 
-    Ok(())
+    let _ = client_id;
+    Ok(InsertClientResult::Inserted)
 }
 
 async fn challenge_client<T>(
@@ -189,7 +217,8 @@ pub async fn authenticate<T>(
 where
     T: Bi<Inbound, Result<Outbound, Error>> + Send + ?Sized,
 {
-    let Some(Inbound::AuthChallengeRequest { pubkey }) = transport.recv().await else {
+    let Some(Inbound::AuthChallengeRequest { pubkey }) = transport.recv().await
+    else {
         return Err(Error::Transport);
     };
 
@@ -197,8 +226,13 @@ where
         Some(nonce) => nonce,
         None => {
             approve_new_client(&props.actors, pubkey).await?;
-            insert_client(&props.db, &pubkey).await?;
-            0
+            match insert_client(&props.db, &pubkey).await? {
+                InsertClientResult::Inserted => 0,
+                InsertClientResult::AlreadyExists => match get_nonce(&props.db, &pubkey).await? {
+                    Some(nonce) => nonce,
+                    None => return Err(Error::DatabaseOperationFailed),
+                },
+            }
         }
     };
 

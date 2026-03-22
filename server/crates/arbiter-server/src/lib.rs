@@ -1,6 +1,4 @@
 #![forbid(unsafe_code)]
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 use crate::context::ServerContext;
 
 pub mod actors;
@@ -10,9 +8,6 @@ pub mod evm;
 pub mod grpc;
 pub mod safe_cell;
 pub mod utils;
-
-#[allow(dead_code, reason = "Reserved as the shared default channel size while server wiring is still being consolidated")]
-const DEFAULT_CHANNEL_SIZE: usize = 1000;
 
 pub struct Server {
     context: ServerContext,

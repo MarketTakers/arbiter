@@ -3,6 +3,12 @@ pub mod url;
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 
+pub mod google {
+    pub mod protobuf {
+        tonic::include_proto!("google.protobuf");
+    }
+}
+
 pub mod proto {
     tonic::include_proto!("arbiter");
 

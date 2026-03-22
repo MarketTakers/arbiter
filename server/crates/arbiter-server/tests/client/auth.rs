@@ -105,3 +105,4 @@ pub async fn test_challenge_auth() {
     // Auth completes, session spawned
     task.await.unwrap();
 }
+

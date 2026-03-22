@@ -12,6 +12,55 @@ enum KeyType {
   KEY_TYPE_RSA = 3;
 }
 
+// --- SDK client management ---
+
+enum SdkClientError {
+  SDK_CLIENT_ERROR_UNSPECIFIED = 0;
+  SDK_CLIENT_ERROR_ALREADY_EXISTS = 1;
+  SDK_CLIENT_ERROR_NOT_FOUND = 2;
+  SDK_CLIENT_ERROR_HAS_RELATED_DATA = 3; // hard-delete blocked by FK (client has grants or transaction logs)
+  SDK_CLIENT_ERROR_INTERNAL = 4;
+}
+
+message SdkClientApproveRequest {
+  bytes pubkey = 1; // 32-byte ed25519 public key
+}
+
+message SdkClientRevokeRequest {
+  int32 client_id = 1;
+}
+
+message SdkClientEntry {
+  int32 id = 1;
+  bytes pubkey = 2;
+  int32 created_at = 3;
+}
+
+message SdkClientList {
+  repeated SdkClientEntry clients = 1;
+}
+
+message SdkClientApproveResponse {
+  oneof result {
+    SdkClientEntry client = 1;
+    SdkClientError error = 2;
+  }
+}
+
+message SdkClientRevokeResponse {
+  oneof result {
+    google.protobuf.Empty ok = 1;
+    SdkClientError error = 2;
+  }
+}
+
+message SdkClientListResponse {
+  oneof result {
+    SdkClientList clients = 1;
+    SdkClientError error = 2;
+  }
+}
+
 message AuthChallengeRequest {
   bytes pubkey = 1;
   optional string bootstrap_token = 2;
@@ -78,18 +127,18 @@ enum VaultState {
   VAULT_STATE_ERROR = 4;
 }
 
-message ClientConnectionRequest {
+message SdkClientConnectionRequest {
   bytes pubkey = 1;
 }
 
-message ClientConnectionResponse {
+message SdkClientConnectionResponse {
   bool approved = 1;
 }
 
-message ClientConnectionCancel {}
+message SdkClientConnectionCancel {}
 
 message UserAgentRequest {
-  int32 id = 14;
+  int32 id = 16;
   oneof payload {
     AuthChallengeRequest auth_challenge_request = 1;
     AuthChallengeSolution auth_challenge_solution = 2;
@@ -101,12 +150,15 @@ message UserAgentRequest {
     arbiter.evm.EvmGrantCreateRequest evm_grant_create = 8;
     arbiter.evm.EvmGrantDeleteRequest evm_grant_delete = 9;
     arbiter.evm.EvmGrantListRequest evm_grant_list = 10;
-    ClientConnectionResponse client_connection_response = 11;
-    BootstrapEncryptedKey bootstrap_encrypted_key = 12;
+    SdkClientConnectionResponse sdk_client_connection_response = 11;
+    SdkClientApproveRequest sdk_client_approve = 12;
+    SdkClientRevokeRequest sdk_client_revoke = 13;
+    google.protobuf.Empty sdk_client_list = 14;
+    BootstrapEncryptedKey bootstrap_encrypted_key = 15;
   }
 }
 message UserAgentResponse {
-  optional int32 id = 14;
+  optional int32 id = 16;
   oneof payload {
     AuthChallenge auth_challenge = 1;
     AuthResult auth_result = 2;
@@ -118,8 +170,10 @@ message UserAgentResponse {
     arbiter.evm.EvmGrantCreateResponse evm_grant_create = 8;
     arbiter.evm.EvmGrantDeleteResponse evm_grant_delete = 9;
     arbiter.evm.EvmGrantListResponse evm_grant_list = 10;
-    ClientConnectionRequest client_connection_request = 11;
-    ClientConnectionCancel client_connection_cancel = 12;
-    BootstrapResult bootstrap_result = 13;
+    SdkClientConnectionResponse sdk_client_connection_response = 11;
+    SdkClientApproveResponse sdk_client_approve_response = 12;
+    SdkClientRevokeResponse sdk_client_revoke_response = 13;
+    SdkClientListResponse sdk_client_list_response = 14;
+    BootstrapResult bootstrap_result = 15;
   }
 }

@@ -87,12 +87,23 @@ impl UserAgentSession {
     pub async fn request_new_client_approval(
         &mut self,
         client_pubkey: VerifyingKey,
-         cancel_flag: watch::Receiver<()>,
+        mut cancel_flag: watch::Receiver<()>,
     ) -> Result<bool, ()> {
-        // temporary use to make clippy happy while we refactor this flow
-        dbg!(client_pubkey);
-        dbg!(cancel_flag);
-        todo!("Think about refactoring it to state-machine based flow, as we already have one")
+        if self
+            .sender
+            .send(OutOfBand::ClientConnectionRequest {
+                pubkey: client_pubkey,
+            })
+            .await
+            .is_err()
+        {
+            return Err(());
+        }
+
+        let _ = cancel_flag.changed().await;
+
+        let _ = self.sender.send(OutOfBand::ClientConnectionCancel).await;
+        Ok(false)
     }
 }
 

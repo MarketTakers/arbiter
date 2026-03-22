@@ -1,6 +1,7 @@
 use tokio::sync::mpsc;
 
 use arbiter_proto::{
+    google::protobuf::{Empty as ProtoEmpty, Timestamp as ProtoTimestamp},
     proto::{
         evm::{
             EtherTransferSettings as ProtoEtherTransferSettings, EvmError as ProtoEvmError,
@@ -19,10 +20,11 @@ use arbiter_proto::{
         },
         user_agent::{
             BootstrapEncryptedKey as ProtoBootstrapEncryptedKey,
-            BootstrapResult as ProtoBootstrapResult, ClientConnectionCancel,
-            ClientConnectionRequest, UnsealEncryptedKey as ProtoUnsealEncryptedKey,
-            UnsealResult as ProtoUnsealResult, UnsealStart, UserAgentRequest, UserAgentResponse,
-            VaultState as ProtoVaultState, user_agent_request::Payload as UserAgentRequestPayload,
+            BootstrapResult as ProtoBootstrapResult,
+            SdkClientConnectionResponse as ProtoSdkClientConnectionResponse,
+            UnsealEncryptedKey as ProtoUnsealEncryptedKey, UnsealResult as ProtoUnsealResult,
+            UnsealStart, UserAgentRequest, UserAgentResponse, VaultState as ProtoVaultState,
+            user_agent_request::Payload as UserAgentRequestPayload,
             user_agent_response::Payload as UserAgentResponsePayload,
         },
     },
@@ -293,14 +295,17 @@ async fn send_out_of_band(
     oob: OutOfBand,
 ) -> Result<(), ()> {
     let payload = match oob {
-        OutOfBand::ClientConnectionRequest { pubkey } => {
-            UserAgentResponsePayload::ClientConnectionRequest(ClientConnectionRequest {
-                pubkey: pubkey.to_bytes().to_vec(),
-            })
+        // The current protobuf response payload carries only an approval boolean.
+        // Keep emitting this shape until a dedicated out-of-band request/cancel payload
+        // is reintroduced in the protocol definition.
+        OutOfBand::ClientConnectionRequest { pubkey: _ } => {
+            UserAgentResponsePayload::SdkClientConnectionResponse(
+                ProtoSdkClientConnectionResponse { approved: false },
+            )
         }
-        OutOfBand::ClientConnectionCancel => {
-            UserAgentResponsePayload::ClientConnectionCancel(ClientConnectionCancel {})
-        }
+        OutOfBand::ClientConnectionCancel => UserAgentResponsePayload::SdkClientConnectionResponse(
+            ProtoSdkClientConnectionResponse { approved: false },
+        ),
     };
 
     bi.send(Ok(UserAgentResponse {
@@ -402,9 +407,7 @@ fn u256_from_proto_bytes(bytes: &[u8]) -> Result<U256, Status> {
     Ok(U256::from_be_slice(bytes))
 }
 
-fn proto_timestamp_to_utc(
-    timestamp: prost_types::Timestamp,
-) -> Result<chrono::DateTime<Utc>, Status> {
+fn proto_timestamp_to_utc(timestamp: ProtoTimestamp) -> Result<chrono::DateTime<Utc>, Status> {
     Utc.timestamp_opt(timestamp.seconds, timestamp.nanos as u32)
         .single()
         .ok_or_else(|| Status::invalid_argument("Invalid timestamp"))
@@ -414,11 +417,11 @@ fn shared_settings_to_proto(shared: SharedGrantSettings) -> ProtoSharedSettings 
     ProtoSharedSettings {
         wallet_id: shared.wallet_id,
         chain_id: shared.chain,
-        valid_from: shared.valid_from.map(|time| prost_types::Timestamp {
+        valid_from: shared.valid_from.map(|time| ProtoTimestamp {
             seconds: time.timestamp(),
             nanos: time.timestamp_subsec_nanos() as i32,
         }),
-        valid_until: shared.valid_until.map(|time| prost_types::Timestamp {
+        valid_until: shared.valid_until.map(|time| ProtoTimestamp {
             seconds: time.timestamp(),
             nanos: time.timestamp_subsec_nanos() as i32,
         }),
@@ -531,7 +534,7 @@ impl EvmGrantOrWallet {
 
     fn grant_delete_response<M>(result: Result<(), SendError<M, Error>>) -> EvmGrantDeleteResponse {
         let result = match result {
-            Ok(()) => EvmGrantDeleteResult::Ok(()),
+            Ok(()) => EvmGrantDeleteResult::Ok(ProtoEmpty {}),
             Err(err) => {
                 warn!(error = ?err, "Failed to delete EVM grant");
                 EvmGrantDeleteResult::Error(ProtoEvmError::Internal.into())
@@ -577,13 +580,7 @@ pub async fn start(
     let mut request_tracker = RequestTracker::default();
     let mut response_id = None;
 
-    let pubkey = match auth::start(
-        &mut conn,
-        &mut bi,
-        &mut request_tracker,
-        &mut response_id,
-    )
-    .await
+    let pubkey = match auth::start(&mut conn, &mut bi, &mut request_tracker, &mut response_id).await
     {
         Ok(pubkey) => pubkey,
         Err(e) => {

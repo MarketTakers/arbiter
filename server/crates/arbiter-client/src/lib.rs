@@ -1,14 +1,12 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+mod auth;
+mod client;
+mod storage;
+mod transport;
+pub mod wallets;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub use auth::ConnectError;
+pub use client::{ArbiterClient, ClientError};
+pub use storage::{FileSigningKeyStorage, SigningKeyStorage, StorageError};
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+#[cfg(feature = "evm")]
+pub use wallets::evm::ArbiterEvmWallet;
