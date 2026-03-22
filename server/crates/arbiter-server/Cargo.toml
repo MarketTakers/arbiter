@@ -9,8 +9,8 @@ license = "Apache-2.0"
 workspace = true
 
 [dependencies]
-diesel = { version = "2.3.6", features = ["chrono", "returning_clauses_for_sqlite_3_35", "serde_json", "time", "uuid"] }
-diesel-async = { version = "0.7.4", features = [
+diesel = { version = "2.3.7", features = ["chrono", "returning_clauses_for_sqlite_3_35", "serde_json", "time", "uuid"] }
+diesel-async = { version = "0.8.0", features = [
     "bb8",
     "migrations",
     "sqlite",
@@ -27,6 +27,7 @@ rustls.workspace = true
 smlang.workspace = true
 miette.workspace = true
 thiserror.workspace = true
+fatality = "0.1.1"
 diesel_migrations = { version = "2.3.1", features = ["sqlite"] }
 async-trait.workspace = true
 secrecy = "0.10.3"
@@ -43,7 +44,7 @@ x25519-dalek.workspace = true
 chacha20poly1305 = { version = "0.10.1", features = ["std"] }
 argon2 = { version = "0.5.3", features = ["zeroize"] }
 restructed = "0.2.2"
-strum = { version = "0.27.2", features = ["derive"] }
+strum = { version = "0.28.0", features = ["derive"] }
 pem = "3.0.6"
 k256.workspace = true
 rsa.workspace = true

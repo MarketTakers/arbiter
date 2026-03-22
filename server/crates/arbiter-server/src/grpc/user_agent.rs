@@ -20,15 +20,18 @@ use arbiter_proto::{
         },
         user_agent::{
             BootstrapEncryptedKey as ProtoBootstrapEncryptedKey,
-            BootstrapResult as ProtoBootstrapResult, ClientConnectionCancel,
-            ClientConnectionRequest, UnsealEncryptedKey as ProtoUnsealEncryptedKey,
-            UnsealResult as ProtoUnsealResult, UnsealStart, UserAgentRequest, UserAgentResponse,
-            VaultState as ProtoVaultState, user_agent_request::Payload as UserAgentRequestPayload,
+            BootstrapResult as ProtoBootstrapResult,
+            SdkClientConnectionCancel as ProtoSdkClientConnectionCancel,
+            SdkClientConnectionRequest as ProtoSdkClientConnectionRequest,
+            UnsealEncryptedKey as ProtoUnsealEncryptedKey, UnsealResult as ProtoUnsealResult,
+            UnsealStart, UserAgentRequest, UserAgentResponse, VaultState as ProtoVaultState,
+            user_agent_request::Payload as UserAgentRequestPayload,
             user_agent_response::Payload as UserAgentResponsePayload,
         },
     },
     transport::{Error as TransportError, Receiver, Sender, grpc::GrpcBi},
 };
+use prost_types::{Timestamp as ProtoTimestamp, };
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use kameo::{
@@ -261,12 +264,14 @@ async fn dispatch_conn_message(
                 actor.ask(HandleGrantDelete { grant_id }).await,
             ))
         }
-        UserAgentRequestPayload::ClientConnectionResponse(resp) => {
+        UserAgentRequestPayload::SdkClientConnectionResponse(resp) => {
             let pubkey_bytes: [u8; 32] = match resp.pubkey.try_into() {
                 Ok(bytes) => bytes,
                 Err(_) => {
                     let _ = bi
-                        .send(Err(Status::invalid_argument("Invalid Ed25519 public key length")))
+                        .send(Err(Status::invalid_argument(
+                            "Invalid Ed25519 public key length",
+                        )))
                         .await;
                     return Err(());
                 }
@@ -289,13 +294,18 @@ async fn dispatch_conn_message(
                 .await
             {
                 warn!(?err, "Failed to process client connection response");
-                let _ = bi.send(Err(Status::internal("Failed to process response"))).await;
+                let _ = bi
+                    .send(Err(Status::internal("Failed to process response")))
+                    .await;
                 return Err(());
             }
 
             return Ok(());
         }
-        UserAgentRequestPayload::AuthChallengeRequest(..) | UserAgentRequestPayload::AuthChallengeSolution(..) => {
+        UserAgentRequestPayload::SdkClientRevoke(_sdk_client_revoke_request) => todo!(),
+        UserAgentRequestPayload::SdkClientList(_) => todo!(),
+        UserAgentRequestPayload::AuthChallengeRequest(..)
+        | UserAgentRequestPayload::AuthChallengeSolution(..) => {
             warn!(?payload, "Unsupported post-auth user agent request");
             let _ = bi
                 .send(Err(Status::invalid_argument(
@@ -304,7 +314,7 @@ async fn dispatch_conn_message(
                 .await;
             return Err(());
         }
-      
+        
     };
 
     bi.send(Ok(UserAgentResponse {
@@ -321,7 +331,7 @@ async fn send_out_of_band(
 ) -> Result<(), ()> {
     let payload = match oob {
         OutOfBand::ClientConnectionRequest { profile } => {
-            UserAgentResponsePayload::ClientConnectionRequest(ClientConnectionRequest {
+            UserAgentResponsePayload::SdkClientConnectionRequest(ProtoSdkClientConnectionRequest {
                 pubkey: profile.pubkey.to_bytes().to_vec(),
                 info: Some(ProtoClientMetadata {
                     name: profile.metadata.name,
@@ -331,7 +341,7 @@ async fn send_out_of_band(
             })
         }
         OutOfBand::ClientConnectionCancel { pubkey } => {
-            UserAgentResponsePayload::ClientConnectionCancel(ClientConnectionCancel {
+            UserAgentResponsePayload::SdkClientConnectionCancel(ProtoSdkClientConnectionCancel {
                 pubkey: pubkey.to_bytes().to_vec(),
             })
         }
@@ -435,9 +445,7 @@ fn u256_from_proto_bytes(bytes: &[u8]) -> Result<U256, Status> {
     Ok(U256::from_be_slice(bytes))
 }
 
-fn proto_timestamp_to_utc(
-    timestamp: prost_types::Timestamp,
-) -> Result<chrono::DateTime<Utc>, Status> {
+fn proto_timestamp_to_utc(timestamp: ProtoTimestamp) -> Result<chrono::DateTime<Utc>, Status> {
     Utc.timestamp_opt(timestamp.seconds, timestamp.nanos as u32)
         .single()
         .ok_or_else(|| Status::invalid_argument("Invalid timestamp"))
@@ -447,11 +455,11 @@ fn shared_settings_to_proto(shared: SharedGrantSettings) -> ProtoSharedSettings 
     ProtoSharedSettings {
         wallet_access_id: shared.wallet_access_id,
         chain_id: shared.chain,
-        valid_from: shared.valid_from.map(|time| prost_types::Timestamp {
+        valid_from: shared.valid_from.map(|time| ProtoTimestamp {
             seconds: time.timestamp(),
             nanos: time.timestamp_subsec_nanos() as i32,
         }),
-        valid_until: shared.valid_until.map(|time| prost_types::Timestamp {
+        valid_until: shared.valid_until.map(|time| ProtoTimestamp {
             seconds: time.timestamp(),
             nanos: time.timestamp_subsec_nanos() as i32,
         }),

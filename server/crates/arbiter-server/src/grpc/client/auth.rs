@@ -1,12 +1,11 @@
 use arbiter_proto::{
-    proto::client::{
+    ClientMetadata, proto::client::{
         AuthChallenge as ProtoAuthChallenge, AuthChallengeRequest as ProtoAuthChallengeRequest,
         AuthChallengeSolution as ProtoAuthChallengeSolution, AuthResult as ProtoAuthResult,
         ClientInfo as ProtoClientInfo, ClientRequest, ClientResponse,
         client_request::Payload as ClientRequestPayload,
         client_response::Payload as ClientResponsePayload,
-    },
-    transport::{Bi, Error as TransportError, Receiver, Sender, grpc::GrpcBi},
+    }, transport::{Bi, Error as TransportError, Receiver, Sender, grpc::GrpcBi}
 };
 use async_trait::async_trait;
 use tonic::Status;
@@ -170,8 +169,8 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
 
 impl Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {}
 
-fn client_metadata_from_proto(metadata: ProtoClientInfo) -> auth::ClientMetadata {
-    auth::ClientMetadata {
+fn client_metadata_from_proto(metadata: ProtoClientInfo) -> ClientMetadata {
+    ClientMetadata {
         name: metadata.name,
         description: metadata.description,
         version: metadata.version,

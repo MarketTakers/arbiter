@@ -1,3 +1,4 @@
+use arbiter_proto::ClientMetadata;
 use arbiter_proto::transport::{Receiver, Sender};
 use arbiter_server::actors::GlobalActors;
 use arbiter_server::{
@@ -10,8 +11,8 @@ use ed25519_dalek::Signer as _;
 
 use super::common::ChannelTransport;
 
-fn metadata(name: &str, description: Option<&str>, version: Option<&str>) -> auth::ClientMetadata {
-    auth::ClientMetadata {
+fn metadata(name: &str, description: Option<&str>, version: Option<&str>) -> ClientMetadata {
+    ClientMetadata {
         name: name.to_owned(),
         description: description.map(str::to_owned),
         version: version.map(str::to_owned),
@@ -21,7 +22,7 @@ fn metadata(name: &str, description: Option<&str>, version: Option<&str>) -> aut
 async fn insert_registered_client(
     db: &db::DatabasePool,
     pubkey: Vec<u8>,
-    metadata: &auth::ClientMetadata,
+    metadata: &ClientMetadata,
 ) {
     use arbiter_server::db::schema::{client_metadata, program_client};
 

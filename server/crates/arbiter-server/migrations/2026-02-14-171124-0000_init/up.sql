@@ -80,6 +80,9 @@ create table if not exists program_client (
     updated_at integer not null default(unixepoch ('now'))
 ) STRICT;
 
+create unique index if not exists program_client_public_key_unique
+    on program_client (public_key);
+
 create unique index if not exists uniq_program_client_public_key on program_client (public_key);
 
 create table if not exists evm_wallet (

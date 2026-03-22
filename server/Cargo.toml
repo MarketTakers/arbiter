@@ -9,23 +9,23 @@ disallowed-methods = "deny"
 
 
 [workspace.dependencies]
-tonic = { version = "0.14.3", features = [
+tonic = { version = "0.14.5", features = [
     "deflate",
     "gzip",
     "tls-connect-info",
     "zstd",
 ] }
 tracing = "0.1.44"
-tokio = { version = "1.49.0", features = ["full"] }
+tokio = { version = "1.50.0", features = ["full"] }
 ed25519-dalek = { version = "3.0.0-pre.6", features = ["rand_core"] }
-chrono = { version = "0.4.43", features = ["serde"] }
+chrono = { version = "0.4.44", features = ["serde"] }
 rand = "0.10.0"
-rustls = { version = "0.23.36", features = ["aws-lc-rs"] }
+rustls = { version = "0.23.37", features = ["aws-lc-rs"] }
 smlang = "0.8.0"
 miette = { version = "7.6.0", features = ["fancy", "serde"] }
 thiserror = "2.0.18"
 async-trait = "0.1.89"
-futures = "0.3.31"
+futures = "0.3.32"
 tokio-stream = { version = "0.1.18", features = ["full"] }
 kameo = "0.19.2"
 prost-types = { version = "0.14.3", features = ["chrono"] }

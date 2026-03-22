@@ -5,4 +5,22 @@ edition = "2024"
 repository = "https://git.markettakers.org/MarketTakers/arbiter"
 license = "Apache-2.0"
 
+[lints]
+workspace = true
+
+[features]
+evm = ["dep:alloy"]
+
 [dependencies]
+arbiter-proto.path = "../arbiter-proto"
+alloy = { workspace = true, optional = true }
+tonic.workspace = true
+tonic.features = ["tls-aws-lc"]
+tokio.workspace = true
+tokio-stream.workspace = true
+ed25519-dalek.workspace = true
+thiserror.workspace = true
+http = "1.4.0"
+rustls-webpki = { version = "0.103.10", features = ["aws-lc-rs"] }
+async-trait.workspace = true
+rand.workspace = true

@@ -1,6 +1,5 @@
 use arbiter_proto::{
-    format_challenge,
-    transport::{Bi, expect_message},
+    ClientMetadata, format_challenge, transport::{Bi, expect_message}
 };
 use chrono::Utc;
 use diesel::{
@@ -23,13 +22,6 @@ use crate::{
         schema::program_client,
     },
 };
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClientMetadata {
-    pub name: String,
-    pub description: Option<String>,
-    pub version: Option<String>,
-}
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -72,9 +64,17 @@ pub enum Outbound {
     AuthSuccess,
 }
 
+pub struct ClientInfo {
+    pub id: i32,
+    pub current_nonce: i32,
+}
+
 /// Atomically reads and increments the nonce for a known client.
 /// Returns `None` if the pubkey is not registered.
-async fn get_nonce(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<Option<i32>, Error> {
+async fn get_client_and_nonce(
+    db: &db::DatabasePool,
+    pubkey: &VerifyingKey,
+) -> Result<Option<ClientInfo>, Error> {
     let pubkey_bytes = pubkey.as_bytes().to_vec();
 
     let mut conn = db.get().await.map_err(|e| {
@@ -85,10 +85,10 @@ async fn get_nonce(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<Optio
     conn.exclusive_transaction(|conn| {
         let pubkey_bytes = pubkey_bytes.clone();
         Box::pin(async move {
-            let Some(current_nonce) = program_client::table
+            let Some((client_id, current_nonce)) = program_client::table
                 .filter(program_client::public_key.eq(&pubkey_bytes))
-                .select(program_client::nonce)
-                .first::<i32>(conn)
+                .select((program_client::id, program_client::nonce))
+                .first::<(i32, i32)>(conn)
                 .await
                 .optional()?
             else {
@@ -101,7 +101,10 @@ async fn get_nonce(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<Optio
                 .execute(conn)
                 .await?;
 
-            Ok(Some(current_nonce))
+            Ok(Some(ClientInfo {
+                id: client_id,
+                current_nonce,
+            }))
         })
     })
     .await
@@ -138,9 +141,8 @@ async fn insert_client(
     db: &db::DatabasePool,
     pubkey: &VerifyingKey,
     metadata: &ClientMetadata,
-) -> Result<(), Error> {
-    use crate::db::schema::client_metadata;
-
+) -> Result<i32, Error> {
+    use crate::db::schema::{client_metadata, program_client};
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
         Error::DatabasePoolUnavailable
@@ -160,38 +162,22 @@ async fn insert_client(
             Error::DatabaseOperationFailed
         })?;
 
-    insert_into(program_client::table)
+    let client_id = insert_into(program_client::table)
         .values((
             program_client::public_key.eq(pubkey.as_bytes().to_vec()),
             program_client::metadata_id.eq(metadata_id),
             program_client::nonce.eq(1), // pre-incremented; challenge uses 0
         ))
-        .execute(&mut conn)
+        .on_conflict_do_nothing()
+        .returning(program_client::id)
+        .get_result::<i32>(&mut conn)
         .await
         .map_err(|e| {
-            error!(error = ?e, "Failed to insert new client");
+            error!(error = ?e, "Failed to insert client metadata");
             Error::DatabaseOperationFailed
         })?;
 
-    Ok(())
-}
-
-async fn get_client_id(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<Option<i32>, Error> {
-    let mut conn = db.get().await.map_err(|e| {
-        error!(error = ?e, "Database pool error");
-        Error::DatabasePoolUnavailable
-    })?;
-
-    program_client::table
-        .filter(program_client::public_key.eq(pubkey.as_bytes().to_vec()))
-        .select(program_client::id)
-        .first::<i32>(&mut conn)
-        .await
-        .optional()
-        .map_err(|e| {
-            error!(error = ?e, "Database error");
-            Error::DatabaseOperationFailed
-        })
+    Ok(client_id)
 }
 
 async fn sync_client_metadata(
@@ -312,7 +298,7 @@ where
         return Err(Error::Transport);
     };
 
-    let nonce = match get_nonce(&props.db, &pubkey).await? {
+    let info = match get_client_and_nonce(&props.db, &pubkey).await? {
         Some(nonce) => nonce,
         None => {
             approve_new_client(
@@ -323,17 +309,18 @@ where
                 },
             )
             .await?;
-            insert_client(&props.db, &pubkey, &metadata).await?;
-            0
+            let client_id = insert_client(&props.db, &pubkey, &metadata).await?;
+            ClientInfo {
+                id: client_id,
+                current_nonce: 0,
+            }
         }
     };
 
-    let client_id = get_client_id(&props.db, &pubkey)
-        .await?
-        .ok_or(Error::DatabaseOperationFailed)?;
-    sync_client_metadata(&props.db, client_id, &metadata).await?;
+    sync_client_metadata(&props.db, info.id, &metadata).await?;
 
-    challenge_client(transport, pubkey, nonce).await?;
+    challenge_client(transport, pubkey, info.current_nonce).await?;
+    
     transport
         .send(Ok(Outbound::AuthSuccess))
         .await

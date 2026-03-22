@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashMap};
 use arbiter_proto::transport::Sender;
 use async_trait::async_trait;
 use ed25519_dalek::VerifyingKey;
-use kameo::{Actor, actor::ActorRef, messages, prelude::Context};
+use kameo::{Actor, actor::ActorRef, messages};
 use thiserror::Error;
 use tracing::error;
 

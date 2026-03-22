@@ -19,6 +19,13 @@ pub mod proto {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientMetadata {
+    pub name: String,
+    pub description: Option<String>,
+    pub version: Option<String>,
+}
+
 pub static BOOTSTRAP_PATH: &str = "bootstrap_token";
 
 pub fn home_path() -> Result<std::path::PathBuf, std::io::Error> {

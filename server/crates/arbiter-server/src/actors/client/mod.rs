@@ -1,9 +1,9 @@
-use arbiter_proto::transport::Bi;
+use arbiter_proto::{ClientMetadata, transport::Bi};
 use kameo::actor::Spawn;
 use tracing::{error, info};
 
 use crate::{
-    actors::{GlobalActors, client::{auth::ClientMetadata, session::ClientSession}},
+    actors::{GlobalActors, client::{ session::ClientSession}},
     db,
 };
 
