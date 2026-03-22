@@ -18,9 +18,6 @@ pub(crate) enum ClientSignError {
 
     #[error("Connection closed by server")]
     ConnectionClosed,
-
-    #[error("Wallet address is not configured")]
-    WalletAddressNotConfigured,
 }
 
 pub(crate) struct ClientTransport {

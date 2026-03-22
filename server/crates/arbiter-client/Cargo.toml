@@ -8,9 +8,12 @@ license = "Apache-2.0"
 [lints]
 workspace = true
 
+[features]
+evm = ["dep:alloy"]
+
 [dependencies]
 arbiter-proto.path = "../arbiter-proto"
-alloy.workspace = true
+alloy = { workspace = true, optional = true }
 tonic.workspace = true
 tonic.features = ["tls-aws-lc"]
 tokio.workspace = true
