@@ -17,7 +17,7 @@ class Router extends RootStackRouter {
       path: '/dashboard',
       children: [
         AutoRoute(page: EvmRoute.page, path: 'evm'),
-        AutoRoute(page: EvmGrantsRoute.page, path: 'grants'),
+        AutoRoute(page: ClientsRoute.page, path: 'clients'),
         AutoRoute(page: AboutRoute.page, path: 'about'),
       ],
     ),

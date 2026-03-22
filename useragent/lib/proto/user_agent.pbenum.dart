@@ -39,6 +39,36 @@ class KeyType extends $pb.ProtobufEnum {
   const KeyType._(super.value, super.name);
 }
 
+class SdkClientError extends $pb.ProtobufEnum {
+  static const SdkClientError SDK_CLIENT_ERROR_UNSPECIFIED =
+      SdkClientError._(0, _omitEnumNames ? '' : 'SDK_CLIENT_ERROR_UNSPECIFIED');
+  static const SdkClientError SDK_CLIENT_ERROR_ALREADY_EXISTS =
+      SdkClientError._(
+          1, _omitEnumNames ? '' : 'SDK_CLIENT_ERROR_ALREADY_EXISTS');
+  static const SdkClientError SDK_CLIENT_ERROR_NOT_FOUND =
+      SdkClientError._(2, _omitEnumNames ? '' : 'SDK_CLIENT_ERROR_NOT_FOUND');
+  static const SdkClientError SDK_CLIENT_ERROR_HAS_RELATED_DATA =
+      SdkClientError._(
+          3, _omitEnumNames ? '' : 'SDK_CLIENT_ERROR_HAS_RELATED_DATA');
+  static const SdkClientError SDK_CLIENT_ERROR_INTERNAL =
+      SdkClientError._(4, _omitEnumNames ? '' : 'SDK_CLIENT_ERROR_INTERNAL');
+
+  static const $core.List<SdkClientError> values = <SdkClientError>[
+    SDK_CLIENT_ERROR_UNSPECIFIED,
+    SDK_CLIENT_ERROR_ALREADY_EXISTS,
+    SDK_CLIENT_ERROR_NOT_FOUND,
+    SDK_CLIENT_ERROR_HAS_RELATED_DATA,
+    SDK_CLIENT_ERROR_INTERNAL,
+  ];
+
+  static final $core.List<SdkClientError?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 4);
+  static SdkClientError? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const SdkClientError._(super.value, super.name);
+}
+
 class AuthResult extends $pb.ProtobufEnum {
   static const AuthResult AUTH_RESULT_UNSPECIFIED =
       AuthResult._(0, _omitEnumNames ? '' : 'AUTH_RESULT_UNSPECIFIED');

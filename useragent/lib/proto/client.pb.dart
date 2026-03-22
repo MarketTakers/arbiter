@@ -22,12 +22,91 @@ export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
 
 export 'client.pbenum.dart';
 
+class ClientInfo extends $pb.GeneratedMessage {
+  factory ClientInfo({
+    $core.String? name,
+    $core.String? description,
+    $core.String? version,
+  }) {
+    final result = create();
+    if (name != null) result.name = name;
+    if (description != null) result.description = description;
+    if (version != null) result.version = version;
+    return result;
+  }
+
+  ClientInfo._();
+
+  factory ClientInfo.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ClientInfo.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ClientInfo',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.client'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'name')
+    ..aOS(2, _omitFieldNames ? '' : 'description')
+    ..aOS(3, _omitFieldNames ? '' : 'version')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ClientInfo clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ClientInfo copyWith(void Function(ClientInfo) updates) =>
+      super.copyWith((message) => updates(message as ClientInfo)) as ClientInfo;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ClientInfo create() => ClientInfo._();
+  @$core.override
+  ClientInfo createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ClientInfo getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ClientInfo>(create);
+  static ClientInfo? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get name => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set name($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasName() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearName() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get description => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set description($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasDescription() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearDescription() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.String get version => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set version($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasVersion() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearVersion() => $_clearField(3);
+}
+
 class AuthChallengeRequest extends $pb.GeneratedMessage {
   factory AuthChallengeRequest({
     $core.List<$core.int>? pubkey,
+    ClientInfo? clientInfo,
   }) {
     final result = create();
     if (pubkey != null) result.pubkey = pubkey;
+    if (clientInfo != null) result.clientInfo = clientInfo;
     return result;
   }
 
@@ -46,6 +125,8 @@ class AuthChallengeRequest extends $pb.GeneratedMessage {
       createEmptyInstance: create)
     ..a<$core.List<$core.int>>(
         1, _omitFieldNames ? '' : 'pubkey', $pb.PbFieldType.OY)
+    ..aOM<ClientInfo>(2, _omitFieldNames ? '' : 'clientInfo',
+        subBuilder: ClientInfo.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -75,6 +156,17 @@ class AuthChallengeRequest extends $pb.GeneratedMessage {
   $core.bool hasPubkey() => $_has(0);
   @$pb.TagNumber(1)
   void clearPubkey() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  ClientInfo get clientInfo => $_getN(1);
+  @$pb.TagNumber(2)
+  set clientInfo(ClientInfo value) => $_setField(2, value);
+  @$pb.TagNumber(2)
+  $core.bool hasClientInfo() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearClientInfo() => $_clearField(2);
+  @$pb.TagNumber(2)
+  ClientInfo ensureClientInfo() => $_ensure(1);
 }
 
 class AuthChallenge extends $pb.GeneratedMessage {

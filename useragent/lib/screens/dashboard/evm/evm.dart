@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:arbiter/proto/evm.pb.dart';
 import 'package:arbiter/providers/connection/connection_manager.dart';
-import 'package:arbiter/providers/evm.dart';
+import 'package:arbiter/providers/evm/evm.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';

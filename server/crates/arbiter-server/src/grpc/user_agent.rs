@@ -21,10 +21,14 @@ use arbiter_proto::{
         user_agent::{
             BootstrapEncryptedKey as ProtoBootstrapEncryptedKey,
             BootstrapResult as ProtoBootstrapResult,
+            SdkClientEntry as ProtoSdkClientEntry, SdkClientError as ProtoSdkClientError,
             SdkClientConnectionCancel as ProtoSdkClientConnectionCancel,
             SdkClientConnectionRequest as ProtoSdkClientConnectionRequest,
+            SdkClientList as ProtoSdkClientList,
+            SdkClientListResponse as ProtoSdkClientListResponse,
             UnsealEncryptedKey as ProtoUnsealEncryptedKey, UnsealResult as ProtoUnsealResult,
             UnsealStart, UserAgentRequest, UserAgentResponse, VaultState as ProtoVaultState,
+            sdk_client_list_response::Result as ProtoSdkClientListResult,
             user_agent_request::Payload as UserAgentRequestPayload,
             user_agent_response::Payload as UserAgentResponsePayload,
         },
@@ -49,7 +53,8 @@ use crate::{
             session::{
                 BootstrapError, Error, HandleBootstrapEncryptedKey, HandleEvmWalletCreate,
                 HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete, HandleGrantList,
-                HandleNewClientApprove, HandleQueryVaultState, HandleUnsealEncryptedKey,
+                HandleNewClientApprove, HandleQueryVaultState, HandleSdkClientList,
+                HandleUnsealEncryptedKey,
                 HandleUnsealRequest, UnsealError,
             },
         },
@@ -303,7 +308,11 @@ async fn dispatch_conn_message(
             return Ok(());
         }
         UserAgentRequestPayload::SdkClientRevoke(_sdk_client_revoke_request) => todo!(),
-        UserAgentRequestPayload::SdkClientList(_) => todo!(),
+        UserAgentRequestPayload::SdkClientList(_) => {
+            UserAgentResponsePayload::SdkClientListResponse(
+                SdkClient::list_response(actor.ask(HandleSdkClientList {}).await),
+            )
+        },
         UserAgentRequestPayload::AuthChallengeRequest(..)
         | UserAgentRequestPayload::AuthChallengeSolution(..) => {
             warn!(?payload, "Unsupported post-auth user agent request");
@@ -353,6 +362,43 @@ async fn send_out_of_band(
     }))
     .await
     .map_err(|_| ())
+}
+
+struct SdkClient;
+
+impl SdkClient {
+    fn list_response<M>(
+        result: Result<
+            Vec<(crate::db::models::ProgramClient, crate::db::models::ProgramClientMetadata)>,
+            SendError<M, Error>,
+        >,
+    ) -> ProtoSdkClientListResponse {
+        let result = match result {
+            Ok(clients) => ProtoSdkClientListResult::Clients(ProtoSdkClientList {
+                clients: clients
+                    .into_iter()
+                    .map(|(client, metadata)| ProtoSdkClientEntry {
+                        id: client.id,
+                        pubkey: client.public_key,
+                        info: Some(ProtoClientMetadata {
+                            name: metadata.name,
+                            description: metadata.description,
+                            version: metadata.version,
+                        }),
+                        created_at: client.created_at.0.timestamp() as i32,
+                    })
+                    .collect(),
+            }),
+            Err(err) => {
+                warn!(error = ?err, "Failed to list SDK clients");
+                ProtoSdkClientListResult::Error(ProtoSdkClientError::Internal.into())
+            }
+        };
+
+        ProtoSdkClientListResponse {
+            result: Some(result),
+        }
+    }
 }
 
 fn parse_grant_request(

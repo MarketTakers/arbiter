@@ -2,15 +2,18 @@ use std::sync::Mutex;
 
 use alloy::primitives::Address;
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
+use diesel::{QueryDsl as _, SelectableHelper};
+use diesel_async::RunQueryDsl;
 use kameo::error::SendError;
-use kameo::messages;
 use kameo::prelude::Context;
+use kameo::{message, messages};
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
 use crate::actors::keyholder::KeyHolderState;
 use crate::actors::user_agent::session::Error;
+use crate::db::models::{ProgramClient, ProgramClientMetadata};
 use crate::evm::policies::{Grant, SpecificGrant};
 use crate::safe_cell::SafeCell;
 use crate::{
@@ -382,5 +385,21 @@ impl UserAgentSession {
         ctx.actor_ref().unlink(&pending_approval.controller).await;
 
         Ok(())
+    }
+
+    #[message]
+    pub(crate) async fn handle_sdk_client_list(
+        &mut self,
+    ) -> Result<Vec<(ProgramClient, ProgramClientMetadata)>, Error> {
+        use crate::db::schema::{program_client, client_metadata};
+        let mut conn = self.props.db.get().await?;
+
+        let clients = program_client::table
+            .inner_join(client_metadata::table)
+            .select((ProgramClient::as_select(), ProgramClientMetadata::as_select()))
+            .load::<(ProgramClient, ProgramClientMetadata)>(&mut conn)
+            .await?;
+
+        Ok(clients)
     }
 }

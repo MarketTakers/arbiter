@@ -4,14 +4,8 @@ import 'package:arbiter/proto/user_agent.pb.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:protobuf/well_known_types/google/protobuf/timestamp.pb.dart';
 
-Future<List<GrantEntry>> listEvmGrants(
-  Connection connection, {
-  int? walletId,
-}) async {
+Future<List<GrantEntry>> listEvmGrants(Connection connection) async {
   final request = EvmGrantListRequest();
-  if (walletId != null) {
-    request.walletId = walletId;
-  }
 
   final response = await connection.request(
     UserAgentRequest(evmGrantList: request),
@@ -45,38 +39,7 @@ Future<int> createEvmGrant(
   TransactionRateLimit? rateLimit,
   required SpecificGrant specific,
 }) async {
-  final response = await connection.request(
-    UserAgentRequest(
-      evmGrantCreate: EvmGrantCreateRequest(
-        clientId: clientId,
-        shared: SharedSettings(
-          walletId: walletId,
-          chainId: chainId,
-          validFrom: validFrom == null ? null : _toTimestamp(validFrom),
-          validUntil: validUntil == null ? null : _toTimestamp(validUntil),
-          maxGasFeePerGas: maxGasFeePerGas,
-          maxPriorityFeePerGas: maxPriorityFeePerGas,
-          rateLimit: rateLimit,
-        ),
-        specific: specific,
-      ),
-    ),
-  );
-  if (!response.hasEvmGrantCreate()) {
-    throw Exception(
-      'Expected EVM grant create response, got ${response.whichPayload()}',
-    );
-  }
-
-  final result = response.evmGrantCreate;
-  switch (result.whichResult()) {
-    case EvmGrantCreateResponse_Result.grantId:
-      return result.grantId;
-    case EvmGrantCreateResponse_Result.error:
-      throw Exception(_describeGrantError(result.error));
-    case EvmGrantCreateResponse_Result.notSet:
-      throw Exception('Grant creation returned no result.');
-  }
+  throw UnimplementedError('EVM grant creation is not yet implemented.');
 }
 
 Future<void> deleteEvmGrant(Connection connection, int grantId) async {

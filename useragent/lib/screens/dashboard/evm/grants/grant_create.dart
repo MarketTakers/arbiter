@@ -1,6 +1,6 @@
 import 'package:arbiter/proto/evm.pb.dart';
-import 'package:arbiter/providers/evm.dart';
-import 'package:arbiter/providers/evm_grants.dart';
+import 'package:arbiter/providers/evm/evm.dart';
+import 'package:arbiter/providers/evm/evm_grants.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';

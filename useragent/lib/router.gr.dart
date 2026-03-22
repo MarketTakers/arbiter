@@ -10,11 +10,11 @@
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
 import 'package:arbiter/screens/bootstrap.dart' as _i2;
-import 'package:arbiter/screens/dashboard.dart' as _i4;
+import 'package:arbiter/screens/dashboard.dart' as _i5;
 import 'package:arbiter/screens/dashboard/about.dart' as _i1;
-import 'package:arbiter/screens/dashboard/evm.dart' as _i6;
-import 'package:arbiter/screens/dashboard/evm_grant_create.dart' as _i3;
-import 'package:arbiter/screens/dashboard/evm_grants.dart' as _i5;
+import 'package:arbiter/screens/dashboard/clients/table.dart' as _i3;
+import 'package:arbiter/screens/dashboard/evm/evm.dart' as _i6;
+import 'package:arbiter/screens/dashboard/evm/grants/grant_create.dart' as _i4;
 import 'package:arbiter/screens/server_connection.dart' as _i7;
 import 'package:arbiter/screens/server_info_setup.dart' as _i8;
 import 'package:arbiter/screens/vault_setup.dart' as _i9;
@@ -54,7 +54,23 @@ class Bootstrap extends _i10.PageRouteInfo<void> {
 }
 
 /// generated route for
-/// [_i3.CreateEvmGrantScreen]
+/// [_i3.ClientsScreen]
+class ClientsRoute extends _i10.PageRouteInfo<void> {
+  const ClientsRoute({List<_i10.PageRouteInfo>? children})
+    : super(ClientsRoute.name, initialChildren: children);
+
+  static const String name = 'ClientsRoute';
+
+  static _i10.PageInfo page = _i10.PageInfo(
+    name,
+    builder: (data) {
+      return const _i3.ClientsScreen();
+    },
+  );
+}
+
+/// generated route for
+/// [_i4.CreateEvmGrantScreen]
 class CreateEvmGrantRoute extends _i10.PageRouteInfo<void> {
   const CreateEvmGrantRoute({List<_i10.PageRouteInfo>? children})
     : super(CreateEvmGrantRoute.name, initialChildren: children);
@@ -64,13 +80,13 @@ class CreateEvmGrantRoute extends _i10.PageRouteInfo<void> {
   static _i10.PageInfo page = _i10.PageInfo(
     name,
     builder: (data) {
-      return const _i3.CreateEvmGrantScreen();
+      return const _i4.CreateEvmGrantScreen();
     },
   );
 }
 
 /// generated route for
-/// [_i4.DashboardRouter]
+/// [_i5.DashboardRouter]
 class DashboardRouter extends _i10.PageRouteInfo<void> {
   const DashboardRouter({List<_i10.PageRouteInfo>? children})
     : super(DashboardRouter.name, initialChildren: children);
@@ -80,23 +96,7 @@ class DashboardRouter extends _i10.PageRouteInfo<void> {
   static _i10.PageInfo page = _i10.PageInfo(
     name,
     builder: (data) {
-      return const _i4.DashboardRouter();
-    },
-  );
-}
-
-/// generated route for
-/// [_i5.EvmGrantsScreen]
-class EvmGrantsRoute extends _i10.PageRouteInfo<void> {
-  const EvmGrantsRoute({List<_i10.PageRouteInfo>? children})
-    : super(EvmGrantsRoute.name, initialChildren: children);
-
-  static const String name = 'EvmGrantsRoute';
-
-  static _i10.PageInfo page = _i10.PageInfo(
-    name,
-    builder: (data) {
-      return const _i5.EvmGrantsScreen();
+      return const _i5.DashboardRouter();
     },
   );
 }

@@ -5,7 +5,7 @@ import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
 
 const breakpoints = MaterialAdaptiveBreakpoints();
 
-final routes = [const EvmRoute(), const EvmGrantsRoute(), const AboutRoute()];
+final routes = [const EvmRoute(), const ClientsRoute(), const AboutRoute()];
 
 @RoutePage()
 class DashboardRouter extends StatelessWidget {
@@ -34,6 +34,11 @@ class DashboardRouter extends StatelessWidget {
               icon: Icon(Icons.rule_folder_outlined),
               selectedIcon: Icon(Icons.rule_folder),
               label: "Grants",
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.devices_other_outlined),
+              selectedIcon: Icon(Icons.devices_other),
+              label: "Clients",
             ),
             NavigationDestination(
               icon: Icon(Icons.info_outline),

@@ -55,18 +55,62 @@ final $typed_data.Uint8List vaultStateDescriptor = $convert.base64Decode(
     'VfVU5CT09UU1RSQVBQRUQQARIWChJWQVVMVF9TVEFURV9TRUFMRUQQAhIYChRWQVVMVF9TVEFU'
     'RV9VTlNFQUxFRBADEhUKEVZBVUxUX1NUQVRFX0VSUk9SEAQ=');
 
+@$core.Deprecated('Use clientInfoDescriptor instead')
+const ClientInfo$json = {
+  '1': 'ClientInfo',
+  '2': [
+    {'1': 'name', '3': 1, '4': 1, '5': 9, '10': 'name'},
+    {
+      '1': 'description',
+      '3': 2,
+      '4': 1,
+      '5': 9,
+      '9': 0,
+      '10': 'description',
+      '17': true
+    },
+    {
+      '1': 'version',
+      '3': 3,
+      '4': 1,
+      '5': 9,
+      '9': 1,
+      '10': 'version',
+      '17': true
+    },
+  ],
+  '8': [
+    {'1': '_description'},
+    {'1': '_version'},
+  ],
+};
+
+/// Descriptor for `ClientInfo`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List clientInfoDescriptor = $convert.base64Decode(
+    'CgpDbGllbnRJbmZvEhIKBG5hbWUYASABKAlSBG5hbWUSJQoLZGVzY3JpcHRpb24YAiABKAlIAF'
+    'ILZGVzY3JpcHRpb26IAQESHQoHdmVyc2lvbhgDIAEoCUgBUgd2ZXJzaW9uiAEBQg4KDF9kZXNj'
+    'cmlwdGlvbkIKCghfdmVyc2lvbg==');
+
 @$core.Deprecated('Use authChallengeRequestDescriptor instead')
 const AuthChallengeRequest$json = {
   '1': 'AuthChallengeRequest',
   '2': [
     {'1': 'pubkey', '3': 1, '4': 1, '5': 12, '10': 'pubkey'},
+    {
+      '1': 'client_info',
+      '3': 2,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.client.ClientInfo',
+      '10': 'clientInfo'
+    },
   ],
 };
 
 /// Descriptor for `AuthChallengeRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List authChallengeRequestDescriptor =
-    $convert.base64Decode(
-        'ChRBdXRoQ2hhbGxlbmdlUmVxdWVzdBIWCgZwdWJrZXkYASABKAxSBnB1YmtleQ==');
+final $typed_data.Uint8List authChallengeRequestDescriptor = $convert.base64Decode(
+    'ChRBdXRoQ2hhbGxlbmdlUmVxdWVzdBIWCgZwdWJrZXkYASABKAxSBnB1YmtleRI7CgtjbGllbn'
+    'RfaW5mbxgCIAEoCzIaLmFyYml0ZXIuY2xpZW50LkNsaWVudEluZm9SCmNsaWVudEluZm8=');
 
 @$core.Deprecated('Use authChallengeDescriptor instead')
 const AuthChallenge$json = {

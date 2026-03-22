@@ -25,6 +25,19 @@ pub enum Error {
     Internal { message: Cow<'static, str> },
 }
 
+impl From<crate::db::PoolError> for Error {
+    fn from(err: crate::db::PoolError) -> Self {
+        error!(?err, "Database pool error");
+        Self::internal("Database pool error")
+    }
+}
+impl From<diesel::result::Error> for Error {
+    fn from(err: diesel::result::Error) -> Self {
+        error!(?err, "Database error");
+        Self::internal("Database error")
+    }
+}
+
 impl Error {
     pub fn internal(message: impl Into<Cow<'static, str>>) -> Self {
         Self::Internal {
@@ -49,7 +62,7 @@ mod connection;
 pub(crate) use connection::{
     BootstrapError, HandleBootstrapEncryptedKey, HandleEvmWalletCreate, HandleEvmWalletList,
     HandleGrantCreate, HandleGrantDelete, HandleGrantList, HandleNewClientApprove,
-    HandleQueryVaultState,
+    HandleQueryVaultState, HandleSdkClientList,
 };
 pub use connection::{HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError};
 

@@ -162,7 +162,7 @@ final $typed_data.Uint8List volumeRateLimitDescriptor = $convert.base64Decode(
 const SharedSettings$json = {
   '1': 'SharedSettings',
   '2': [
-    {'1': 'wallet_id', '3': 1, '4': 1, '5': 5, '10': 'walletId'},
+    {'1': 'wallet_access_id', '3': 1, '4': 1, '5': 5, '10': 'walletAccessId'},
     {'1': 'chain_id', '3': 2, '4': 1, '5': 4, '10': 'chainId'},
     {
       '1': 'valid_from',
@@ -224,15 +224,15 @@ const SharedSettings$json = {
 
 /// Descriptor for `SharedSettings`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List sharedSettingsDescriptor = $convert.base64Decode(
-    'Cg5TaGFyZWRTZXR0aW5ncxIbCgl3YWxsZXRfaWQYASABKAVSCHdhbGxldElkEhkKCGNoYWluX2'
-    'lkGAIgASgEUgdjaGFpbklkEj4KCnZhbGlkX2Zyb20YAyABKAsyGi5nb29nbGUucHJvdG9idWYu'
-    'VGltZXN0YW1wSABSCXZhbGlkRnJvbYgBARJACgt2YWxpZF91bnRpbBgEIAEoCzIaLmdvb2dsZS'
-    '5wcm90b2J1Zi5UaW1lc3RhbXBIAVIKdmFsaWRVbnRpbIgBARIxChNtYXhfZ2FzX2ZlZV9wZXJf'
-    'Z2FzGAUgASgMSAJSD21heEdhc0ZlZVBlckdhc4gBARI7ChhtYXhfcHJpb3JpdHlfZmVlX3Blcl'
-    '9nYXMYBiABKAxIA1IUbWF4UHJpb3JpdHlGZWVQZXJHYXOIAQESRQoKcmF0ZV9saW1pdBgHIAEo'
-    'CzIhLmFyYml0ZXIuZXZtLlRyYW5zYWN0aW9uUmF0ZUxpbWl0SARSCXJhdGVMaW1pdIgBAUINCg'
-    'tfdmFsaWRfZnJvbUIOCgxfdmFsaWRfdW50aWxCFgoUX21heF9nYXNfZmVlX3Blcl9nYXNCGwoZ'
-    'X21heF9wcmlvcml0eV9mZWVfcGVyX2dhc0INCgtfcmF0ZV9saW1pdA==');
+    'Cg5TaGFyZWRTZXR0aW5ncxIoChB3YWxsZXRfYWNjZXNzX2lkGAEgASgFUg53YWxsZXRBY2Nlc3'
+    'NJZBIZCghjaGFpbl9pZBgCIAEoBFIHY2hhaW5JZBI+Cgp2YWxpZF9mcm9tGAMgASgLMhouZ29v'
+    'Z2xlLnByb3RvYnVmLlRpbWVzdGFtcEgAUgl2YWxpZEZyb22IAQESQAoLdmFsaWRfdW50aWwYBC'
+    'ABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAFSCnZhbGlkVW50aWyIAQESMQoTbWF4'
+    'X2dhc19mZWVfcGVyX2dhcxgFIAEoDEgCUg9tYXhHYXNGZWVQZXJHYXOIAQESOwoYbWF4X3ByaW'
+    '9yaXR5X2ZlZV9wZXJfZ2FzGAYgASgMSANSFG1heFByaW9yaXR5RmVlUGVyR2FziAEBEkUKCnJh'
+    'dGVfbGltaXQYByABKAsyIS5hcmJpdGVyLmV2bS5UcmFuc2FjdGlvblJhdGVMaW1pdEgEUglyYX'
+    'RlTGltaXSIAQFCDQoLX3ZhbGlkX2Zyb21CDgoMX3ZhbGlkX3VudGlsQhYKFF9tYXhfZ2FzX2Zl'
+    'ZV9wZXJfZ2FzQhsKGV9tYXhfcHJpb3JpdHlfZmVlX3Blcl9nYXNCDQoLX3JhdGVfbGltaXQ=');
 
 @$core.Deprecated('Use etherTransferSettingsDescriptor instead')
 const EtherTransferSettings$json = {
@@ -631,10 +631,9 @@ final $typed_data.Uint8List transactionEvalErrorDescriptor = $convert.base64Deco
 const EvmGrantCreateRequest$json = {
   '1': 'EvmGrantCreateRequest',
   '2': [
-    {'1': 'client_id', '3': 1, '4': 1, '5': 5, '10': 'clientId'},
     {
       '1': 'shared',
-      '3': 2,
+      '3': 1,
       '4': 1,
       '5': 11,
       '6': '.arbiter.evm.SharedSettings',
@@ -642,7 +641,7 @@ const EvmGrantCreateRequest$json = {
     },
     {
       '1': 'specific',
-      '3': 3,
+      '3': 2,
       '4': 1,
       '5': 11,
       '6': '.arbiter.evm.SpecificGrant',
@@ -653,9 +652,9 @@ const EvmGrantCreateRequest$json = {
 
 /// Descriptor for `EvmGrantCreateRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List evmGrantCreateRequestDescriptor = $convert.base64Decode(
-    'ChVFdm1HcmFudENyZWF0ZVJlcXVlc3QSGwoJY2xpZW50X2lkGAEgASgFUghjbGllbnRJZBIzCg'
-    'ZzaGFyZWQYAiABKAsyGy5hcmJpdGVyLmV2bS5TaGFyZWRTZXR0aW5nc1IGc2hhcmVkEjYKCHNw'
-    'ZWNpZmljGAMgASgLMhouYXJiaXRlci5ldm0uU3BlY2lmaWNHcmFudFIIc3BlY2lmaWM=');
+    'ChVFdm1HcmFudENyZWF0ZVJlcXVlc3QSMwoGc2hhcmVkGAEgASgLMhsuYXJiaXRlci5ldm0uU2'
+    'hhcmVkU2V0dGluZ3NSBnNoYXJlZBI2CghzcGVjaWZpYxgCIAEoCzIaLmFyYml0ZXIuZXZtLlNw'
+    'ZWNpZmljR3JhbnRSCHNwZWNpZmlj');
 
 @$core.Deprecated('Use evmGrantCreateResponseDescriptor instead')
 const EvmGrantCreateResponse$json = {
@@ -734,7 +733,7 @@ const GrantEntry$json = {
   '1': 'GrantEntry',
   '2': [
     {'1': 'id', '3': 1, '4': 1, '5': 5, '10': 'id'},
-    {'1': 'client_id', '3': 2, '4': 1, '5': 5, '10': 'clientId'},
+    {'1': 'wallet_access_id', '3': 2, '4': 1, '5': 5, '10': 'walletAccessId'},
     {
       '1': 'shared',
       '3': 3,
@@ -756,34 +755,34 @@ const GrantEntry$json = {
 
 /// Descriptor for `GrantEntry`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List grantEntryDescriptor = $convert.base64Decode(
-    'CgpHcmFudEVudHJ5Eg4KAmlkGAEgASgFUgJpZBIbCgljbGllbnRfaWQYAiABKAVSCGNsaWVudE'
-    'lkEjMKBnNoYXJlZBgDIAEoCzIbLmFyYml0ZXIuZXZtLlNoYXJlZFNldHRpbmdzUgZzaGFyZWQS'
-    'NgoIc3BlY2lmaWMYBCABKAsyGi5hcmJpdGVyLmV2bS5TcGVjaWZpY0dyYW50UghzcGVjaWZpYw'
-    '==');
+    'CgpHcmFudEVudHJ5Eg4KAmlkGAEgASgFUgJpZBIoChB3YWxsZXRfYWNjZXNzX2lkGAIgASgFUg'
+    '53YWxsZXRBY2Nlc3NJZBIzCgZzaGFyZWQYAyABKAsyGy5hcmJpdGVyLmV2bS5TaGFyZWRTZXR0'
+    'aW5nc1IGc2hhcmVkEjYKCHNwZWNpZmljGAQgASgLMhouYXJiaXRlci5ldm0uU3BlY2lmaWNHcm'
+    'FudFIIc3BlY2lmaWM=');
 
 @$core.Deprecated('Use evmGrantListRequestDescriptor instead')
 const EvmGrantListRequest$json = {
   '1': 'EvmGrantListRequest',
   '2': [
     {
-      '1': 'wallet_id',
+      '1': 'wallet_access_id',
       '3': 1,
       '4': 1,
       '5': 5,
       '9': 0,
-      '10': 'walletId',
+      '10': 'walletAccessId',
       '17': true
     },
   ],
   '8': [
-    {'1': '_wallet_id'},
+    {'1': '_wallet_access_id'},
   ],
 };
 
 /// Descriptor for `EvmGrantListRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List evmGrantListRequestDescriptor = $convert.base64Decode(
-    'ChNFdm1HcmFudExpc3RSZXF1ZXN0EiAKCXdhbGxldF9pZBgBIAEoBUgAUgh3YWxsZXRJZIgBAU'
-    'IMCgpfd2FsbGV0X2lk');
+    'ChNFdm1HcmFudExpc3RSZXF1ZXN0Ei0KEHdhbGxldF9hY2Nlc3NfaWQYASABKAVIAFIOd2FsbG'
+    'V0QWNjZXNzSWSIAQFCEwoRX3dhbGxldF9hY2Nlc3NfaWQ=');
 
 @$core.Deprecated('Use evmGrantListResponseDescriptor instead')
 const EvmGrantListResponse$json = {
