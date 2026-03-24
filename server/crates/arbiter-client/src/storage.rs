@@ -1,14 +1,8 @@
 use arbiter_proto::home_path;
 use std::path::{Path, PathBuf};
+use terrors::OneOf;
 
-#[derive(Debug, thiserror::Error)]
-pub enum StorageError {
-    #[error("I/O error")]
-    Io(#[from] std::io::Error),
-
-    #[error("Invalid signing key length in storage: expected {expected} bytes, got {actual} bytes")]
-    InvalidKeyLength { expected: usize, actual: usize },
-}
+use crate::errors::{InvalidKeyLengthError, StorageError};
 
 pub trait SigningKeyStorage {
     fn load_or_create(&self) -> std::result::Result<ed25519_dalek::SigningKey, StorageError>;
@@ -27,18 +21,21 @@ impl FileSigningKeyStorage {
     }
 
     pub fn from_default_location() -> std::result::Result<Self, StorageError> {
-        Ok(Self::new(home_path()?.join(Self::DEFAULT_FILE_NAME)))
+        Ok(Self::new(
+            home_path()
+                .map_err(OneOf::new)?
+                .join(Self::DEFAULT_FILE_NAME),
+        ))
     }
 
     fn read_key(path: &Path) -> std::result::Result<ed25519_dalek::SigningKey, StorageError> {
-        let bytes = std::fs::read(path)?;
-        let raw: [u8; 32] =
-            bytes
-                .try_into()
-                .map_err(|v: Vec<u8>| StorageError::InvalidKeyLength {
-                    expected: 32,
-                    actual: v.len(),
-                })?;
+        let bytes = std::fs::read(path).map_err(OneOf::new)?;
+        let raw: [u8; 32] = bytes.try_into().map_err(|v: Vec<u8>| {
+            OneOf::new(InvalidKeyLengthError {
+                expected: 32,
+                actual: v.len(),
+            })
+        })?;
         Ok(ed25519_dalek::SigningKey::from_bytes(&raw))
     }
 }
@@ -46,7 +43,7 @@ impl FileSigningKeyStorage {
 impl SigningKeyStorage for FileSigningKeyStorage {
     fn load_or_create(&self) -> std::result::Result<ed25519_dalek::SigningKey, StorageError> {
         if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)?;
+            std::fs::create_dir_all(parent).map_err(OneOf::new)?;
         }
 
         if self.path.exists() {
@@ -64,20 +61,21 @@ impl SigningKeyStorage for FileSigningKeyStorage {
         {
             Ok(mut file) => {
                 use std::io::Write as _;
-                file.write_all(&raw_key)?;
+                file.write_all(&raw_key).map_err(OneOf::new)?;
                 Ok(key)
             }
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
                 Self::read_key(&self.path)
             }
-            Err(err) => Err(StorageError::Io(err)),
+            Err(err) => Err(OneOf::new(err)),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{FileSigningKeyStorage, SigningKeyStorage, StorageError};
+    use super::{FileSigningKeyStorage, SigningKeyStorage};
+    use crate::errors::InvalidKeyLengthError;
 
     fn unique_temp_key_path() -> std::path::PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -119,12 +117,12 @@ mod tests {
             .load_or_create()
             .expect_err("storage should reject non-32-byte key file");
 
-        match err {
-            StorageError::InvalidKeyLength { expected, actual } => {
-                assert_eq!(expected, 32);
-                assert_eq!(actual, 31);
+        match err.narrow::<InvalidKeyLengthError, _>() {
+            Ok(invalid_len) => {
+                assert_eq!(invalid_len.expected, 32);
+                assert_eq!(invalid_len.actual, 31);
             }
-            other => panic!("unexpected error: {other:?}"),
+            Err(other) => panic!("unexpected io error: {other:?}"),
         }
 
         std::fs::remove_file(path).expect("temp key file should be removable");

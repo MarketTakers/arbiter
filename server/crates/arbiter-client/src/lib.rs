@@ -1,12 +1,13 @@
 mod auth;
 mod client;
+mod errors;
 mod storage;
 mod transport;
 pub mod wallets;
 
-pub use auth::ConnectError;
-pub use client::{ArbiterClient, ClientError};
-pub use storage::{FileSigningKeyStorage, SigningKeyStorage, StorageError};
+pub use client::ArbiterClient;
+pub use errors::{ClientError, ConnectError, StorageError};
+pub use storage::{FileSigningKeyStorage, SigningKeyStorage};
 
 #[cfg(feature = "evm")]
 pub use wallets::evm::ArbiterEvmWallet;

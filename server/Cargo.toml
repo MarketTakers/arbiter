@@ -1,7 +1,5 @@
 [workspace]
-members = [
-    "crates/*",
-]
+members = ["crates/*"]
 resolver = "3"
 
 [workspace.lints.clippy]
@@ -43,3 +41,4 @@ k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"] }
 rsa = { version = "0.9", features = ["sha2"] }
 sha2 = "0.10"
 spki = "0.7"
+terrors = { version = "0.5", git = "https://github.com/CleverWild/terrors" }

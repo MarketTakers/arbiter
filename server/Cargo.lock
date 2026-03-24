@@ -686,6 +686,7 @@ dependencies = [
  "http",
  "rand 0.10.0",
  "rustls-webpki",
+ "terrors",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
@@ -4907,6 +4908,11 @@ dependencies = [
  "rustix",
  "windows-sys 0.60.2",
 ]
+
+[[package]]
+name = "terrors"
+version = "0.5.1"
+source = "git+https://github.com/CleverWild/terrors#a0867fd9ca3fbb44c32e92113a917f1577b5716a"
 
 [[package]]
 name = "test-log"

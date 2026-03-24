@@ -2,13 +2,20 @@ use alloy::{
     consensus::SignableTransaction,
     network::TxSigner,
     primitives::{Address, B256, ChainId, Signature},
-    signers::{Error, Result, Signer},
+    signers::{Result, Signer},
 };
 use async_trait::async_trait;
 use std::sync::Arc;
+use terrors::OneOf;
 use tokio::sync::Mutex;
 
-use crate::transport::ClientTransport;
+use crate::{
+    errors::{
+        EvmChainIdMismatchError, EvmHashSigningUnsupportedError,
+        EvmTransactionSigningUnsupportedError, EvmWalletError,
+    },
+    transport::ClientTransport,
+};
 
 pub struct ArbiterEvmWallet {
     transport: Arc<Mutex<ClientTransport>>,
@@ -17,6 +24,7 @@ pub struct ArbiterEvmWallet {
 }
 
 impl ArbiterEvmWallet {
+    #[allow(dead_code)]
     pub(crate) fn new(transport: Arc<Mutex<ClientTransport>>, address: Address) -> Self {
         Self {
             transport,
@@ -34,14 +42,17 @@ impl ArbiterEvmWallet {
         self
     }
 
-    fn validate_chain_id(&self, tx: &mut dyn SignableTransaction<Signature>) -> Result<()> {
+    fn validate_chain_id(
+        &self,
+        tx: &mut dyn SignableTransaction<Signature>,
+    ) -> std::result::Result<(), EvmWalletError> {
         if let Some(chain_id) = self.chain_id
             && !tx.set_chain_id_checked(chain_id)
         {
-            return Err(Error::TransactionChainIdMismatch {
+            return Err(OneOf::new(EvmChainIdMismatchError {
                 signer: chain_id,
                 tx: tx.chain_id().unwrap(),
-            });
+            }));
         }
 
         Ok(())
@@ -51,9 +62,7 @@ impl ArbiterEvmWallet {
 #[async_trait]
 impl Signer for ArbiterEvmWallet {
     async fn sign_hash(&self, _hash: &B256) -> Result<Signature> {
-        Err(Error::other(
-            "hash-only signing is not supported for ArbiterEvmWallet; use transaction signing",
-        ))
+        Err(EvmWalletError::new(EvmHashSigningUnsupportedError).into())
     }
 
     fn address(&self) -> Address {
@@ -80,10 +89,9 @@ impl TxSigner<Signature> for ArbiterEvmWallet {
         tx: &mut dyn SignableTransaction<Signature>,
     ) -> Result<Signature> {
         let _transport = self.transport.lock().await;
-        self.validate_chain_id(tx)?;
+        self.validate_chain_id(tx)
+            .map_err(OneOf::into::<alloy::signers::Error>)?;
 
-        Err(Error::other(
-            "transaction signing is not supported by current arbiter.client protocol",
-        ))
+        Err(EvmWalletError::new(EvmTransactionSigningUnsupportedError).into())
     }
 }
