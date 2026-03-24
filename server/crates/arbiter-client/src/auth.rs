@@ -14,19 +14,7 @@ use crate::{
 };
 
 #[derive(Debug, thiserror::Error)]
-pub enum ConnectError {
-    #[error("Could not establish connection")]
-    Connection(#[from] tonic::transport::Error),
-
-    #[error("Invalid server URI")]
-    InvalidUri(#[from] http::uri::InvalidUri),
-
-    #[error("Invalid CA certificate")]
-    InvalidCaCert(#[from] webpki::Error),
-
-    #[error("gRPC error")]
-    Grpc(#[from] tonic::Status),
-
+pub enum AuthError {
     #[error("Auth challenge was not returned by server")]
     MissingAuthChallenge,
 
@@ -43,15 +31,15 @@ pub enum ConnectError {
     Storage(#[from] StorageError),
 }
 
-fn map_auth_result(code: i32) -> ConnectError {
+fn map_auth_result(code: i32) -> AuthError {
     match AuthResult::try_from(code).unwrap_or(AuthResult::Unspecified) {
-        AuthResult::ApprovalDenied => ConnectError::ApprovalDenied,
-        AuthResult::NoUserAgentsOnline => ConnectError::NoUserAgentsOnline,
+        AuthResult::ApprovalDenied => AuthError::ApprovalDenied,
+        AuthResult::NoUserAgentsOnline => AuthError::NoUserAgentsOnline,
         AuthResult::Unspecified
         | AuthResult::Success
         | AuthResult::InvalidKey
         | AuthResult::InvalidSignature
-        | AuthResult::Internal => ConnectError::UnexpectedAuthResponse,
+        | AuthResult::Internal => AuthError::UnexpectedAuthResponse,
     }
 }
 
@@ -59,7 +47,7 @@ async fn send_auth_challenge_request(
     transport: &mut ClientTransport,
     metadata: ClientMetadata,
     key: &ed25519_dalek::SigningKey,
-) -> std::result::Result<(), ConnectError> {
+) -> std::result::Result<(), AuthError> {
     transport
         .send(ClientRequest {
             request_id: next_request_id(),
@@ -75,22 +63,22 @@ async fn send_auth_challenge_request(
             )),
         })
         .await
-        .map_err(|_| ConnectError::UnexpectedAuthResponse)
+        .map_err(|_| AuthError::UnexpectedAuthResponse)
 }
 
 async fn receive_auth_challenge(
     transport: &mut ClientTransport,
-) -> std::result::Result<arbiter_proto::proto::client::AuthChallenge, ConnectError> {
+) -> std::result::Result<arbiter_proto::proto::client::AuthChallenge, AuthError> {
     let response = transport
         .recv()
         .await
-        .map_err(|_| ConnectError::MissingAuthChallenge)?;
+        .map_err(|_| AuthError::MissingAuthChallenge)?;
 
-    let payload = response.payload.ok_or(ConnectError::MissingAuthChallenge)?;
+    let payload = response.payload.ok_or(AuthError::MissingAuthChallenge)?;
     match payload {
         ClientResponsePayload::AuthChallenge(challenge) => Ok(challenge),
         ClientResponsePayload::AuthResult(result) => Err(map_auth_result(result)),
-        _ => Err(ConnectError::UnexpectedAuthResponse),
+        _ => Err(AuthError::UnexpectedAuthResponse),
     }
 }
 
@@ -98,7 +86,7 @@ async fn send_auth_challenge_solution(
     transport: &mut ClientTransport,
     key: &ed25519_dalek::SigningKey,
     challenge: arbiter_proto::proto::client::AuthChallenge,
-) -> std::result::Result<(), ConnectError> {
+) -> std::result::Result<(), AuthError> {
     let challenge_payload = format_challenge(challenge.nonce, &challenge.pubkey);
     let signature = key.sign(&challenge_payload).to_bytes().to_vec();
 
@@ -110,20 +98,20 @@ async fn send_auth_challenge_solution(
             )),
         })
         .await
-        .map_err(|_| ConnectError::UnexpectedAuthResponse)
+        .map_err(|_| AuthError::UnexpectedAuthResponse)
 }
 
 async fn receive_auth_confirmation(
     transport: &mut ClientTransport,
-) -> std::result::Result<(), ConnectError> {
+) -> std::result::Result<(), AuthError> {
     let response = transport
         .recv()
         .await
-        .map_err(|_| ConnectError::UnexpectedAuthResponse)?;
+        .map_err(|_| AuthError::UnexpectedAuthResponse)?;
 
     let payload = response
         .payload
-        .ok_or(ConnectError::UnexpectedAuthResponse)?;
+        .ok_or(AuthError::UnexpectedAuthResponse)?;
     match payload {
         ClientResponsePayload::AuthResult(result)
             if AuthResult::try_from(result).ok() == Some(AuthResult::Success) =>
@@ -131,7 +119,7 @@ async fn receive_auth_confirmation(
             Ok(())
         }
         ClientResponsePayload::AuthResult(result) => Err(map_auth_result(result)),
-        _ => Err(ConnectError::UnexpectedAuthResponse),
+        _ => Err(AuthError::UnexpectedAuthResponse),
     }
 }
 
@@ -139,7 +127,7 @@ pub(crate) async fn authenticate(
     transport: &mut ClientTransport,
     metadata: ClientMetadata,
     key: &ed25519_dalek::SigningKey,
-) -> std::result::Result<(), ConnectError> {
+) -> std::result::Result<(), AuthError> {
     send_auth_challenge_request(transport, metadata, key).await?;
     let challenge = receive_auth_challenge(transport).await?;
     send_auth_challenge_solution(transport, key, challenge).await?;

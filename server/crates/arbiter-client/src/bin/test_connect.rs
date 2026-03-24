@@ -3,6 +3,7 @@ use std::io::{self, Write};
 
 use arbiter_client::ArbiterClient;
 use arbiter_proto::{ClientMetadata, url::ArbiterUrl};
+use tonic::ConnectError;
 
 #[tokio::main]
 async fn main() {
@@ -22,6 +23,8 @@ async fn main() {
         return;
     }
 
+   
+
     let url = match ArbiterUrl::try_from(input) {
         Ok(url) => url,
         Err(err) => {
@@ -29,6 +32,8 @@ async fn main() {
             return;
         }
     };
+
+     println!("{:#?}", url);
 
     let metadata = ClientMetadata {
         name: "arbiter-client test_connect".to_string(),
@@ -38,6 +43,6 @@ async fn main() {
 
     match ArbiterClient::connect(url, metadata).await {
         Ok(_) => println!("Connected and authenticated successfully."),
-        Err(err) => eprintln!("Failed to connect: {err}"),
+        Err(err) => eprintln!("Failed to connect: {:#?}", err),
     }
 }
