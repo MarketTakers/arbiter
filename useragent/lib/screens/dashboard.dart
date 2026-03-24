@@ -34,11 +34,6 @@ class DashboardRouter extends StatelessWidget {
               label: "Wallets",
             ),
             NavigationDestination(
-              icon: Icon(Icons.rule_folder_outlined),
-              selectedIcon: Icon(Icons.rule_folder),
-              label: "Grants",
-            ),
-            NavigationDestination(
               icon: Icon(Icons.devices_other_outlined),
               selectedIcon: Icon(Icons.devices_other),
               label: "Clients",
