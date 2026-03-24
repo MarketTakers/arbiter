@@ -12,7 +12,7 @@ Future<List<SdkClientEntry>?> sdkClients(Ref ref) async {
     return null;
   }
 
-  final resp = await connection.request(
+  final resp = await connection.ask(
     UserAgentRequest(sdkClientList: Empty()),
   );
 

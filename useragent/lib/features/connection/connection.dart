@@ -29,7 +29,7 @@ class Connection {
 
   Stream<UserAgentResponse> get outOfBandMessages => _outOfBandMessages.stream;
 
-  Future<UserAgentResponse> request(UserAgentRequest message) async {
+  Future<UserAgentResponse> ask(UserAgentRequest message) async {
     _ensureOpen();
 
     final requestId = _nextRequestId++;
@@ -49,7 +49,23 @@ class Connection {
     return completer.future;
   }
 
+  Future<void> tell(UserAgentRequest message) async {
+    _ensureOpen();
+
+    final requestId = _nextRequestId++;
+    message.id = requestId;
+
+    talker.debug('Sending message: ${message.toDebugString()}');
+
+    try {
+      _tx.add(message);
+    } catch (error, stackTrace) {
+      talker.error('Failed to send message: $error', error, stackTrace);
+    }
+  }
+
   Future<void> close() async {
+    talker.debug('Closing connection...');
     final rxSubscription = _rxSubscription;
     if (rxSubscription == null) {
       return;
@@ -86,6 +102,7 @@ class Connection {
   }
 
   void _handleDone() {
+    talker.debug('Connection closed by server.');
     if (_rxSubscription == null) {
       return;
     }

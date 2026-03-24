@@ -8,16 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:arbiter/theme/palette.dart';
 import 'package:sizer/sizer.dart';
-
-// ─── Palette ──────────────────────────────────────────────────────────────────
-
-class _Palette {
-  static const ink = Color(0xFF15263C);
-  static const coral = Color(0xFFE26254);
-  static const cream = Color(0xFFFFFAF4);
-  static const line = Color(0x1A15263C);
-}
 
 // ─── Column width getters ─────────────────────────────────────────────────────
 
@@ -92,8 +84,8 @@ class _StatePanel extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        color: _Palette.cream.withValues(alpha: 0.92),
-        border: Border.all(color: _Palette.line),
+        color: Palette.cream.withValues(alpha: 0.92),
+        border: Border.all(color: Palette.line),
       ),
       child: Padding(
         padding: EdgeInsets.all(2.8.h),
@@ -107,12 +99,12 @@ class _StatePanel extends StatelessWidget {
                 child: const CircularProgressIndicator(strokeWidth: 2.5),
               )
             else
-              Icon(icon, size: 34, color: _Palette.coral),
+              Icon(icon, size: 34, color: Palette.coral),
             SizedBox(height: 1.8.h),
             Text(
               title,
               style: theme.textTheme.headlineSmall?.copyWith(
-                color: _Palette.ink,
+                color: Palette.ink,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -120,7 +112,7 @@ class _StatePanel extends StatelessWidget {
             Text(
               body,
               style: theme.textTheme.bodyLarge?.copyWith(
-                color: _Palette.ink.withValues(alpha: 0.72),
+                color: Palette.ink.withValues(alpha: 0.72),
                 height: 1.5,
               ),
             ),
@@ -155,8 +147,8 @@ class _Header extends StatelessWidget {
       padding: EdgeInsets.symmetric(horizontal: 1.6.w, vertical: 1.2.h),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        color: _Palette.cream,
-        border: Border.all(color: _Palette.line),
+        color: Palette.cream,
+        border: Border.all(color: Palette.line),
       ),
       child: Row(
         children: [
@@ -164,7 +156,7 @@ class _Header extends StatelessWidget {
             child: Text(
               'SDK Clients',
               style: theme.textTheme.titleMedium?.copyWith(
-                color: _Palette.ink,
+                color: Palette.ink,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -173,7 +165,7 @@ class _Header extends StatelessWidget {
             Text(
               'Syncing',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: _Palette.ink.withValues(alpha: 0.62),
+                color: Palette.ink.withValues(alpha: 0.62),
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -182,8 +174,8 @@ class _Header extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: () => onRefresh(),
             style: OutlinedButton.styleFrom(
-              foregroundColor: _Palette.ink,
-              side: BorderSide(color: _Palette.line),
+              foregroundColor: Palette.ink,
+              side: BorderSide(color: Palette.line),
               padding: EdgeInsets.symmetric(
                 horizontal: 1.4.w,
                 vertical: 1.2.h,
@@ -209,7 +201,7 @@ class _ClientTableHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = Theme.of(context).textTheme.labelLarge?.copyWith(
-      color: _Palette.ink.withValues(alpha: 0.72),
+      color: Palette.ink.withValues(alpha: 0.72),
       fontWeight: FontWeight.w800,
       letterSpacing: 0.3,
     );
@@ -218,7 +210,7 @@ class _ClientTableHeader extends StatelessWidget {
       padding: EdgeInsets.symmetric(vertical: 1.4.h),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        color: _Palette.ink.withValues(alpha: 0.04),
+        color: Palette.ink.withValues(alpha: 0.04),
       ),
       child: Row(
         children: [
@@ -257,7 +249,7 @@ class _ClientTableRow extends HookWidget {
     final expanded = useState(false);
     final accent = _accentColor(client.pubkey);
     final theme = Theme.of(context);
-    final muted = _Palette.ink.withValues(alpha: 0.62);
+    final muted = Palette.ink.withValues(alpha: 0.62);
 
     final name = client.info.name.isEmpty ? '—' : client.info.name;
     final version = client.info.version.isEmpty ? '—' : client.info.version;
@@ -301,7 +293,7 @@ class _ClientTableRow extends HookWidget {
                             child: Text(
                               '${client.id}',
                               style: theme.textTheme.bodyLarge?.copyWith(
-                                color: _Palette.ink,
+                                color: Palette.ink,
                               ),
                             ),
                           ),
@@ -313,7 +305,7 @@ class _ClientTableRow extends HookWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodyMedium?.copyWith(
-                                color: _Palette.ink,
+                                color: Palette.ink,
                               ),
                             ),
                           ),
@@ -395,7 +387,7 @@ class _ClientTableRow extends HookWidget {
                             child: Text(
                               _shortPubkey(client.pubkey),
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: _Palette.ink,
+                                color: Palette.ink,
                                 fontFamily: 'monospace',
                               ),
                             ),
@@ -444,8 +436,8 @@ class _ClientTable extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        color: _Palette.cream.withValues(alpha: 0.92),
-        border: Border.all(color: _Palette.line),
+        color: Palette.cream.withValues(alpha: 0.92),
+        border: Border.all(color: Palette.line),
       ),
       child: Padding(
         padding: EdgeInsets.all(2.h),
@@ -459,7 +451,7 @@ class _ClientTable extends StatelessWidget {
                 Text(
                   'Registered clients',
                   style: theme.textTheme.titleLarge?.copyWith(
-                    color: _Palette.ink,
+                    color: Palette.ink,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -467,7 +459,7 @@ class _ClientTable extends StatelessWidget {
                 Text(
                   'Every entry here has authenticated with Arbiter at least once.',
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: _Palette.ink.withValues(alpha: 0.70),
+                    color: Palette.ink.withValues(alpha: 0.70),
                     height: 1.4,
                   ),
                 ),
@@ -564,7 +556,7 @@ class ClientsScreen extends HookConsumerWidget {
     return Scaffold(
       body: SafeArea(
         child: RefreshIndicator.adaptive(
-          color: _Palette.ink,
+          color: Palette.ink,
           backgroundColor: Colors.white,
           onRefresh: refresh,
           child: ListView(

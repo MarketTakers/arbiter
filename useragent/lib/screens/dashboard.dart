@@ -1,7 +1,11 @@
+import 'package:arbiter/features/callouts/callout_manager.dart';
+import 'package:arbiter/features/callouts/show_callout_list.dart';
 import 'package:arbiter/router.gr.dart';
+import 'package:arbiter/theme/palette.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_adaptive_scaffold/flutter_adaptive_scaffold.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 const breakpoints = MaterialAdaptiveBreakpoints();
 
@@ -17,7 +21,6 @@ class DashboardRouter extends StatelessWidget {
       routes: routes,
       transitionBuilder: (context, child, animation) => FadeTransition(
         opacity: animation,
-        // the passed child is technically our animated selected-tab page
         child: child,
       ),
       builder: (context, child) {
@@ -53,8 +56,54 @@ class DashboardRouter extends StatelessWidget {
           selectedIndex: currentActive,
           transitionDuration: const Duration(milliseconds: 800),
           internalAnimations: true,
+          trailingNavRail: const _CalloutBell(),
         );
       },
+    );
+  }
+}
+
+class _CalloutBell extends ConsumerWidget {
+  const _CalloutBell({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(
+      calloutManagerProvider.select((map) => map.length),
+    );
+
+    return IconButton(
+      onPressed: () => showCalloutList(context, ref),
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(
+            count > 0 ? Icons.notifications : Icons.notifications_outlined,
+            color: Palette.ink,
+          ),
+          if (count > 0)
+            Positioned(
+              top: -2,
+              right: -4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  count > 99 ? '99+' : '$count',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

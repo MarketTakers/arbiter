@@ -7,7 +7,7 @@ import 'package:protobuf/well_known_types/google/protobuf/timestamp.pb.dart';
 Future<List<GrantEntry>> listEvmGrants(Connection connection) async {
   final request = EvmGrantListRequest();
 
-  final response = await connection.request(
+  final response = await connection.ask(
     UserAgentRequest(evmGrantList: request),
   );
   if (!response.hasEvmGrantList()) {
@@ -43,7 +43,7 @@ Future<int> createEvmGrant(
 }
 
 Future<void> deleteEvmGrant(Connection connection, int grantId) async {
-  final response = await connection.request(
+  final response = await connection.ask(
     UserAgentRequest(evmGrantDelete: EvmGrantDeleteRequest(grantId: grantId)),
   );
   if (!response.hasEvmGrantDelete()) {

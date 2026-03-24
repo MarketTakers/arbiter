@@ -43,7 +43,7 @@ use kameo::{
     error::SendError,
 };
 use tonic::Status;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::{
     actors::{
@@ -91,6 +91,7 @@ async fn dispatch_loop(
         tokio::select! {
             oob = receiver.recv() => {
                 let Some(oob) = oob else {
+                    warn!("Out-of-band message channel closed");
                     return;
                 };
 
@@ -104,10 +105,11 @@ async fn dispatch_loop(
                     return;
                 };
 
-                if dispatch_conn_message(&mut bi, &actor, &mut request_tracker, conn)
+                if let Err(e) = dispatch_conn_message(&mut bi, &actor, &mut request_tracker, conn)
                     .await
-                    .is_err()
+                    
                 {
+                    error!(error = ?e, "Error handling user agent message");
                     return;
                 }
             }
@@ -677,10 +679,7 @@ pub async fn start(
     let actor = UserAgentSession::spawn(UserAgentSession::new(conn, Box::new(oob_adapter)));
     let actor_for_cleanup = actor.clone();
 
-    let _ = defer(move || {
-        actor_for_cleanup.kill();
-    });
-
     info!(?pubkey, "User authenticated successfully");
     dispatch_loop(bi, actor, oob_receiver, request_tracker).await;
+    actor_for_cleanup.kill();
 }

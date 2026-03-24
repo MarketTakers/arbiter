@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:arbiter/proto/evm.pb.dart';
+import 'package:arbiter/theme/palette.dart';
 import 'package:arbiter/providers/connection/connection_manager.dart';
 import 'package:arbiter/providers/evm/evm.dart';
 import 'package:auto_route/auto_route.dart';
@@ -89,7 +90,7 @@ class EvmScreen extends HookConsumerWidget {
     return Scaffold(
       body: SafeArea(
         child: RefreshIndicator.adaptive(
-          color: _Palette.ink,
+          color: Palette.ink,
           backgroundColor: Colors.white,
           onRefresh: refreshWallets,
           child: ListView(
@@ -112,13 +113,6 @@ class EvmScreen extends HookConsumerWidget {
       ),
     );
   }
-}
-
-class _Palette {
-  static const ink = Color(0xFF15263C);
-  static const coral = Color(0xFFE26254);
-  static const cream = Color(0xFFFFFAF4);
-  static const line = Color(0x1A15263C);
 }
 
 double get _accentStripWidth => 0.8.w;
@@ -148,8 +142,8 @@ class _Header extends StatelessWidget {
       padding: EdgeInsets.symmetric(horizontal: 1.6.w, vertical: 1.2.h),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        color: _Palette.cream,
-        border: Border.all(color: _Palette.line),
+        color: Palette.cream,
+        border: Border.all(color: Palette.line),
       ),
       child: Row(
         children: [
@@ -157,7 +151,7 @@ class _Header extends StatelessWidget {
             child: Text(
               'EVM Wallet Vault',
               style: theme.textTheme.titleMedium?.copyWith(
-                color: _Palette.ink,
+                color: Palette.ink,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -166,7 +160,7 @@ class _Header extends StatelessWidget {
             Text(
               'Syncing',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: _Palette.ink.withValues(alpha: 0.62),
+                color: Palette.ink.withValues(alpha: 0.62),
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -175,7 +169,7 @@ class _Header extends StatelessWidget {
           FilledButton.icon(
             onPressed: isCreating ? null : () => onCreate(),
             style: FilledButton.styleFrom(
-              backgroundColor: _Palette.ink,
+              backgroundColor: Palette.ink,
               foregroundColor: Colors.white,
               padding: EdgeInsets.symmetric(horizontal: 1.4.w, vertical: 1.2.h),
               shape: RoundedRectangleBorder(
@@ -195,8 +189,8 @@ class _Header extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: () => onRefresh(),
             style: OutlinedButton.styleFrom(
-              foregroundColor: _Palette.ink,
-              side: BorderSide(color: _Palette.line),
+              foregroundColor: Palette.ink,
+              side: BorderSide(color: Palette.line),
               padding: EdgeInsets.symmetric(horizontal: 1.4.w, vertical: 1.2.h),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
@@ -223,8 +217,8 @@ class _WalletTable extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        color: _Palette.cream.withValues(alpha: 0.92),
-        border: Border.all(color: _Palette.line),
+        color: Palette.cream.withValues(alpha: 0.92),
+        border: Border.all(color: Palette.line),
       ),
       child: Padding(
         padding: EdgeInsets.all(2.h),
@@ -238,7 +232,7 @@ class _WalletTable extends StatelessWidget {
                 Text(
                   'Managed wallets',
                   style: theme.textTheme.titleLarge?.copyWith(
-                    color: _Palette.ink,
+                    color: Palette.ink,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -246,7 +240,7 @@ class _WalletTable extends StatelessWidget {
                 Text(
                   'Every address here is generated and held by Arbiter.',
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: _Palette.ink.withValues(alpha: 0.70),
+                    color: Palette.ink.withValues(alpha: 0.70),
                     height: 1.4,
                   ),
                 ),
@@ -288,7 +282,7 @@ class _WalletTableHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = Theme.of(context).textTheme.labelLarge?.copyWith(
-      color: _Palette.ink.withValues(alpha: 0.72),
+      color: Palette.ink.withValues(alpha: 0.72),
       fontWeight: FontWeight.w800,
       letterSpacing: 0.3,
     );
@@ -297,7 +291,7 @@ class _WalletTableHeader extends StatelessWidget {
       padding: EdgeInsets.symmetric(vertical: 1.4.h),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        color: _Palette.ink.withValues(alpha: 0.04),
+        color: Palette.ink.withValues(alpha: 0.04),
       ),
       child: Row(
         children: [
@@ -328,10 +322,10 @@ class _WalletTableRow extends StatelessWidget {
     final rowHeight = 5.h;
     final walletStyle = Theme.of(
       context,
-    ).textTheme.bodyLarge?.copyWith(color: _Palette.ink);
+    ).textTheme.bodyLarge?.copyWith(color: Palette.ink);
     final addressStyle = Theme.of(
       context,
-    ).textTheme.bodyMedium?.copyWith(color: _Palette.ink);
+    ).textTheme.bodyMedium?.copyWith(color: Palette.ink);
 
     return Container(
       height: rowHeight,
@@ -420,8 +414,8 @@ class _StatePanel extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        color: _Palette.cream.withValues(alpha: 0.92),
-        border: Border.all(color: _Palette.line),
+        color: Palette.cream.withValues(alpha: 0.92),
+        border: Border.all(color: Palette.line),
       ),
       child: Padding(
         padding: EdgeInsets.all(2.8.h),
@@ -435,12 +429,12 @@ class _StatePanel extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2.5),
               )
             else
-              Icon(icon, size: 34, color: _Palette.coral),
+              Icon(icon, size: 34, color: Palette.coral),
             SizedBox(height: 1.8.h),
             Text(
               title,
               style: theme.textTheme.headlineSmall?.copyWith(
-                color: _Palette.ink,
+                color: Palette.ink,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -448,7 +442,7 @@ class _StatePanel extends StatelessWidget {
             Text(
               body,
               style: theme.textTheme.bodyLarge?.copyWith(
-                color: _Palette.ink.withValues(alpha: 0.72),
+                color: Palette.ink.withValues(alpha: 0.72),
                 height: 1.5,
               ),
             ),

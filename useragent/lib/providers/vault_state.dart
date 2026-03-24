@@ -13,7 +13,7 @@ Future<VaultState?> vaultState(Ref ref) async {
     return null;
   }
 
-  final resp = await conn.request(UserAgentRequest(queryVaultState: Empty()));
+  final resp = await conn.ask(UserAgentRequest(queryVaultState: Empty()));
   if (resp.whichPayload() != UserAgentResponse_Payload.vaultState) {
     talker.warning('Expected vault state response, got ${resp.whichPayload()}');
     return null;
