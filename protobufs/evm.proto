@@ -12,7 +12,8 @@ enum EvmError {
 }
 
 message WalletEntry {
-  bytes address = 1; // 20-byte Ethereum address
+  int32 id = 1;
+  bytes address = 2; // 20-byte Ethereum address
 }
 
 message WalletList {

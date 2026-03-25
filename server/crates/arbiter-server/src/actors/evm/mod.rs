@@ -105,7 +105,7 @@ impl EvmActor {
 #[messages]
 impl EvmActor {
     #[message]
-    pub async fn generate(&mut self) -> Result<Address, Error> {
+    pub async fn generate(&mut self) -> Result<(i32, Address), Error> {
         let (mut key_cell, address) = safe_signer::generate(&mut self.rng);
 
         let plaintext = key_cell.read_inline(|reader| SafeCell::new(reader.to_vec()));
@@ -117,15 +117,16 @@ impl EvmActor {
             .map_err(|_| Error::KeyholderSend)?;
 
         let mut conn = self.db.get().await?;
-        insert_into(schema::evm_wallet::table)
+        let wallet_id = insert_into(schema::evm_wallet::table)
             .values(&models::NewEvmWallet {
                 address: address.as_slice().to_vec(),
                 aead_encrypted_id: aead_id,
             })
-            .execute(&mut conn)
+            .returning(schema::evm_wallet::id)
+            .get_result(&mut conn)
             .await?;
 
-        Ok(address)
+        Ok((wallet_id, address))
     }
 
     #[message]

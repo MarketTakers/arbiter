@@ -18,6 +18,19 @@ pub mod client;
 mod request_tracker;
 pub mod user_agent;
 
+pub trait Convert {
+    type Output;
+
+    fn convert(self) -> Self::Output;
+}
+
+pub trait TryConvert {
+    type Output;
+    type Error;
+
+    fn try_convert(self) -> Result<Self::Output, Self::Error>;
+}
+
 #[async_trait]
 impl arbiter_proto::proto::arbiter_service_server::ArbiterService for super::Server {
     type UserAgentStream = ReceiverStream<Result<UserAgentResponse, Status>>;
