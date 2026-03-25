@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:arbiter/proto/user_agent.pb.dart';
 import 'package:arbiter/providers/connection/connection_manager.dart';
+import 'package:arbiter/router.gr.dart';
 import 'package:arbiter/providers/sdk_clients/list.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
@@ -176,10 +177,7 @@ class _Header extends StatelessWidget {
             style: OutlinedButton.styleFrom(
               foregroundColor: Palette.ink,
               side: BorderSide(color: Palette.line),
-              padding: EdgeInsets.symmetric(
-                horizontal: 1.4.w,
-                vertical: 1.2.h,
-              ),
+              padding: EdgeInsets.symmetric(horizontal: 1.4.w, vertical: 1.2.h),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
@@ -215,9 +213,15 @@ class _ClientTableHeader extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(width: _accentStripWidth + _cellHPad),
-          SizedBox(width: _idColWidth, child: Text('ID', style: style)),
+          SizedBox(
+            width: _idColWidth,
+            child: Text('ID', style: style),
+          ),
           SizedBox(width: _colGap),
-          SizedBox(width: _nameColWidth, child: Text('Name', style: style)),
+          SizedBox(
+            width: _nameColWidth,
+            child: Text('Name', style: style),
+          ),
           SizedBox(width: _colGap),
           SizedBox(
             width: _versionColWidth,
@@ -397,9 +401,7 @@ class _ClientTableRow extends HookWidget {
                             color: muted,
                             onPressed: () async {
                               await Clipboard.setData(
-                                ClipboardData(
-                                  text: _fullPubkey(client.pubkey),
-                                ),
+                                ClipboardData(text: _fullPubkey(client.pubkey)),
                               );
                               if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -409,6 +411,14 @@ class _ClientTableRow extends HookWidget {
                                 ),
                               );
                             },
+                          ),
+                          FilledButton.tonal(
+                            onPressed: () {
+                              context.router.push(
+                                ClientDetailsRoute(clientId: client.id),
+                              );
+                            },
+                            child: const Text('Manage access'),
                           ),
                         ],
                       ),
