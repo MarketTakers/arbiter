@@ -10,6 +10,7 @@ class Router extends RootStackRouter {
     AutoRoute(page: ServerInfoSetupRoute.page, path: '/server-info'),
     AutoRoute(page: ServerConnectionRoute.page, path: '/server-connection'),
     AutoRoute(page: VaultSetupRoute.page, path: '/vault'),
+    AutoRoute(page: ClientDetailsRoute.page, path: '/clients/:clientId'),
     AutoRoute(page: CreateEvmGrantRoute.page, path: '/evm-grants/create'),
 
     AutoRoute(
