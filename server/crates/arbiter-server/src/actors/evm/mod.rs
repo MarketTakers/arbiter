@@ -130,7 +130,7 @@ impl EvmActor {
     }
 
     #[message]
-    pub async fn list_wallets(&self) -> Result<Vec<Address>, Error> {
+    pub async fn list_wallets(&self) -> Result<Vec<(i32, Address)>, Error> {
         let mut conn = self.db.get().await?;
         let rows: Vec<models::EvmWallet> = schema::evm_wallet::table
             .select(models::EvmWallet::as_select())
@@ -139,7 +139,7 @@ impl EvmActor {
 
         Ok(rows
             .into_iter()
-            .map(|w| Address::from_slice(&w.address))
+            .map(|w| (w.id, Address::from_slice(&w.address)))
             .collect())
     }
 }

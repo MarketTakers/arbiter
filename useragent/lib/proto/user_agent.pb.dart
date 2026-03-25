@@ -1072,6 +1072,230 @@ class SdkClientConnectionCancel extends $pb.GeneratedMessage {
   void clearPubkey() => $_clearField(1);
 }
 
+class SdkClientWalletAccess extends $pb.GeneratedMessage {
+  factory SdkClientWalletAccess({
+    $core.int? clientId,
+    $core.int? walletId,
+  }) {
+    final result = create();
+    if (clientId != null) result.clientId = clientId;
+    if (walletId != null) result.walletId = walletId;
+    return result;
+  }
+
+  SdkClientWalletAccess._();
+
+  factory SdkClientWalletAccess.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SdkClientWalletAccess.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SdkClientWalletAccess',
+      package:
+          const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.user_agent'),
+      createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'clientId')
+    ..aI(2, _omitFieldNames ? '' : 'walletId')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SdkClientWalletAccess clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SdkClientWalletAccess copyWith(
+          void Function(SdkClientWalletAccess) updates) =>
+      super.copyWith((message) => updates(message as SdkClientWalletAccess))
+          as SdkClientWalletAccess;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SdkClientWalletAccess create() => SdkClientWalletAccess._();
+  @$core.override
+  SdkClientWalletAccess createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SdkClientWalletAccess getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SdkClientWalletAccess>(create);
+  static SdkClientWalletAccess? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.int get clientId => $_getIZ(0);
+  @$pb.TagNumber(1)
+  set clientId($core.int value) => $_setSignedInt32(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasClientId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearClientId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get walletId => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set walletId($core.int value) => $_setSignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasWalletId() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearWalletId() => $_clearField(2);
+}
+
+class SdkClientGrantWalletAccess extends $pb.GeneratedMessage {
+  factory SdkClientGrantWalletAccess({
+    $core.Iterable<SdkClientWalletAccess>? accesses,
+  }) {
+    final result = create();
+    if (accesses != null) result.accesses.addAll(accesses);
+    return result;
+  }
+
+  SdkClientGrantWalletAccess._();
+
+  factory SdkClientGrantWalletAccess.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SdkClientGrantWalletAccess.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SdkClientGrantWalletAccess',
+      package:
+          const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.user_agent'),
+      createEmptyInstance: create)
+    ..pPM<SdkClientWalletAccess>(1, _omitFieldNames ? '' : 'accesses',
+        subBuilder: SdkClientWalletAccess.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SdkClientGrantWalletAccess clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SdkClientGrantWalletAccess copyWith(
+          void Function(SdkClientGrantWalletAccess) updates) =>
+      super.copyWith(
+              (message) => updates(message as SdkClientGrantWalletAccess))
+          as SdkClientGrantWalletAccess;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SdkClientGrantWalletAccess create() => SdkClientGrantWalletAccess._();
+  @$core.override
+  SdkClientGrantWalletAccess createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SdkClientGrantWalletAccess getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SdkClientGrantWalletAccess>(create);
+  static SdkClientGrantWalletAccess? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<SdkClientWalletAccess> get accesses => $_getList(0);
+}
+
+class SdkClientRevokeWalletAccess extends $pb.GeneratedMessage {
+  factory SdkClientRevokeWalletAccess({
+    $core.Iterable<SdkClientWalletAccess>? accesses,
+  }) {
+    final result = create();
+    if (accesses != null) result.accesses.addAll(accesses);
+    return result;
+  }
+
+  SdkClientRevokeWalletAccess._();
+
+  factory SdkClientRevokeWalletAccess.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SdkClientRevokeWalletAccess.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SdkClientRevokeWalletAccess',
+      package:
+          const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.user_agent'),
+      createEmptyInstance: create)
+    ..pPM<SdkClientWalletAccess>(1, _omitFieldNames ? '' : 'accesses',
+        subBuilder: SdkClientWalletAccess.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SdkClientRevokeWalletAccess clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SdkClientRevokeWalletAccess copyWith(
+          void Function(SdkClientRevokeWalletAccess) updates) =>
+      super.copyWith(
+              (message) => updates(message as SdkClientRevokeWalletAccess))
+          as SdkClientRevokeWalletAccess;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SdkClientRevokeWalletAccess create() =>
+      SdkClientRevokeWalletAccess._();
+  @$core.override
+  SdkClientRevokeWalletAccess createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SdkClientRevokeWalletAccess getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SdkClientRevokeWalletAccess>(create);
+  static SdkClientRevokeWalletAccess? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<SdkClientWalletAccess> get accesses => $_getList(0);
+}
+
+class ListWalletAccessResponse extends $pb.GeneratedMessage {
+  factory ListWalletAccessResponse({
+    $core.Iterable<SdkClientWalletAccess>? accesses,
+  }) {
+    final result = create();
+    if (accesses != null) result.accesses.addAll(accesses);
+    return result;
+  }
+
+  ListWalletAccessResponse._();
+
+  factory ListWalletAccessResponse.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory ListWalletAccessResponse.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'ListWalletAccessResponse',
+      package:
+          const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.user_agent'),
+      createEmptyInstance: create)
+    ..pPM<SdkClientWalletAccess>(1, _omitFieldNames ? '' : 'accesses',
+        subBuilder: SdkClientWalletAccess.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ListWalletAccessResponse clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  ListWalletAccessResponse copyWith(
+          void Function(ListWalletAccessResponse) updates) =>
+      super.copyWith((message) => updates(message as ListWalletAccessResponse))
+          as ListWalletAccessResponse;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static ListWalletAccessResponse create() => ListWalletAccessResponse._();
+  @$core.override
+  ListWalletAccessResponse createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static ListWalletAccessResponse getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<ListWalletAccessResponse>(create);
+  static ListWalletAccessResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $pb.PbList<SdkClientWalletAccess> get accesses => $_getList(0);
+}
+
 enum UserAgentRequest_Payload {
   authChallengeRequest,
   authChallengeSolution,
@@ -1087,6 +1311,9 @@ enum UserAgentRequest_Payload {
   sdkClientRevoke,
   sdkClientList,
   bootstrapEncryptedKey,
+  grantWalletAccess,
+  revokeWalletAccess,
+  listWalletAccess,
   notSet
 }
 
@@ -1106,7 +1333,10 @@ class UserAgentRequest extends $pb.GeneratedMessage {
     SdkClientRevokeRequest? sdkClientRevoke,
     $1.Empty? sdkClientList,
     BootstrapEncryptedKey? bootstrapEncryptedKey,
+    SdkClientGrantWalletAccess? grantWalletAccess,
     $core.int? id,
+    SdkClientRevokeWalletAccess? revokeWalletAccess,
+    $1.Empty? listWalletAccess,
   }) {
     final result = create();
     if (authChallengeRequest != null)
@@ -1128,7 +1358,11 @@ class UserAgentRequest extends $pb.GeneratedMessage {
     if (sdkClientList != null) result.sdkClientList = sdkClientList;
     if (bootstrapEncryptedKey != null)
       result.bootstrapEncryptedKey = bootstrapEncryptedKey;
+    if (grantWalletAccess != null) result.grantWalletAccess = grantWalletAccess;
     if (id != null) result.id = id;
+    if (revokeWalletAccess != null)
+      result.revokeWalletAccess = revokeWalletAccess;
+    if (listWalletAccess != null) result.listWalletAccess = listWalletAccess;
     return result;
   }
 
@@ -1154,9 +1388,12 @@ class UserAgentRequest extends $pb.GeneratedMessage {
     9: UserAgentRequest_Payload.evmGrantDelete,
     10: UserAgentRequest_Payload.evmGrantList,
     11: UserAgentRequest_Payload.sdkClientConnectionResponse,
-    13: UserAgentRequest_Payload.sdkClientRevoke,
-    14: UserAgentRequest_Payload.sdkClientList,
-    15: UserAgentRequest_Payload.bootstrapEncryptedKey,
+    12: UserAgentRequest_Payload.sdkClientRevoke,
+    13: UserAgentRequest_Payload.sdkClientList,
+    14: UserAgentRequest_Payload.bootstrapEncryptedKey,
+    15: UserAgentRequest_Payload.grantWalletAccess,
+    17: UserAgentRequest_Payload.revokeWalletAccess,
+    18: UserAgentRequest_Payload.listWalletAccess,
     0: UserAgentRequest_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -1164,7 +1401,7 @@ class UserAgentRequest extends $pb.GeneratedMessage {
       package:
           const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.user_agent'),
       createEmptyInstance: create)
-    ..oo(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15])
+    ..oo(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18])
     ..aOM<AuthChallengeRequest>(
         1, _omitFieldNames ? '' : 'authChallengeRequest',
         subBuilder: AuthChallengeRequest.create)
@@ -1190,14 +1427,22 @@ class UserAgentRequest extends $pb.GeneratedMessage {
     ..aOM<SdkClientConnectionResponse>(
         11, _omitFieldNames ? '' : 'sdkClientConnectionResponse',
         subBuilder: SdkClientConnectionResponse.create)
-    ..aOM<SdkClientRevokeRequest>(13, _omitFieldNames ? '' : 'sdkClientRevoke',
+    ..aOM<SdkClientRevokeRequest>(12, _omitFieldNames ? '' : 'sdkClientRevoke',
         subBuilder: SdkClientRevokeRequest.create)
-    ..aOM<$1.Empty>(14, _omitFieldNames ? '' : 'sdkClientList',
+    ..aOM<$1.Empty>(13, _omitFieldNames ? '' : 'sdkClientList',
         subBuilder: $1.Empty.create)
     ..aOM<BootstrapEncryptedKey>(
-        15, _omitFieldNames ? '' : 'bootstrapEncryptedKey',
+        14, _omitFieldNames ? '' : 'bootstrapEncryptedKey',
         subBuilder: BootstrapEncryptedKey.create)
+    ..aOM<SdkClientGrantWalletAccess>(
+        15, _omitFieldNames ? '' : 'grantWalletAccess',
+        subBuilder: SdkClientGrantWalletAccess.create)
     ..aI(16, _omitFieldNames ? '' : 'id')
+    ..aOM<SdkClientRevokeWalletAccess>(
+        17, _omitFieldNames ? '' : 'revokeWalletAccess',
+        subBuilder: SdkClientRevokeWalletAccess.create)
+    ..aOM<$1.Empty>(18, _omitFieldNames ? '' : 'listWalletAccess',
+        subBuilder: $1.Empty.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1230,9 +1475,12 @@ class UserAgentRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(9)
   @$pb.TagNumber(10)
   @$pb.TagNumber(11)
+  @$pb.TagNumber(12)
   @$pb.TagNumber(13)
   @$pb.TagNumber(14)
   @$pb.TagNumber(15)
+  @$pb.TagNumber(17)
+  @$pb.TagNumber(18)
   UserAgentRequest_Payload whichPayload() =>
       _UserAgentRequest_PayloadByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(1)
@@ -1246,9 +1494,12 @@ class UserAgentRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(9)
   @$pb.TagNumber(10)
   @$pb.TagNumber(11)
+  @$pb.TagNumber(12)
   @$pb.TagNumber(13)
   @$pb.TagNumber(14)
   @$pb.TagNumber(15)
+  @$pb.TagNumber(17)
+  @$pb.TagNumber(18)
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -1375,48 +1626,83 @@ class UserAgentRequest extends $pb.GeneratedMessage {
   SdkClientConnectionResponse ensureSdkClientConnectionResponse() =>
       $_ensure(10);
 
-  @$pb.TagNumber(13)
+  @$pb.TagNumber(12)
   SdkClientRevokeRequest get sdkClientRevoke => $_getN(11);
-  @$pb.TagNumber(13)
-  set sdkClientRevoke(SdkClientRevokeRequest value) => $_setField(13, value);
-  @$pb.TagNumber(13)
+  @$pb.TagNumber(12)
+  set sdkClientRevoke(SdkClientRevokeRequest value) => $_setField(12, value);
+  @$pb.TagNumber(12)
   $core.bool hasSdkClientRevoke() => $_has(11);
-  @$pb.TagNumber(13)
-  void clearSdkClientRevoke() => $_clearField(13);
-  @$pb.TagNumber(13)
+  @$pb.TagNumber(12)
+  void clearSdkClientRevoke() => $_clearField(12);
+  @$pb.TagNumber(12)
   SdkClientRevokeRequest ensureSdkClientRevoke() => $_ensure(11);
 
-  @$pb.TagNumber(14)
+  @$pb.TagNumber(13)
   $1.Empty get sdkClientList => $_getN(12);
-  @$pb.TagNumber(14)
-  set sdkClientList($1.Empty value) => $_setField(14, value);
-  @$pb.TagNumber(14)
+  @$pb.TagNumber(13)
+  set sdkClientList($1.Empty value) => $_setField(13, value);
+  @$pb.TagNumber(13)
   $core.bool hasSdkClientList() => $_has(12);
-  @$pb.TagNumber(14)
-  void clearSdkClientList() => $_clearField(14);
-  @$pb.TagNumber(14)
+  @$pb.TagNumber(13)
+  void clearSdkClientList() => $_clearField(13);
+  @$pb.TagNumber(13)
   $1.Empty ensureSdkClientList() => $_ensure(12);
 
-  @$pb.TagNumber(15)
+  @$pb.TagNumber(14)
   BootstrapEncryptedKey get bootstrapEncryptedKey => $_getN(13);
-  @$pb.TagNumber(15)
+  @$pb.TagNumber(14)
   set bootstrapEncryptedKey(BootstrapEncryptedKey value) =>
-      $_setField(15, value);
-  @$pb.TagNumber(15)
+      $_setField(14, value);
+  @$pb.TagNumber(14)
   $core.bool hasBootstrapEncryptedKey() => $_has(13);
-  @$pb.TagNumber(15)
-  void clearBootstrapEncryptedKey() => $_clearField(15);
-  @$pb.TagNumber(15)
+  @$pb.TagNumber(14)
+  void clearBootstrapEncryptedKey() => $_clearField(14);
+  @$pb.TagNumber(14)
   BootstrapEncryptedKey ensureBootstrapEncryptedKey() => $_ensure(13);
 
+  @$pb.TagNumber(15)
+  SdkClientGrantWalletAccess get grantWalletAccess => $_getN(14);
+  @$pb.TagNumber(15)
+  set grantWalletAccess(SdkClientGrantWalletAccess value) =>
+      $_setField(15, value);
+  @$pb.TagNumber(15)
+  $core.bool hasGrantWalletAccess() => $_has(14);
+  @$pb.TagNumber(15)
+  void clearGrantWalletAccess() => $_clearField(15);
+  @$pb.TagNumber(15)
+  SdkClientGrantWalletAccess ensureGrantWalletAccess() => $_ensure(14);
+
   @$pb.TagNumber(16)
-  $core.int get id => $_getIZ(14);
+  $core.int get id => $_getIZ(15);
   @$pb.TagNumber(16)
-  set id($core.int value) => $_setSignedInt32(14, value);
+  set id($core.int value) => $_setSignedInt32(15, value);
   @$pb.TagNumber(16)
-  $core.bool hasId() => $_has(14);
+  $core.bool hasId() => $_has(15);
   @$pb.TagNumber(16)
   void clearId() => $_clearField(16);
+
+  @$pb.TagNumber(17)
+  SdkClientRevokeWalletAccess get revokeWalletAccess => $_getN(16);
+  @$pb.TagNumber(17)
+  set revokeWalletAccess(SdkClientRevokeWalletAccess value) =>
+      $_setField(17, value);
+  @$pb.TagNumber(17)
+  $core.bool hasRevokeWalletAccess() => $_has(16);
+  @$pb.TagNumber(17)
+  void clearRevokeWalletAccess() => $_clearField(17);
+  @$pb.TagNumber(17)
+  SdkClientRevokeWalletAccess ensureRevokeWalletAccess() => $_ensure(16);
+
+  @$pb.TagNumber(18)
+  $1.Empty get listWalletAccess => $_getN(17);
+  @$pb.TagNumber(18)
+  set listWalletAccess($1.Empty value) => $_setField(18, value);
+  @$pb.TagNumber(18)
+  $core.bool hasListWalletAccess() => $_has(17);
+  @$pb.TagNumber(18)
+  void clearListWalletAccess() => $_clearField(18);
+  @$pb.TagNumber(18)
+  $1.Empty ensureListWalletAccess() => $_ensure(17);
 }
 
 enum UserAgentResponse_Payload {
@@ -1435,6 +1721,7 @@ enum UserAgentResponse_Payload {
   sdkClientRevokeResponse,
   sdkClientListResponse,
   bootstrapResult,
+  listWalletAccessResponse,
   notSet
 }
 
@@ -1456,6 +1743,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
     SdkClientListResponse? sdkClientListResponse,
     BootstrapResult? bootstrapResult,
     $core.int? id,
+    ListWalletAccessResponse? listWalletAccessResponse,
   }) {
     final result = create();
     if (authChallenge != null) result.authChallenge = authChallenge;
@@ -1479,6 +1767,8 @@ class UserAgentResponse extends $pb.GeneratedMessage {
       result.sdkClientListResponse = sdkClientListResponse;
     if (bootstrapResult != null) result.bootstrapResult = bootstrapResult;
     if (id != null) result.id = id;
+    if (listWalletAccessResponse != null)
+      result.listWalletAccessResponse = listWalletAccessResponse;
     return result;
   }
 
@@ -1508,6 +1798,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
     13: UserAgentResponse_Payload.sdkClientRevokeResponse,
     14: UserAgentResponse_Payload.sdkClientListResponse,
     15: UserAgentResponse_Payload.bootstrapResult,
+    17: UserAgentResponse_Payload.listWalletAccessResponse,
     0: UserAgentResponse_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -1515,7 +1806,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
       package:
           const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.user_agent'),
       createEmptyInstance: create)
-    ..oo(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+    ..oo(0, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17])
     ..aOM<AuthChallenge>(1, _omitFieldNames ? '' : 'authChallenge',
         subBuilder: AuthChallenge.create)
     ..aE<AuthResult>(2, _omitFieldNames ? '' : 'authResult',
@@ -1551,6 +1842,9 @@ class UserAgentResponse extends $pb.GeneratedMessage {
     ..aE<BootstrapResult>(15, _omitFieldNames ? '' : 'bootstrapResult',
         enumValues: BootstrapResult.values)
     ..aI(16, _omitFieldNames ? '' : 'id')
+    ..aOM<ListWalletAccessResponse>(
+        17, _omitFieldNames ? '' : 'listWalletAccessResponse',
+        subBuilder: ListWalletAccessResponse.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1587,6 +1881,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
   @$pb.TagNumber(13)
   @$pb.TagNumber(14)
   @$pb.TagNumber(15)
+  @$pb.TagNumber(17)
   UserAgentResponse_Payload whichPayload() =>
       _UserAgentResponse_PayloadByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(1)
@@ -1604,6 +1899,7 @@ class UserAgentResponse extends $pb.GeneratedMessage {
   @$pb.TagNumber(13)
   @$pb.TagNumber(14)
   @$pb.TagNumber(15)
+  @$pb.TagNumber(17)
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -1775,6 +2071,18 @@ class UserAgentResponse extends $pb.GeneratedMessage {
   $core.bool hasId() => $_has(15);
   @$pb.TagNumber(16)
   void clearId() => $_clearField(16);
+
+  @$pb.TagNumber(17)
+  ListWalletAccessResponse get listWalletAccessResponse => $_getN(16);
+  @$pb.TagNumber(17)
+  set listWalletAccessResponse(ListWalletAccessResponse value) =>
+      $_setField(17, value);
+  @$pb.TagNumber(17)
+  $core.bool hasListWalletAccessResponse() => $_has(16);
+  @$pb.TagNumber(17)
+  void clearListWalletAccessResponse() => $_clearField(17);
+  @$pb.TagNumber(17)
+  ListWalletAccessResponse ensureListWalletAccessResponse() => $_ensure(16);
 }
 
 const $core.bool _omitFieldNames =

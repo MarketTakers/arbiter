@@ -15,14 +15,15 @@ use arbiter_proto::{
         },
         user_agent::{
             BootstrapEncryptedKey as ProtoBootstrapEncryptedKey,
-            BootstrapResult as ProtoBootstrapResult,
+            BootstrapResult as ProtoBootstrapResult, ListWalletAccessResponse,
             SdkClientConnectionCancel as ProtoSdkClientConnectionCancel,
             SdkClientConnectionRequest as ProtoSdkClientConnectionRequest,
             SdkClientEntry as ProtoSdkClientEntry, SdkClientError as ProtoSdkClientError,
-            SdkClientList as ProtoSdkClientList,
-            SdkClientListResponse as ProtoSdkClientListResponse,
-            UnsealEncryptedKey as ProtoUnsealEncryptedKey, UnsealResult as ProtoUnsealResult,
-            UnsealStart, UserAgentRequest, UserAgentResponse, VaultState as ProtoVaultState,
+            SdkClientGrantWalletAccess, SdkClientList as ProtoSdkClientList,
+            SdkClientListResponse as ProtoSdkClientListResponse, SdkClientRevokeWalletAccess,
+            SdkClientWalletAccess, UnsealEncryptedKey as ProtoUnsealEncryptedKey,
+            UnsealResult as ProtoUnsealResult, UnsealStart, UserAgentRequest, UserAgentResponse,
+            VaultState as ProtoVaultState,
             sdk_client_list_response::Result as ProtoSdkClientListResult,
             user_agent_request::Payload as UserAgentRequestPayload,
             user_agent_response::Payload as UserAgentResponsePayload,
@@ -43,11 +44,8 @@ use crate::{
         keyholder::KeyHolderState,
         user_agent::{
             OutOfBand, UserAgentConnection, UserAgentSession,
-            session::{
-                BootstrapError, HandleBootstrapEncryptedKey, HandleEvmWalletCreate,
-                HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete, HandleGrantList,
-                HandleNewClientApprove, HandleQueryVaultState, HandleSdkClientList,
-                HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError,
+            session::connection::{
+                BootstrapError, HandleBootstrapEncryptedKey, HandleEvmWalletCreate, HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete, HandleGrantEvmWalletAccess, HandleGrantList, HandleListWalletAccess, HandleNewClientApprove, HandleQueryVaultState, HandleRevokeEvmWalletAccess, HandleSdkClientList, HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError
             },
         },
     },
@@ -263,9 +261,9 @@ async fn dispatch_inner(
                 Ok(wallets) => WalletListResult::Wallets(WalletList {
                     wallets: wallets
                         .into_iter()
-                        .map(|w| WalletEntry {
-                            address: w.to_vec(),
-                            id: todo!(),
+                        .map(|(id, address)| WalletEntry {
+                            address: address.to_vec(),
+                            id,
                         })
                         .collect(),
                 }),
@@ -384,8 +382,48 @@ async fn dispatch_inner(
             })
         }
 
-        UserAgentRequestPayload::GrantWalletAccessList(_)
-        | UserAgentRequestPayload::RevokeWalletAccessList(_) => todo!(),
+        UserAgentRequestPayload::GrantWalletAccess(SdkClientGrantWalletAccess { accesses }) => {
+            let entries = accesses.try_convert()?;
+
+            match actor.ask(HandleGrantEvmWalletAccess { entries }).await {
+                Ok(()) => {
+                    info!("Successfully granted wallet access");
+                    return Ok(None);
+                }
+                Err(err) => {
+                    warn!(error = ?err, "Failed to grant wallet access");
+                    return Err(Status::internal("Failed to grant wallet access"));
+                }
+            }
+        }
+
+        UserAgentRequestPayload::RevokeWalletAccess(SdkClientRevokeWalletAccess { accesses }) => {
+            let entries = accesses.try_convert()?;
+
+            match actor.ask(HandleRevokeEvmWalletAccess { entries }).await {
+                Ok(()) => {
+                    info!("Successfully revoked wallet access");
+                    return Ok(None);
+                }
+                Err(err) => {
+                    warn!(error = ?err, "Failed to revoke wallet access");
+                    return Err(Status::internal("Failed to revoke wallet access"));
+                }
+            }
+        }
+
+        UserAgentRequestPayload::ListWalletAccess(_) => {
+            let result = match actor.ask(HandleListWalletAccess {}).await {
+                Ok(accesses) => ListWalletAccessResponse {
+                    accesses: accesses.into_iter().map(|a| a.convert()).collect(),
+                },
+                Err(err) => {
+                    warn!(error = ?err, "Failed to list wallet access");
+                    return Err(Status::internal("Failed to list wallet access"));
+                }
+            };
+            UserAgentResponsePayload::ListWalletAccessResponse(result)
+        }
 
         UserAgentRequestPayload::AuthChallengeRequest(..)
         | UserAgentRequestPayload::AuthChallengeSolution(..) => {

@@ -418,6 +418,83 @@ final $typed_data.Uint8List sdkClientConnectionCancelDescriptor =
     $convert.base64Decode(
         'ChlTZGtDbGllbnRDb25uZWN0aW9uQ2FuY2VsEhYKBnB1YmtleRgBIAEoDFIGcHVia2V5');
 
+@$core.Deprecated('Use sdkClientWalletAccessDescriptor instead')
+const SdkClientWalletAccess$json = {
+  '1': 'SdkClientWalletAccess',
+  '2': [
+    {'1': 'client_id', '3': 1, '4': 1, '5': 5, '10': 'clientId'},
+    {'1': 'wallet_id', '3': 2, '4': 1, '5': 5, '10': 'walletId'},
+  ],
+};
+
+/// Descriptor for `SdkClientWalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientWalletAccessDescriptor = $convert.base64Decode(
+    'ChVTZGtDbGllbnRXYWxsZXRBY2Nlc3MSGwoJY2xpZW50X2lkGAEgASgFUghjbGllbnRJZBIbCg'
+    'l3YWxsZXRfaWQYAiABKAVSCHdhbGxldElk');
+
+@$core.Deprecated('Use sdkClientGrantWalletAccessDescriptor instead')
+const SdkClientGrantWalletAccess$json = {
+  '1': 'SdkClientGrantWalletAccess',
+  '2': [
+    {
+      '1': 'accesses',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.arbiter.user_agent.SdkClientWalletAccess',
+      '10': 'accesses'
+    },
+  ],
+};
+
+/// Descriptor for `SdkClientGrantWalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientGrantWalletAccessDescriptor =
+    $convert.base64Decode(
+        'ChpTZGtDbGllbnRHcmFudFdhbGxldEFjY2VzcxJFCghhY2Nlc3NlcxgBIAMoCzIpLmFyYml0ZX'
+        'IudXNlcl9hZ2VudC5TZGtDbGllbnRXYWxsZXRBY2Nlc3NSCGFjY2Vzc2Vz');
+
+@$core.Deprecated('Use sdkClientRevokeWalletAccessDescriptor instead')
+const SdkClientRevokeWalletAccess$json = {
+  '1': 'SdkClientRevokeWalletAccess',
+  '2': [
+    {
+      '1': 'accesses',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.arbiter.user_agent.SdkClientWalletAccess',
+      '10': 'accesses'
+    },
+  ],
+};
+
+/// Descriptor for `SdkClientRevokeWalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientRevokeWalletAccessDescriptor =
+    $convert.base64Decode(
+        'ChtTZGtDbGllbnRSZXZva2VXYWxsZXRBY2Nlc3MSRQoIYWNjZXNzZXMYASADKAsyKS5hcmJpdG'
+        'VyLnVzZXJfYWdlbnQuU2RrQ2xpZW50V2FsbGV0QWNjZXNzUghhY2Nlc3Nlcw==');
+
+@$core.Deprecated('Use listWalletAccessResponseDescriptor instead')
+const ListWalletAccessResponse$json = {
+  '1': 'ListWalletAccessResponse',
+  '2': [
+    {
+      '1': 'accesses',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.arbiter.user_agent.SdkClientWalletAccess',
+      '10': 'accesses'
+    },
+  ],
+};
+
+/// Descriptor for `ListWalletAccessResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List listWalletAccessResponseDescriptor =
+    $convert.base64Decode(
+        'ChhMaXN0V2FsbGV0QWNjZXNzUmVzcG9uc2USRQoIYWNjZXNzZXMYASADKAsyKS5hcmJpdGVyLn'
+        'VzZXJfYWdlbnQuU2RrQ2xpZW50V2FsbGV0QWNjZXNzUghhY2Nlc3Nlcw==');
+
 @$core.Deprecated('Use userAgentRequestDescriptor instead')
 const UserAgentRequest$json = {
   '1': 'UserAgentRequest',
@@ -524,7 +601,7 @@ const UserAgentRequest$json = {
     },
     {
       '1': 'sdk_client_revoke',
-      '3': 13,
+      '3': 12,
       '4': 1,
       '5': 11,
       '6': '.arbiter.user_agent.SdkClientRevokeRequest',
@@ -533,7 +610,7 @@ const UserAgentRequest$json = {
     },
     {
       '1': 'sdk_client_list',
-      '3': 14,
+      '3': 13,
       '4': 1,
       '5': 11,
       '6': '.google.protobuf.Empty',
@@ -542,12 +619,39 @@ const UserAgentRequest$json = {
     },
     {
       '1': 'bootstrap_encrypted_key',
-      '3': 15,
+      '3': 14,
       '4': 1,
       '5': 11,
       '6': '.arbiter.user_agent.BootstrapEncryptedKey',
       '9': 0,
       '10': 'bootstrapEncryptedKey'
+    },
+    {
+      '1': 'grant_wallet_access',
+      '3': 15,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.SdkClientGrantWalletAccess',
+      '9': 0,
+      '10': 'grantWalletAccess'
+    },
+    {
+      '1': 'revoke_wallet_access',
+      '3': 17,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.SdkClientRevokeWalletAccess',
+      '9': 0,
+      '10': 'revokeWalletAccess'
+    },
+    {
+      '1': 'list_wallet_access',
+      '3': 18,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Empty',
+      '9': 0,
+      '10': 'listWalletAccess'
     },
   ],
   '8': [
@@ -574,12 +678,16 @@ final $typed_data.Uint8List userAgentRequestDescriptor = $convert.base64Decode(
     'c3QYCiABKAsyIC5hcmJpdGVyLmV2bS5Fdm1HcmFudExpc3RSZXF1ZXN0SABSDGV2bUdyYW50TG'
     'lzdBJ2Ch5zZGtfY2xpZW50X2Nvbm5lY3Rpb25fcmVzcG9uc2UYCyABKAsyLy5hcmJpdGVyLnVz'
     'ZXJfYWdlbnQuU2RrQ2xpZW50Q29ubmVjdGlvblJlc3BvbnNlSABSG3Nka0NsaWVudENvbm5lY3'
-    'Rpb25SZXNwb25zZRJYChFzZGtfY2xpZW50X3Jldm9rZRgNIAEoCzIqLmFyYml0ZXIudXNlcl9h'
+    'Rpb25SZXNwb25zZRJYChFzZGtfY2xpZW50X3Jldm9rZRgMIAEoCzIqLmFyYml0ZXIudXNlcl9h'
     'Z2VudC5TZGtDbGllbnRSZXZva2VSZXF1ZXN0SABSD3Nka0NsaWVudFJldm9rZRJACg9zZGtfY2'
-    'xpZW50X2xpc3QYDiABKAsyFi5nb29nbGUucHJvdG9idWYuRW1wdHlIAFINc2RrQ2xpZW50TGlz'
-    'dBJjChdib290c3RyYXBfZW5jcnlwdGVkX2tleRgPIAEoCzIpLmFyYml0ZXIudXNlcl9hZ2VudC'
-    '5Cb290c3RyYXBFbmNyeXB0ZWRLZXlIAFIVYm9vdHN0cmFwRW5jcnlwdGVkS2V5QgkKB3BheWxv'
-    'YWQ=');
+    'xpZW50X2xpc3QYDSABKAsyFi5nb29nbGUucHJvdG9idWYuRW1wdHlIAFINc2RrQ2xpZW50TGlz'
+    'dBJjChdib290c3RyYXBfZW5jcnlwdGVkX2tleRgOIAEoCzIpLmFyYml0ZXIudXNlcl9hZ2VudC'
+    '5Cb290c3RyYXBFbmNyeXB0ZWRLZXlIAFIVYm9vdHN0cmFwRW5jcnlwdGVkS2V5EmAKE2dyYW50'
+    'X3dhbGxldF9hY2Nlc3MYDyABKAsyLi5hcmJpdGVyLnVzZXJfYWdlbnQuU2RrQ2xpZW50R3Jhbn'
+    'RXYWxsZXRBY2Nlc3NIAFIRZ3JhbnRXYWxsZXRBY2Nlc3MSYwoUcmV2b2tlX3dhbGxldF9hY2Nl'
+    'c3MYESABKAsyLy5hcmJpdGVyLnVzZXJfYWdlbnQuU2RrQ2xpZW50UmV2b2tlV2FsbGV0QWNjZX'
+    'NzSABSEnJldm9rZVdhbGxldEFjY2VzcxJGChJsaXN0X3dhbGxldF9hY2Nlc3MYEiABKAsyFi5n'
+    'b29nbGUucHJvdG9idWYuRW1wdHlIAFIQbGlzdFdhbGxldEFjY2Vzc0IJCgdwYXlsb2Fk');
 
 @$core.Deprecated('Use userAgentResponseDescriptor instead')
 const UserAgentResponse$json = {
@@ -721,6 +829,15 @@ const UserAgentResponse$json = {
       '9': 0,
       '10': 'bootstrapResult'
     },
+    {
+      '1': 'list_wallet_access_response',
+      '3': 17,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.ListWalletAccessResponse',
+      '9': 0,
+      '10': 'listWalletAccessResponse'
+    },
   ],
   '8': [
     {'1': 'payload'},
@@ -754,4 +871,6 @@ final $typed_data.Uint8List userAgentResponseDescriptor = $convert.base64Decode(
     'xpc3RfcmVzcG9uc2UYDiABKAsyKS5hcmJpdGVyLnVzZXJfYWdlbnQuU2RrQ2xpZW50TGlzdFJl'
     'c3BvbnNlSABSFXNka0NsaWVudExpc3RSZXNwb25zZRJQChBib290c3RyYXBfcmVzdWx0GA8gAS'
     'gOMiMuYXJiaXRlci51c2VyX2FnZW50LkJvb3RzdHJhcFJlc3VsdEgAUg9ib290c3RyYXBSZXN1'
-    'bHRCCQoHcGF5bG9hZEIFCgNfaWQ=');
+    'bHQSbQobbGlzdF93YWxsZXRfYWNjZXNzX3Jlc3BvbnNlGBEgASgLMiwuYXJiaXRlci51c2VyX2'
+    'FnZW50Lkxpc3RXYWxsZXRBY2Nlc3NSZXNwb25zZUgAUhhsaXN0V2FsbGV0QWNjZXNzUmVzcG9u'
+    'c2VCCQoHcGF5bG9hZEIFCgNfaWQ=');

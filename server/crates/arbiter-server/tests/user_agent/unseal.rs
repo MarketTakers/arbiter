@@ -2,9 +2,9 @@ use arbiter_server::{
     actors::{
         GlobalActors,
         keyholder::{Bootstrap, Seal},
-        user_agent::session::{
-            HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError, UserAgentSession,
-        },
+        user_agent::{UserAgentSession, session::connection::{
+            HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError,
+        }},
     },
     db,
     safe_cell::{SafeCell, SafeCellHandle as _},

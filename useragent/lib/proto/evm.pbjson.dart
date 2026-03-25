@@ -34,13 +34,15 @@ final $typed_data.Uint8List evmErrorDescriptor = $convert.base64Decode(
 const WalletEntry$json = {
   '1': 'WalletEntry',
   '2': [
-    {'1': 'address', '3': 1, '4': 1, '5': 12, '10': 'address'},
+    {'1': 'id', '3': 1, '4': 1, '5': 5, '10': 'id'},
+    {'1': 'address', '3': 2, '4': 1, '5': 12, '10': 'address'},
   ],
 };
 
 /// Descriptor for `WalletEntry`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List walletEntryDescriptor = $convert
-    .base64Decode('CgtXYWxsZXRFbnRyeRIYCgdhZGRyZXNzGAEgASgMUgdhZGRyZXNz');
+final $typed_data.Uint8List walletEntryDescriptor = $convert.base64Decode(
+    'CgtXYWxsZXRFbnRyeRIOCgJpZBgBIAEoBVICaWQSGAoHYWRkcmVzcxgCIAEoDFIHYWRkcmVzcw'
+    '==');
 
 @$core.Deprecated('Use walletListDescriptor instead')
 const WalletList$json = {

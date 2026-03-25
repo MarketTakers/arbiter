@@ -145,6 +145,10 @@ message SdkClientRevokeWalletAccess {
   repeated SdkClientWalletAccess accesses = 1;
 }
 
+message ListWalletAccessResponse {
+  repeated SdkClientWalletAccess accesses = 1;
+}
+
 message UserAgentRequest {
   int32 id = 16;
   oneof payload {
@@ -162,8 +166,9 @@ message UserAgentRequest {
     SdkClientRevokeRequest sdk_client_revoke = 12;
     google.protobuf.Empty sdk_client_list = 13;
     BootstrapEncryptedKey bootstrap_encrypted_key = 14;
-    SdkClientGrantWalletAccess grant_wallet_access_list = 15;
-    SdkClientRevokeWalletAccess revoke_wallet_access_list = 17;
+    SdkClientGrantWalletAccess grant_wallet_access = 15;
+    SdkClientRevokeWalletAccess revoke_wallet_access = 17;
+    google.protobuf.Empty list_wallet_access = 18;
   }
 }
 message UserAgentResponse {
@@ -184,5 +189,6 @@ message UserAgentResponse {
     SdkClientRevokeResponse sdk_client_revoke_response = 13;
     SdkClientListResponse sdk_client_list_response = 14;
     BootstrapResult bootstrap_result = 15;
+    ListWalletAccessResponse list_wallet_access_response = 17;
   }
 }

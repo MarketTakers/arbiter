@@ -7,11 +7,13 @@ use arbiter_proto::proto::evm::{
     VolumeRateLimit as ProtoVolumeRateLimit,
     specific_grant::Grant as ProtoSpecificGrantType,
 };
+use arbiter_proto::proto::user_agent::SdkClientWalletAccess;
 use alloy::primitives::{Address, U256};
 use chrono::{DateTime, TimeZone, Utc};
 use prost_types::Timestamp as ProtoTimestamp;
 use tonic::Status;
 
+use crate::actors::user_agent::EvmAccessEntry;
 use crate::{
     evm::policies::{
         SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit,
@@ -131,5 +133,20 @@ impl TryConvert for ProtoSpecificGrant {
             })),
             None => Err(Status::invalid_argument("Missing specific grant kind")),
         }
+    }
+}
+
+impl TryConvert for Vec<SdkClientWalletAccess> {
+    type Output = Vec<EvmAccessEntry>;
+    type Error = Status;
+
+    fn try_convert(self) -> Result<Vec<EvmAccessEntry>, Status> {
+        Ok(self
+            .into_iter()
+            .map(|SdkClientWalletAccess { client_id, wallet_id }| EvmAccessEntry {
+                wallet_id,
+                sdk_client_id: client_id,
+            })
+            .collect())
     }
 }

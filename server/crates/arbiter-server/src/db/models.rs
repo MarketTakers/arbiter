@@ -187,6 +187,12 @@ pub struct EvmWallet {
 
 #[derive(Models, Queryable, Debug, Insertable, Selectable, Clone)]
 #[diesel(table_name = schema::evm_wallet_access, check_for_backend(Sqlite))]
+#[view(
+    NewEvmWalletAccess,
+    derive(Insertable),
+    omit(id, created_at),
+    attributes_with = "deriveless"
+)]
 pub struct EvmWalletAccess {
     pub id: i32,
     pub wallet_id: i32,

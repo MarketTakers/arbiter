@@ -41,7 +41,7 @@ final class CalloutManagerProvider
   }
 }
 
-String _$calloutManagerHash() => r'1d42ddcd9e5b8669a7ec08709b9dde9df6865bda';
+String _$calloutManagerHash() => r'ff8c9a03a6bbbca822242eb497c503b18240a289';
 
 abstract class _$CalloutManager extends $Notifier<Map<String, ActiveCallout>> {
   Map<String, ActiveCallout> build();

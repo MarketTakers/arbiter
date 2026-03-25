@@ -26,9 +26,11 @@ export 'evm.pbenum.dart';
 
 class WalletEntry extends $pb.GeneratedMessage {
   factory WalletEntry({
+    $core.int? id,
     $core.List<$core.int>? address,
   }) {
     final result = create();
+    if (id != null) result.id = id;
     if (address != null) result.address = address;
     return result;
   }
@@ -46,8 +48,9 @@ class WalletEntry extends $pb.GeneratedMessage {
       _omitMessageNames ? '' : 'WalletEntry',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.evm'),
       createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'id')
     ..a<$core.List<$core.int>>(
-        1, _omitFieldNames ? '' : 'address', $pb.PbFieldType.OY)
+        2, _omitFieldNames ? '' : 'address', $pb.PbFieldType.OY)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -70,13 +73,22 @@ class WalletEntry extends $pb.GeneratedMessage {
   static WalletEntry? _defaultInstance;
 
   @$pb.TagNumber(1)
-  $core.List<$core.int> get address => $_getN(0);
+  $core.int get id => $_getIZ(0);
   @$pb.TagNumber(1)
-  set address($core.List<$core.int> value) => $_setBytes(0, value);
+  set id($core.int value) => $_setSignedInt32(0, value);
   @$pb.TagNumber(1)
-  $core.bool hasAddress() => $_has(0);
+  $core.bool hasId() => $_has(0);
   @$pb.TagNumber(1)
-  void clearAddress() => $_clearField(1);
+  void clearId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.List<$core.int> get address => $_getN(1);
+  @$pb.TagNumber(2)
+  set address($core.List<$core.int> value) => $_setBytes(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasAddress() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearAddress() => $_clearField(2);
 }
 
 class WalletList extends $pb.GeneratedMessage {

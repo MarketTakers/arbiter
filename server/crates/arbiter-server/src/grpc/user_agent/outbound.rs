@@ -1,16 +1,17 @@
-use arbiter_proto::proto::evm::{
-    EtherTransferSettings as ProtoEtherTransferSettings,
-    SharedSettings as ProtoSharedSettings,
-    SpecificGrant as ProtoSpecificGrant,
-    TokenTransferSettings as ProtoTokenTransferSettings,
-    TransactionRateLimit as ProtoTransactionRateLimit,
-    VolumeRateLimit as ProtoVolumeRateLimit,
-    specific_grant::Grant as ProtoSpecificGrantType,
+use arbiter_proto::proto::{
+    evm::{
+        EtherTransferSettings as ProtoEtherTransferSettings, SharedSettings as ProtoSharedSettings,
+        SpecificGrant as ProtoSpecificGrant, TokenTransferSettings as ProtoTokenTransferSettings,
+        TransactionRateLimit as ProtoTransactionRateLimit, VolumeRateLimit as ProtoVolumeRateLimit,
+        specific_grant::Grant as ProtoSpecificGrantType,
+    },
+    user_agent::SdkClientWalletAccess as ProtoSdkClientWalletAccess,
 };
 use chrono::{DateTime, Utc};
 use prost_types::Timestamp as ProtoTimestamp;
 
 use crate::{
+    actors::user_agent::EvmAccessEntry,
     evm::policies::{SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit},
     grpc::Convert,
 };
@@ -83,10 +84,25 @@ impl Convert for SpecificGrant {
                 ProtoSpecificGrantType::TokenTransfer(ProtoTokenTransferSettings {
                     token_contract: s.token_contract.to_vec(),
                     target: s.target.map(|a| a.to_vec()),
-                    volume_limits: s.volume_limits.into_iter().map(VolumeRateLimit::convert).collect(),
+                    volume_limits: s
+                        .volume_limits
+                        .into_iter()
+                        .map(VolumeRateLimit::convert)
+                        .collect(),
                 })
             }
         };
         ProtoSpecificGrant { grant: Some(grant) }
+    }
+}
+
+impl Convert for EvmAccessEntry {
+    type Output = ProtoSdkClientWalletAccess;
+
+    fn convert(self) -> Self::Output {
+        ProtoSdkClientWalletAccess {
+            client_id: self.sdk_client_id,
+            wallet_id: self.wallet_id,
+        }
     }
 }

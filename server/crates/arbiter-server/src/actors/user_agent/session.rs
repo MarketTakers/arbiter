@@ -58,13 +58,7 @@ pub struct UserAgentSession {
     pending_client_approvals: HashMap<VerifyingKey, PendingClientApproval>,
 }
 
-mod connection;
-pub(crate) use connection::{
-    BootstrapError, HandleBootstrapEncryptedKey, HandleEvmWalletCreate, HandleEvmWalletList,
-    HandleGrantCreate, HandleGrantDelete, HandleGrantList, HandleNewClientApprove,
-    HandleQueryVaultState, HandleSdkClientList,
-};
-pub use connection::{HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError};
+pub mod connection;
 
 impl UserAgentSession {
     pub(crate) fn new(props: UserAgentConnection, sender: Box<dyn Sender<OutOfBand>>) -> Self {
