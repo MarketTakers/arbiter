@@ -4,6 +4,7 @@ import 'package:arbiter/proto/evm.pb.dart';
 import 'package:arbiter/theme/palette.dart';
 import 'package:arbiter/providers/connection/connection_manager.dart';
 import 'package:arbiter/providers/evm/evm.dart';
+import 'package:arbiter/widgets/page_header.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -99,11 +100,50 @@ class EvmScreen extends HookConsumerWidget {
             ),
             padding: EdgeInsets.fromLTRB(2.4.w, 2.4.h, 2.4.w, 3.2.h),
             children: [
-              _Header(
+              PageHeader(
+                title: 'EVM Wallet Vault',
                 isBusy: walletsAsync.isLoading,
-                isCreating: isCreating.value,
-                onCreate: createWallet,
-                onRefresh: refreshWallets,
+                actions: [
+                  FilledButton.icon(
+                    onPressed: isCreating.value ? null : () => createWallet(),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Palette.ink,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 1.4.w,
+                        vertical: 1.2.h,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: isCreating.value
+                        ? SizedBox(
+                            width: 1.6.h,
+                            height: 1.6.h,
+                            child: CircularProgressIndicator(strokeWidth: 2.2),
+                          )
+                        : const Icon(Icons.add_circle_outline, size: 18),
+                    label: Text(isCreating.value ? 'Creating...' : 'Create'),
+                  ),
+                  SizedBox(width: 1.w),
+                  OutlinedButton.icon(
+                    onPressed: () => refreshWallets(),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Palette.ink,
+                      side: BorderSide(color: Palette.line),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 1.4.w,
+                        vertical: 1.2.h,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Refresh'),
+                  ),
+                ],
               ),
               SizedBox(height: 1.8.h),
               content,
@@ -120,90 +160,6 @@ double get _cellHorizontalPadding => 1.8.w;
 double get _walletColumnWidth => 18.w;
 double get _columnGap => 1.8.w;
 double get _tableMinWidth => 72.w;
-
-class _Header extends StatelessWidget {
-  const _Header({
-    required this.isBusy,
-    required this.isCreating,
-    required this.onCreate,
-    required this.onRefresh,
-  });
-
-  final bool isBusy;
-  final bool isCreating;
-  final Future<void> Function() onCreate;
-  final Future<void> Function() onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 1.6.w, vertical: 1.2.h),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        color: Palette.cream,
-        border: Border.all(color: Palette.line),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              'EVM Wallet Vault',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: Palette.ink,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          if (isBusy) ...[
-            Text(
-              'Syncing',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: Palette.ink.withValues(alpha: 0.62),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            SizedBox(width: 1.w),
-          ],
-          FilledButton.icon(
-            onPressed: isCreating ? null : () => onCreate(),
-            style: FilledButton.styleFrom(
-              backgroundColor: Palette.ink,
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(horizontal: 1.4.w, vertical: 1.2.h),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            icon: isCreating
-                ? SizedBox(
-                    width: 1.6.h,
-                    height: 1.6.h,
-                    child: CircularProgressIndicator(strokeWidth: 2.2),
-                  )
-                : const Icon(Icons.add_circle_outline, size: 18),
-            label: Text(isCreating ? 'Creating...' : 'Create'),
-          ),
-          SizedBox(width: 1.w),
-          OutlinedButton.icon(
-            onPressed: () => onRefresh(),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Palette.ink,
-              side: BorderSide(color: Palette.line),
-              padding: EdgeInsets.symmetric(horizontal: 1.4.w, vertical: 1.2.h),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            icon: const Icon(Icons.refresh, size: 18),
-            label: const Text('Refresh'),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _WalletTable extends StatelessWidget {
   const _WalletTable({required this.wallets});
