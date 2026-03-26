@@ -1,6 +1,8 @@
-import 'package:arbiter/features/connection/evm.dart';
+import 'package:arbiter/features/connection/evm.dart' as evm;
 import 'package:arbiter/proto/evm.pb.dart';
 import 'package:arbiter/providers/connection/connection_manager.dart';
+import 'package:hooks_riverpod/experimental/mutation.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'evm.g.dart';
@@ -14,7 +16,7 @@ class Evm extends _$Evm {
       return null;
     }
 
-    return listEvmWallets(connection);
+    return evm.listEvmWallets(connection);
   }
 
   Future<void> refreshWallets() async {
@@ -25,16 +27,21 @@ class Evm extends _$Evm {
     }
 
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => listEvmWallets(connection));
+    state = await AsyncValue.guard(() => evm.listEvmWallets(connection));
   }
+}
 
-  Future<void> createWallet() async {
-    final connection = await ref.read(connectionManagerProvider.future);
+final createEvmWallet = Mutation();
+
+Future<void> executeCreateEvmWallet(MutationTarget target) async {
+  return await createEvmWallet.run(target, (tsx) async {
+       final connection = await tsx.get(connectionManagerProvider.future);
     if (connection == null) {
       throw Exception('Not connected to the server.');
     }
 
-    await createEvmWallet(connection);
-    state = await AsyncValue.guard(() => listEvmWallets(connection));
-  }
+    await evm.createEvmWallet(connection);
+
+    await tsx.get(evmProvider.notifier).refreshWallets();
+  });
 }
