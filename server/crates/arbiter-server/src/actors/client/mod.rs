@@ -10,11 +10,16 @@ use crate::{
 pub struct ClientConnection {
     pub(crate) db: db::DatabasePool,
     pub(crate) actors: GlobalActors,
+    pub(crate) client_id: i32,
 }
 
 impl ClientConnection {
     pub fn new(db: db::DatabasePool, actors: GlobalActors) -> Self {
-        Self { db, actors }
+        Self {
+            db,
+            actors,
+            client_id: 0,
+        }
     }
 }
 
@@ -26,7 +31,8 @@ where
     T: Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> + Send + ?Sized,
 {
     match auth::authenticate(&mut props, transport).await {
-        Ok(_pubkey) => {
+        Ok(authenticated) => {
+            props.client_id = authenticated.client_id;
             ClientSession::spawn(ClientSession::new(props));
             info!("Client authenticated, session started");
         }

@@ -137,6 +137,11 @@ message SdkClientConnectionResponse {
 
 message SdkClientConnectionCancel {}
 
+message UserAgentEvmSignTransactionRequest {
+  int32 client_id = 1;
+  arbiter.evm.EvmSignTransactionRequest request = 2;
+}
+
 message UserAgentRequest {
   int32 id = 16;
   oneof payload {
@@ -155,6 +160,7 @@ message UserAgentRequest {
     SdkClientRevokeRequest sdk_client_revoke = 13;
     google.protobuf.Empty sdk_client_list = 14;
     BootstrapEncryptedKey bootstrap_encrypted_key = 15;
+    UserAgentEvmSignTransactionRequest evm_sign_transaction = 17;
   }
 }
 message UserAgentResponse {
@@ -175,5 +181,6 @@ message UserAgentResponse {
     SdkClientRevokeResponse sdk_client_revoke_response = 13;
     SdkClientListResponse sdk_client_list_response = 14;
     BootstrapResult bootstrap_result = 15;
+    arbiter.evm.EvmSignTransactionResponse evm_sign_transaction = 17;
   }
 }

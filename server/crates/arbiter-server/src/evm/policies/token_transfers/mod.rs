@@ -38,9 +38,9 @@ fn grant_join() -> _ {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Meaning {
-    token: &'static TokenInfo,
-    to: Address,
-    value: U256,
+    pub(crate) token: &'static TokenInfo,
+    pub(crate) to: Address,
+    pub(crate) value: U256,
 }
 impl std::fmt::Display for Meaning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

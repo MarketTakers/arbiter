@@ -54,10 +54,19 @@ pub enum Outbound {
     AuthSuccess,
 }
 
+#[derive(Debug, Clone)]
+pub struct AuthenticatedClient {
+    pub pubkey: VerifyingKey,
+    pub client_id: i32,
+}
+
 /// Atomically reads and increments the nonce for a known client.
 /// Returns `None` if the pubkey is not registered.
-async fn get_nonce(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<Option<i32>, Error> {
-    let pubkey_bytes = pubkey.as_bytes().to_vec();
+async fn get_nonce(
+    db: &db::DatabasePool,
+    pubkey: &VerifyingKey,
+) -> Result<Option<(/* client_id */ i32, /* nonce */ i32)>, Error> {
+    let pubkey_bytes = pubkey.as_bytes();
 
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
@@ -65,7 +74,6 @@ async fn get_nonce(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<Optio
     })?;
 
     conn.exclusive_transaction(|conn| {
-        let pubkey_bytes = pubkey_bytes.clone();
         Box::pin(async move {
             let Some((client_id, current_nonce)) = program_client::table
                 .filter(program_client::public_key.eq(&pubkey_bytes))
@@ -83,8 +91,7 @@ async fn get_nonce(db: &db::DatabasePool, pubkey: &VerifyingKey) -> Result<Optio
                 .execute(conn)
                 .await?;
 
-            let _ = client_id;
-            Ok(Some(current_nonce))
+            Ok(Some((client_id, current_nonce)))
         })
     })
     .await
@@ -213,23 +220,25 @@ where
 pub async fn authenticate<T>(
     props: &mut ClientConnection,
     transport: &mut T,
-) -> Result<VerifyingKey, Error>
+) -> Result<AuthenticatedClient, Error>
 where
     T: Bi<Inbound, Result<Outbound, Error>> + Send + ?Sized,
 {
-    let Some(Inbound::AuthChallengeRequest { pubkey }) = transport.recv().await
-    else {
+    let Some(Inbound::AuthChallengeRequest { pubkey }) = transport.recv().await else {
         return Err(Error::Transport);
     };
 
-    let nonce = match get_nonce(&props.db, &pubkey).await? {
-        Some(nonce) => nonce,
+    let (client_id, nonce) = match get_nonce(&props.db, &pubkey).await? {
+        Some(client_nonce) => client_nonce,
         None => {
             approve_new_client(&props.actors, pubkey).await?;
             match insert_client(&props.db, &pubkey).await? {
-                InsertClientResult::Inserted => 0,
+                InsertClientResult::Inserted => match get_nonce(&props.db, &pubkey).await? {
+                    Some((client_id, _)) => (client_id, 0),
+                    None => return Err(Error::DatabaseOperationFailed),
+                },
                 InsertClientResult::AlreadyExists => match get_nonce(&props.db, &pubkey).await? {
-                    Some(nonce) => nonce,
+                    Some((client_id, nonce)) => (client_id, nonce),
                     None => return Err(Error::DatabaseOperationFailed),
                 },
             }
@@ -245,5 +254,5 @@ where
             Error::Transport
         })?;
 
-    Ok(pubkey)
+    Ok(AuthenticatedClient { pubkey, client_id })
 }

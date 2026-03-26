@@ -42,6 +42,7 @@ message ClientRequest {
     AuthChallengeRequest auth_challenge_request = 1;
     AuthChallengeSolution auth_challenge_solution = 2;
     google.protobuf.Empty query_vault_state = 3;
+    arbiter.evm.EvmSignTransactionRequest evm_sign_transaction = 5;
   }
 }
 

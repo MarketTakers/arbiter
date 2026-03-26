@@ -151,7 +151,9 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
             _ => {
                 let _ = self
                     .bi
-                    .send(Err(Status::invalid_argument("Unsupported client auth request")))
+                    .send(Err(Status::invalid_argument(
+                        "Unsupported client auth request",
+                    )))
                     .await;
                 None
             }
@@ -168,6 +170,7 @@ pub async fn start(
     response_id: &mut Option<i32>,
 ) -> Result<(), auth::Error> {
     let mut transport = AuthTransportAdapter::new(bi, request_tracker, response_id);
-    client::auth::authenticate(conn, &mut transport).await?;
+    let authenticated = client::auth::authenticate(conn, &mut transport).await?;
+    conn.client_id = authenticated.client_id;
     Ok(())
 }

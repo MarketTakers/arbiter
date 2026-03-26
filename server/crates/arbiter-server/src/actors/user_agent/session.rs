@@ -36,7 +36,10 @@ impl Error {
 pub struct UserAgentSession {
     props: UserAgentConnection,
     state: UserAgentStateMachine<DummyContext>,
-    #[allow(dead_code, reason = "The session keeps ownership of the outbound transport even before the state-machine flow starts using it directly")]
+    #[allow(
+        dead_code,
+        reason = "The session keeps ownership of the outbound transport even before the state-machine flow starts using it directly"
+    )]
     sender: Box<dyn Sender<OutOfBand>>,
 }
 
@@ -44,8 +47,11 @@ mod connection;
 pub(crate) use connection::{
     BootstrapError, HandleBootstrapEncryptedKey, HandleEvmWalletCreate, HandleEvmWalletList,
     HandleGrantCreate, HandleGrantDelete, HandleGrantList, HandleQueryVaultState,
+    HandleSignTransaction,
 };
-pub use connection::{HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError};
+pub use connection::{
+    HandleUnsealEncryptedKey, HandleUnsealRequest, SignTransactionError, UnsealError,
+};
 
 impl UserAgentSession {
     pub(crate) fn new(props: UserAgentConnection, sender: Box<dyn Sender<OutOfBand>>) -> Self {

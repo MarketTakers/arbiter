@@ -4,17 +4,24 @@ use arbiter_proto::{
     google::protobuf::{Empty as ProtoEmpty, Timestamp as ProtoTimestamp},
     proto::{
         evm::{
-            EtherTransferSettings as ProtoEtherTransferSettings, EvmError as ProtoEvmError,
-            EvmGrantCreateRequest, EvmGrantCreateResponse, EvmGrantDeleteRequest,
-            EvmGrantDeleteResponse, EvmGrantList, EvmGrantListResponse, GrantEntry,
+            EtherTransferSettings as ProtoEtherTransferSettings,
+            EvalViolation as ProtoEvalViolation, EvmError as ProtoEvmError, EvmGrantCreateRequest,
+            EvmGrantCreateResponse, EvmGrantDeleteRequest, EvmGrantDeleteResponse, EvmGrantList,
+            EvmGrantListResponse, EvmSignTransactionResponse, GasLimitExceededViolation,
+            GrantEntry, NoMatchingGrantError, PolicyViolationsError,
             SharedSettings as ProtoSharedSettings, SpecificGrant as ProtoSpecificGrant,
-            TokenTransferSettings as ProtoTokenTransferSettings,
+            SpecificMeaning as ProtoSpecificMeaning, TokenInfo as ProtoTokenInfo,
+            TokenTransferSettings as ProtoTokenTransferSettings, TransactionEvalError,
             TransactionRateLimit as ProtoTransactionRateLimit,
             VolumeRateLimit as ProtoVolumeRateLimit, WalletCreateResponse, WalletEntry, WalletList,
-            WalletListResponse, evm_grant_create_response::Result as EvmGrantCreateResult,
+            WalletListResponse, eval_violation::Kind as ProtoEvalViolationKind,
+            evm_grant_create_response::Result as EvmGrantCreateResult,
             evm_grant_delete_response::Result as EvmGrantDeleteResult,
             evm_grant_list_response::Result as EvmGrantListResult,
+            evm_sign_transaction_response::Result as EvmSignTransactionResult,
             specific_grant::Grant as ProtoSpecificGrantType,
+            specific_meaning::Meaning as ProtoSpecificMeaningKind,
+            transaction_eval_error::Kind as ProtoTransactionEvalErrorKind,
             wallet_create_response::Result as WalletCreateResult,
             wallet_list_response::Result as WalletListResult,
         },
@@ -23,8 +30,8 @@ use arbiter_proto::{
             BootstrapResult as ProtoBootstrapResult,
             SdkClientConnectionResponse as ProtoSdkClientConnectionResponse,
             UnsealEncryptedKey as ProtoUnsealEncryptedKey, UnsealResult as ProtoUnsealResult,
-            UnsealStart, UserAgentRequest, UserAgentResponse, VaultState as ProtoVaultState,
-            user_agent_request::Payload as UserAgentRequestPayload,
+            UnsealStart, UserAgentEvmSignTransactionRequest, UserAgentRequest, UserAgentResponse,
+            VaultState as ProtoVaultState, user_agent_request::Payload as UserAgentRequestPayload,
             user_agent_response::Payload as UserAgentResponsePayload,
         },
     },
@@ -47,7 +54,9 @@ use crate::{
             session::{
                 BootstrapError, Error, HandleBootstrapEncryptedKey, HandleEvmWalletCreate,
                 HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete, HandleGrantList,
-                HandleQueryVaultState, HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError,
+                HandleQueryVaultState, HandleSignTransaction, HandleUnsealEncryptedKey,
+                HandleUnsealRequest, SignTransactionError as SessionSignTransactionError,
+                UnsealError,
             },
         },
     },
@@ -55,11 +64,123 @@ use crate::{
         Grant, SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit,
         ether_transfer, token_transfers,
     },
+    evm::{PolicyError, VetError, policies::EvalViolation},
     grpc::request_tracker::RequestTracker,
     utils::defer,
 };
-use alloy::primitives::{Address, U256};
+use alloy::{
+    consensus::TxEip1559,
+    primitives::{Address, U256},
+    rlp::Decodable,
+};
 mod auth;
+
+fn u256_to_proto_bytes(value: U256) -> Vec<u8> {
+    value.to_be_bytes::<32>().to_vec()
+}
+
+fn meaning_to_proto(meaning: crate::evm::policies::SpecificMeaning) -> ProtoSpecificMeaning {
+    let kind = match meaning {
+        crate::evm::policies::SpecificMeaning::EtherTransfer(meaning) => {
+            ProtoSpecificMeaningKind::EtherTransfer(
+                arbiter_proto::proto::evm::EtherTransferMeaning {
+                    to: meaning.to.to_vec(),
+                    value: u256_to_proto_bytes(meaning.value),
+                },
+            )
+        }
+        crate::evm::policies::SpecificMeaning::TokenTransfer(meaning) => {
+            ProtoSpecificMeaningKind::TokenTransfer(
+                arbiter_proto::proto::evm::TokenTransferMeaning {
+                    token: Some(ProtoTokenInfo {
+                        symbol: meaning.token.symbol.to_string(),
+                        address: meaning.token.contract.to_vec(),
+                        chain_id: meaning.token.chain,
+                    }),
+                    to: meaning.to.to_vec(),
+                    value: u256_to_proto_bytes(meaning.value),
+                },
+            )
+        }
+    };
+
+    ProtoSpecificMeaning {
+        meaning: Some(kind),
+    }
+}
+
+fn violation_to_proto(violation: EvalViolation) -> ProtoEvalViolation {
+    let kind = match violation {
+        EvalViolation::InvalidTarget { target } => {
+            ProtoEvalViolationKind::InvalidTarget(target.to_vec())
+        }
+        EvalViolation::GasLimitExceeded {
+            max_gas_fee_per_gas,
+            max_priority_fee_per_gas,
+        } => ProtoEvalViolationKind::GasLimitExceeded(GasLimitExceededViolation {
+            max_gas_fee_per_gas: max_gas_fee_per_gas.map(u256_to_proto_bytes),
+            max_priority_fee_per_gas: max_priority_fee_per_gas.map(u256_to_proto_bytes),
+        }),
+        EvalViolation::RateLimitExceeded => {
+            ProtoEvalViolationKind::RateLimitExceeded(ProtoEmpty {})
+        }
+        EvalViolation::VolumetricLimitExceeded => {
+            ProtoEvalViolationKind::VolumetricLimitExceeded(ProtoEmpty {})
+        }
+        EvalViolation::InvalidTime => ProtoEvalViolationKind::InvalidTime(ProtoEmpty {}),
+        EvalViolation::InvalidTransactionType => {
+            ProtoEvalViolationKind::InvalidTransactionType(ProtoEmpty {})
+        }
+    };
+
+    ProtoEvalViolation { kind: Some(kind) }
+}
+
+fn eval_error_to_proto(err: VetError) -> Option<TransactionEvalError> {
+    let kind = match err {
+        VetError::ContractCreationNotSupported => {
+            ProtoTransactionEvalErrorKind::ContractCreationNotSupported(ProtoEmpty {})
+        }
+        VetError::UnsupportedTransactionType => {
+            ProtoTransactionEvalErrorKind::UnsupportedTransactionType(ProtoEmpty {})
+        }
+        VetError::Evaluated(meaning, policy_error) => match policy_error {
+            PolicyError::NoMatchingGrant => {
+                ProtoTransactionEvalErrorKind::NoMatchingGrant(NoMatchingGrantError {
+                    meaning: Some(meaning_to_proto(meaning)),
+                })
+            }
+            PolicyError::Violations(violations) => {
+                ProtoTransactionEvalErrorKind::PolicyViolations(PolicyViolationsError {
+                    meaning: Some(meaning_to_proto(meaning)),
+                    violations: violations.into_iter().map(violation_to_proto).collect(),
+                })
+            }
+            PolicyError::Pool(_) | PolicyError::Database(_) => {
+                return None;
+            }
+        },
+    };
+
+    Some(TransactionEvalError { kind: Some(kind) })
+}
+
+fn decode_eip1559_transaction(payload: &[u8]) -> Result<TxEip1559, ()> {
+    let mut body = payload;
+    if let Some((prefix, rest)) = payload.split_first()
+        && *prefix == 0x02
+    {
+        body = rest;
+    }
+
+    let mut cursor = body;
+    let transaction = TxEip1559::decode(&mut cursor).map_err(|_| ())?;
+    if !cursor.is_empty() {
+        return Err(());
+    }
+
+    Ok(transaction)
+}
 
 pub struct OutOfBandAdapter(mpsc::Sender<OutOfBand>);
 
@@ -270,6 +391,92 @@ async fn dispatch_conn_message(
             UserAgentResponsePayload::EvmGrantDelete(EvmGrantOrWallet::grant_delete_response(
                 actor.ask(HandleGrantDelete { grant_id }).await,
             ))
+        }
+        UserAgentRequestPayload::EvmSignTransaction(UserAgentEvmSignTransactionRequest {
+            client_id,
+            request,
+        }) => {
+            if client_id <= 0 {
+                let _ = bi
+                    .send(Err(Status::invalid_argument("Invalid SDK client id")))
+                    .await;
+                return Err(());
+            }
+
+            let Some(request) = request else {
+                let _ = bi
+                    .send(Err(Status::invalid_argument(
+                        "Missing EVM sign transaction payload",
+                    )))
+                    .await;
+                return Err(());
+            };
+
+            let wallet_address = match <[u8; 20]>::try_from(request.wallet_address.as_slice()) {
+                Ok(address) => Address::from(address),
+                Err(_) => {
+                    let _ = bi
+                        .send(Err(Status::invalid_argument("Invalid EVM wallet address")))
+                        .await;
+                    return Err(());
+                }
+            };
+
+            let transaction = match decode_eip1559_transaction(&request.rlp_transaction) {
+                Ok(transaction) => transaction,
+                Err(()) => {
+                    let _ = bi
+                        .send(Err(Status::invalid_argument(
+                            "Invalid EIP-1559 RLP transaction",
+                        )))
+                        .await;
+                    return Err(());
+                }
+            };
+
+            let response = match actor
+                .ask(HandleSignTransaction {
+                    client_id,
+                    wallet_address,
+                    transaction,
+                })
+                .await
+            {
+                Ok(signature) => EvmSignTransactionResponse {
+                    result: Some(EvmSignTransactionResult::Signature(
+                        signature.as_bytes().to_vec(),
+                    )),
+                },
+                Err(SendError::HandlerError(SessionSignTransactionError::Vet(vet_error))) => {
+                    match eval_error_to_proto(vet_error) {
+                        Some(eval_error) => EvmSignTransactionResponse {
+                            result: Some(EvmSignTransactionResult::EvalError(eval_error)),
+                        },
+                        None => EvmSignTransactionResponse {
+                            result: Some(EvmSignTransactionResult::Error(
+                                ProtoEvmError::Internal.into(),
+                            )),
+                        },
+                    }
+                }
+                Err(SendError::HandlerError(SessionSignTransactionError::Internal)) => {
+                    EvmSignTransactionResponse {
+                        result: Some(EvmSignTransactionResult::Error(
+                            ProtoEvmError::Internal.into(),
+                        )),
+                    }
+                }
+                Err(err) => {
+                    warn!(error = ?err, "Failed to sign EVM transaction via user-agent");
+                    EvmSignTransactionResponse {
+                        result: Some(EvmSignTransactionResult::Error(
+                            ProtoEvmError::Internal.into(),
+                        )),
+                    }
+                }
+            };
+
+            UserAgentResponsePayload::EvmSignTransaction(response)
         }
         payload => {
             warn!(?payload, "Unsupported post-auth user agent request");
