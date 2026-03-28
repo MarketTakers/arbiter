@@ -19,8 +19,6 @@ String _formatError(Object error) {
   return message;
 }
 
-// ─── Grant list ───────────────────────────────────────────────────────────────
-
 class _GrantList extends StatelessWidget {
   const _GrantList({required this.grants});
 
@@ -28,21 +26,21 @@ class _GrantList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (var i = 0; i < grants.length; i++)
-          Padding(
-            padding: EdgeInsets.only(
-              bottom: i == grants.length - 1 ? 0 : 1.8.h,
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          for (var i = 0; i < grants.length; i++)
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: i == grants.length - 1 ? 0 : 1.8.h,
+              ),
+              child: GrantCard(grant: grants[i]),
             ),
-            child: GrantCard(grant: grants[i]),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
-
-// ─── Screen ───────────────────────────────────────────────────────────────────
 
 @RoutePage()
 class EvmGrantsScreen extends ConsumerWidget {
