@@ -2,7 +2,7 @@ import 'package:arbiter/providers/sdk_clients/wallet_access.dart';
 import 'package:arbiter/screens/dashboard/clients/details/widgets/client_details_state_panel.dart';
 import 'package:arbiter/screens/dashboard/clients/details/widgets/wallet_access_list.dart';
 import 'package:arbiter/screens/dashboard/clients/details/widgets/wallet_access_search_field.dart';
-import 'package:arbiter/theme/palette.dart';
+import 'package:arbiter/widgets/cream_frame.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -27,15 +27,9 @@ class WalletAccessSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final optionsAsync = ref.watch(clientWalletOptionsProvider);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Palette.cream,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Palette.line),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
+    return CreamFrame(
+      padding: const EdgeInsets.all(20),
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
@@ -56,7 +50,6 @@ class WalletAccessSection extends ConsumerWidget {
             ),
           ],
         ),
-      ),
     );
   }
 }

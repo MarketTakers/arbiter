@@ -1,5 +1,5 @@
 import 'package:arbiter/proto/user_agent.pb.dart';
-import 'package:arbiter/theme/palette.dart';
+import 'package:arbiter/widgets/cream_frame.dart';
 import 'package:flutter/material.dart';
 
 class ClientSummaryCard extends StatelessWidget {
@@ -9,15 +9,9 @@ class ClientSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Palette.cream,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Palette.line),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
+    return CreamFrame(
+      padding: const EdgeInsets.all(20),
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
@@ -42,7 +36,6 @@ class ClientSummaryCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:arbiter/providers/sdk_clients/wallet_access.dart';
 import 'package:arbiter/theme/palette.dart';
+import 'package:arbiter/widgets/cream_frame.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/experimental/mutation.dart';
 
@@ -24,15 +25,9 @@ class WalletAccessSaveBar extends StatelessWidget {
       MutationError(:final error) => error.toString(),
       _ => null,
     };
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Palette.cream,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Palette.line),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+    return CreamFrame(
+      padding: const EdgeInsets.all(16),
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (errorText != null) ...[
@@ -54,7 +49,6 @@ class WalletAccessSaveBar extends StatelessWidget {
             ),
           ],
         ),
-      ),
     );
   }
 }
