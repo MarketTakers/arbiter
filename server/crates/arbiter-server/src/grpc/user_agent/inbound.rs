@@ -1,23 +1,21 @@
+use alloy::primitives::{Address, U256};
 use arbiter_proto::proto::evm::{
-    EtherTransferSettings as ProtoEtherTransferSettings,
-    SharedSettings as ProtoSharedSettings,
-    SpecificGrant as ProtoSpecificGrant,
-    TokenTransferSettings as ProtoTokenTransferSettings,
-    TransactionRateLimit as ProtoTransactionRateLimit,
-    VolumeRateLimit as ProtoVolumeRateLimit,
+    EtherTransferSettings as ProtoEtherTransferSettings, SharedSettings as ProtoSharedSettings,
+    SpecificGrant as ProtoSpecificGrant, TokenTransferSettings as ProtoTokenTransferSettings,
+    TransactionRateLimit as ProtoTransactionRateLimit, VolumeRateLimit as ProtoVolumeRateLimit,
     specific_grant::Grant as ProtoSpecificGrantType,
 };
-use arbiter_proto::proto::user_agent::SdkClientWalletAccess;
-use alloy::primitives::{Address, U256};
+use arbiter_proto::proto::user_agent::{SdkClientWalletAccess, WalletAccess};
 use chrono::{DateTime, TimeZone, Utc};
 use prost_types::Timestamp as ProtoTimestamp;
 use tonic::Status;
 
-use crate::actors::user_agent::EvmAccessEntry;
+use crate::db::models::{CoreEvmWalletAccess, NewEvmWallet, NewEvmWalletAccess};
+use crate::grpc::Convert;
 use crate::{
     evm::policies::{
-        SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit,
-        ether_transfer, token_transfers,
+        SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit, ether_transfer,
+        token_transfers,
     },
     grpc::TryConvert,
 };
@@ -79,8 +77,14 @@ impl TryConvert for ProtoSharedSettings {
         Ok(SharedGrantSettings {
             wallet_access_id: self.wallet_access_id,
             chain: self.chain_id,
-            valid_from: self.valid_from.map(ProtoTimestamp::try_convert).transpose()?,
-            valid_until: self.valid_until.map(ProtoTimestamp::try_convert).transpose()?,
+            valid_from: self
+                .valid_from
+                .map(ProtoTimestamp::try_convert)
+                .transpose()?,
+            valid_until: self
+                .valid_until
+                .map(ProtoTimestamp::try_convert)
+                .transpose()?,
             max_gas_fee_per_gas: self
                 .max_gas_fee_per_gas
                 .as_deref()
@@ -136,17 +140,29 @@ impl TryConvert for ProtoSpecificGrant {
     }
 }
 
-impl TryConvert for Vec<SdkClientWalletAccess> {
-    type Output = Vec<EvmAccessEntry>;
+impl Convert for WalletAccess {
+    type Output = NewEvmWalletAccess;
+
+    fn convert(self) -> Self::Output {
+        NewEvmWalletAccess {
+            wallet_id: self.wallet_id,
+            client_id: self.sdk_client_id,
+        }
+    }
+}
+
+impl TryConvert for SdkClientWalletAccess {
+    type Output = CoreEvmWalletAccess;
     type Error = Status;
 
-    fn try_convert(self) -> Result<Vec<EvmAccessEntry>, Status> {
-        Ok(self
-            .into_iter()
-            .map(|SdkClientWalletAccess { client_id, wallet_id }| EvmAccessEntry {
-                wallet_id,
-                sdk_client_id: client_id,
-            })
-            .collect())
+    fn try_convert(self) -> Result<CoreEvmWalletAccess, Status> {
+        let Some(access) = self.access else {
+            return Err(Status::invalid_argument("Missing wallet access entry"));
+        };
+        Ok(CoreEvmWalletAccess {
+            wallet_id: access.wallet_id,
+            client_id: access.sdk_client_id,
+            id: self.id,
+        })
     }
 }

@@ -418,19 +418,40 @@ final $typed_data.Uint8List sdkClientConnectionCancelDescriptor =
     $convert.base64Decode(
         'ChlTZGtDbGllbnRDb25uZWN0aW9uQ2FuY2VsEhYKBnB1YmtleRgBIAEoDFIGcHVia2V5');
 
+@$core.Deprecated('Use walletAccessDescriptor instead')
+const WalletAccess$json = {
+  '1': 'WalletAccess',
+  '2': [
+    {'1': 'wallet_id', '3': 1, '4': 1, '5': 5, '10': 'walletId'},
+    {'1': 'sdk_client_id', '3': 2, '4': 1, '5': 5, '10': 'sdkClientId'},
+  ],
+};
+
+/// Descriptor for `WalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List walletAccessDescriptor = $convert.base64Decode(
+    'CgxXYWxsZXRBY2Nlc3MSGwoJd2FsbGV0X2lkGAEgASgFUgh3YWxsZXRJZBIiCg1zZGtfY2xpZW'
+    '50X2lkGAIgASgFUgtzZGtDbGllbnRJZA==');
+
 @$core.Deprecated('Use sdkClientWalletAccessDescriptor instead')
 const SdkClientWalletAccess$json = {
   '1': 'SdkClientWalletAccess',
   '2': [
-    {'1': 'client_id', '3': 1, '4': 1, '5': 5, '10': 'clientId'},
-    {'1': 'wallet_id', '3': 2, '4': 1, '5': 5, '10': 'walletId'},
+    {'1': 'id', '3': 1, '4': 1, '5': 5, '10': 'id'},
+    {
+      '1': 'access',
+      '3': 2,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.WalletAccess',
+      '10': 'access'
+    },
   ],
 };
 
 /// Descriptor for `SdkClientWalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List sdkClientWalletAccessDescriptor = $convert.base64Decode(
-    'ChVTZGtDbGllbnRXYWxsZXRBY2Nlc3MSGwoJY2xpZW50X2lkGAEgASgFUghjbGllbnRJZBIbCg'
-    'l3YWxsZXRfaWQYAiABKAVSCHdhbGxldElk');
+    'ChVTZGtDbGllbnRXYWxsZXRBY2Nlc3MSDgoCaWQYASABKAVSAmlkEjgKBmFjY2VzcxgCIAEoCz'
+    'IgLmFyYml0ZXIudXNlcl9hZ2VudC5XYWxsZXRBY2Nlc3NSBmFjY2Vzcw==');
 
 @$core.Deprecated('Use sdkClientGrantWalletAccessDescriptor instead')
 const SdkClientGrantWalletAccess$json = {
@@ -441,7 +462,7 @@ const SdkClientGrantWalletAccess$json = {
       '3': 1,
       '4': 3,
       '5': 11,
-      '6': '.arbiter.user_agent.SdkClientWalletAccess',
+      '6': '.arbiter.user_agent.WalletAccess',
       '10': 'accesses'
     },
   ],
@@ -450,29 +471,22 @@ const SdkClientGrantWalletAccess$json = {
 /// Descriptor for `SdkClientGrantWalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List sdkClientGrantWalletAccessDescriptor =
     $convert.base64Decode(
-        'ChpTZGtDbGllbnRHcmFudFdhbGxldEFjY2VzcxJFCghhY2Nlc3NlcxgBIAMoCzIpLmFyYml0ZX'
-        'IudXNlcl9hZ2VudC5TZGtDbGllbnRXYWxsZXRBY2Nlc3NSCGFjY2Vzc2Vz');
+        'ChpTZGtDbGllbnRHcmFudFdhbGxldEFjY2VzcxI8CghhY2Nlc3NlcxgBIAMoCzIgLmFyYml0ZX'
+        'IudXNlcl9hZ2VudC5XYWxsZXRBY2Nlc3NSCGFjY2Vzc2Vz');
 
 @$core.Deprecated('Use sdkClientRevokeWalletAccessDescriptor instead')
 const SdkClientRevokeWalletAccess$json = {
   '1': 'SdkClientRevokeWalletAccess',
   '2': [
-    {
-      '1': 'accesses',
-      '3': 1,
-      '4': 3,
-      '5': 11,
-      '6': '.arbiter.user_agent.SdkClientWalletAccess',
-      '10': 'accesses'
-    },
+    {'1': 'accesses', '3': 1, '4': 3, '5': 5, '10': 'accesses'},
   ],
 };
 
 /// Descriptor for `SdkClientRevokeWalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List sdkClientRevokeWalletAccessDescriptor =
     $convert.base64Decode(
-        'ChtTZGtDbGllbnRSZXZva2VXYWxsZXRBY2Nlc3MSRQoIYWNjZXNzZXMYASADKAsyKS5hcmJpdG'
-        'VyLnVzZXJfYWdlbnQuU2RrQ2xpZW50V2FsbGV0QWNjZXNzUghhY2Nlc3Nlcw==');
+        'ChtTZGtDbGllbnRSZXZva2VXYWxsZXRBY2Nlc3MSGgoIYWNjZXNzZXMYASADKAVSCGFjY2Vzc2'
+        'Vz');
 
 @$core.Deprecated('Use listWalletAccessResponseDescriptor instead')
 const ListWalletAccessResponse$json = {

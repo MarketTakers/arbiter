@@ -193,6 +193,12 @@ pub struct EvmWallet {
     omit(id, created_at),
     attributes_with = "deriveless"
 )]
+#[view(
+    CoreEvmWalletAccess,
+    derive(Insertable),
+    omit(created_at),
+    attributes_with = "deriveless"
+)]
 pub struct EvmWalletAccess {
     pub id: i32,
     pub wallet_id: i32,

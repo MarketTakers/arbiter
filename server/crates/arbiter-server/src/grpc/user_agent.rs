@@ -45,10 +45,15 @@ use crate::{
         user_agent::{
             OutOfBand, UserAgentConnection, UserAgentSession,
             session::connection::{
-                BootstrapError, HandleBootstrapEncryptedKey, HandleEvmWalletCreate, HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete, HandleGrantEvmWalletAccess, HandleGrantList, HandleListWalletAccess, HandleNewClientApprove, HandleQueryVaultState, HandleRevokeEvmWalletAccess, HandleSdkClientList, HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError
+                BootstrapError, HandleBootstrapEncryptedKey, HandleEvmWalletCreate,
+                HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete,
+                HandleGrantEvmWalletAccess, HandleGrantList, HandleListWalletAccess,
+                HandleNewClientApprove, HandleQueryVaultState, HandleRevokeEvmWalletAccess,
+                HandleSdkClientList, HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError,
             },
         },
     },
+    db::models::{CoreEvmWalletAccess, NewEvmWalletAccess},
     grpc::{Convert, TryConvert, request_tracker::RequestTracker},
 };
 mod auth;
@@ -383,7 +388,8 @@ async fn dispatch_inner(
         }
 
         UserAgentRequestPayload::GrantWalletAccess(SdkClientGrantWalletAccess { accesses }) => {
-            let entries = accesses.try_convert()?;
+            let entries: Vec<NewEvmWalletAccess> =
+                accesses.into_iter().map(|a| a.convert()).collect();
 
             match actor.ask(HandleGrantEvmWalletAccess { entries }).await {
                 Ok(()) => {
@@ -398,9 +404,7 @@ async fn dispatch_inner(
         }
 
         UserAgentRequestPayload::RevokeWalletAccess(SdkClientRevokeWalletAccess { accesses }) => {
-            let entries = accesses.try_convert()?;
-
-            match actor.ask(HandleRevokeEvmWalletAccess { entries }).await {
+            match actor.ask(HandleRevokeEvmWalletAccess { entries: accesses }).await {
                 Ok(()) => {
                     info!("Successfully revoked wallet access");
                     return Ok(None);

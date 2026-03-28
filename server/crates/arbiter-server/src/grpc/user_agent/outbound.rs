@@ -5,13 +5,13 @@ use arbiter_proto::proto::{
         TransactionRateLimit as ProtoTransactionRateLimit, VolumeRateLimit as ProtoVolumeRateLimit,
         specific_grant::Grant as ProtoSpecificGrantType,
     },
-    user_agent::SdkClientWalletAccess as ProtoSdkClientWalletAccess,
+    user_agent::{SdkClientWalletAccess as ProtoSdkClientWalletAccess, WalletAccess},
 };
 use chrono::{DateTime, Utc};
 use prost_types::Timestamp as ProtoTimestamp;
 
 use crate::{
-    actors::user_agent::EvmAccessEntry,
+    db::models::EvmWalletAccess,
     evm::policies::{SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit},
     grpc::Convert,
 };
@@ -96,13 +96,16 @@ impl Convert for SpecificGrant {
     }
 }
 
-impl Convert for EvmAccessEntry {
+impl Convert for EvmWalletAccess {
     type Output = ProtoSdkClientWalletAccess;
 
     fn convert(self) -> Self::Output {
-        ProtoSdkClientWalletAccess {
-            client_id: self.sdk_client_id,
-            wallet_id: self.wallet_id,
+        Self::Output {
+            id: self.id,
+            access: Some(WalletAccess {
+                wallet_id: self.wallet_id,
+                sdk_client_id: self.client_id,
+            }),
         }
     }
 }
