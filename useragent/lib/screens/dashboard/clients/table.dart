@@ -10,6 +10,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:arbiter/theme/palette.dart';
+import 'package:arbiter/widgets/cream_frame.dart';
+import 'package:arbiter/widgets/state_panel.dart';
 import 'package:sizer/sizer.dart';
 
 // ─── Column width getters ─────────────────────────────────────────────────────
@@ -57,79 +59,6 @@ String _formatError(Object error) {
     return message.substring('Exception: '.length);
   }
   return message;
-}
-
-// ─── State panel ─────────────────────────────────────────────────────────────
-
-class _StatePanel extends StatelessWidget {
-  const _StatePanel({
-    required this.icon,
-    required this.title,
-    required this.body,
-    this.actionLabel,
-    this.onAction,
-    this.busy = false,
-  });
-
-  final IconData icon;
-  final String title;
-  final String body;
-  final String? actionLabel;
-  final Future<void> Function()? onAction;
-  final bool busy;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        color: Palette.cream.withValues(alpha: 0.92),
-        border: Border.all(color: Palette.line),
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(2.8.h),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (busy)
-              SizedBox(
-                width: 2.8.h,
-                height: 2.8.h,
-                child: const CircularProgressIndicator(strokeWidth: 2.5),
-              )
-            else
-              Icon(icon, size: 34, color: Palette.coral),
-            SizedBox(height: 1.8.h),
-            Text(
-              title,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                color: Palette.ink,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            SizedBox(height: 1.h),
-            Text(
-              body,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: Palette.ink.withValues(alpha: 0.72),
-                height: 1.5,
-              ),
-            ),
-            if (actionLabel != null && onAction != null) ...[
-              SizedBox(height: 2.h),
-              OutlinedButton.icon(
-                onPressed: () => onAction!(),
-                icon: const Icon(Icons.refresh),
-                label: Text(actionLabel!),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 // ─── Header ───────────────────────────────────────────────────────────────────
@@ -443,17 +372,11 @@ class _ClientTable extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        color: Palette.cream.withValues(alpha: 0.92),
-        border: Border.all(color: Palette.line),
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(2.h),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final tableWidth = math.max(_tableMinWidth, constraints.maxWidth);
+    return CreamFrame(
+      padding: EdgeInsets.all(2.h),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final tableWidth = math.max(_tableMinWidth, constraints.maxWidth);
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -497,7 +420,6 @@ class _ClientTable extends StatelessWidget {
             );
           },
         ),
-      ),
     );
   }
 }
@@ -533,27 +455,27 @@ class ClientsScreen extends HookConsumerWidget {
     final clients = clientsAsync.asData?.value;
 
     final content = switch (clientsAsync) {
-      AsyncLoading() when clients == null => const _StatePanel(
+      AsyncLoading() when clients == null => const StatePanel(
         icon: Icons.hourglass_top,
         title: 'Loading clients',
         body: 'Pulling client registry from Arbiter.',
         busy: true,
       ),
-      AsyncError(:final error) => _StatePanel(
+      AsyncError(:final error) => StatePanel(
         icon: Icons.sync_problem,
         title: 'Client registry unavailable',
         body: _formatError(error),
         actionLabel: 'Retry',
         onAction: refresh,
       ),
-      _ when !isConnected => _StatePanel(
+      _ when !isConnected => StatePanel(
         icon: Icons.portable_wifi_off,
         title: 'No active server connection',
         body: 'Reconnect to Arbiter to list SDK clients.',
         actionLabel: 'Refresh',
         onAction: refresh,
       ),
-      _ when clients != null && clients.isEmpty => _StatePanel(
+      _ when clients != null && clients.isEmpty => StatePanel(
         icon: Icons.devices_other_outlined,
         title: 'No clients yet',
         body: 'SDK clients appear here once they register with Arbiter.',
