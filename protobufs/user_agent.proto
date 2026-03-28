@@ -132,17 +132,22 @@ message SdkClientConnectionCancel {
   bytes pubkey = 1;
 }
 
+message WalletAccess {
+  int32 wallet_id = 1;
+  int32 sdk_client_id = 2;
+}
+
 message SdkClientWalletAccess {
-  int32 client_id = 1;
-  int32 wallet_id = 2;
+  int32 id = 1;
+  WalletAccess access = 2;
 }
 
 message SdkClientGrantWalletAccess {
-  repeated SdkClientWalletAccess accesses = 1;
+  repeated WalletAccess accesses = 1;
 }
 
 message SdkClientRevokeWalletAccess {
-  repeated SdkClientWalletAccess accesses = 1;
+  repeated int32 accesses = 1;
 }
 
 message ListWalletAccessResponse {

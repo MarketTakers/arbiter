@@ -15,8 +15,8 @@ Future<Set<int>> readClientWalletAccess(
     );
   }
   return {
-    for (final access in response.listWalletAccessResponse.accesses)
-      if (access.clientId == clientId) access.walletId,
+    for (final entry in response.listWalletAccessResponse.accesses)
+      if (entry.access != null && entry.access.sdkClientId == clientId) entry.access.walletId,
   };
 }
 
@@ -36,7 +36,7 @@ Future<void> writeClientWalletAccess(
         grantWalletAccess: SdkClientGrantWalletAccess(
           accesses: [
             for (final walletId in toGrant)
-              SdkClientWalletAccess(clientId: clientId, walletId: walletId),
+              WalletAccess(sdkClientId: clientId, walletId: walletId),
           ],
         ),
       ),
@@ -49,7 +49,7 @@ Future<void> writeClientWalletAccess(
         revokeWalletAccess: SdkClientRevokeWalletAccess(
           accesses: [
             for (final walletId in toRevoke)
-              SdkClientWalletAccess(clientId: clientId, walletId: walletId),
+              walletId
           ],
         ),
       ),
