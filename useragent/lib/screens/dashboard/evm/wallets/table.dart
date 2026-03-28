@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:arbiter/proto/evm.pb.dart';
 import 'package:arbiter/theme/palette.dart';
+import 'package:arbiter/widgets/cream_frame.dart';
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 
@@ -32,15 +33,9 @@ class WalletTable extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        color: Palette.cream.withValues(alpha: 0.92),
-        border: Border.all(color: Palette.line),
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(2.h),
-        child: LayoutBuilder(
+    return CreamFrame(
+      padding: EdgeInsets.all(2.h),
+      child: LayoutBuilder(
           builder: (context, constraints) {
             final tableWidth = math.max(_tableMinWidth, constraints.maxWidth);
 
@@ -89,7 +84,6 @@ class WalletTable extends StatelessWidget {
             );
           },
         ),
-      ),
     );
   }
 }

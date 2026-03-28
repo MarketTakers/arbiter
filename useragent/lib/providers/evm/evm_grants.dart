@@ -1,11 +1,9 @@
 import 'package:arbiter/features/connection/evm/grants.dart';
 import 'package:arbiter/proto/evm.pb.dart';
 import 'package:arbiter/providers/connection/connection_manager.dart';
-import 'package:fixnum/fixnum.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:hooks_riverpod/experimental/mutation.dart';
 import 'package:mtcore/markettakers.dart';
-import 'package:protobuf/well_known_types/google/protobuf/timestamp.pb.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'evm_grants.freezed.dart';

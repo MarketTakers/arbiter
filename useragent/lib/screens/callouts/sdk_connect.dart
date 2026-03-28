@@ -1,5 +1,6 @@
 import 'package:arbiter/proto/client.pb.dart';
 import 'package:arbiter/theme/palette.dart';
+import 'package:arbiter/widgets/cream_frame.dart';
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 
@@ -31,12 +32,7 @@ class SdkConnectCallout extends StatelessWidget {
         clientInfo.hasVersion() && clientInfo.version.isNotEmpty;
     final showInfoCard = hasDescription || hasVersion;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Palette.cream,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Palette.line),
-      ),
+    return CreamFrame(
       padding: EdgeInsets.all(2.4.h),
       child: Column(
         mainAxisSize: MainAxisSize.min,
