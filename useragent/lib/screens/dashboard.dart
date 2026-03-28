@@ -22,15 +22,18 @@ class DashboardRouter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = const Text("Arbiter", style: TextStyle(fontWeight: FontWeight.w800));
-
+    final title = Container(
+      margin: const EdgeInsets.all(16),
+      child: const Text(
+        "Arbiter",
+        style: TextStyle(fontWeight: FontWeight.w800),
+      ),
+    );
 
     return AutoTabsRouter(
       routes: routes,
-      transitionBuilder: (context, child, animation) => FadeTransition(
-        opacity: animation,
-        child: child,
-      ),
+      transitionBuilder: (context, child, animation) =>
+          FadeTransition(opacity: animation, child: child),
       builder: (context, child) {
         final tabsRouter = AutoTabsRouter.of(context);
         final currentActive = tabsRouter.activeIndex;
@@ -66,7 +69,7 @@ class DashboardRouter extends StatelessWidget {
           selectedIndex: currentActive,
           transitionDuration: const Duration(milliseconds: 800),
           internalAnimations: true,
-          
+
           trailingNavRail: const _CalloutBell(),
         );
       },
@@ -79,9 +82,7 @@ class _CalloutBell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final count = ref.watch(
-      calloutManagerProvider.select((map) => map.length),
-    );
+    final count = ref.watch(calloutManagerProvider.select((map) => map.length));
 
     return IconButton(
       onPressed: () => showCalloutList(context, ref),
