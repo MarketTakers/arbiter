@@ -3,11 +3,6 @@ use crate::{
     db::{self, models::KeyType},
 };
 
-pub struct EvmAccessEntry {
-    pub wallet_id: i32,
-    pub sdk_client_id: i32,
-}
-
 /// Abstraction over Ed25519 / ECDSA-secp256k1 / RSA public keys used during the auth handshake.
 #[derive(Clone, Debug)]
 pub enum AuthPublicKey {

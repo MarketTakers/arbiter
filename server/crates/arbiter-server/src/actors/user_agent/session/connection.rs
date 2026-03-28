@@ -13,9 +13,10 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
 use crate::actors::keyholder::KeyHolderState;
-use crate::actors::user_agent::EvmAccessEntry;
 use crate::actors::user_agent::session::Error;
-use crate::db::models::{ProgramClient, ProgramClientMetadata};
+use crate::db::models::{
+    CoreEvmWalletAccess, EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
+};
 use crate::db::schema::evm_wallet_access;
 use crate::evm::policies::{Grant, SpecificGrant};
 use crate::safe_cell::SafeCell;
@@ -304,8 +305,6 @@ impl UserAgentSession {
     }
 }
 
-
-
 #[messages]
 impl UserAgentSession {
     #[message]
@@ -360,20 +359,16 @@ impl UserAgentSession {
     #[message]
     pub(crate) async fn handle_grant_evm_wallet_access(
         &mut self,
-        entries: Vec<EvmAccessEntry>,
+        entries: Vec<NewEvmWalletAccess>,
     ) -> Result<(), Error> {
         let mut conn = self.props.db.get().await?;
         conn.transaction(|conn| {
             Box::pin(async move {
-                use crate::db::models::NewEvmWalletAccess;
                 use crate::db::schema::evm_wallet_access;
 
                 for entry in entries {
                     diesel::insert_into(evm_wallet_access::table)
-                        .values(&NewEvmWalletAccess {
-                            wallet_id: entry.wallet_id,
-                            client_id: entry.sdk_client_id,
-                        })
+                        .values(&entry)
                         .on_conflict_do_nothing()
                         .execute(conn)
                         .await?;
@@ -389,7 +384,7 @@ impl UserAgentSession {
     #[message]
     pub(crate) async fn handle_revoke_evm_wallet_access(
         &mut self,
-        entries: Vec<EvmAccessEntry>,
+        entries: Vec<i32>,
     ) -> Result<(), Error> {
         let mut conn = self.props.db.get().await?;
         conn.transaction(|conn| {
@@ -397,11 +392,7 @@ impl UserAgentSession {
                 use crate::db::schema::evm_wallet_access;
                 for entry in entries {
                     diesel::delete(evm_wallet_access::table)
-                        .filter(
-                            evm_wallet_access::wallet_id
-                                .eq(entry.wallet_id)
-                                .and(evm_wallet_access::client_id.eq(entry.sdk_client_id)),
-                        )
+                        .filter(evm_wallet_access::wallet_id.eq(entry))
                         .execute(conn)
                         .await?;
                 }
@@ -414,19 +405,15 @@ impl UserAgentSession {
     }
 
     #[message]
-    pub(crate) async fn handle_list_wallet_access(&mut self) -> Result<Vec<EvmAccessEntry>, Error> {
+    pub(crate) async fn handle_list_wallet_access(
+        &mut self,
+    ) -> Result<Vec<EvmWalletAccess>, Error> {
         let mut conn = self.props.db.get().await?;
         use crate::db::schema::evm_wallet_access;
         let access_entries = evm_wallet_access::table
-            .select((evm_wallet_access::wallet_id, evm_wallet_access::client_id))
-            .load::<(i32, i32)>(&mut conn)
-            .await?
-            .into_iter()
-            .map(|(wallet_id, sdk_client_id)| EvmAccessEntry {
-                wallet_id,
-                sdk_client_id,
-            })
-            .collect();
+            .select(EvmWalletAccess::as_select())
+            .load::<_>(&mut conn)
+            .await?;
         Ok(access_entries)
     }
 }
