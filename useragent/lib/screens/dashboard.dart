@@ -22,6 +22,9 @@ class DashboardRouter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final title = const Text("Arbiter", style: TextStyle(fontWeight: FontWeight.w800));
+
+
     return AutoTabsRouter(
       routes: routes,
       transitionBuilder: (context, child, animation) => FadeTransition(
@@ -58,9 +61,12 @@ class DashboardRouter extends StatelessWidget {
           onSelectedIndexChange: (index) {
             tabsRouter.navigate(routes[index]);
           },
+          leadingExtendedNavRail: title,
+          leadingUnextendedNavRail: title,
           selectedIndex: currentActive,
           transitionDuration: const Duration(milliseconds: 800),
           internalAnimations: true,
+          
           trailingNavRail: const _CalloutBell(),
         );
       },
