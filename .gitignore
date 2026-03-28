@@ -3,3 +3,4 @@ scripts/__pycache__/
 .DS_Store
 .cargo/config.toml
 .vscode/
+docs/

@@ -16,8 +16,22 @@ Future<Set<int>> readClientWalletAccess(
   }
   return {
     for (final entry in response.listWalletAccessResponse.accesses)
-      if (entry.access != null && entry.access.sdkClientId == clientId) entry.access.walletId,
+      if (entry.access.sdkClientId == clientId) entry.access.walletId,
   };
+}
+
+Future<List<SdkClientWalletAccess>> listAllWalletAccesses(
+  Connection connection,
+) async {
+  final response = await connection.ask(
+    UserAgentRequest(listWalletAccess: Empty()),
+  );
+  if (!response.hasListWalletAccessResponse()) {
+    throw Exception(
+      'Expected list wallet access response, got ${response.whichPayload()}',
+    );
+  }
+  return response.listWalletAccessResponse.accesses.toList(growable: false);
 }
 
 Future<void> writeClientWalletAccess(
