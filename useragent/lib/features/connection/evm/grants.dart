@@ -29,17 +29,27 @@ Future<List<GrantEntry>> listEvmGrants(Connection connection) async {
 
 Future<int> createEvmGrant(
   Connection connection, {
-  required int clientId,
-  required int walletId,
-  required Int64 chainId,
-  DateTime? validFrom,
-  DateTime? validUntil,
-  List<int>? maxGasFeePerGas,
-  List<int>? maxPriorityFeePerGas,
-  TransactionRateLimit? rateLimit,
+  required SharedSettings sharedSettings,
   required SpecificGrant specific,
 }) async {
-  throw UnimplementedError('EVM grant creation is not yet implemented.');
+  final request = UserAgentRequest(
+    evmGrantCreate: EvmGrantCreateRequest(
+      shared: sharedSettings,
+      specific: specific,
+    ),
+  );
+
+  final resp = await connection.ask(request);
+
+  if (!resp.hasEvmGrantCreate()) {
+    throw Exception(
+      'Expected EVM grant create response, got ${resp.whichPayload()}',
+    );
+  }
+
+  final result = resp.evmGrantCreate;
+
+  return result.grantId;
 }
 
 Future<void> deleteEvmGrant(Connection connection, int grantId) async {
