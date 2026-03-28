@@ -15,11 +15,11 @@ class ServerConnectionScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final connectionState = ref.watch(connectionManagerProvider);
 
-    if (connectionState.value != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    ref.listen(connectionManagerProvider, (_, next) {
+      if (next.value != null && context.mounted) {
         context.router.replace(const VaultSetupRoute());
-      });
-    }
+      }
+    });
 
     final body = switch (connectionState) {
       AsyncLoading() => const CircularProgressIndicator(),
