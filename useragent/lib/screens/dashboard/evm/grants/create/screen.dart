@@ -5,6 +5,10 @@ import 'package:arbiter/screens/dashboard/evm/grants/create/grants/ether_transfe
 import 'package:arbiter/screens/dashboard/evm/grants/create/grants/grant_form_handler.dart';
 import 'package:arbiter/screens/dashboard/evm/grants/create/grants/token_transfer_grant.dart';
 import 'package:arbiter/screens/dashboard/evm/grants/create/provider.dart';
+import 'package:arbiter/screens/dashboard/evm/grants/create/fields/chain_id_field.dart';
+import 'package:arbiter/screens/dashboard/evm/grants/create/fields/gas_fee_options_field.dart';
+import 'package:arbiter/screens/dashboard/evm/grants/create/fields/transaction_rate_limit_field.dart';
+import 'package:arbiter/screens/dashboard/evm/grants/create/fields/validity_window_field.dart';
 import 'package:arbiter/screens/dashboard/evm/grants/create/shared_grant_fields.dart';
 import 'package:arbiter/screens/dashboard/evm/grants/create/utils.dart';
 import 'package:arbiter/theme/palette.dart';
@@ -101,8 +105,64 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
               const _IntroCard(),
               SizedBox(height: 1.8.h),
               const _Section(
-                title: 'Shared grant options',
-                child: SharedGrantFields(),
+                title: 'Authorization',
+                tooltip: 'Select which SDK client receives this grant and '
+                    'which of its wallet accesses it applies to.',
+                child: AuthorizationFields(),
+              ),
+              SizedBox(height: 1.8.h),
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Expanded(
+                      child: _Section(
+                        title: 'Chain',
+                        tooltip: 'Restrict this grant to a specific EVM chain ID. '
+                            'Leave empty to allow any chain.',
+                        optional: true,
+                        child: ChainIdField(),
+                      ),
+                    ),
+                    SizedBox(width: 1.8.w),
+                    const Expanded(
+                      child: _Section(
+                        title: 'Timing',
+                        tooltip: 'Set an optional validity window. '
+                            'Signing requests outside this period will be rejected.',
+                        optional: true,
+                        child: ValidityWindowField(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 1.8.h),
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Expanded(
+                      child: _Section(
+                        title: 'Gas limits',
+                        tooltip: 'Cap the gas fees this grant may authorize. '
+                            'Transactions exceeding these values will be rejected.',
+                        optional: true,
+                        child: GasFeeOptionsField(),
+                      ),
+                    ),
+                    SizedBox(width: 1.8.w),
+                    const Expanded(
+                      child: _Section(
+                        title: 'Transaction limits',
+                        tooltip: 'Limit how many transactions can be signed '
+                            'within a rolling time window.',
+                        optional: true,
+                        child: TransactionRateLimitField(),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               SizedBox(height: 1.8.h),
               _GrantTypeSelector(
@@ -112,6 +172,8 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
               SizedBox(height: 1.8.h),
               _Section(
                 title: 'Grant-specific options',
+                tooltip: 'Rules specific to the selected transfer type. '
+                    'Switch between Ether and token above to change these fields.',
                 child: handler.buildForm(context, ref),
               ),
               SizedBox(height: 2.2.h),
@@ -175,13 +237,21 @@ class _IntroCard extends StatelessWidget {
 }
 
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child});
+  const _Section({
+    required this.title,
+    required this.tooltip,
+    required this.child,
+    this.optional = false,
+  });
 
   final String title;
+  final String tooltip;
   final Widget child;
+  final bool optional;
 
   @override
   Widget build(BuildContext context) {
+    final subtleColor = Theme.of(context).colorScheme.outline;
     return Container(
       padding: EdgeInsets.all(2.h),
       decoration: BoxDecoration(
@@ -192,11 +262,33 @@ class _Section extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
+          Row(
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              SizedBox(width: 0.4.w),
+              Tooltip(
+                message: tooltip,
+                child: Icon(
+                  Icons.info_outline_rounded,
+                  size: 16,
+                  color: subtleColor,
                 ),
+              ),
+              if (optional) ...[
+                SizedBox(width: 0.6.w),
+                Text(
+                  '(optional)',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: subtleColor,
+                      ),
+                ),
+              ],
+            ],
           ),
           SizedBox(height: 1.4.h),
           child,
