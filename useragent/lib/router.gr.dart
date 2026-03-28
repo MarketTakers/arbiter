@@ -18,7 +18,7 @@ import 'package:arbiter/screens/dashboard/clients/details/client_details.dart'
     as _i4;
 import 'package:arbiter/screens/dashboard/clients/table.dart' as _i5;
 import 'package:arbiter/screens/dashboard/evm/evm.dart' as _i9;
-import 'package:arbiter/screens/dashboard/evm/grants/grant_create.dart' as _i6;
+import 'package:arbiter/screens/dashboard/evm/grants/create/screen.dart' as _i6;
 import 'package:arbiter/screens/dashboard/evm/grants/grants.dart' as _i8;
 import 'package:arbiter/screens/server_connection.dart' as _i10;
 import 'package:arbiter/screens/server_info_setup.dart' as _i11;
