@@ -9,7 +9,12 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 const breakpoints = MaterialAdaptiveBreakpoints();
 
-final routes = [const EvmRoute(), const ClientsRoute(), const AboutRoute()];
+final routes = [
+  const EvmRoute(),
+  const ClientsRoute(),
+  const EvmGrantsRoute(),
+  const AboutRoute(),
+];
 
 @RoutePage()
 class DashboardRouter extends StatelessWidget {
@@ -37,6 +42,11 @@ class DashboardRouter extends StatelessWidget {
               icon: Icon(Icons.devices_other_outlined),
               selectedIcon: Icon(Icons.devices_other),
               label: "Clients",
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.policy_outlined),
+              selectedIcon: Icon(Icons.policy),
+              label: "Grants",
             ),
             NavigationDestination(
               icon: Icon(Icons.info_outline),

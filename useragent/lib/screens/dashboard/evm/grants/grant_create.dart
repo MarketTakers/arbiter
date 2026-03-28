@@ -1,12 +1,16 @@
 import 'package:arbiter/proto/evm.pb.dart';
+import 'package:arbiter/proto/user_agent.pb.dart';
 import 'package:arbiter/providers/evm/evm.dart';
 import 'package:arbiter/providers/evm/evm_grants.dart';
+import 'package:arbiter/providers/sdk_clients/list.dart';
+import 'package:arbiter/providers/sdk_clients/wallet_access_list.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:hooks_riverpod/experimental/mutation.dart';
+import 'package:protobuf/well_known_types/google/protobuf/timestamp.pb.dart';
 import 'package:sizer/sizer.dart';
 
 @RoutePage()
@@ -15,11 +19,10 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final wallets = ref.watch(evmProvider).asData?.value ?? const <WalletEntry>[];
     final createMutation = ref.watch(createEvmGrantMutation);
 
-    final selectedWalletIndex = useState<int?>(wallets.isEmpty ? null : 0);
-    final clientIdController = useTextEditingController();
+    final selectedClientId = useState<int?>(null);
+    final selectedWalletAccessId = useState<int?>(null);
     final chainIdController = useTextEditingController(text: '1');
     final gasFeeController = useTextEditingController();
     final priorityFeeController = useTextEditingController();
@@ -40,14 +43,13 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
     ]);
 
     Future<void> submit() async {
-      final selectedWallet = selectedWalletIndex.value;
-      if (selectedWallet == null) {
-        _showCreateMessage(context, 'At least one wallet is required.');
+      final accessId = selectedWalletAccessId.value;
+      if (accessId == null) {
+        _showCreateMessage(context, 'Select a client and wallet access.');
         return;
       }
 
       try {
-        final clientId = int.parse(clientIdController.text.trim());
         final chainId = Int64.parseInt(chainIdController.text.trim());
         final rateLimit = _buildRateLimit(
           txCountController.text,
@@ -83,16 +85,25 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
           _ => throw Exception('Unsupported grant type.'),
         };
 
+        final sharedSettings = SharedSettings(
+          walletAccessId: accessId,
+          chainId: chainId,
+        );
+        if (validFrom.value != null) {
+          sharedSettings.validFrom = _toTimestamp(validFrom.value!);
+        }
+        if (validUntil.value != null) {
+          sharedSettings.validUntil = _toTimestamp(validUntil.value!);
+        }
+        final gasBytes = _optionalBigIntBytes(gasFeeController.text);
+        if (gasBytes != null) sharedSettings.maxGasFeePerGas = gasBytes;
+        final priorityBytes = _optionalBigIntBytes(priorityFeeController.text);
+        if (priorityBytes != null) sharedSettings.maxPriorityFeePerGas = priorityBytes;
+        if (rateLimit != null) sharedSettings.rateLimit = rateLimit;
+
         await executeCreateEvmGrant(
           ref,
-          clientId: clientId,
-          walletId: selectedWallet + 1,
-          chainId: chainId,
-          validFrom: validFrom.value,
-          validUntil: validUntil.value,
-          maxGasFeePerGas: _optionalBigIntBytes(gasFeeController.text),
-          maxPriorityFeePerGas: _optionalBigIntBytes(priorityFeeController.text),
-          rateLimit: rateLimit,
+          sharedSettings: sharedSettings,
           specific: specific,
         );
         if (!context.mounted) {
@@ -113,22 +124,23 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
         child: ListView(
           padding: EdgeInsets.fromLTRB(2.4.w, 2.h, 2.4.w, 3.2.h),
           children: [
-            _CreateIntroCard(walletCount: wallets.length),
+            const _CreateIntroCard(),
             SizedBox(height: 1.8.h),
             _CreateSection(
               title: 'Shared grant options',
               children: [
-                _WalletPickerField(
-                  wallets: wallets,
-                  selectedIndex: selectedWalletIndex.value,
-                  onChanged: (value) => selectedWalletIndex.value = value,
+                _ClientPickerField(
+                  selectedClientId: selectedClientId.value,
+                  onChanged: (clientId) {
+                    selectedClientId.value = clientId;
+                    selectedWalletAccessId.value = null;
+                  },
                 ),
-                _NumberInputField(
-                  controller: clientIdController,
-                  label: 'Client ID',
-                  hint: '42',
-                  helper:
-                      'Manual for now. The app does not yet expose a client picker.',
+                _WalletAccessPickerField(
+                  selectedClientId: selectedClientId.value,
+                  selectedAccessId: selectedWalletAccessId.value,
+                  onChanged: (accessId) =>
+                      selectedWalletAccessId.value = accessId,
                 ),
                 _NumberInputField(
                   controller: chainIdController,
@@ -204,9 +216,7 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
 }
 
 class _CreateIntroCard extends StatelessWidget {
-  const _CreateIntroCard({required this.walletCount});
-
-  final int walletCount;
+  const _CreateIntroCard();
 
   @override
   Widget build(BuildContext context) {
@@ -222,7 +232,7 @@ class _CreateIntroCard extends StatelessWidget {
         border: Border.all(color: const Color(0x1A17324A)),
       ),
       child: Text(
-        'Compose shared constraints once, then switch between Ether and token transfer rules. $walletCount wallet${walletCount == 1 ? '' : 's'} currently available.',
+        'Pick a client, then select one of the wallet accesses already granted to it. Compose shared constraints once, then switch between Ether and token transfer rules.',
         style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
       ),
     );
@@ -266,37 +276,98 @@ class _CreateSection extends StatelessWidget {
   }
 }
 
-class _WalletPickerField extends StatelessWidget {
-  const _WalletPickerField({
-    required this.wallets,
-    required this.selectedIndex,
+class _ClientPickerField extends ConsumerWidget {
+  const _ClientPickerField({
+    required this.selectedClientId,
     required this.onChanged,
   });
 
-  final List<WalletEntry> wallets;
-  final int? selectedIndex;
+  final int? selectedClientId;
   final ValueChanged<int?> onChanged;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final clients =
+        ref.watch(sdkClientsProvider).asData?.value ?? const <SdkClientEntry>[];
+
     return DropdownButtonFormField<int>(
-      initialValue: selectedIndex,
+      value: clients.any((c) => c.id == selectedClientId)
+          ? selectedClientId
+          : null,
       decoration: const InputDecoration(
-        labelText: 'Wallet',
-        helperText:
-            'Uses the current wallet order. The API still does not expose stable wallet IDs directly.',
+        labelText: 'Client',
         border: OutlineInputBorder(),
       ),
       items: [
-        for (var i = 0; i < wallets.length; i++)
+        for (final c in clients)
           DropdownMenuItem(
-            value: i,
+            value: c.id,
             child: Text(
-              'Wallet ${(i + 1).toString().padLeft(2, '0')} · ${_shortAddress(wallets[i].address)}',
+              c.info.name.isEmpty ? 'Client #${c.id}' : c.info.name,
             ),
           ),
       ],
-      onChanged: wallets.isEmpty ? null : onChanged,
+      onChanged: clients.isEmpty ? null : onChanged,
+    );
+  }
+}
+
+class _WalletAccessPickerField extends ConsumerWidget {
+  const _WalletAccessPickerField({
+    required this.selectedClientId,
+    required this.selectedAccessId,
+    required this.onChanged,
+  });
+
+  final int? selectedClientId;
+  final int? selectedAccessId;
+  final ValueChanged<int?> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final allAccesses =
+        ref.watch(walletAccessListProvider).asData?.value ??
+        const <SdkClientWalletAccess>[];
+    final wallets =
+        ref.watch(evmProvider).asData?.value ?? const <WalletEntry>[];
+
+    final walletById = <int, WalletEntry>{
+      for (final w in wallets) w.id: w,
+    };
+
+    final accesses = selectedClientId == null
+        ? const <SdkClientWalletAccess>[]
+        : allAccesses
+              .where((a) => a.access.sdkClientId == selectedClientId)
+              .toList();
+
+    final effectiveValue =
+        accesses.any((a) => a.id == selectedAccessId) ? selectedAccessId : null;
+
+    return DropdownButtonFormField<int>(
+      value: effectiveValue,
+      decoration: InputDecoration(
+        labelText: 'Wallet access',
+        helperText: selectedClientId == null
+            ? 'Select a client first'
+            : accesses.isEmpty
+            ? 'No wallet accesses for this client'
+            : null,
+        border: const OutlineInputBorder(),
+      ),
+      items: [
+        for (final a in accesses)
+          DropdownMenuItem(
+            value: a.id,
+            child: Text(() {
+              final wallet = walletById[a.access.walletId];
+              return wallet != null
+                  ? _shortAddress(wallet.address)
+                  : 'Wallet #${a.access.walletId}';
+            }()),
+          ),
+      ],
+      onChanged: accesses.isEmpty ? null : onChanged,
     );
   }
 }
@@ -733,6 +804,13 @@ class _VolumeLimitValue {
       windowSeconds: windowSeconds ?? this.windowSeconds,
     );
   }
+}
+
+Timestamp _toTimestamp(DateTime value) {
+  final utc = value.toUtc();
+  return Timestamp()
+    ..seconds = Int64(utc.millisecondsSinceEpoch ~/ 1000)
+    ..nanos = (utc.microsecondsSinceEpoch % 1000000) * 1000;
 }
 
 TransactionRateLimit? _buildRateLimit(String countText, String windowText) {
