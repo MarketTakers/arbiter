@@ -8,7 +8,15 @@ backend = "aqua:ast-grep/ast-grep"
 checksum = "sha256:5c830eae8456569e2f7212434ed9c238f58dca412d76045418ed6d394a755836"
 url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.0/app-aarch64-unknown-linux-gnu.zip"
 
+[tools.ast-grep."platforms.linux-arm64-musl"]
+checksum = "sha256:5c830eae8456569e2f7212434ed9c238f58dca412d76045418ed6d394a755836"
+url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.0/app-aarch64-unknown-linux-gnu.zip"
+
 [tools.ast-grep."platforms.linux-x64"]
+checksum = "sha256:e825a05603f0bcc4cd9076c4cc8c9abd6d008b7cd07d9aa3cc323ba4b8606651"
+url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.0/app-x86_64-unknown-linux-gnu.zip"
+
+[tools.ast-grep."platforms.linux-x64-musl"]
 checksum = "sha256:e825a05603f0bcc4cd9076c4cc8c9abd6d008b7cd07d9aa3cc323ba4b8606651"
 url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.0/app-x86_64-unknown-linux-gnu.zip"
 
@@ -32,10 +40,6 @@ backend = "cargo:cargo-audit"
 version = "0.13.9"
 backend = "cargo:cargo-edit"
 
-[[tools."cargo:cargo-features"]]
-version = "1.0.0"
-backend = "cargo:cargo-features"
-
 [[tools."cargo:cargo-features-manager"]]
 version = "0.11.1"
 backend = "cargo:cargo-features-manager"
@@ -49,20 +53,12 @@ version = "0.9.126"
 backend = "cargo:cargo-nextest"
 
 [[tools."cargo:cargo-shear"]]
-version = "1.9.1"
+version = "1.11.2"
 backend = "cargo:cargo-shear"
 
 [[tools."cargo:cargo-vet"]]
 version = "0.10.2"
 backend = "cargo:cargo-vet"
-
-[[tools."cargo:diesel-cli"]]
-version = "2.3.6"
-backend = "cargo:diesel-cli"
-
-[tools."cargo:diesel-cli".options]
-default-features = "false"
-features = "sqlite,sqlite-bundled"
 
 [[tools."cargo:diesel_cli"]]
 version = "2.3.6"
@@ -71,10 +67,6 @@ backend = "cargo:diesel_cli"
 [tools."cargo:diesel_cli".options]
 default-features = "false"
 features = "sqlite,sqlite-bundled"
-
-[[tools."cargo:rinf_cli"]]
-version = "8.9.1"
-backend = "cargo:rinf_cli"
 
 [[tools.flutter]]
 version = "3.38.9-stable"
@@ -88,7 +80,15 @@ backend = "aqua:protocolbuffers/protobuf/protoc"
 checksum = "sha256:2594ff4fcae8cb57310d394d0961b236190ad9c5efbfdf1f597ea471d424fe79"
 url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-linux-aarch_64.zip"
 
+[tools.protoc."platforms.linux-arm64-musl"]
+checksum = "sha256:2594ff4fcae8cb57310d394d0961b236190ad9c5efbfdf1f597ea471d424fe79"
+url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-linux-aarch_64.zip"
+
 [tools.protoc."platforms.linux-x64"]
+checksum = "sha256:48785a926e73ffa3f68e2f22b14e7b849620c7a1d36809ac9249a5495e280323"
+url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-linux-x86_64.zip"
+
+[tools.protoc."platforms.linux-x64-musl"]
 checksum = "sha256:48785a926e73ffa3f68e2f22b14e7b849620c7a1d36809ac9249a5495e280323"
 url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-linux-x86_64.zip"
 
@@ -109,24 +109,32 @@ version = "3.14.3"
 backend = "core:python"
 
 [tools.python."platforms.linux-arm64"]
-checksum = "sha256:be0f4dc2932f762292b27d46ea7d3e8e66ddf3969a5eb0254a229015ed402625"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260303/cpython-3.14.3+20260303-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+checksum = "sha256:53700338695e402a1a1fe22be4a41fbdacc70e22bb308a48eca8ed67cb7992be"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260324/cpython-3.14.3+20260324-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+
+[tools.python."platforms.linux-arm64-musl"]
+checksum = "sha256:53700338695e402a1a1fe22be4a41fbdacc70e22bb308a48eca8ed67cb7992be"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260324/cpython-3.14.3+20260324-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
 
 [tools.python."platforms.linux-x64"]
-checksum = "sha256:0a73413f89efd417871876c9accaab28a9d1e3cd6358fbfff171a38ec99302f0"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260303/cpython-3.14.3+20260303-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+checksum = "sha256:d7a9f970914bb4c88756fe3bdcc186d4feb90e9500e54f1db47dae4dc9687e39"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260324/cpython-3.14.3+20260324-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+
+[tools.python."platforms.linux-x64-musl"]
+checksum = "sha256:d7a9f970914bb4c88756fe3bdcc186d4feb90e9500e54f1db47dae4dc9687e39"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260324/cpython-3.14.3+20260324-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
 
 [tools.python."platforms.macos-arm64"]
-checksum = "sha256:4703cdf18b26798fde7b49b6b66149674c25f97127be6a10dbcf29309bdcdcdb"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260303/cpython-3.14.3+20260303-aarch64-apple-darwin-install_only_stripped.tar.gz"
+checksum = "sha256:c43aecde4a663aebff99b9b83da0efec506479f1c3f98331442f33d2c43501f9"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260324/cpython-3.14.3+20260324-aarch64-apple-darwin-install_only_stripped.tar.gz"
 
 [tools.python."platforms.macos-x64"]
-checksum = "sha256:76f1cc26e3d262eae8ca546a93e8bded10cf0323613f7e246fea2e10a8115eb7"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260303/cpython-3.14.3+20260303-x86_64-apple-darwin-install_only_stripped.tar.gz"
+checksum = "sha256:9ab41dbc2f100a2a45d1833b9c11165f51051c558b5213eda9a9731d5948a0c0"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260324/cpython-3.14.3+20260324-x86_64-apple-darwin-install_only_stripped.tar.gz"
 
 [tools.python."platforms.windows-x64"]
-checksum = "sha256:950c5f21a015c1bdd1337f233456df2470fab71e4d794407d27a84cb8b9909a0"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260303/cpython-3.14.3+20260303-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
+checksum = "sha256:bbe19034b35b0267176a7442575ae7dc6343480fd4d35598cb7700173d431e09"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260324/cpython-3.14.3+20260324-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
 
 [[tools.rust]]
 version = "1.93.0"
