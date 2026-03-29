@@ -8,6 +8,30 @@ pub mod proto {
 
     pub mod user_agent {
         tonic::include_proto!("arbiter.user_agent");
+
+        pub mod auth {
+            tonic::include_proto!("arbiter.user_agent.auth");
+        }
+
+        pub mod evm {
+            tonic::include_proto!("arbiter.user_agent.evm");
+        }
+
+        pub mod sdk_client {
+            tonic::include_proto!("arbiter.user_agent.sdk_client");
+        }
+
+        pub mod vault {
+            tonic::include_proto!("arbiter.user_agent.vault");
+
+            pub mod bootstrap {
+                tonic::include_proto!("arbiter.user_agent.vault.bootstrap");
+            }
+
+            pub mod unseal {
+                tonic::include_proto!("arbiter.user_agent.vault.unseal");
+            }
+        }
     }
 
     pub mod client {

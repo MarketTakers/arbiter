@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package arbiter.user_agent.vault;
+
+import "google/protobuf/empty.proto";
+import "user_agent/vault/bootstrap.proto";
+import "user_agent/vault/unseal.proto";
+
+enum VaultState {
+  VAULT_STATE_UNSPECIFIED = 0;
+  VAULT_STATE_UNBOOTSTRAPPED = 1;
+  VAULT_STATE_SEALED = 2;
+  VAULT_STATE_UNSEALED = 3;
+  VAULT_STATE_ERROR = 4;
+}
+
+message Request {
+  oneof payload {
+    google.protobuf.Empty query_state = 1;
+    unseal.Request unseal = 2;
+    bootstrap.Request bootstrap = 3;
+  }
+}
+
+message Response {
+  oneof payload {
+    VaultState state = 1;
+    unseal.Response unseal = 2;
+    bootstrap.Response bootstrap = 3;
+  }
+}
