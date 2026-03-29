@@ -101,6 +101,7 @@ async fn query_relevant_past_transfers(
 
 async fn check_volume_rate_limits(
     grant: &Grant<Settings>,
+    current_transfer_value: U256,
     db: &mut impl AsyncConnection<Backend = Sqlite>,
 ) -> QueryResult<Vec<EvalViolation>> {
     let mut violations = Vec::new();
@@ -113,12 +114,12 @@ async fn check_volume_rate_limits(
 
     for limit in &grant.settings.volume_limits {
         let window_start = chrono::Utc::now() - limit.window;
-        let cumulative_volume: U256 = past_transfers
+        let prospective_cumulative_volume: U256 = past_transfers
             .iter()
             .filter(|(_, timestamp)| timestamp >= &window_start)
-            .fold(U256::default(), |acc, (value, _)| acc + *value);
+            .fold(current_transfer_value, |acc, (value, _)| acc + *value);
 
-        if cumulative_volume > limit.max_volume {
+        if prospective_cumulative_volume > limit.max_volume {
             violations.push(EvalViolation::VolumetricLimitExceeded);
             break;
         }
@@ -163,7 +164,7 @@ impl Policy for TokenTransfer {
             violations.push(EvalViolation::InvalidTarget { target: meaning.to });
         }
 
-        let rate_violations = check_volume_rate_limits(grant, db).await?;
+        let rate_violations = check_volume_rate_limits(grant, meaning.value, db).await?;
         violations.extend(rate_violations);
 
         Ok(violations)
