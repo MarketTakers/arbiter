@@ -1,12 +1,14 @@
 use arbiter_proto::transport::Bi;
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, update};
 use diesel_async::RunQueryDsl;
+use kameo::error::SendError;
 use tracing::error;
 
 use super::Error;
 use crate::{
     actors::{
         bootstrap::ConsumeToken,
+        keyholder::{self, SignUseragentPubkeyIntegrityTag},
         user_agent::{AuthPublicKey, UserAgentConnection, auth::Outbound},
     },
     db::schema,
@@ -40,7 +42,11 @@ smlang::statemachine!(
     }
 );
 
-async fn create_nonce(db: &crate::db::DatabasePool, pubkey_bytes: &[u8]) -> Result<i32, Error> {
+async fn create_nonce(
+    db: &crate::db::DatabasePool,
+    pubkey_bytes: &[u8],
+    key_type: crate::db::models::KeyType,
+) -> Result<i32, Error> {
     let mut db_conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
         Error::internal("Database unavailable")
@@ -50,12 +56,14 @@ async fn create_nonce(db: &crate::db::DatabasePool, pubkey_bytes: &[u8]) -> Resu
             Box::pin(async move {
                 let current_nonce = schema::useragent_client::table
                     .filter(schema::useragent_client::public_key.eq(pubkey_bytes.to_vec()))
+                    .filter(schema::useragent_client::key_type.eq(key_type))
                     .select(schema::useragent_client::nonce)
                     .first::<i32>(conn)
                     .await?;
 
                 update(schema::useragent_client::table)
                     .filter(schema::useragent_client::public_key.eq(pubkey_bytes.to_vec()))
+                    .filter(schema::useragent_client::key_type.eq(key_type))
                     .set(schema::useragent_client::nonce.eq(current_nonce + 1))
                     .execute(conn)
                     .await?;
@@ -75,7 +83,11 @@ async fn create_nonce(db: &crate::db::DatabasePool, pubkey_bytes: &[u8]) -> Resu
         })
 }
 
-async fn register_key(db: &crate::db::DatabasePool, pubkey: &AuthPublicKey) -> Result<(), Error> {
+async fn register_key(
+    db: &crate::db::DatabasePool,
+    pubkey: &AuthPublicKey,
+    integrity_tag: Option<Vec<u8>>,
+) -> Result<(), Error> {
     let pubkey_bytes = pubkey.to_stored_bytes();
     let key_type = pubkey.key_type();
     let mut conn = db.get().await.map_err(|e| {
@@ -88,6 +100,7 @@ async fn register_key(db: &crate::db::DatabasePool, pubkey: &AuthPublicKey) -> R
             schema::useragent_client::public_key.eq(pubkey_bytes),
             schema::useragent_client::nonce.eq(1),
             schema::useragent_client::key_type.eq(key_type),
+            schema::useragent_client::pubkey_integrity_tag.eq(integrity_tag),
         ))
         .execute(&mut conn)
         .await
@@ -120,8 +133,11 @@ where
         &mut self,
         ChallengeRequest { pubkey }: ChallengeRequest,
     ) -> Result<ChallengeContext, Self::Error> {
+        self.verify_pubkey_integrity_before_challenge(&pubkey)
+            .await?;
+
         let stored_bytes = pubkey.to_stored_bytes();
-        let nonce = create_nonce(&self.conn.db, &stored_bytes).await?;
+        let nonce = create_nonce(&self.conn.db, &stored_bytes, pubkey.key_type()).await?;
 
         self.transport
             .send(Ok(Outbound::AuthChallenge { nonce }))
@@ -161,7 +177,15 @@ where
             return Err(Error::InvalidBootstrapToken);
         }
 
-        register_key(&self.conn.db, &pubkey).await?;
+        let integrity_tag = self
+            .try_sign_pubkey_integrity_tag(&pubkey)
+            .await
+            .map_err(|err| {
+                error!(?err, "Failed to sign user-agent pubkey integrity tag");
+                Error::internal("Failed to sign user-agent pubkey integrity tag")
+            })?;
+
+        register_key(&self.conn.db, &pubkey, integrity_tag).await?;
 
         self.transport
             .send(Ok(Outbound::AuthSuccess))
@@ -218,5 +242,93 @@ where
         }
 
         Ok(key.clone())
+    }
+}
+
+impl<T> AuthContext<'_, T>
+where
+    T: Bi<super::Inbound, Result<super::Outbound, Error>> + Send,
+{
+    async fn try_sign_pubkey_integrity_tag(
+        &self,
+        pubkey: &AuthPublicKey,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let signed = self
+            .conn
+            .actors
+            .key_holder
+            .ask(SignUseragentPubkeyIntegrityTag {
+                public_key: pubkey.to_stored_bytes(),
+                key_type: pubkey.key_type(),
+            })
+            .await;
+
+        match signed {
+            Ok(tag) => Ok(Some(tag)),
+            Err(SendError::HandlerError(keyholder::Error::NotBootstrapped)) => Ok(None),
+            Err(SendError::HandlerError(err)) => {
+                error!(
+                    ?err,
+                    "Keyholder failed to sign user-agent pubkey integrity tag"
+                );
+                Err(Error::internal(
+                    "Keyholder failed to sign user-agent pubkey integrity tag",
+                ))
+            }
+            Err(err) => {
+                error!(
+                    ?err,
+                    "Failed to contact keyholder for user-agent pubkey integrity tag"
+                );
+                Err(Error::internal(
+                    "Failed to contact keyholder for user-agent pubkey integrity tag",
+                ))
+            }
+        }
+    }
+
+    async fn verify_pubkey_integrity_before_challenge(
+        &self,
+        pubkey: &AuthPublicKey,
+    ) -> Result<(), Error> {
+        let stored_tag: Option<Option<Vec<u8>>> = {
+            let mut conn = self.conn.db.get().await.map_err(|e| {
+                error!(error = ?e, "Database pool error");
+                Error::internal("Database unavailable")
+            })?;
+
+            schema::useragent_client::table
+                .filter(schema::useragent_client::public_key.eq(pubkey.to_stored_bytes()))
+                .filter(schema::useragent_client::key_type.eq(pubkey.key_type()))
+                .select(schema::useragent_client::pubkey_integrity_tag)
+                .first::<Option<Vec<u8>>>(&mut conn)
+                .await
+                .optional()
+                .map_err(|e| {
+                    error!(error = ?e, "Database error");
+                    Error::internal("Database operation failed")
+                })?
+        };
+
+        let Some(stored_tag) = stored_tag else {
+            return Err(Error::UnregisteredPublicKey);
+        };
+
+        let Some(expected_tag) = self.try_sign_pubkey_integrity_tag(pubkey).await? else {
+            // Vault sealed/unbootstrapped: cannot verify integrity yet.
+            return Ok(());
+        };
+
+        let Some(stored_tag) = stored_tag else {
+            error!("Missing pubkey integrity tag for registered key while vault is unsealed");
+            return Err(Error::InvalidChallengeSolution);
+        };
+
+        if stored_tag != expected_tag {
+            error!("User-agent pubkey integrity tag mismatch");
+            return Err(Error::InvalidChallengeSolution);
+        }
+
+        Ok(())
     }
 }

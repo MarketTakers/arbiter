@@ -49,6 +49,7 @@ pem = "3.0.6"
 k256.workspace = true
 rsa.workspace = true
 sha2.workspace = true
+hmac = "0.12"
 spki.workspace = true
 alloy.workspace = true
 prost-types.workspace = true

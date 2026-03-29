@@ -2,14 +2,17 @@ use arbiter_server::{
     actors::{
         GlobalActors,
         keyholder::{Bootstrap, Seal},
-        user_agent::{UserAgentSession, session::connection::{
-            HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError,
-        }},
+        user_agent::{
+            UserAgentSession,
+            session::connection::{HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError},
+        },
     },
     db,
     safe_cell::{SafeCell, SafeCellHandle as _},
 };
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
+use diesel::{ExpressionMethods as _, QueryDsl as _, insert_into};
+use diesel_async::RunQueryDsl;
 use kameo::actor::Spawn as _;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
@@ -147,5 +150,44 @@ pub async fn test_unseal_retry_after_invalid_key() {
 
         let response = user_agent.ask(encrypted_key).await;
         assert!(matches!(response, Ok(())));
+    }
+}
+
+#[tokio::test]
+#[test_log::test]
+pub async fn test_unseal_backfills_missing_pubkey_integrity_tags() {
+    let seal_key = b"test-seal-key";
+    let (db, user_agent) = setup_sealed_user_agent(seal_key).await;
+
+    {
+        let mut conn = db.get().await.unwrap();
+        insert_into(arbiter_server::db::schema::useragent_client::table)
+            .values((
+                arbiter_server::db::schema::useragent_client::public_key
+                    .eq(vec![1u8, 2u8, 3u8, 4u8]),
+                arbiter_server::db::schema::useragent_client::key_type.eq(1i32),
+                arbiter_server::db::schema::useragent_client::pubkey_integrity_tag
+                    .eq(Option::<Vec<u8>>::None),
+            ))
+            .execute(&mut conn)
+            .await
+            .unwrap();
+    }
+
+    let encrypted_key = client_dh_encrypt(&user_agent, seal_key).await;
+    let response = user_agent.ask(encrypted_key).await;
+    assert!(matches!(response, Ok(())));
+
+    {
+        let mut conn = db.get().await.unwrap();
+        let tags: Vec<Option<Vec<u8>>> = arbiter_server::db::schema::useragent_client::table
+            .select(arbiter_server::db::schema::useragent_client::pubkey_integrity_tag)
+            .load(&mut conn)
+            .await
+            .unwrap();
+        assert!(
+            tags.iter()
+                .all(|tag| matches!(tag, Some(v) if v.len() == 32))
+        );
     }
 }
