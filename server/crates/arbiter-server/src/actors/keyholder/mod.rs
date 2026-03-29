@@ -32,6 +32,7 @@ enum State {
     Unsealed {
         root_key_history_id: i32,
         root_key: KeyCell,
+        useragent_integrity_key: KeyCell,
     },
 }
 
@@ -145,6 +146,7 @@ impl KeyHolder {
         }
         let salt = v1::generate_salt();
         let mut seal_key = v1::derive_seal_key(seal_key_raw, &salt);
+        let useragent_integrity_key = v1::derive_useragent_integrity_key(&mut seal_key);
         let mut root_key = KeyCell::new_secure_random();
 
         // Zero nonces are fine because they are one-time
@@ -193,6 +195,7 @@ impl KeyHolder {
         self.state = State::Unsealed {
             root_key,
             root_key_history_id,
+            useragent_integrity_key,
         };
 
         info!("Keyholder bootstrapped successfully");
@@ -226,6 +229,7 @@ impl KeyHolder {
             Error::BrokenDatabase
         })?;
         let mut seal_key = v1::derive_seal_key(seal_key_raw, &salt);
+        let useragent_integrity_key = v1::derive_useragent_integrity_key(&mut seal_key);
 
         let mut root_key = SafeCell::new(current_key.ciphertext.clone());
 
@@ -249,6 +253,7 @@ impl KeyHolder {
                 error!(?err, "Broken database: invalid encryption key size");
                 Error::BrokenDatabase
             })?,
+            useragent_integrity_key,
         };
 
         info!("Keyholder unsealed successfully");
@@ -257,6 +262,28 @@ impl KeyHolder {
     }
 
     // Decrypts the `aead_encrypted` entry with the given ID and returns the plaintext
+    #[message]
+    pub fn sign_useragent_pubkey_integrity_tag(
+        &mut self,
+        public_key: Vec<u8>,
+        key_type: models::KeyType,
+    ) -> Result<Vec<u8>, Error> {
+        let State::Unsealed {
+            useragent_integrity_key,
+            ..
+        } = &mut self.state
+        else {
+            return Err(Error::NotBootstrapped);
+        };
+
+        let tag = v1::compute_useragent_pubkey_integrity_tag(
+            useragent_integrity_key,
+            key_type as i32,
+            &public_key,
+        );
+        Ok(tag.to_vec())
+    }
+
     #[message]
     pub async fn decrypt(&mut self, aead_id: i32) -> Result<SafeCell<Vec<u8>>, Error> {
         let State::Unsealed { root_key, .. } = &mut self.state else {
@@ -292,6 +319,7 @@ impl KeyHolder {
         let State::Unsealed {
             root_key,
             root_key_history_id,
+            ..
         } = &mut self.state
         else {
             return Err(Error::NotBootstrapped);

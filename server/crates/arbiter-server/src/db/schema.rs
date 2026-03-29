@@ -178,6 +178,7 @@ diesel::table! {
         id -> Integer,
         nonce -> Integer,
         public_key -> Binary,
+        pubkey_integrity_tag -> Nullable<Binary>,
         key_type -> Integer,
         created_at -> Integer,
         updated_at -> Integer,

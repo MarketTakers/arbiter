@@ -242,6 +242,7 @@ pub struct UseragentClient {
     pub id: i32,
     pub nonce: i32,
     pub public_key: Vec<u8>,
+    pub pubkey_integrity_tag: Option<Vec<u8>>,
     pub created_at: SqliteTimestamp,
     pub updated_at: SqliteTimestamp,
     pub key_type: KeyType,
