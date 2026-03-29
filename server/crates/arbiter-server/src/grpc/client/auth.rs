@@ -1,8 +1,10 @@
 use arbiter_proto::{
+    ClientMetadata,
     proto::client::{
         AuthChallenge as ProtoAuthChallenge, AuthChallengeRequest as ProtoAuthChallengeRequest,
         AuthChallengeSolution as ProtoAuthChallengeSolution, AuthResult as ProtoAuthResult,
-        ClientRequest, ClientResponse, client_request::Payload as ClientRequestPayload,
+        ClientInfo as ProtoClientInfo, ClientRequest, ClientResponse,
+        client_request::Payload as ClientRequestPayload,
         client_response::Payload as ClientResponsePayload,
     },
     transport::{Bi, Error as TransportError, Receiver, Sender, grpc::GrpcBi},
@@ -19,19 +21,16 @@ use crate::{
 pub struct AuthTransportAdapter<'a> {
     bi: &'a mut GrpcBi<ClientRequest, ClientResponse>,
     request_tracker: &'a mut RequestTracker,
-    response_id: &'a mut Option<i32>,
 }
 
 impl<'a> AuthTransportAdapter<'a> {
     pub fn new(
         bi: &'a mut GrpcBi<ClientRequest, ClientResponse>,
         request_tracker: &'a mut RequestTracker,
-        response_id: &'a mut Option<i32>,
     ) -> Self {
         Self {
             bi,
             request_tracker,
-            response_id,
         }
     }
 
@@ -57,7 +56,7 @@ impl<'a> AuthTransportAdapter<'a> {
                     ProtoAuthResult::ApprovalDenied
                 }
                 auth::Error::ApproveError(auth::ApproveError::Upstream(
-                    crate::actors::router::ApprovalError::NoUserAgentsConnected,
+                    crate::actors::flow_coordinator::ApprovalError::NoUserAgentsConnected,
                 )) => ProtoAuthResult::NoUserAgentsOnline,
                 auth::Error::ApproveError(auth::ApproveError::Internal)
                 | auth::Error::DatabasePoolUnavailable
@@ -72,11 +71,9 @@ impl<'a> AuthTransportAdapter<'a> {
         &mut self,
         payload: ClientResponsePayload,
     ) -> Result<(), TransportError> {
-        let request_id = self.response_id.take();
-
         self.bi
             .send(Ok(ClientResponse {
-                request_id,
+                request_id: Some(self.request_tracker.current_request_id()),
                 payload: Some(payload),
             }))
             .await
@@ -114,19 +111,27 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
             }
         };
 
-        let request_id = match self.request_tracker.request(request.request_id) {
+        match self.request_tracker.request(request.request_id) {
             Ok(request_id) => request_id,
             Err(error) => {
                 let _ = self.bi.send(Err(error)).await;
                 return None;
             }
         };
-        *self.response_id = Some(request_id);
-
         let payload = request.payload?;
 
         match payload {
-            ClientRequestPayload::AuthChallengeRequest(ProtoAuthChallengeRequest { pubkey }) => {
+            ClientRequestPayload::AuthChallengeRequest(ProtoAuthChallengeRequest {
+                pubkey,
+                client_info,
+            }) => {
+                let Some(client_info) = client_info else {
+                    let _ = self
+                        .bi
+                        .send(Err(Status::invalid_argument("Missing client info")))
+                        .await;
+                    return None;
+                };
                 let Ok(pubkey) = <[u8; 32]>::try_from(pubkey) else {
                     let _ = self.send_auth_result(ProtoAuthResult::InvalidKey).await;
                     return None;
@@ -135,7 +140,10 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
                     let _ = self.send_auth_result(ProtoAuthResult::InvalidKey).await;
                     return None;
                 };
-                Some(auth::Inbound::AuthChallengeRequest { pubkey })
+                Some(auth::Inbound::AuthChallengeRequest {
+                    pubkey,
+                    metadata: client_metadata_from_proto(client_info),
+                })
             }
             ClientRequestPayload::AuthChallengeSolution(ProtoAuthChallengeSolution {
                 signature,
@@ -163,14 +171,19 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
 
 impl Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {}
 
+fn client_metadata_from_proto(metadata: ProtoClientInfo) -> ClientMetadata {
+    ClientMetadata {
+        name: metadata.name,
+        description: metadata.description,
+        version: metadata.version,
+    }
+}
+
 pub async fn start(
     conn: &mut ClientConnection,
     bi: &mut GrpcBi<ClientRequest, ClientResponse>,
     request_tracker: &mut RequestTracker,
-    response_id: &mut Option<i32>,
-) -> Result<(), auth::Error> {
-    let mut transport = AuthTransportAdapter::new(bi, request_tracker, response_id);
-    let authenticated = client::auth::authenticate(conn, &mut transport).await?;
-    conn.client_id = authenticated.client_id;
-    Ok(())
+) -> Result<i32, auth::Error> {
+    let mut transport = AuthTransportAdapter::new(bi, request_tracker);
+    client::auth::authenticate(conn, &mut transport).await
 }

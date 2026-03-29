@@ -6,13 +6,16 @@ use alloy::{
     primitives::{TxKind, U256},
 };
 use chrono::Utc;
-use diesel::{ExpressionMethods as _, QueryDsl, QueryResult, insert_into, sqlite::Sqlite};
+use diesel::{ExpressionMethods as _, QueryDsl as _, QueryResult, insert_into, sqlite::Sqlite};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use tracing_subscriber::registry::Data;
 
 use crate::{
     db::{
-        self,
-        models::{EvmBasicGrant, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp},
+        self, DatabaseError,
+        models::{
+            EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp,
+        },
         schema::{self, evm_transaction_log},
     },
     evm::policies::{
@@ -28,12 +31,8 @@ mod utils;
 /// Errors that can only occur once the transaction meaning is known (during policy evaluation)
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
 pub enum PolicyError {
-    #[error("Database connection pool error")]
-    #[diagnostic(code(arbiter_server::evm::policy_error::pool))]
-    Pool(#[from] db::PoolError),
-    #[error("Database returned error")]
-    #[diagnostic(code(arbiter_server::evm::policy_error::database))]
-    Database(#[from] diesel::result::Error),
+    #[error("Database error")]
+    Database(#[from] crate::db::DatabaseError),
     #[error("Transaction violates policy: {0:?}")]
     #[diagnostic(code(arbiter_server::evm::policy_error::violation))]
     Violations(Vec<EvalViolation>),
@@ -56,16 +55,6 @@ pub enum VetError {
 }
 
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
-pub enum SignError {
-    #[error("Database connection pool error")]
-    #[diagnostic(code(arbiter_server::evm::database_error))]
-    Pool(#[from] db::PoolError),
-    #[error("Database returned error")]
-    #[diagnostic(code(arbiter_server::evm::database_error))]
-    Database(#[from] diesel::result::Error),
-}
-
-#[derive(Debug, thiserror::Error, miette::Diagnostic)]
 pub enum AnalyzeError {
     #[error("Engine doesn't support granting permissions for contract creation")]
     #[diagnostic(code(arbiter_server::evm::analyze_error::contract_creation_not_supported))]
@@ -74,28 +63,6 @@ pub enum AnalyzeError {
     #[error("Unsupported transaction type")]
     #[diagnostic(code(arbiter_server::evm::analyze_error::unsupported_transaction_type))]
     UnsupportedTransactionType,
-}
-
-#[derive(Debug, thiserror::Error, miette::Diagnostic)]
-pub enum CreationError {
-    #[error("Database connection pool error")]
-    #[diagnostic(code(arbiter_server::evm::creation_error::database_error))]
-    Pool(#[from] db::PoolError),
-
-    #[error("Database returned error")]
-    #[diagnostic(code(arbiter_server::evm::creation_error::database_error))]
-    Database(#[from] diesel::result::Error),
-}
-
-#[derive(Debug, thiserror::Error, miette::Diagnostic)]
-pub enum ListGrantsError {
-    #[error("Database connection pool error")]
-    #[diagnostic(code(arbiter_server::evm::list_grants_error::pool))]
-    Pool(#[from] db::PoolError),
-
-    #[error("Database returned error")]
-    #[diagnostic(code(arbiter_server::evm::list_grants_error::database))]
-    Database(#[from] diesel::result::Error),
 }
 
 /// Controls whether a transaction should be executed or only validated
@@ -165,16 +132,22 @@ impl Engine {
         meaning: &P::Meaning,
         run_kind: RunKind,
     ) -> Result<(), PolicyError> {
-        let mut conn = self.db.get().await?;
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
 
         let grant = P::try_find_grant(&context, &mut conn)
-            .await?
+            .await
+            .map_err(DatabaseError::from)?
             .ok_or(PolicyError::NoMatchingGrant)?;
 
         let mut violations =
             check_shared_constraints(&context, &grant.shared, grant.shared_grant_id, &mut conn)
-                .await?;
-        violations.extend(P::evaluate(&context, meaning, &grant, &mut conn).await?);
+                .await
+                .map_err(DatabaseError::from)?;
+        violations.extend(
+            P::evaluate(&context, meaning, &grant, &mut conn)
+                .await
+                .map_err(DatabaseError::from)?,
+        );
 
         if !violations.is_empty() {
             return Err(PolicyError::Violations(violations));
@@ -184,8 +157,7 @@ impl Engine {
                     let log_id: i32 = insert_into(evm_transaction_log::table)
                         .values(&NewEvmTransactionLog {
                             grant_id: grant.shared_grant_id,
-                            client_id: context.client_id,
-                            wallet_id: context.wallet_id,
+                            wallet_access_id: context.target.id,
                             chain_id: context.chain as i32,
                             eth_value: utils::u256_to_bytes(context.value).to_vec(),
                             signed_at: Utc::now().into(),
@@ -199,7 +171,8 @@ impl Engine {
                     QueryResult::Ok(())
                 })
             })
-            .await?;
+            .await
+            .map_err(DatabaseError::from)?;
         }
 
         Ok(())
@@ -213,9 +186,8 @@ impl Engine {
 
     pub async fn create_grant<P: Policy>(
         &self,
-        client_id: i32,
         full_grant: FullGrant<P::Settings>,
-    ) -> Result<i32, CreationError> {
+    ) -> Result<i32, DatabaseError> {
         let mut conn = self.db.get().await?;
 
         let id = conn
@@ -225,9 +197,8 @@ impl Engine {
 
                     let basic_grant: EvmBasicGrant = insert_into(evm_basic_grant::table)
                         .values(&NewEvmBasicGrant {
-                            wallet_id: full_grant.basic.wallet_id,
                             chain_id: full_grant.basic.chain as i32,
-                            client_id,
+                            wallet_access_id: full_grant.basic.wallet_access_id,
                             valid_from: full_grant.basic.valid_from.map(SqliteTimestamp),
                             valid_until: full_grant.basic.valid_until.map(SqliteTimestamp),
                             max_gas_fee_per_gas: full_grant
@@ -262,7 +233,7 @@ impl Engine {
         Ok(id)
     }
 
-    pub async fn list_all_grants(&self) -> Result<Vec<Grant<SpecificGrant>>, ListGrantsError> {
+    pub async fn list_all_grants(&self) -> Result<Vec<Grant<SpecificGrant>>, DatabaseError> {
         let mut conn = self.db.get().await?;
 
         let mut grants: Vec<Grant<SpecificGrant>> = Vec::new();
@@ -295,8 +266,7 @@ impl Engine {
 
     pub async fn evaluate_transaction(
         &self,
-        wallet_id: i32,
-        client_id: i32,
+        target: EvmWalletAccess,
         transaction: TxEip1559,
         run_kind: RunKind,
     ) -> Result<SpecificMeaning, VetError> {
@@ -304,8 +274,7 @@ impl Engine {
             return Err(VetError::ContractCreationNotSupported);
         };
         let context = policies::EvalContext {
-            wallet_id,
-            client_id,
+            target,
             chain: transaction.chain_id,
             to,
             value: transaction.value,

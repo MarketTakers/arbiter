@@ -1,4 +1,4 @@
-use std::string::FromUtf8Error;
+use std::{net::IpAddr, string::FromUtf8Error};
 
 use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper as _};
 use diesel_async::{AsyncConnection, RunQueryDsl};
@@ -6,7 +6,7 @@ use miette::Diagnostic;
 use pem::Pem;
 use rcgen::{
     BasicConstraints, Certificate, CertificateParams, CertifiedIssuer, DistinguishedName, DnType,
-    IsCa, Issuer, KeyPair, KeyUsagePurpose,
+    IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType,
 };
 use rustls::pki_types::pem::PemObject;
 use thiserror::Error;
@@ -114,6 +114,11 @@ impl TlsCa {
             KeyUsagePurpose::DigitalSignature,
             KeyUsagePurpose::KeyEncipherment,
         ];
+        params
+            .subject_alt_names
+            .push(SanType::IpAddress(IpAddr::from([
+                127, 0, 0, 1,
+            ])));
 
         let mut dn = DistinguishedName::new();
         dn.push(DnType::CommonName, "Arbiter Instance Leaf");

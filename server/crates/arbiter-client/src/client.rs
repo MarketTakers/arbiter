@@ -1,25 +1,36 @@
-use arbiter_proto::{proto::arbiter_service_client::ArbiterServiceClient, url::ArbiterUrl};
+use arbiter_proto::{ClientMetadata, proto::arbiter_service_client::ArbiterServiceClient, url::ArbiterUrl};
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::ClientTlsConfig;
 
 use crate::{
-    auth::{ConnectError, authenticate},
-    storage::{FileSigningKeyStorage, SigningKeyStorage},
-    transport::{BUFFER_LENGTH, ClientTransport},
+    StorageError, auth::{AuthError, authenticate}, storage::{FileSigningKeyStorage, SigningKeyStorage}, transport::{BUFFER_LENGTH, ClientTransport}
 };
 
 #[cfg(feature = "evm")]
 use crate::wallets::evm::ArbiterEvmWallet;
 
 #[derive(Debug, thiserror::Error)]
-pub enum ClientError {
+pub enum Error {
     #[error("gRPC error")]
     Grpc(#[from] tonic::Status),
 
-    #[error("Connection closed by server")]
-    ConnectionClosed,
+    #[error("Could not establish connection")]
+    Connection(#[from] tonic::transport::Error),
+
+    #[error("Invalid server URI")]
+    InvalidUri(#[from] http::uri::InvalidUri),
+
+    #[error("Invalid CA certificate")]
+    InvalidCaCert(#[from] webpki::Error),
+
+    #[error("Authentication error")]
+    Authentication(#[from] AuthError),
+
+    #[error("Storage error")]
+    Storage(#[from] StorageError),
+    
 }
 
 pub struct ArbiterClient {
@@ -28,27 +39,29 @@ pub struct ArbiterClient {
 }
 
 impl ArbiterClient {
-    pub async fn connect(url: ArbiterUrl) -> Result<Self, ConnectError> {
+    pub async fn connect(url: ArbiterUrl, metadata: ClientMetadata) -> Result<Self, Error> {
         let storage = FileSigningKeyStorage::from_default_location()?;
-        Self::connect_with_storage(url, &storage).await
+        Self::connect_with_storage(url, metadata, &storage).await
     }
 
     pub async fn connect_with_storage<S: SigningKeyStorage>(
         url: ArbiterUrl,
+        metadata: ClientMetadata,
         storage: &S,
-    ) -> Result<Self, ConnectError> {
+    ) -> Result<Self, Error> {
         let key = storage.load_or_create()?;
-        Self::connect_with_key(url, key).await
+        Self::connect_with_key(url, metadata, key).await
     }
 
     pub async fn connect_with_key(
         url: ArbiterUrl,
+        metadata: ClientMetadata,
         key: ed25519_dalek::SigningKey,
-    ) -> Result<Self, ConnectError> {
+    ) -> Result<Self, Error> {
         let anchor = webpki::anchor_from_trusted_cert(&url.ca_cert)?.to_owned();
         let tls = ClientTlsConfig::new().trust_anchor(anchor);
 
-        let channel = tonic::transport::Channel::from_shared(format!("{}:{}", url.host, url.port))?
+        let channel = tonic::transport::Channel::from_shared(format!("https://{}:{}", url.host, url.port))?
             .tls_config(tls)?
             .connect()
             .await?;
@@ -62,7 +75,7 @@ impl ArbiterClient {
             receiver: response_stream,
         };
 
-        authenticate(&mut transport, &key).await?;
+        authenticate(&mut transport, metadata, &key).await?;
 
         Ok(Self {
             transport: Arc::new(Mutex::new(transport)),
@@ -70,7 +83,7 @@ impl ArbiterClient {
     }
 
     #[cfg(feature = "evm")]
-    pub async fn evm_wallets(&self) -> Result<Vec<ArbiterEvmWallet>, ClientError> {
+    pub async fn evm_wallets(&self) -> Result<Vec<ArbiterEvmWallet>, Error> {
         todo!("fetch EVM wallet list from server")
     }
 }

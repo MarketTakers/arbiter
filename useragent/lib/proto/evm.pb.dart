@@ -26,9 +26,11 @@ export 'evm.pbenum.dart';
 
 class WalletEntry extends $pb.GeneratedMessage {
   factory WalletEntry({
+    $core.int? id,
     $core.List<$core.int>? address,
   }) {
     final result = create();
+    if (id != null) result.id = id;
     if (address != null) result.address = address;
     return result;
   }
@@ -46,8 +48,9 @@ class WalletEntry extends $pb.GeneratedMessage {
       _omitMessageNames ? '' : 'WalletEntry',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.evm'),
       createEmptyInstance: create)
+    ..aI(1, _omitFieldNames ? '' : 'id')
     ..a<$core.List<$core.int>>(
-        1, _omitFieldNames ? '' : 'address', $pb.PbFieldType.OY)
+        2, _omitFieldNames ? '' : 'address', $pb.PbFieldType.OY)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -70,13 +73,22 @@ class WalletEntry extends $pb.GeneratedMessage {
   static WalletEntry? _defaultInstance;
 
   @$pb.TagNumber(1)
-  $core.List<$core.int> get address => $_getN(0);
+  $core.int get id => $_getIZ(0);
   @$pb.TagNumber(1)
-  set address($core.List<$core.int> value) => $_setBytes(0, value);
+  set id($core.int value) => $_setSignedInt32(0, value);
   @$pb.TagNumber(1)
-  $core.bool hasAddress() => $_has(0);
+  $core.bool hasId() => $_has(0);
   @$pb.TagNumber(1)
-  void clearAddress() => $_clearField(1);
+  void clearId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.List<$core.int> get address => $_getN(1);
+  @$pb.TagNumber(2)
+  set address($core.List<$core.int> value) => $_setBytes(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasAddress() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearAddress() => $_clearField(2);
 }
 
 class WalletList extends $pb.GeneratedMessage {
@@ -436,7 +448,7 @@ class VolumeRateLimit extends $pb.GeneratedMessage {
 
 class SharedSettings extends $pb.GeneratedMessage {
   factory SharedSettings({
-    $core.int? walletId,
+    $core.int? walletAccessId,
     $fixnum.Int64? chainId,
     $0.Timestamp? validFrom,
     $0.Timestamp? validUntil,
@@ -445,7 +457,7 @@ class SharedSettings extends $pb.GeneratedMessage {
     TransactionRateLimit? rateLimit,
   }) {
     final result = create();
-    if (walletId != null) result.walletId = walletId;
+    if (walletAccessId != null) result.walletAccessId = walletAccessId;
     if (chainId != null) result.chainId = chainId;
     if (validFrom != null) result.validFrom = validFrom;
     if (validUntil != null) result.validUntil = validUntil;
@@ -469,7 +481,7 @@ class SharedSettings extends $pb.GeneratedMessage {
       _omitMessageNames ? '' : 'SharedSettings',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.evm'),
       createEmptyInstance: create)
-    ..aI(1, _omitFieldNames ? '' : 'walletId')
+    ..aI(1, _omitFieldNames ? '' : 'walletAccessId')
     ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'chainId', $pb.PbFieldType.OU6,
         defaultOrMaker: $fixnum.Int64.ZERO)
     ..aOM<$0.Timestamp>(3, _omitFieldNames ? '' : 'validFrom',
@@ -504,13 +516,13 @@ class SharedSettings extends $pb.GeneratedMessage {
   static SharedSettings? _defaultInstance;
 
   @$pb.TagNumber(1)
-  $core.int get walletId => $_getIZ(0);
+  $core.int get walletAccessId => $_getIZ(0);
   @$pb.TagNumber(1)
-  set walletId($core.int value) => $_setSignedInt32(0, value);
+  set walletAccessId($core.int value) => $_setSignedInt32(0, value);
   @$pb.TagNumber(1)
-  $core.bool hasWalletId() => $_has(0);
+  $core.bool hasWalletAccessId() => $_has(0);
   @$pb.TagNumber(1)
-  void clearWalletId() => $_clearField(1);
+  void clearWalletAccessId() => $_clearField(1);
 
   @$pb.TagNumber(2)
   $fixnum.Int64 get chainId => $_getI64(1);
@@ -1625,12 +1637,10 @@ class TransactionEvalError extends $pb.GeneratedMessage {
 /// --- UserAgent grant management ---
 class EvmGrantCreateRequest extends $pb.GeneratedMessage {
   factory EvmGrantCreateRequest({
-    $core.int? clientId,
     SharedSettings? shared,
     SpecificGrant? specific,
   }) {
     final result = create();
-    if (clientId != null) result.clientId = clientId;
     if (shared != null) result.shared = shared;
     if (specific != null) result.specific = specific;
     return result;
@@ -1649,10 +1659,9 @@ class EvmGrantCreateRequest extends $pb.GeneratedMessage {
       _omitMessageNames ? '' : 'EvmGrantCreateRequest',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.evm'),
       createEmptyInstance: create)
-    ..aI(1, _omitFieldNames ? '' : 'clientId')
-    ..aOM<SharedSettings>(2, _omitFieldNames ? '' : 'shared',
+    ..aOM<SharedSettings>(1, _omitFieldNames ? '' : 'shared',
         subBuilder: SharedSettings.create)
-    ..aOM<SpecificGrant>(3, _omitFieldNames ? '' : 'specific',
+    ..aOM<SpecificGrant>(2, _omitFieldNames ? '' : 'specific',
         subBuilder: SpecificGrant.create)
     ..hasRequiredFields = false;
 
@@ -1677,35 +1686,26 @@ class EvmGrantCreateRequest extends $pb.GeneratedMessage {
   static EvmGrantCreateRequest? _defaultInstance;
 
   @$pb.TagNumber(1)
-  $core.int get clientId => $_getIZ(0);
+  SharedSettings get shared => $_getN(0);
   @$pb.TagNumber(1)
-  set clientId($core.int value) => $_setSignedInt32(0, value);
+  set shared(SharedSettings value) => $_setField(1, value);
   @$pb.TagNumber(1)
-  $core.bool hasClientId() => $_has(0);
+  $core.bool hasShared() => $_has(0);
   @$pb.TagNumber(1)
-  void clearClientId() => $_clearField(1);
+  void clearShared() => $_clearField(1);
+  @$pb.TagNumber(1)
+  SharedSettings ensureShared() => $_ensure(0);
 
   @$pb.TagNumber(2)
-  SharedSettings get shared => $_getN(1);
+  SpecificGrant get specific => $_getN(1);
   @$pb.TagNumber(2)
-  set shared(SharedSettings value) => $_setField(2, value);
+  set specific(SpecificGrant value) => $_setField(2, value);
   @$pb.TagNumber(2)
-  $core.bool hasShared() => $_has(1);
+  $core.bool hasSpecific() => $_has(1);
   @$pb.TagNumber(2)
-  void clearShared() => $_clearField(2);
+  void clearSpecific() => $_clearField(2);
   @$pb.TagNumber(2)
-  SharedSettings ensureShared() => $_ensure(1);
-
-  @$pb.TagNumber(3)
-  SpecificGrant get specific => $_getN(2);
-  @$pb.TagNumber(3)
-  set specific(SpecificGrant value) => $_setField(3, value);
-  @$pb.TagNumber(3)
-  $core.bool hasSpecific() => $_has(2);
-  @$pb.TagNumber(3)
-  void clearSpecific() => $_clearField(3);
-  @$pb.TagNumber(3)
-  SpecificGrant ensureSpecific() => $_ensure(2);
+  SpecificGrant ensureSpecific() => $_ensure(1);
 }
 
 enum EvmGrantCreateResponse_Result { grantId, error, notSet }
@@ -1939,13 +1939,13 @@ class EvmGrantDeleteResponse extends $pb.GeneratedMessage {
 class GrantEntry extends $pb.GeneratedMessage {
   factory GrantEntry({
     $core.int? id,
-    $core.int? clientId,
+    $core.int? walletAccessId,
     SharedSettings? shared,
     SpecificGrant? specific,
   }) {
     final result = create();
     if (id != null) result.id = id;
-    if (clientId != null) result.clientId = clientId;
+    if (walletAccessId != null) result.walletAccessId = walletAccessId;
     if (shared != null) result.shared = shared;
     if (specific != null) result.specific = specific;
     return result;
@@ -1965,7 +1965,7 @@ class GrantEntry extends $pb.GeneratedMessage {
       package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.evm'),
       createEmptyInstance: create)
     ..aI(1, _omitFieldNames ? '' : 'id')
-    ..aI(2, _omitFieldNames ? '' : 'clientId')
+    ..aI(2, _omitFieldNames ? '' : 'walletAccessId')
     ..aOM<SharedSettings>(3, _omitFieldNames ? '' : 'shared',
         subBuilder: SharedSettings.create)
     ..aOM<SpecificGrant>(4, _omitFieldNames ? '' : 'specific',
@@ -2000,13 +2000,13 @@ class GrantEntry extends $pb.GeneratedMessage {
   void clearId() => $_clearField(1);
 
   @$pb.TagNumber(2)
-  $core.int get clientId => $_getIZ(1);
+  $core.int get walletAccessId => $_getIZ(1);
   @$pb.TagNumber(2)
-  set clientId($core.int value) => $_setSignedInt32(1, value);
+  set walletAccessId($core.int value) => $_setSignedInt32(1, value);
   @$pb.TagNumber(2)
-  $core.bool hasClientId() => $_has(1);
+  $core.bool hasWalletAccessId() => $_has(1);
   @$pb.TagNumber(2)
-  void clearClientId() => $_clearField(2);
+  void clearWalletAccessId() => $_clearField(2);
 
   @$pb.TagNumber(3)
   SharedSettings get shared => $_getN(2);
@@ -2033,10 +2033,10 @@ class GrantEntry extends $pb.GeneratedMessage {
 
 class EvmGrantListRequest extends $pb.GeneratedMessage {
   factory EvmGrantListRequest({
-    $core.int? walletId,
+    $core.int? walletAccessId,
   }) {
     final result = create();
-    if (walletId != null) result.walletId = walletId;
+    if (walletAccessId != null) result.walletAccessId = walletAccessId;
     return result;
   }
 
@@ -2053,7 +2053,7 @@ class EvmGrantListRequest extends $pb.GeneratedMessage {
       _omitMessageNames ? '' : 'EvmGrantListRequest',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.evm'),
       createEmptyInstance: create)
-    ..aI(1, _omitFieldNames ? '' : 'walletId')
+    ..aI(1, _omitFieldNames ? '' : 'walletAccessId')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -2076,13 +2076,13 @@ class EvmGrantListRequest extends $pb.GeneratedMessage {
   static EvmGrantListRequest? _defaultInstance;
 
   @$pb.TagNumber(1)
-  $core.int get walletId => $_getIZ(0);
+  $core.int get walletAccessId => $_getIZ(0);
   @$pb.TagNumber(1)
-  set walletId($core.int value) => $_setSignedInt32(0, value);
+  set walletAccessId($core.int value) => $_setSignedInt32(0, value);
   @$pb.TagNumber(1)
-  $core.bool hasWalletId() => $_has(0);
+  $core.bool hasWalletAccessId() => $_has(0);
   @$pb.TagNumber(1)
-  void clearWalletId() => $_clearField(1);
+  void clearWalletAccessId() => $_clearField(1);
 }
 
 enum EvmGrantListResponse_Result { grants, error, notSet }

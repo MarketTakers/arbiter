@@ -1,9 +1,11 @@
 use arbiter_proto::{
-    format_challenge,
+    ClientMetadata, format_challenge,
     transport::{Bi, expect_message},
 };
+use chrono::Utc;
 use diesel::{
-    ExpressionMethods as _, OptionalExtension as _, QueryDsl as _, dsl::insert_into, update,
+    ExpressionMethods as _, OptionalExtension as _, QueryDsl as _, SelectableHelper as _,
+    dsl::insert_into, update,
 };
 use diesel_async::RunQueryDsl as _;
 use ed25519_dalek::{Signature, VerifyingKey};
@@ -12,10 +14,14 @@ use tracing::error;
 
 use crate::{
     actors::{
-        client::ClientConnection,
-        router::{self, RequestClientApproval},
+        client::{ClientConnection, ClientProfile},
+        flow_coordinator::{self, RequestClientApproval},
     },
-    db::{self, schema::program_client},
+    db::{
+        self,
+        models::{ProgramClientMetadata, SqliteTimestamp},
+        schema::program_client,
+    },
 };
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
@@ -39,13 +45,18 @@ pub enum ApproveError {
     #[error("Client connection denied by user agents")]
     Denied,
     #[error("Upstream error: {0}")]
-    Upstream(router::ApprovalError),
+    Upstream(flow_coordinator::ApprovalError),
 }
 
 #[derive(Debug, Clone)]
 pub enum Inbound {
-    AuthChallengeRequest { pubkey: VerifyingKey },
-    AuthChallengeSolution { signature: Signature },
+    AuthChallengeRequest {
+        pubkey: VerifyingKey,
+        metadata: ClientMetadata,
+    },
+    AuthChallengeSolution {
+        signature: Signature,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -54,19 +65,18 @@ pub enum Outbound {
     AuthSuccess,
 }
 
-#[derive(Debug, Clone)]
-pub struct AuthenticatedClient {
-    pub pubkey: VerifyingKey,
-    pub client_id: i32,
+pub struct ClientInfo {
+    pub id: i32,
+    pub current_nonce: i32,
 }
 
 /// Atomically reads and increments the nonce for a known client.
 /// Returns `None` if the pubkey is not registered.
-async fn get_nonce(
+async fn get_client_and_nonce(
     db: &db::DatabasePool,
     pubkey: &VerifyingKey,
-) -> Result<Option<(/* client_id */ i32, /* nonce */ i32)>, Error> {
-    let pubkey_bytes = pubkey.as_bytes();
+) -> Result<Option<ClientInfo>, Error> {
+    let pubkey_bytes = pubkey.as_bytes().to_vec();
 
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
@@ -91,7 +101,10 @@ async fn get_nonce(
                 .execute(conn)
                 .await?;
 
-            Ok(Some((client_id, current_nonce)))
+            Ok(Some(ClientInfo {
+                id: client_id,
+                current_nonce,
+            }))
         })
     })
     .await
@@ -103,13 +116,11 @@ async fn get_nonce(
 
 async fn approve_new_client(
     actors: &crate::actors::GlobalActors,
-    pubkey: VerifyingKey,
+    profile: ClientProfile,
 ) -> Result<(), Error> {
     let result = actors
-        .router
-        .ask(RequestClientApproval {
-            client_pubkey: pubkey,
-        })
+        .flow_coordinator
+        .ask(RequestClientApproval { client: profile })
         .await;
 
     match result {
@@ -120,65 +131,124 @@ async fn approve_new_client(
             Err(Error::ApproveError(ApproveError::Upstream(e)))
         }
         Err(e) => {
-            error!(error = ?e, "Approval request to router failed");
+            error!(error = ?e, "Approval request to flow coordinator failed");
             Err(Error::ApproveError(ApproveError::Internal))
         }
     }
 }
 
-enum InsertClientResult {
-    Inserted,
-    AlreadyExists,
-}
-
 async fn insert_client(
     db: &db::DatabasePool,
     pubkey: &VerifyingKey,
-) -> Result<InsertClientResult, Error> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i32;
+    metadata: &ClientMetadata,
+) -> Result<i32, Error> {
+    use crate::db::schema::{client_metadata, program_client};
+    let mut conn = db.get().await.map_err(|e| {
+        error!(error = ?e, "Database pool error");
+        Error::DatabasePoolUnavailable
+    })?;
+
+    let metadata_id = insert_into(client_metadata::table)
+        .values((
+            client_metadata::name.eq(&metadata.name),
+            client_metadata::description.eq(&metadata.description),
+            client_metadata::version.eq(&metadata.version),
+        ))
+        .returning(client_metadata::id)
+        .get_result::<i32>(&mut conn)
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "Failed to insert client metadata");
+            Error::DatabaseOperationFailed
+        })?;
+
+    let client_id = insert_into(program_client::table)
+        .values((
+            program_client::public_key.eq(pubkey.as_bytes().to_vec()),
+            program_client::metadata_id.eq(metadata_id),
+            program_client::nonce.eq(1), // pre-incremented; challenge uses 0
+        ))
+        .on_conflict_do_nothing()
+        .returning(program_client::id)
+        .get_result::<i32>(&mut conn)
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "Failed to insert client metadata");
+            Error::DatabaseOperationFailed
+        })?;
+
+    Ok(client_id)
+}
+
+async fn sync_client_metadata(
+    db: &db::DatabasePool,
+    client_id: i32,
+    metadata: &ClientMetadata,
+) -> Result<(), Error> {
+    use crate::db::schema::{client_metadata, client_metadata_history};
+
+    let now = SqliteTimestamp(Utc::now());
 
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
         Error::DatabasePoolUnavailable
     })?;
 
-    match insert_into(program_client::table)
-        .values((
-            program_client::public_key.eq(pubkey.as_bytes().to_vec()),
-            program_client::nonce.eq(1), // pre-incremented; challenge uses 0
-            program_client::created_at.eq(now),
-            program_client::updated_at.eq(now),
-        ))
-        .execute(&mut conn)
-        .await
-    {
-        Ok(_) => {}
-        Err(diesel::result::Error::DatabaseError(
-            diesel::result::DatabaseErrorKind::UniqueViolation,
-            _,
-        )) => return Ok(InsertClientResult::AlreadyExists),
-        Err(e) => {
-            error!(error = ?e, "Failed to insert new client");
-            return Err(Error::DatabaseOperationFailed);
-        }
-    }
+    conn.exclusive_transaction(|conn| {
+        let metadata = metadata.clone();
+        Box::pin(async move {
+            let (current_metadata_id, current): (i32, ProgramClientMetadata) =
+                program_client::table
+                    .find(client_id)
+                    .inner_join(client_metadata::table)
+                    .select((
+                        program_client::metadata_id,
+                        ProgramClientMetadata::as_select(),
+                    ))
+                    .first(conn)
+                    .await?;
 
-    let client_id = program_client::table
-        .filter(program_client::public_key.eq(pubkey.as_bytes().to_vec()))
-        .order(program_client::id.desc())
-        .select(program_client::id)
-        .first::<i32>(&mut conn)
-        .await
-        .map_err(|e| {
-            error!(error = ?e, "Failed to load inserted client id");
-            Error::DatabaseOperationFailed
-        })?;
+            let unchanged = current.name == metadata.name
+                && current.description == metadata.description
+                && current.version == metadata.version;
+            if unchanged {
+                return Ok(());
+            }
 
-    let _ = client_id;
-    Ok(InsertClientResult::Inserted)
+            insert_into(client_metadata_history::table)
+                .values((
+                    client_metadata_history::metadata_id.eq(current_metadata_id),
+                    client_metadata_history::client_id.eq(client_id),
+                ))
+                .execute(conn)
+                .await?;
+
+            let metadata_id = insert_into(client_metadata::table)
+                .values((
+                    client_metadata::name.eq(&metadata.name),
+                    client_metadata::description.eq(&metadata.description),
+                    client_metadata::version.eq(&metadata.version),
+                ))
+                .returning(client_metadata::id)
+                .get_result::<i32>(conn)
+                .await?;
+
+            update(program_client::table.find(client_id))
+                .set((
+                    program_client::metadata_id.eq(metadata_id),
+                    program_client::updated_at.eq(now),
+                ))
+                .execute(conn)
+                .await?;
+
+            Ok::<(), diesel::result::Error>(())
+        })
+    })
+    .await
+    .map_err(|e| {
+        error!(error = ?e, "Database error");
+        Error::DatabaseOperationFailed
+    })
 }
 
 async fn challenge_client<T>(
@@ -220,32 +290,36 @@ where
 pub async fn authenticate<T>(
     props: &mut ClientConnection,
     transport: &mut T,
-) -> Result<AuthenticatedClient, Error>
+) -> Result<i32, Error>
 where
     T: Bi<Inbound, Result<Outbound, Error>> + Send + ?Sized,
 {
-    let Some(Inbound::AuthChallengeRequest { pubkey }) = transport.recv().await else {
+    let Some(Inbound::AuthChallengeRequest { pubkey, metadata }) = transport.recv().await else {
         return Err(Error::Transport);
     };
 
-    let (client_id, nonce) = match get_nonce(&props.db, &pubkey).await? {
-        Some(client_nonce) => client_nonce,
+    let info = match get_client_and_nonce(&props.db, &pubkey).await? {
+        Some(nonce) => nonce,
         None => {
-            approve_new_client(&props.actors, pubkey).await?;
-            match insert_client(&props.db, &pubkey).await? {
-                InsertClientResult::Inserted => match get_nonce(&props.db, &pubkey).await? {
-                    Some((client_id, _)) => (client_id, 0),
-                    None => return Err(Error::DatabaseOperationFailed),
+            approve_new_client(
+                &props.actors,
+                ClientProfile {
+                    pubkey,
+                    metadata: metadata.clone(),
                 },
-                InsertClientResult::AlreadyExists => match get_nonce(&props.db, &pubkey).await? {
-                    Some((client_id, nonce)) => (client_id, nonce),
-                    None => return Err(Error::DatabaseOperationFailed),
-                },
+            )
+            .await?;
+            let client_id = insert_client(&props.db, &pubkey, &metadata).await?;
+            ClientInfo {
+                id: client_id,
+                current_nonce: 0,
             }
         }
     };
 
-    challenge_client(transport, pubkey, nonce).await?;
+    sync_client_metadata(&props.db, info.id, &metadata).await?;
+    challenge_client(transport, pubkey, info.current_nonce).await?;
+    
     transport
         .send(Ok(Outbound::AuthSuccess))
         .await
@@ -254,5 +328,5 @@ where
             Error::Transport
         })?;
 
-    Ok(AuthenticatedClient { pubkey, client_id })
+    Ok(info.id)
 }

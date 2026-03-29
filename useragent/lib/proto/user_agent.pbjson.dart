@@ -31,6 +31,25 @@ final $typed_data.Uint8List keyTypeDescriptor = $convert.base64Decode(
     'CgdLZXlUeXBlEhgKFEtFWV9UWVBFX1VOU1BFQ0lGSUVEEAASFAoQS0VZX1RZUEVfRUQyNTUxOR'
     'ABEhwKGEtFWV9UWVBFX0VDRFNBX1NFQ1AyNTZLMRACEhAKDEtFWV9UWVBFX1JTQRAD');
 
+@$core.Deprecated('Use sdkClientErrorDescriptor instead')
+const SdkClientError$json = {
+  '1': 'SdkClientError',
+  '2': [
+    {'1': 'SDK_CLIENT_ERROR_UNSPECIFIED', '2': 0},
+    {'1': 'SDK_CLIENT_ERROR_ALREADY_EXISTS', '2': 1},
+    {'1': 'SDK_CLIENT_ERROR_NOT_FOUND', '2': 2},
+    {'1': 'SDK_CLIENT_ERROR_HAS_RELATED_DATA', '2': 3},
+    {'1': 'SDK_CLIENT_ERROR_INTERNAL', '2': 4},
+  ],
+};
+
+/// Descriptor for `SdkClientError`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List sdkClientErrorDescriptor = $convert.base64Decode(
+    'Cg5TZGtDbGllbnRFcnJvchIgChxTREtfQ0xJRU5UX0VSUk9SX1VOU1BFQ0lGSUVEEAASIwofU0'
+    'RLX0NMSUVOVF9FUlJPUl9BTFJFQURZX0VYSVNUUxABEh4KGlNES19DTElFTlRfRVJST1JfTk9U'
+    'X0ZPVU5EEAISJQohU0RLX0NMSUVOVF9FUlJPUl9IQVNfUkVMQVRFRF9EQVRBEAMSHQoZU0RLX0'
+    'NMSUVOVF9FUlJPUl9JTlRFUk5BTBAE');
+
 @$core.Deprecated('Use authResultDescriptor instead')
 const AuthResult$json = {
   '1': 'AuthResult',
@@ -104,6 +123,131 @@ final $typed_data.Uint8List vaultStateDescriptor = $convert.base64Decode(
     'CgpWYXVsdFN0YXRlEhsKF1ZBVUxUX1NUQVRFX1VOU1BFQ0lGSUVEEAASHgoaVkFVTFRfU1RBVE'
     'VfVU5CT09UU1RSQVBQRUQQARIWChJWQVVMVF9TVEFURV9TRUFMRUQQAhIYChRWQVVMVF9TVEFU'
     'RV9VTlNFQUxFRBADEhUKEVZBVUxUX1NUQVRFX0VSUk9SEAQ=');
+
+@$core.Deprecated('Use sdkClientRevokeRequestDescriptor instead')
+const SdkClientRevokeRequest$json = {
+  '1': 'SdkClientRevokeRequest',
+  '2': [
+    {'1': 'client_id', '3': 1, '4': 1, '5': 5, '10': 'clientId'},
+  ],
+};
+
+/// Descriptor for `SdkClientRevokeRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientRevokeRequestDescriptor =
+    $convert.base64Decode(
+        'ChZTZGtDbGllbnRSZXZva2VSZXF1ZXN0EhsKCWNsaWVudF9pZBgBIAEoBVIIY2xpZW50SWQ=');
+
+@$core.Deprecated('Use sdkClientEntryDescriptor instead')
+const SdkClientEntry$json = {
+  '1': 'SdkClientEntry',
+  '2': [
+    {'1': 'id', '3': 1, '4': 1, '5': 5, '10': 'id'},
+    {'1': 'pubkey', '3': 2, '4': 1, '5': 12, '10': 'pubkey'},
+    {
+      '1': 'info',
+      '3': 3,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.client.ClientInfo',
+      '10': 'info'
+    },
+    {'1': 'created_at', '3': 4, '4': 1, '5': 5, '10': 'createdAt'},
+  ],
+};
+
+/// Descriptor for `SdkClientEntry`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientEntryDescriptor = $convert.base64Decode(
+    'Cg5TZGtDbGllbnRFbnRyeRIOCgJpZBgBIAEoBVICaWQSFgoGcHVia2V5GAIgASgMUgZwdWJrZX'
+    'kSLgoEaW5mbxgDIAEoCzIaLmFyYml0ZXIuY2xpZW50LkNsaWVudEluZm9SBGluZm8SHQoKY3Jl'
+    'YXRlZF9hdBgEIAEoBVIJY3JlYXRlZEF0');
+
+@$core.Deprecated('Use sdkClientListDescriptor instead')
+const SdkClientList$json = {
+  '1': 'SdkClientList',
+  '2': [
+    {
+      '1': 'clients',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.arbiter.user_agent.SdkClientEntry',
+      '10': 'clients'
+    },
+  ],
+};
+
+/// Descriptor for `SdkClientList`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientListDescriptor = $convert.base64Decode(
+    'Cg1TZGtDbGllbnRMaXN0EjwKB2NsaWVudHMYASADKAsyIi5hcmJpdGVyLnVzZXJfYWdlbnQuU2'
+    'RrQ2xpZW50RW50cnlSB2NsaWVudHM=');
+
+@$core.Deprecated('Use sdkClientRevokeResponseDescriptor instead')
+const SdkClientRevokeResponse$json = {
+  '1': 'SdkClientRevokeResponse',
+  '2': [
+    {
+      '1': 'ok',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Empty',
+      '9': 0,
+      '10': 'ok'
+    },
+    {
+      '1': 'error',
+      '3': 2,
+      '4': 1,
+      '5': 14,
+      '6': '.arbiter.user_agent.SdkClientError',
+      '9': 0,
+      '10': 'error'
+    },
+  ],
+  '8': [
+    {'1': 'result'},
+  ],
+};
+
+/// Descriptor for `SdkClientRevokeResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientRevokeResponseDescriptor = $convert.base64Decode(
+    'ChdTZGtDbGllbnRSZXZva2VSZXNwb25zZRIoCgJvaxgBIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi'
+    '5FbXB0eUgAUgJvaxI6CgVlcnJvchgCIAEoDjIiLmFyYml0ZXIudXNlcl9hZ2VudC5TZGtDbGll'
+    'bnRFcnJvckgAUgVlcnJvckIICgZyZXN1bHQ=');
+
+@$core.Deprecated('Use sdkClientListResponseDescriptor instead')
+const SdkClientListResponse$json = {
+  '1': 'SdkClientListResponse',
+  '2': [
+    {
+      '1': 'clients',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.SdkClientList',
+      '9': 0,
+      '10': 'clients'
+    },
+    {
+      '1': 'error',
+      '3': 2,
+      '4': 1,
+      '5': 14,
+      '6': '.arbiter.user_agent.SdkClientError',
+      '9': 0,
+      '10': 'error'
+    },
+  ],
+  '8': [
+    {'1': 'result'},
+  ],
+};
+
+/// Descriptor for `SdkClientListResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientListResponseDescriptor = $convert.base64Decode(
+    'ChVTZGtDbGllbnRMaXN0UmVzcG9uc2USPQoHY2xpZW50cxgBIAEoCzIhLmFyYml0ZXIudXNlcl'
+    '9hZ2VudC5TZGtDbGllbnRMaXN0SABSB2NsaWVudHMSOgoFZXJyb3IYAiABKA4yIi5hcmJpdGVy'
+    'LnVzZXJfYWdlbnQuU2RrQ2xpZW50RXJyb3JIAFIFZXJyb3JCCAoGcmVzdWx0');
 
 @$core.Deprecated('Use authChallengeRequestDescriptor instead')
 const AuthChallengeRequest$json = {
@@ -224,46 +368,152 @@ final $typed_data.Uint8List bootstrapEncryptedKeyDescriptor = $convert.base64Dec
     'RleHQYAiABKAxSCmNpcGhlcnRleHQSJwoPYXNzb2NpYXRlZF9kYXRhGAMgASgMUg5hc3NvY2lh'
     'dGVkRGF0YQ==');
 
-@$core.Deprecated('Use clientConnectionRequestDescriptor instead')
-const ClientConnectionRequest$json = {
-  '1': 'ClientConnectionRequest',
+@$core.Deprecated('Use sdkClientConnectionRequestDescriptor instead')
+const SdkClientConnectionRequest$json = {
+  '1': 'SdkClientConnectionRequest',
+  '2': [
+    {'1': 'pubkey', '3': 1, '4': 1, '5': 12, '10': 'pubkey'},
+    {
+      '1': 'info',
+      '3': 2,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.client.ClientInfo',
+      '10': 'info'
+    },
+  ],
+};
+
+/// Descriptor for `SdkClientConnectionRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientConnectionRequestDescriptor =
+    $convert.base64Decode(
+        'ChpTZGtDbGllbnRDb25uZWN0aW9uUmVxdWVzdBIWCgZwdWJrZXkYASABKAxSBnB1YmtleRIuCg'
+        'RpbmZvGAIgASgLMhouYXJiaXRlci5jbGllbnQuQ2xpZW50SW5mb1IEaW5mbw==');
+
+@$core.Deprecated('Use sdkClientConnectionResponseDescriptor instead')
+const SdkClientConnectionResponse$json = {
+  '1': 'SdkClientConnectionResponse',
+  '2': [
+    {'1': 'approved', '3': 1, '4': 1, '5': 8, '10': 'approved'},
+    {'1': 'pubkey', '3': 2, '4': 1, '5': 12, '10': 'pubkey'},
+  ],
+};
+
+/// Descriptor for `SdkClientConnectionResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientConnectionResponseDescriptor =
+    $convert.base64Decode(
+        'ChtTZGtDbGllbnRDb25uZWN0aW9uUmVzcG9uc2USGgoIYXBwcm92ZWQYASABKAhSCGFwcHJvdm'
+        'VkEhYKBnB1YmtleRgCIAEoDFIGcHVia2V5');
+
+@$core.Deprecated('Use sdkClientConnectionCancelDescriptor instead')
+const SdkClientConnectionCancel$json = {
+  '1': 'SdkClientConnectionCancel',
   '2': [
     {'1': 'pubkey', '3': 1, '4': 1, '5': 12, '10': 'pubkey'},
   ],
 };
 
-/// Descriptor for `ClientConnectionRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List clientConnectionRequestDescriptor =
+/// Descriptor for `SdkClientConnectionCancel`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientConnectionCancelDescriptor =
     $convert.base64Decode(
-        'ChdDbGllbnRDb25uZWN0aW9uUmVxdWVzdBIWCgZwdWJrZXkYASABKAxSBnB1YmtleQ==');
+        'ChlTZGtDbGllbnRDb25uZWN0aW9uQ2FuY2VsEhYKBnB1YmtleRgBIAEoDFIGcHVia2V5');
 
-@$core.Deprecated('Use clientConnectionResponseDescriptor instead')
-const ClientConnectionResponse$json = {
-  '1': 'ClientConnectionResponse',
+@$core.Deprecated('Use walletAccessDescriptor instead')
+const WalletAccess$json = {
+  '1': 'WalletAccess',
   '2': [
-    {'1': 'approved', '3': 1, '4': 1, '5': 8, '10': 'approved'},
+    {'1': 'wallet_id', '3': 1, '4': 1, '5': 5, '10': 'walletId'},
+    {'1': 'sdk_client_id', '3': 2, '4': 1, '5': 5, '10': 'sdkClientId'},
   ],
 };
 
-/// Descriptor for `ClientConnectionResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List clientConnectionResponseDescriptor =
-    $convert.base64Decode(
-        'ChhDbGllbnRDb25uZWN0aW9uUmVzcG9uc2USGgoIYXBwcm92ZWQYASABKAhSCGFwcHJvdmVk');
+/// Descriptor for `WalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List walletAccessDescriptor = $convert.base64Decode(
+    'CgxXYWxsZXRBY2Nlc3MSGwoJd2FsbGV0X2lkGAEgASgFUgh3YWxsZXRJZBIiCg1zZGtfY2xpZW'
+    '50X2lkGAIgASgFUgtzZGtDbGllbnRJZA==');
 
-@$core.Deprecated('Use clientConnectionCancelDescriptor instead')
-const ClientConnectionCancel$json = {
-  '1': 'ClientConnectionCancel',
+@$core.Deprecated('Use sdkClientWalletAccessDescriptor instead')
+const SdkClientWalletAccess$json = {
+  '1': 'SdkClientWalletAccess',
+  '2': [
+    {'1': 'id', '3': 1, '4': 1, '5': 5, '10': 'id'},
+    {
+      '1': 'access',
+      '3': 2,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.WalletAccess',
+      '10': 'access'
+    },
+  ],
 };
 
-/// Descriptor for `ClientConnectionCancel`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List clientConnectionCancelDescriptor =
-    $convert.base64Decode('ChZDbGllbnRDb25uZWN0aW9uQ2FuY2Vs');
+/// Descriptor for `SdkClientWalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientWalletAccessDescriptor = $convert.base64Decode(
+    'ChVTZGtDbGllbnRXYWxsZXRBY2Nlc3MSDgoCaWQYASABKAVSAmlkEjgKBmFjY2VzcxgCIAEoCz'
+    'IgLmFyYml0ZXIudXNlcl9hZ2VudC5XYWxsZXRBY2Nlc3NSBmFjY2Vzcw==');
+
+@$core.Deprecated('Use sdkClientGrantWalletAccessDescriptor instead')
+const SdkClientGrantWalletAccess$json = {
+  '1': 'SdkClientGrantWalletAccess',
+  '2': [
+    {
+      '1': 'accesses',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.arbiter.user_agent.WalletAccess',
+      '10': 'accesses'
+    },
+  ],
+};
+
+/// Descriptor for `SdkClientGrantWalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientGrantWalletAccessDescriptor =
+    $convert.base64Decode(
+        'ChpTZGtDbGllbnRHcmFudFdhbGxldEFjY2VzcxI8CghhY2Nlc3NlcxgBIAMoCzIgLmFyYml0ZX'
+        'IudXNlcl9hZ2VudC5XYWxsZXRBY2Nlc3NSCGFjY2Vzc2Vz');
+
+@$core.Deprecated('Use sdkClientRevokeWalletAccessDescriptor instead')
+const SdkClientRevokeWalletAccess$json = {
+  '1': 'SdkClientRevokeWalletAccess',
+  '2': [
+    {'1': 'accesses', '3': 1, '4': 3, '5': 5, '10': 'accesses'},
+  ],
+};
+
+/// Descriptor for `SdkClientRevokeWalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sdkClientRevokeWalletAccessDescriptor =
+    $convert.base64Decode(
+        'ChtTZGtDbGllbnRSZXZva2VXYWxsZXRBY2Nlc3MSGgoIYWNjZXNzZXMYASADKAVSCGFjY2Vzc2'
+        'Vz');
+
+@$core.Deprecated('Use listWalletAccessResponseDescriptor instead')
+const ListWalletAccessResponse$json = {
+  '1': 'ListWalletAccessResponse',
+  '2': [
+    {
+      '1': 'accesses',
+      '3': 1,
+      '4': 3,
+      '5': 11,
+      '6': '.arbiter.user_agent.SdkClientWalletAccess',
+      '10': 'accesses'
+    },
+  ],
+};
+
+/// Descriptor for `ListWalletAccessResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List listWalletAccessResponseDescriptor =
+    $convert.base64Decode(
+        'ChhMaXN0V2FsbGV0QWNjZXNzUmVzcG9uc2USRQoIYWNjZXNzZXMYASADKAsyKS5hcmJpdGVyLn'
+        'VzZXJfYWdlbnQuU2RrQ2xpZW50V2FsbGV0QWNjZXNzUghhY2Nlc3Nlcw==');
 
 @$core.Deprecated('Use userAgentRequestDescriptor instead')
 const UserAgentRequest$json = {
   '1': 'UserAgentRequest',
   '2': [
-    {'1': 'id', '3': 14, '4': 1, '5': 5, '10': 'id'},
+    {'1': 'id', '3': 16, '4': 1, '5': 5, '10': 'id'},
     {
       '1': 'auth_challenge_request',
       '3': 1,
@@ -355,22 +605,67 @@ const UserAgentRequest$json = {
       '10': 'evmGrantList'
     },
     {
-      '1': 'client_connection_response',
+      '1': 'sdk_client_connection_response',
       '3': 11,
       '4': 1,
       '5': 11,
-      '6': '.arbiter.user_agent.ClientConnectionResponse',
+      '6': '.arbiter.user_agent.SdkClientConnectionResponse',
       '9': 0,
-      '10': 'clientConnectionResponse'
+      '10': 'sdkClientConnectionResponse'
+    },
+    {
+      '1': 'sdk_client_revoke',
+      '3': 12,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.SdkClientRevokeRequest',
+      '9': 0,
+      '10': 'sdkClientRevoke'
+    },
+    {
+      '1': 'sdk_client_list',
+      '3': 13,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Empty',
+      '9': 0,
+      '10': 'sdkClientList'
     },
     {
       '1': 'bootstrap_encrypted_key',
-      '3': 12,
+      '3': 14,
       '4': 1,
       '5': 11,
       '6': '.arbiter.user_agent.BootstrapEncryptedKey',
       '9': 0,
       '10': 'bootstrapEncryptedKey'
+    },
+    {
+      '1': 'grant_wallet_access',
+      '3': 15,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.SdkClientGrantWalletAccess',
+      '9': 0,
+      '10': 'grantWalletAccess'
+    },
+    {
+      '1': 'revoke_wallet_access',
+      '3': 17,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.SdkClientRevokeWalletAccess',
+      '9': 0,
+      '10': 'revokeWalletAccess'
+    },
+    {
+      '1': 'list_wallet_access',
+      '3': 18,
+      '4': 1,
+      '5': 11,
+      '6': '.google.protobuf.Empty',
+      '9': 0,
+      '10': 'listWalletAccess'
     },
   ],
   '8': [
@@ -380,7 +675,7 @@ const UserAgentRequest$json = {
 
 /// Descriptor for `UserAgentRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List userAgentRequestDescriptor = $convert.base64Decode(
-    'ChBVc2VyQWdlbnRSZXF1ZXN0Eg4KAmlkGA4gASgFUgJpZBJgChZhdXRoX2NoYWxsZW5nZV9yZX'
+    'ChBVc2VyQWdlbnRSZXF1ZXN0Eg4KAmlkGBAgASgFUgJpZBJgChZhdXRoX2NoYWxsZW5nZV9yZX'
     'F1ZXN0GAEgASgLMiguYXJiaXRlci51c2VyX2FnZW50LkF1dGhDaGFsbGVuZ2VSZXF1ZXN0SABS'
     'FGF1dGhDaGFsbGVuZ2VSZXF1ZXN0EmMKF2F1dGhfY2hhbGxlbmdlX3NvbHV0aW9uGAIgASgLMi'
     'kuYXJiaXRlci51c2VyX2FnZW50LkF1dGhDaGFsbGVuZ2VTb2x1dGlvbkgAUhVhdXRoQ2hhbGxl'
@@ -395,17 +690,24 @@ final $typed_data.Uint8List userAgentRequestDescriptor = $convert.base64Decode(
     'DmV2bUdyYW50Q3JlYXRlEk4KEGV2bV9ncmFudF9kZWxldGUYCSABKAsyIi5hcmJpdGVyLmV2bS'
     '5Fdm1HcmFudERlbGV0ZVJlcXVlc3RIAFIOZXZtR3JhbnREZWxldGUSSAoOZXZtX2dyYW50X2xp'
     'c3QYCiABKAsyIC5hcmJpdGVyLmV2bS5Fdm1HcmFudExpc3RSZXF1ZXN0SABSDGV2bUdyYW50TG'
-    'lzdBJsChpjbGllbnRfY29ubmVjdGlvbl9yZXNwb25zZRgLIAEoCzIsLmFyYml0ZXIudXNlcl9h'
-    'Z2VudC5DbGllbnRDb25uZWN0aW9uUmVzcG9uc2VIAFIYY2xpZW50Q29ubmVjdGlvblJlc3Bvbn'
-    'NlEmMKF2Jvb3RzdHJhcF9lbmNyeXB0ZWRfa2V5GAwgASgLMikuYXJiaXRlci51c2VyX2FnZW50'
-    'LkJvb3RzdHJhcEVuY3J5cHRlZEtleUgAUhVib290c3RyYXBFbmNyeXB0ZWRLZXlCCQoHcGF5bG'
-    '9hZA==');
+    'lzdBJ2Ch5zZGtfY2xpZW50X2Nvbm5lY3Rpb25fcmVzcG9uc2UYCyABKAsyLy5hcmJpdGVyLnVz'
+    'ZXJfYWdlbnQuU2RrQ2xpZW50Q29ubmVjdGlvblJlc3BvbnNlSABSG3Nka0NsaWVudENvbm5lY3'
+    'Rpb25SZXNwb25zZRJYChFzZGtfY2xpZW50X3Jldm9rZRgMIAEoCzIqLmFyYml0ZXIudXNlcl9h'
+    'Z2VudC5TZGtDbGllbnRSZXZva2VSZXF1ZXN0SABSD3Nka0NsaWVudFJldm9rZRJACg9zZGtfY2'
+    'xpZW50X2xpc3QYDSABKAsyFi5nb29nbGUucHJvdG9idWYuRW1wdHlIAFINc2RrQ2xpZW50TGlz'
+    'dBJjChdib290c3RyYXBfZW5jcnlwdGVkX2tleRgOIAEoCzIpLmFyYml0ZXIudXNlcl9hZ2VudC'
+    '5Cb290c3RyYXBFbmNyeXB0ZWRLZXlIAFIVYm9vdHN0cmFwRW5jcnlwdGVkS2V5EmAKE2dyYW50'
+    'X3dhbGxldF9hY2Nlc3MYDyABKAsyLi5hcmJpdGVyLnVzZXJfYWdlbnQuU2RrQ2xpZW50R3Jhbn'
+    'RXYWxsZXRBY2Nlc3NIAFIRZ3JhbnRXYWxsZXRBY2Nlc3MSYwoUcmV2b2tlX3dhbGxldF9hY2Nl'
+    'c3MYESABKAsyLy5hcmJpdGVyLnVzZXJfYWdlbnQuU2RrQ2xpZW50UmV2b2tlV2FsbGV0QWNjZX'
+    'NzSABSEnJldm9rZVdhbGxldEFjY2VzcxJGChJsaXN0X3dhbGxldF9hY2Nlc3MYEiABKAsyFi5n'
+    'b29nbGUucHJvdG9idWYuRW1wdHlIAFIQbGlzdFdhbGxldEFjY2Vzc0IJCgdwYXlsb2Fk');
 
 @$core.Deprecated('Use userAgentResponseDescriptor instead')
 const UserAgentResponse$json = {
   '1': 'UserAgentResponse',
   '2': [
-    {'1': 'id', '3': 14, '4': 1, '5': 5, '9': 1, '10': 'id', '17': true},
+    {'1': 'id', '3': 16, '4': 1, '5': 5, '9': 1, '10': 'id', '17': true},
     {
       '1': 'auth_challenge',
       '3': 1,
@@ -497,31 +799,58 @@ const UserAgentResponse$json = {
       '10': 'evmGrantList'
     },
     {
-      '1': 'client_connection_request',
+      '1': 'sdk_client_connection_request',
       '3': 11,
       '4': 1,
       '5': 11,
-      '6': '.arbiter.user_agent.ClientConnectionRequest',
+      '6': '.arbiter.user_agent.SdkClientConnectionRequest',
       '9': 0,
-      '10': 'clientConnectionRequest'
+      '10': 'sdkClientConnectionRequest'
     },
     {
-      '1': 'client_connection_cancel',
+      '1': 'sdk_client_connection_cancel',
       '3': 12,
       '4': 1,
       '5': 11,
-      '6': '.arbiter.user_agent.ClientConnectionCancel',
+      '6': '.arbiter.user_agent.SdkClientConnectionCancel',
       '9': 0,
-      '10': 'clientConnectionCancel'
+      '10': 'sdkClientConnectionCancel'
+    },
+    {
+      '1': 'sdk_client_revoke_response',
+      '3': 13,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.SdkClientRevokeResponse',
+      '9': 0,
+      '10': 'sdkClientRevokeResponse'
+    },
+    {
+      '1': 'sdk_client_list_response',
+      '3': 14,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.SdkClientListResponse',
+      '9': 0,
+      '10': 'sdkClientListResponse'
     },
     {
       '1': 'bootstrap_result',
-      '3': 13,
+      '3': 15,
       '4': 1,
       '5': 14,
       '6': '.arbiter.user_agent.BootstrapResult',
       '9': 0,
       '10': 'bootstrapResult'
+    },
+    {
+      '1': 'list_wallet_access_response',
+      '3': 17,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.ListWalletAccessResponse',
+      '9': 0,
+      '10': 'listWalletAccessResponse'
     },
   ],
   '8': [
@@ -532,7 +861,7 @@ const UserAgentResponse$json = {
 
 /// Descriptor for `UserAgentResponse`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List userAgentResponseDescriptor = $convert.base64Decode(
-    'ChFVc2VyQWdlbnRSZXNwb25zZRITCgJpZBgOIAEoBUgBUgJpZIgBARJKCg5hdXRoX2NoYWxsZW'
+    'ChFVc2VyQWdlbnRSZXNwb25zZRITCgJpZBgQIAEoBUgBUgJpZIgBARJKCg5hdXRoX2NoYWxsZW'
     '5nZRgBIAEoCzIhLmFyYml0ZXIudXNlcl9hZ2VudC5BdXRoQ2hhbGxlbmdlSABSDWF1dGhDaGFs'
     'bGVuZ2USQQoLYXV0aF9yZXN1bHQYAiABKA4yHi5hcmJpdGVyLnVzZXJfYWdlbnQuQXV0aFJlc3'
     'VsdEgAUgphdXRoUmVzdWx0El0KFXVuc2VhbF9zdGFydF9yZXNwb25zZRgDIAEoCzInLmFyYml0'
@@ -546,10 +875,16 @@ final $typed_data.Uint8List userAgentResponseDescriptor = $convert.base64Decode(
     '5ldm0uRXZtR3JhbnRDcmVhdGVSZXNwb25zZUgAUg5ldm1HcmFudENyZWF0ZRJPChBldm1fZ3Jh'
     'bnRfZGVsZXRlGAkgASgLMiMuYXJiaXRlci5ldm0uRXZtR3JhbnREZWxldGVSZXNwb25zZUgAUg'
     '5ldm1HcmFudERlbGV0ZRJJCg5ldm1fZ3JhbnRfbGlzdBgKIAEoCzIhLmFyYml0ZXIuZXZtLkV2'
-    'bUdyYW50TGlzdFJlc3BvbnNlSABSDGV2bUdyYW50TGlzdBJpChljbGllbnRfY29ubmVjdGlvbl'
-    '9yZXF1ZXN0GAsgASgLMisuYXJiaXRlci51c2VyX2FnZW50LkNsaWVudENvbm5lY3Rpb25SZXF1'
-    'ZXN0SABSF2NsaWVudENvbm5lY3Rpb25SZXF1ZXN0EmYKGGNsaWVudF9jb25uZWN0aW9uX2Nhbm'
-    'NlbBgMIAEoCzIqLmFyYml0ZXIudXNlcl9hZ2VudC5DbGllbnRDb25uZWN0aW9uQ2FuY2VsSABS'
-    'FmNsaWVudENvbm5lY3Rpb25DYW5jZWwSUAoQYm9vdHN0cmFwX3Jlc3VsdBgNIAEoDjIjLmFyYm'
-    'l0ZXIudXNlcl9hZ2VudC5Cb290c3RyYXBSZXN1bHRIAFIPYm9vdHN0cmFwUmVzdWx0QgkKB3Bh'
-    'eWxvYWRCBQoDX2lk');
+    'bUdyYW50TGlzdFJlc3BvbnNlSABSDGV2bUdyYW50TGlzdBJzCh1zZGtfY2xpZW50X2Nvbm5lY3'
+    'Rpb25fcmVxdWVzdBgLIAEoCzIuLmFyYml0ZXIudXNlcl9hZ2VudC5TZGtDbGllbnRDb25uZWN0'
+    'aW9uUmVxdWVzdEgAUhpzZGtDbGllbnRDb25uZWN0aW9uUmVxdWVzdBJwChxzZGtfY2xpZW50X2'
+    'Nvbm5lY3Rpb25fY2FuY2VsGAwgASgLMi0uYXJiaXRlci51c2VyX2FnZW50LlNka0NsaWVudENv'
+    'bm5lY3Rpb25DYW5jZWxIAFIZc2RrQ2xpZW50Q29ubmVjdGlvbkNhbmNlbBJqChpzZGtfY2xpZW'
+    '50X3Jldm9rZV9yZXNwb25zZRgNIAEoCzIrLmFyYml0ZXIudXNlcl9hZ2VudC5TZGtDbGllbnRS'
+    'ZXZva2VSZXNwb25zZUgAUhdzZGtDbGllbnRSZXZva2VSZXNwb25zZRJkChhzZGtfY2xpZW50X2'
+    'xpc3RfcmVzcG9uc2UYDiABKAsyKS5hcmJpdGVyLnVzZXJfYWdlbnQuU2RrQ2xpZW50TGlzdFJl'
+    'c3BvbnNlSABSFXNka0NsaWVudExpc3RSZXNwb25zZRJQChBib290c3RyYXBfcmVzdWx0GA8gAS'
+    'gOMiMuYXJiaXRlci51c2VyX2FnZW50LkJvb3RzdHJhcFJlc3VsdEgAUg9ib290c3RyYXBSZXN1'
+    'bHQSbQobbGlzdF93YWxsZXRfYWNjZXNzX3Jlc3BvbnNlGBEgASgLMiwuYXJiaXRlci51c2VyX2'
+    'FnZW50Lkxpc3RXYWxsZXRBY2Nlc3NSZXNwb25zZUgAUhhsaXN0V2FsbGV0QWNjZXNzUmVzcG9u'
+    'c2VCCQoHcGF5bG9hZEIFCgNfaWQ=');

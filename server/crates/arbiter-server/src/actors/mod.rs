@@ -3,15 +3,18 @@ use miette::Diagnostic;
 use thiserror::Error;
 
 use crate::{
-    actors::{bootstrap::Bootstrapper, evm::EvmActor, keyholder::KeyHolder, router::MessageRouter},
+    actors::{
+        bootstrap::Bootstrapper, evm::EvmActor, flow_coordinator::FlowCoordinator,
+        keyholder::KeyHolder,
+    },
     db,
 };
 
 pub mod bootstrap;
 pub mod client;
 mod evm;
+pub mod flow_coordinator;
 pub mod keyholder;
-pub mod router;
 pub mod user_agent;
 
 #[derive(Error, Debug, Diagnostic)]
@@ -30,7 +33,7 @@ pub enum SpawnError {
 pub struct GlobalActors {
     pub key_holder: ActorRef<KeyHolder>,
     pub bootstrapper: ActorRef<Bootstrapper>,
-    pub router: ActorRef<MessageRouter>,
+    pub flow_coordinator: ActorRef<FlowCoordinator>,
     pub evm: ActorRef<EvmActor>,
 }
 
@@ -41,7 +44,7 @@ impl GlobalActors {
             bootstrapper: Bootstrapper::spawn(Bootstrapper::new(&db).await?),
             evm: EvmActor::spawn(EvmActor::new(key_holder.clone(), db)),
             key_holder,
-            router: MessageRouter::spawn(MessageRouter::default()),
+            flow_coordinator: FlowCoordinator::spawn(FlowCoordinator::default()),
         })
     }
 }

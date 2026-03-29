@@ -3,12 +3,6 @@ pub mod url;
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 
-pub mod google {
-    pub mod protobuf {
-        tonic::include_proto!("google.protobuf");
-    }
-}
-
 pub mod proto {
     tonic::include_proto!("arbiter");
 
@@ -23,6 +17,13 @@ pub mod proto {
     pub mod evm {
         tonic::include_proto!("arbiter.evm");
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientMetadata {
+    pub name: String,
+    pub description: Option<String>,
+    pub version: Option<String>,
 }
 
 pub static BOOTSTRAP_PATH: &str = "bootstrap_token";

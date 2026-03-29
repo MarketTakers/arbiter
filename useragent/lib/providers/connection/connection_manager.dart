@@ -14,7 +14,7 @@ class ConnectionManager extends _$ConnectionManager {
   Future<Connection?> build() async {
     final serverInfo = await ref.watch(serverInfoProvider.future);
     final key = await ref.watch(keyProvider.future);
-    final token = ref.watch(bootstrapTokenProvider);
+    final token = ref.read(bootstrapTokenProvider);
 
     if (serverInfo == null || key == null) {
       return null;

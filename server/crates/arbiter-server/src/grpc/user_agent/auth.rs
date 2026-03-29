@@ -21,19 +21,16 @@ use crate::{
 pub struct AuthTransportAdapter<'a> {
     bi: &'a mut GrpcBi<UserAgentRequest, UserAgentResponse>,
     request_tracker: &'a mut RequestTracker,
-    response_id: &'a mut Option<i32>,
 }
 
 impl<'a> AuthTransportAdapter<'a> {
     pub fn new(
         bi: &'a mut GrpcBi<UserAgentRequest, UserAgentResponse>,
         request_tracker: &'a mut RequestTracker,
-        response_id: &'a mut Option<i32>,
     ) -> Self {
         Self {
             bi,
             request_tracker,
-            response_id,
         }
     }
 
@@ -41,11 +38,9 @@ impl<'a> AuthTransportAdapter<'a> {
         &mut self,
         payload: UserAgentResponsePayload,
     ) -> Result<(), TransportError> {
-        let id = self.response_id.take();
-
         self.bi
             .send(Ok(UserAgentResponse {
-                id,
+                id: Some(self.request_tracker.current_request_id()),
                 payload: Some(payload),
             }))
             .await
@@ -75,9 +70,14 @@ impl Sender<Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {
             Err(Error::InvalidBootstrapToken) => {
                 UserAgentResponsePayload::AuthResult(ProtoAuthResult::TokenInvalid.into())
             }
-            Err(Error::Internal { details }) => return self.bi.send(Err(Status::internal(details))).await,
+            Err(Error::Internal { details }) => {
+                return self.bi.send(Err(Status::internal(details))).await;
+            }
             Err(Error::Transport) => {
-                return self.bi.send(Err(Status::unavailable("transport error"))).await;
+                return self
+                    .bi
+                    .send(Err(Status::unavailable("transport error")))
+                    .await;
             }
         };
 
@@ -96,14 +96,13 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
             }
         };
 
-        let request_id = match self.request_tracker.request(request.id) {
+        match self.request_tracker.request(request.id) {
             Ok(request_id) => request_id,
             Err(error) => {
                 let _ = self.bi.send(Err(error)).await;
                 return None;
             }
         };
-        *self.response_id = Some(request_id);
 
         let Some(payload) = request.payload else {
             warn!(
@@ -173,8 +172,7 @@ pub async fn start(
     conn: &mut UserAgentConnection,
     bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
     request_tracker: &mut RequestTracker,
-    response_id: &mut Option<i32>,
 ) -> Result<AuthPublicKey, auth::Error> {
-    let transport = AuthTransportAdapter::new(bi, request_tracker, response_id);
+    let transport = AuthTransportAdapter::new(bi, request_tracker);
     auth::authenticate(conn, transport).await
 }

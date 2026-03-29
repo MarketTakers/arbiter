@@ -4,16 +4,10 @@ import 'package:arbiter/proto/user_agent.pb.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:protobuf/well_known_types/google/protobuf/timestamp.pb.dart';
 
-Future<List<GrantEntry>> listEvmGrants(
-  Connection connection, {
-  int? walletId,
-}) async {
+Future<List<GrantEntry>> listEvmGrants(Connection connection) async {
   final request = EvmGrantListRequest();
-  if (walletId != null) {
-    request.walletId = walletId;
-  }
 
-  final response = await connection.request(
+  final response = await connection.ask(
     UserAgentRequest(evmGrantList: request),
   );
   if (!response.hasEvmGrantList()) {
@@ -35,52 +29,31 @@ Future<List<GrantEntry>> listEvmGrants(
 
 Future<int> createEvmGrant(
   Connection connection, {
-  required int clientId,
-  required int walletId,
-  required Int64 chainId,
-  DateTime? validFrom,
-  DateTime? validUntil,
-  List<int>? maxGasFeePerGas,
-  List<int>? maxPriorityFeePerGas,
-  TransactionRateLimit? rateLimit,
+  required SharedSettings sharedSettings,
   required SpecificGrant specific,
 }) async {
-  final response = await connection.request(
-    UserAgentRequest(
-      evmGrantCreate: EvmGrantCreateRequest(
-        clientId: clientId,
-        shared: SharedSettings(
-          walletId: walletId,
-          chainId: chainId,
-          validFrom: validFrom == null ? null : _toTimestamp(validFrom),
-          validUntil: validUntil == null ? null : _toTimestamp(validUntil),
-          maxGasFeePerGas: maxGasFeePerGas,
-          maxPriorityFeePerGas: maxPriorityFeePerGas,
-          rateLimit: rateLimit,
-        ),
-        specific: specific,
-      ),
+  final request = UserAgentRequest(
+    evmGrantCreate: EvmGrantCreateRequest(
+      shared: sharedSettings,
+      specific: specific,
     ),
   );
-  if (!response.hasEvmGrantCreate()) {
+
+  final resp = await connection.ask(request);
+
+  if (!resp.hasEvmGrantCreate()) {
     throw Exception(
-      'Expected EVM grant create response, got ${response.whichPayload()}',
+      'Expected EVM grant create response, got ${resp.whichPayload()}',
     );
   }
 
-  final result = response.evmGrantCreate;
-  switch (result.whichResult()) {
-    case EvmGrantCreateResponse_Result.grantId:
-      return result.grantId;
-    case EvmGrantCreateResponse_Result.error:
-      throw Exception(_describeGrantError(result.error));
-    case EvmGrantCreateResponse_Result.notSet:
-      throw Exception('Grant creation returned no result.');
-  }
+  final result = resp.evmGrantCreate;
+
+  return result.grantId;
 }
 
 Future<void> deleteEvmGrant(Connection connection, int grantId) async {
-  final response = await connection.request(
+  final response = await connection.ask(
     UserAgentRequest(evmGrantDelete: EvmGrantDeleteRequest(grantId: grantId)),
   );
   if (!response.hasEvmGrantDelete()) {

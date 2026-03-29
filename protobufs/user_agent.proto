@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package arbiter.user_agent;
 
+import "client.proto";
 import "evm.proto";
 import "google/protobuf/empty.proto";
 
@@ -22,10 +23,6 @@ enum SdkClientError {
   SDK_CLIENT_ERROR_INTERNAL = 4;
 }
 
-message SdkClientApproveRequest {
-  bytes pubkey = 1; // 32-byte ed25519 public key
-}
-
 message SdkClientRevokeRequest {
   int32 client_id = 1;
 }
@@ -33,18 +30,12 @@ message SdkClientRevokeRequest {
 message SdkClientEntry {
   int32 id = 1;
   bytes pubkey = 2;
-  int32 created_at = 3;
+  arbiter.client.ClientInfo info = 3;
+  int32 created_at = 4;
 }
 
 message SdkClientList {
   repeated SdkClientEntry clients = 1;
-}
-
-message SdkClientApproveResponse {
-  oneof result {
-    SdkClientEntry client = 1;
-    SdkClientError error = 2;
-  }
 }
 
 message SdkClientRevokeResponse {
@@ -129,13 +120,39 @@ enum VaultState {
 
 message SdkClientConnectionRequest {
   bytes pubkey = 1;
+  arbiter.client.ClientInfo info = 2;
 }
 
 message SdkClientConnectionResponse {
   bool approved = 1;
+  bytes pubkey = 2;
 }
 
-message SdkClientConnectionCancel {}
+message SdkClientConnectionCancel {
+  bytes pubkey = 1;
+}
+
+message WalletAccess {
+  int32 wallet_id = 1;
+  int32 sdk_client_id = 2;
+}
+
+message SdkClientWalletAccess {
+  int32 id = 1;
+  WalletAccess access = 2;
+}
+
+message SdkClientGrantWalletAccess {
+  repeated WalletAccess accesses = 1;
+}
+
+message SdkClientRevokeWalletAccess {
+  repeated int32 accesses = 1;
+}
+
+message ListWalletAccessResponse {
+  repeated SdkClientWalletAccess accesses = 1;
+}
 
 message UserAgentEvmSignTransactionRequest {
   int32 client_id = 1;
@@ -156,11 +173,13 @@ message UserAgentRequest {
     arbiter.evm.EvmGrantDeleteRequest evm_grant_delete = 9;
     arbiter.evm.EvmGrantListRequest evm_grant_list = 10;
     SdkClientConnectionResponse sdk_client_connection_response = 11;
-    SdkClientApproveRequest sdk_client_approve = 12;
-    SdkClientRevokeRequest sdk_client_revoke = 13;
-    google.protobuf.Empty sdk_client_list = 14;
-    BootstrapEncryptedKey bootstrap_encrypted_key = 15;
-    UserAgentEvmSignTransactionRequest evm_sign_transaction = 17;
+    SdkClientRevokeRequest sdk_client_revoke = 12;
+    google.protobuf.Empty sdk_client_list = 13;
+    BootstrapEncryptedKey bootstrap_encrypted_key = 14;
+    SdkClientGrantWalletAccess grant_wallet_access = 15;
+    SdkClientRevokeWalletAccess revoke_wallet_access = 17;
+    google.protobuf.Empty list_wallet_access = 18;
+    UserAgentEvmSignTransactionRequest evm_sign_transaction = 19;
   }
 }
 message UserAgentResponse {
@@ -176,11 +195,12 @@ message UserAgentResponse {
     arbiter.evm.EvmGrantCreateResponse evm_grant_create = 8;
     arbiter.evm.EvmGrantDeleteResponse evm_grant_delete = 9;
     arbiter.evm.EvmGrantListResponse evm_grant_list = 10;
-    SdkClientConnectionResponse sdk_client_connection_response = 11;
-    SdkClientApproveResponse sdk_client_approve_response = 12;
+    SdkClientConnectionRequest sdk_client_connection_request = 11;
+    SdkClientConnectionCancel sdk_client_connection_cancel = 12;
     SdkClientRevokeResponse sdk_client_revoke_response = 13;
     SdkClientListResponse sdk_client_list_response = 14;
     BootstrapResult bootstrap_result = 15;
-    arbiter.evm.EvmSignTransactionResponse evm_sign_transaction = 17;
+    ListWalletAccessResponse list_wallet_access_response = 17;
+    arbiter.evm.EvmSignTransactionResponse evm_sign_transaction = 18;
   }
 }

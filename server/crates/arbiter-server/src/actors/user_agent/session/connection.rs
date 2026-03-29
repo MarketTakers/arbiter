@@ -2,13 +2,22 @@ use std::sync::Mutex;
 
 use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
+use diesel::sql_types::ops::Add;
+use diesel::{BoolExpressionMethods as _, ExpressionMethods as _, QueryDsl as _, SelectableHelper};
+use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::error::SendError;
-use kameo::messages;
+use kameo::prelude::Context;
+use kameo::{message, messages};
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
+use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
 use crate::actors::keyholder::KeyHolderState;
 use crate::actors::user_agent::session::Error;
+use crate::db::models::{
+    CoreEvmWalletAccess, EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
+};
+use crate::db::schema::evm_wallet_access;
 use crate::evm::policies::{Grant, SpecificGrant};
 use crate::safe_cell::SafeCell;
 use crate::{
@@ -281,7 +290,7 @@ impl UserAgentSession {
 #[messages]
 impl UserAgentSession {
     #[message]
-    pub(crate) async fn handle_evm_wallet_create(&mut self) -> Result<Address, Error> {
+    pub(crate) async fn handle_evm_wallet_create(&mut self) -> Result<(i32, Address), Error> {
         match self.props.actors.evm.ask(Generate {}).await {
             Ok(address) => Ok(address),
             Err(SendError::HandlerError(err)) => Err(Error::internal(format!(
@@ -295,7 +304,7 @@ impl UserAgentSession {
     }
 
     #[message]
-    pub(crate) async fn handle_evm_wallet_list(&mut self) -> Result<Vec<Address>, Error> {
+    pub(crate) async fn handle_evm_wallet_list(&mut self) -> Result<Vec<(i32, Address)>, Error> {
         match self.props.actors.evm.ask(ListWallets {}).await {
             Ok(wallets) => Ok(wallets),
             Err(err) => {
@@ -322,7 +331,6 @@ impl UserAgentSession {
     #[message]
     pub(crate) async fn handle_grant_create(
         &mut self,
-        client_id: i32,
         basic: crate::evm::policies::SharedGrantSettings,
         grant: crate::evm::policies::SpecificGrant,
     ) -> Result<i32, Error> {
@@ -330,11 +338,7 @@ impl UserAgentSession {
             .props
             .actors
             .evm
-            .ask(UseragentCreateGrant {
-                client_id,
-                basic,
-                grant,
-            })
+            .ask(UseragentCreateGrant { basic, grant })
             .await
         {
             Ok(grant_id) => Ok(grant_id),
@@ -389,5 +393,120 @@ impl UserAgentSession {
                 Err(SignTransactionError::Internal)
             }
         }
+    }
+
+    #[message]
+    pub(crate) async fn handle_grant_evm_wallet_access(
+        &mut self,
+        entries: Vec<NewEvmWalletAccess>,
+    ) -> Result<(), Error> {
+        let mut conn = self.props.db.get().await?;
+        conn.transaction(|conn| {
+            Box::pin(async move {
+                use crate::db::schema::evm_wallet_access;
+
+                for entry in entries {
+                    diesel::insert_into(evm_wallet_access::table)
+                        .values(&entry)
+                        .on_conflict_do_nothing()
+                        .execute(conn)
+                        .await?;
+                }
+
+                Result::<_, Error>::Ok(())
+            })
+        })
+        .await?;
+        Ok(())
+    }
+
+    #[message]
+    pub(crate) async fn handle_revoke_evm_wallet_access(
+        &mut self,
+        entries: Vec<i32>,
+    ) -> Result<(), Error> {
+        let mut conn = self.props.db.get().await?;
+        conn.transaction(|conn| {
+            Box::pin(async move {
+                use crate::db::schema::evm_wallet_access;
+                for entry in entries {
+                    diesel::delete(evm_wallet_access::table)
+                        .filter(evm_wallet_access::wallet_id.eq(entry))
+                        .execute(conn)
+                        .await?;
+                }
+
+                Result::<_, Error>::Ok(())
+            })
+        })
+        .await?;
+        Ok(())
+    }
+
+    #[message]
+    pub(crate) async fn handle_list_wallet_access(
+        &mut self,
+    ) -> Result<Vec<EvmWalletAccess>, Error> {
+        let mut conn = self.props.db.get().await?;
+        use crate::db::schema::evm_wallet_access;
+        let access_entries = evm_wallet_access::table
+            .select(EvmWalletAccess::as_select())
+            .load::<_>(&mut conn)
+            .await?;
+        Ok(access_entries)
+    }
+}
+
+#[messages]
+impl UserAgentSession {
+    #[message(ctx)]
+    pub(crate) async fn handle_new_client_approve(
+        &mut self,
+        approved: bool,
+        pubkey: ed25519_dalek::VerifyingKey,
+        ctx: &mut Context<Self, Result<(), Error>>,
+    ) -> Result<(), Error> {
+        let pending_approval = match self.pending_client_approvals.remove(&pubkey) {
+            Some(approval) => approval,
+            None => {
+                error!("Received client connection response for unknown client");
+                return Err(Error::internal("Unknown client in connection response"));
+            }
+        };
+
+        pending_approval
+            .controller
+            .tell(ClientApprovalAnswer { approved })
+            .await
+            .map_err(|err| {
+                error!(
+                    ?err,
+                    "Failed to send client approval response to controller"
+                );
+                Error::internal("Failed to send client approval response to controller")
+            })?;
+
+        ctx.actor_ref().unlink(&pending_approval.controller).await;
+
+        Ok(())
+    }
+
+    #[message]
+    pub(crate) async fn handle_sdk_client_list(
+        &mut self,
+    ) -> Result<Vec<(ProgramClient, ProgramClientMetadata)>, Error> {
+        use crate::db::schema::{client_metadata, program_client};
+        let mut conn = self.props.db.get().await?;
+
+        let clients = program_client::table
+            .inner_join(client_metadata::table)
+            .select((
+                ProgramClient::as_select(),
+                ProgramClientMetadata::as_select(),
+            ))
+            .load::<(ProgramClient, ProgramClientMetadata)>(&mut conn)
+            .await?;
+
+        Ok(clients)
     }
 }

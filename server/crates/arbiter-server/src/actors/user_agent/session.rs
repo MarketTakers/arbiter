@@ -1,15 +1,15 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashMap};
 
 use arbiter_proto::transport::Sender;
 use async_trait::async_trait;
 use ed25519_dalek::VerifyingKey;
-use kameo::{Actor, messages};
+use kameo::{Actor, actor::ActorRef, messages};
 use thiserror::Error;
-use tokio::sync::watch;
 use tracing::error;
 
 use crate::actors::{
-    router::RegisterUserAgent,
+    client::ClientProfile,
+    flow_coordinator::{RegisterUserAgent, client_connect_approval::ClientApprovalController},
     user_agent::{OutOfBand, UserAgentConnection},
 };
 
@@ -25,6 +25,19 @@ pub enum Error {
     Internal { message: Cow<'static, str> },
 }
 
+impl From<crate::db::PoolError> for Error {
+    fn from(err: crate::db::PoolError) -> Self {
+        error!(?err, "Database pool error");
+        Self::internal("Database pool error")
+    }
+}
+impl From<diesel::result::Error> for Error {
+    fn from(err: diesel::result::Error) -> Self {
+        error!(?err, "Database error");
+        Self::internal("Database error")
+    }
+}
+
 impl Error {
     pub fn internal(message: impl Into<Cow<'static, str>>) -> Self {
         Self::Internal {
@@ -33,25 +46,19 @@ impl Error {
     }
 }
 
+pub struct PendingClientApproval {
+    controller: ActorRef<ClientApprovalController>,
+}
+
 pub struct UserAgentSession {
     props: UserAgentConnection,
     state: UserAgentStateMachine<DummyContext>,
-    #[allow(
-        dead_code,
-        reason = "The session keeps ownership of the outbound transport even before the state-machine flow starts using it directly"
-    )]
     sender: Box<dyn Sender<OutOfBand>>,
+
+    pending_client_approvals: HashMap<VerifyingKey, PendingClientApproval>,
 }
 
-mod connection;
-pub(crate) use connection::{
-    BootstrapError, HandleBootstrapEncryptedKey, HandleEvmWalletCreate, HandleEvmWalletList,
-    HandleGrantCreate, HandleGrantDelete, HandleGrantList, HandleQueryVaultState,
-    HandleSignTransaction,
-};
-pub use connection::{
-    HandleUnsealEncryptedKey, HandleUnsealRequest, SignTransactionError, UnsealError,
-};
+pub mod connection;
 
 impl UserAgentSession {
     pub(crate) fn new(props: UserAgentConnection, sender: Box<dyn Sender<OutOfBand>>) -> Self {
@@ -59,6 +66,7 @@ impl UserAgentSession {
             props,
             state: UserAgentStateMachine::new(DummyContext),
             sender,
+            pending_client_approvals: Default::default(),
         }
     }
 
@@ -90,26 +98,28 @@ impl UserAgentSession {
 #[messages]
 impl UserAgentSession {
     #[message]
-    pub async fn request_new_client_approval(
+    pub async fn begin_new_client_approval(
         &mut self,
-        client_pubkey: VerifyingKey,
-        mut cancel_flag: watch::Receiver<()>,
-    ) -> Result<bool, ()> {
-        if self
+        client: ClientProfile,
+        controller: ActorRef<ClientApprovalController>,
+    ) {
+        if let Err(e) = self
             .sender
             .send(OutOfBand::ClientConnectionRequest {
-                pubkey: client_pubkey,
+                profile: client.clone(),
             })
             .await
-            .is_err()
         {
-            return Err(());
+            error!(
+                ?e,
+                actor = "user_agent",
+                event = "failed to announce new client connection"
+            );
+            return;
         }
 
-        let _ = cancel_flag.changed().await;
-
-        let _ = self.sender.send(OutOfBand::ClientConnectionCancel).await;
-        Ok(false)
+        self.pending_client_approvals
+            .insert(client.pubkey, PendingClientApproval { controller });
     }
 }
 
@@ -124,15 +134,48 @@ impl Actor for UserAgentSession {
     ) -> Result<Self, Self::Error> {
         args.props
             .actors
-            .router
+            .flow_coordinator
             .ask(RegisterUserAgent {
                 actor: this.clone(),
             })
             .await
             .map_err(|err| {
-                error!(?err, "Failed to register user agent connection with router");
-                Error::internal("Failed to register user agent connection with router")
+                error!(
+                    ?err,
+                    "Failed to register user agent connection with flow coordinator"
+                );
+                Error::internal("Failed to register user agent connection with flow coordinator")
             })?;
         Ok(args)
+    }
+
+    async fn on_link_died(
+        &mut self,
+        _: kameo::prelude::WeakActorRef<Self>,
+        id: kameo::prelude::ActorId,
+        _: kameo::prelude::ActorStopReason,
+    ) -> Result<std::ops::ControlFlow<kameo::prelude::ActorStopReason>, Self::Error> {
+        let cancelled_pubkey = self
+            .pending_client_approvals
+            .iter()
+            .find_map(|(k, v)| (v.controller.id() == id).then_some(*k));
+
+        if let Some(pubkey) = cancelled_pubkey {
+            self.pending_client_approvals.remove(&pubkey);
+
+            if let Err(e) = self
+                .sender
+                .send(OutOfBand::ClientConnectionCancel { pubkey })
+                .await
+            {
+                error!(
+                    ?e,
+                    actor = "user_agent",
+                    event = "failed to announce client connection cancellation"
+                );
+            }
+        }
+
+        Ok(std::ops::ControlFlow::Continue(()))
     }
 }

@@ -1,4 +1,4 @@
-use arbiter_proto::transport::Bi;
+use arbiter_proto::{ClientMetadata, transport::Bi};
 use kameo::actor::Spawn;
 use tracing::{error, info};
 
@@ -7,10 +7,15 @@ use crate::{
     db,
 };
 
+#[derive(Debug, Clone)]
+pub struct ClientProfile {
+    pub pubkey: ed25519_dalek::VerifyingKey,
+    pub metadata: ClientMetadata,
+}
+
 pub struct ClientConnection {
     pub(crate) db: db::DatabasePool,
     pub(crate) actors: GlobalActors,
-    pub(crate) client_id: i32,
 }
 
 impl ClientConnection {
@@ -18,7 +23,6 @@ impl ClientConnection {
         Self {
             db,
             actors,
-            client_id: 0,
         }
     }
 }
@@ -31,9 +35,8 @@ where
     T: Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> + Send + ?Sized,
 {
     match auth::authenticate(&mut props, transport).await {
-        Ok(authenticated) => {
-            props.client_id = authenticated.client_id;
-            ClientSession::spawn(ClientSession::new(props));
+        Ok(client_id) => {
+            ClientSession::spawn(ClientSession::new(props, client_id));
             info!("Client authenticated, session started");
         }
         Err(err) => {

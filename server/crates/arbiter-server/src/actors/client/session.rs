@@ -1,3 +1,4 @@
+use ed25519_dalek::VerifyingKey;
 use kameo::{Actor, messages};
 use tracing::error;
 
@@ -6,10 +7,11 @@ use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
 use crate::{
     actors::{
         GlobalActors,
-        client::ClientConnection,
+        client::ClientConnection, flow_coordinator::RegisterClient,
+       
         evm::{ClientSignTransaction, SignTransactionError},
         keyholder::KeyHolderState,
-        router::RegisterClient,
+       
     },
     db,
     evm::VetError,
@@ -17,11 +19,12 @@ use crate::{
 
 pub struct ClientSession {
     props: ClientConnection,
+    client_id: i32,
 }
 
 impl ClientSession {
-    pub(crate) fn new(props: ClientConnection) -> Self {
-        Self { props }
+    pub(crate) fn new(props: ClientConnection, client_id: i32) -> Self {
+        Self { props, client_id }
     }
 }
 
@@ -53,7 +56,7 @@ impl ClientSession {
             .actors
             .evm
             .ask(ClientSignTransaction {
-                client_id: self.props.client_id,
+                client_id: self.client_id,
                 wallet_address,
                 transaction,
             })
@@ -82,7 +85,7 @@ impl Actor for ClientSession {
     ) -> Result<Self, Self::Error> {
         args.props
             .actors
-            .router
+            .flow_coordinator
             .ask(RegisterClient { actor: this })
             .await
             .map_err(|_| Error::ConnectionRegistrationFailed)?;
@@ -93,7 +96,7 @@ impl Actor for ClientSession {
 impl ClientSession {
     pub fn new_test(db: db::DatabasePool, actors: GlobalActors) -> Self {
         let props = ClientConnection::new(db, actors);
-        Self { props }
+        Self { props, client_id: 0 }
     }
 }
 

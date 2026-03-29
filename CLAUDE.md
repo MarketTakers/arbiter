@@ -67,7 +67,7 @@ The server is actor-based using the **kameo** crate. All long-lived state lives 
 
 - **`Bootstrapper`** — Manages the one-time bootstrap token written to `~/.arbiter/bootstrap_token` on first run.
 - **`KeyHolder`** — Holds the encrypted root key and manages the Sealed/Unsealed vault state machine. On unseal, decrypts the root key into a `memsafe` hardened memory cell.
-- **`MessageRouter`** — Coordinates streaming messages between user agents and SDK clients.
+- **`FlowCoordinator`** — Coordinates cross-connection flow between user agents and SDK clients.
 - **`EvmActor`** — Handles EVM transaction policy enforcement and signing.
 
 Per-connection actors live under `actors/user_agent/` and `actors/client/`, each with `auth` (challenge-response authentication) and `session` (post-auth operations) sub-modules.

@@ -9,12 +9,12 @@ use rand::{SeedableRng, rng, rngs::StdRng};
 use crate::{
     actors::keyholder::{CreateNew, Decrypt, KeyHolder},
     db::{
-        self, DatabasePool,
+        self, DatabaseError, DatabasePool,
         models::{self, SqliteTimestamp},
         schema,
     },
     evm::{
-        self, ListGrantsError, RunKind,
+        self, RunKind,
         policies::{
             FullGrant, Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning,
             ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
@@ -33,11 +33,7 @@ pub enum SignTransactionError {
 
     #[error("Database error: {0}")]
     #[diagnostic(code(arbiter::evm::sign::database))]
-    Database(#[from] diesel::result::Error),
-
-    #[error("Database pool error: {0}")]
-    #[diagnostic(code(arbiter::evm::sign::pool))]
-    Pool(#[from] db::PoolError),
+    Database(#[from] DatabaseError),
 
     #[error("Keyholder error: {0}")]
     #[diagnostic(code(arbiter::evm::sign::keyholder))]
@@ -68,15 +64,7 @@ pub enum Error {
 
     #[error("Database error: {0}")]
     #[diagnostic(code(arbiter::evm::database))]
-    Database(#[from] diesel::result::Error),
-
-    #[error("Database pool error: {0}")]
-    #[diagnostic(code(arbiter::evm::database_pool))]
-    DatabasePool(#[from] db::PoolError),
-
-    #[error("Grant creation error: {0}")]
-    #[diagnostic(code(arbiter::evm::creation))]
-    Creation(#[from] evm::CreationError),
+    Database(#[from] DatabaseError),
 }
 
 #[derive(Actor)]
@@ -105,7 +93,7 @@ impl EvmActor {
 #[messages]
 impl EvmActor {
     #[message]
-    pub async fn generate(&mut self) -> Result<Address, Error> {
+    pub async fn generate(&mut self) -> Result<(i32, Address), Error> {
         let (mut key_cell, address) = safe_signer::generate(&mut self.rng);
 
         let plaintext = key_cell.read_inline(|reader| SafeCell::new(reader.to_vec()));
@@ -116,29 +104,32 @@ impl EvmActor {
             .await
             .map_err(|_| Error::KeyholderSend)?;
 
-        let mut conn = self.db.get().await?;
-        insert_into(schema::evm_wallet::table)
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
+        let wallet_id = insert_into(schema::evm_wallet::table)
             .values(&models::NewEvmWallet {
                 address: address.as_slice().to_vec(),
                 aead_encrypted_id: aead_id,
             })
-            .execute(&mut conn)
-            .await?;
+            .returning(schema::evm_wallet::id)
+            .get_result(&mut conn)
+            .await
+            .map_err(DatabaseError::from)?;
 
-        Ok(address)
+        Ok((wallet_id, address))
     }
 
     #[message]
-    pub async fn list_wallets(&self) -> Result<Vec<Address>, Error> {
-        let mut conn = self.db.get().await?;
+    pub async fn list_wallets(&self) -> Result<Vec<(i32, Address)>, Error> {
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
         let rows: Vec<models::EvmWallet> = schema::evm_wallet::table
             .select(models::EvmWallet::as_select())
             .load(&mut conn)
-            .await?;
+            .await
+            .map_err(DatabaseError::from)?;
 
         Ok(rows
             .into_iter()
-            .map(|w| Address::from_slice(&w.address))
+            .map(|w| (w.id, Address::from_slice(&w.address)))
             .collect())
     }
 }
@@ -148,31 +139,24 @@ impl EvmActor {
     #[message]
     pub async fn useragent_create_grant(
         &mut self,
-        client_id: i32,
         basic: SharedGrantSettings,
         grant: SpecificGrant,
-    ) -> Result<i32, evm::CreationError> {
+    ) -> Result<i32, DatabaseError> {
         match grant {
             SpecificGrant::EtherTransfer(settings) => {
                 self.engine
-                    .create_grant::<EtherTransfer>(
-                        client_id,
-                        FullGrant {
-                            basic,
-                            specific: settings,
-                        },
-                    )
+                    .create_grant::<EtherTransfer>(FullGrant {
+                        basic,
+                        specific: settings,
+                    })
                     .await
             }
             SpecificGrant::TokenTransfer(settings) => {
                 self.engine
-                    .create_grant::<TokenTransfer>(
-                        client_id,
-                        FullGrant {
-                            basic,
-                            specific: settings,
-                        },
-                    )
+                    .create_grant::<TokenTransfer>(FullGrant {
+                        basic,
+                        specific: settings,
+                    })
                     .await
             }
         }
@@ -180,22 +164,23 @@ impl EvmActor {
 
     #[message]
     pub async fn useragent_delete_grant(&mut self, grant_id: i32) -> Result<(), Error> {
-        let mut conn = self.db.get().await?;
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
         diesel::update(schema::evm_basic_grant::table)
             .filter(schema::evm_basic_grant::id.eq(grant_id))
             .set(schema::evm_basic_grant::revoked_at.eq(SqliteTimestamp::now()))
             .execute(&mut conn)
-            .await?;
+            .await
+            .map_err(DatabaseError::from)?;
         Ok(())
     }
 
     #[message]
     pub async fn useragent_list_grants(&mut self) -> Result<Vec<Grant<SpecificGrant>>, Error> {
-        match self.engine.list_all_grants().await {
-            Ok(grants) => Ok(grants),
-            Err(ListGrantsError::Database(db)) => Err(Error::Database(db)),
-            Err(ListGrantsError::Pool(pool)) => Err(Error::DatabasePool(pool)),
-        }
+        Ok(self
+            .engine
+            .list_all_grants()
+            .await
+            .map_err(DatabaseError::from)?)
     }
 
     #[message]
@@ -205,24 +190,29 @@ impl EvmActor {
         wallet_address: Address,
         transaction: TxEip1559,
     ) -> Result<SpecificMeaning, SignTransactionError> {
-        let mut conn = self.db.get().await?;
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
         let wallet = schema::evm_wallet::table
             .select(models::EvmWallet::as_select())
             .filter(schema::evm_wallet::address.eq(wallet_address.as_slice()))
             .first(&mut conn)
             .await
-            .optional()?
+            .optional()
+            .map_err(DatabaseError::from)?
+            .ok_or(SignTransactionError::WalletNotFound)?;
+        let wallet_access = schema::evm_wallet_access::table
+            .select(models::EvmWalletAccess::as_select())
+            .filter(schema::evm_wallet_access::wallet_id.eq(wallet.id))
+            .filter(schema::evm_wallet_access::client_id.eq(client_id))
+            .first(&mut conn)
+            .await
+            .optional()
+            .map_err(DatabaseError::from)?
             .ok_or(SignTransactionError::WalletNotFound)?;
         drop(conn);
 
         let meaning = self
             .engine
-            .evaluate_transaction(
-                wallet.id,
-                client_id,
-                transaction.clone(),
-                RunKind::Execution,
-            )
+            .evaluate_transaction(wallet_access, transaction.clone(), RunKind::Execution)
             .await?;
 
         Ok(meaning)
@@ -235,13 +225,23 @@ impl EvmActor {
         wallet_address: Address,
         mut transaction: TxEip1559,
     ) -> Result<Signature, SignTransactionError> {
-        let mut conn = self.db.get().await?;
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
         let wallet = schema::evm_wallet::table
             .select(models::EvmWallet::as_select())
             .filter(schema::evm_wallet::address.eq(wallet_address.as_slice()))
             .first(&mut conn)
             .await
-            .optional()?
+            .optional()
+            .map_err(DatabaseError::from)?
+            .ok_or(SignTransactionError::WalletNotFound)?;
+        let wallet_access = schema::evm_wallet_access::table
+            .select(models::EvmWalletAccess::as_select())
+            .filter(schema::evm_wallet_access::wallet_id.eq(wallet.id))
+            .filter(schema::evm_wallet_access::client_id.eq(client_id))
+            .first(&mut conn)
+            .await
+            .optional()
+            .map_err(DatabaseError::from)?
             .ok_or(SignTransactionError::WalletNotFound)?;
         drop(conn);
 
@@ -256,12 +256,7 @@ impl EvmActor {
         let signer = safe_signer::SafeSigner::from_cell(raw_key)?;
 
         self.engine
-            .evaluate_transaction(
-                wallet.id,
-                client_id,
-                transaction.clone(),
-                RunKind::Execution,
-            )
+            .evaluate_transaction(wallet_access, transaction.clone(), RunKind::Execution)
             .await?;
 
         use alloy::network::TxSignerSync as _;

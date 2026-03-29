@@ -10,7 +10,7 @@ Future<BootstrapResult> bootstrapVault(
 ) async {
   final encryptedKey = await _encryptVaultKeyMaterial(connection, password);
 
-  final response = await connection.request(
+  final response = await connection.ask(
     UserAgentRequest(
       bootstrapEncryptedKey: BootstrapEncryptedKey(
         nonce: encryptedKey.nonce,
@@ -31,7 +31,7 @@ Future<BootstrapResult> bootstrapVault(
 Future<UnsealResult> unsealVault(Connection connection, String password) async {
   final encryptedKey = await _encryptVaultKeyMaterial(connection, password);
 
-  final response = await connection.request(
+  final response = await connection.ask(
     UserAgentRequest(
       unsealEncryptedKey: UnsealEncryptedKey(
         nonce: encryptedKey.nonce,
@@ -56,7 +56,7 @@ Future<_EncryptedVaultKey> _encryptVaultKeyMaterial(
   final clientKeyPair = await keyExchange.newKeyPair();
   final clientPublicKey = await clientKeyPair.extractPublicKey();
 
-  final handshakeResponse = await connection.request(
+  final handshakeResponse = await connection.ask(
     UserAgentRequest(unsealStart: UnsealStart(clientPubkey: clientPublicKey.bytes)),
   );
   if (!handshakeResponse.hasUnsealStartResponse()) {

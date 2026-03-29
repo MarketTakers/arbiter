@@ -1,7 +1,6 @@
 import 'package:arbiter/features/connection/evm/grants.dart';
 import 'package:arbiter/proto/evm.pb.dart';
 import 'package:arbiter/providers/connection/connection_manager.dart';
-import 'package:fixnum/fixnum.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:hooks_riverpod/experimental/mutation.dart';
 import 'package:mtcore/markettakers.dart';
@@ -73,14 +72,7 @@ class EvmGrants extends _$EvmGrants {
 
 Future<int> executeCreateEvmGrant(
   MutationTarget ref, {
-  required int clientId,
-  required int walletId,
-  required Int64 chainId,
-  DateTime? validFrom,
-  DateTime? validUntil,
-  List<int>? maxGasFeePerGas,
-  List<int>? maxPriorityFeePerGas,
-  TransactionRateLimit? rateLimit,
+  required SharedSettings sharedSettings,
   required SpecificGrant specific,
 }) {
   return createEvmGrantMutation.run(ref, (tsx) async {
@@ -91,14 +83,7 @@ Future<int> executeCreateEvmGrant(
 
     final grantId = await createEvmGrant(
       connection,
-      clientId: clientId,
-      walletId: walletId,
-      chainId: chainId,
-      validFrom: validFrom,
-      validUntil: validUntil,
-      maxGasFeePerGas: maxGasFeePerGas,
-      maxPriorityFeePerGas: maxPriorityFeePerGas,
-      rateLimit: rateLimit,
+      sharedSettings: sharedSettings,
       specific: specific,
     );
 

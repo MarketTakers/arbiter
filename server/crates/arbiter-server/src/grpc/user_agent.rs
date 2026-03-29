@@ -1,72 +1,68 @@
 use tokio::sync::mpsc;
 
 use arbiter_proto::{
-    google::protobuf::{Empty as ProtoEmpty, Timestamp as ProtoTimestamp},
     proto::{
+        client::ClientInfo as ProtoClientMetadata,
         evm::{
-            EtherTransferSettings as ProtoEtherTransferSettings,
-            EvalViolation as ProtoEvalViolation, EvmError as ProtoEvmError, EvmGrantCreateRequest,
-            EvmGrantCreateResponse, EvmGrantDeleteRequest, EvmGrantDeleteResponse, EvmGrantList,
-            EvmGrantListResponse, EvmSignTransactionResponse, GasLimitExceededViolation,
-            GrantEntry, NoMatchingGrantError, PolicyViolationsError,
-            SharedSettings as ProtoSharedSettings, SpecificGrant as ProtoSpecificGrant,
-            SpecificMeaning as ProtoSpecificMeaning, TokenInfo as ProtoTokenInfo,
-            TokenTransferSettings as ProtoTokenTransferSettings, TransactionEvalError,
-            TransactionRateLimit as ProtoTransactionRateLimit,
-            VolumeRateLimit as ProtoVolumeRateLimit, WalletCreateResponse, WalletEntry, WalletList,
-            WalletListResponse, eval_violation::Kind as ProtoEvalViolationKind,
-            evm_grant_create_response::Result as EvmGrantCreateResult,
+            EvmError as ProtoEvmError, EvmGrantCreateRequest, EvmGrantCreateResponse,
+            EvmGrantDeleteRequest, EvmGrantDeleteResponse, EvmGrantList, EvmGrantListResponse,
+            EvmSignTransactionResponse, GrantEntry, WalletCreateResponse, WalletEntry, WalletList,
+            WalletListResponse, evm_grant_create_response::Result as EvmGrantCreateResult,
             evm_grant_delete_response::Result as EvmGrantDeleteResult,
             evm_grant_list_response::Result as EvmGrantListResult,
             evm_sign_transaction_response::Result as EvmSignTransactionResult,
-            specific_grant::Grant as ProtoSpecificGrantType,
-            specific_meaning::Meaning as ProtoSpecificMeaningKind,
-            transaction_eval_error::Kind as ProtoTransactionEvalErrorKind,
             wallet_create_response::Result as WalletCreateResult,
             wallet_list_response::Result as WalletListResult,
         },
         user_agent::{
             BootstrapEncryptedKey as ProtoBootstrapEncryptedKey,
-            BootstrapResult as ProtoBootstrapResult,
-            SdkClientConnectionResponse as ProtoSdkClientConnectionResponse,
-            UnsealEncryptedKey as ProtoUnsealEncryptedKey, UnsealResult as ProtoUnsealResult,
-            UnsealStart, UserAgentEvmSignTransactionRequest, UserAgentRequest, UserAgentResponse,
-            VaultState as ProtoVaultState, user_agent_request::Payload as UserAgentRequestPayload,
+            BootstrapResult as ProtoBootstrapResult, ListWalletAccessResponse,
+            SdkClientConnectionCancel as ProtoSdkClientConnectionCancel,
+            SdkClientConnectionRequest as ProtoSdkClientConnectionRequest,
+            SdkClientEntry as ProtoSdkClientEntry, SdkClientError as ProtoSdkClientError,
+            SdkClientGrantWalletAccess, SdkClientList as ProtoSdkClientList,
+            SdkClientListResponse as ProtoSdkClientListResponse, SdkClientRevokeWalletAccess,
+            SdkClientWalletAccess, UnsealEncryptedKey as ProtoUnsealEncryptedKey,
+            UnsealResult as ProtoUnsealResult, UnsealStart, UserAgentEvmSignTransactionRequest,
+            UserAgentRequest, UserAgentResponse, VaultState as ProtoVaultState,
+            sdk_client_list_response::Result as ProtoSdkClientListResult,
+            user_agent_request::Payload as UserAgentRequestPayload,
             user_agent_response::Payload as UserAgentResponsePayload,
         },
     },
     transport::{Error as TransportError, Receiver, Sender, grpc::GrpcBi},
 };
 use async_trait::async_trait;
-use chrono::{TimeZone, Utc};
 use kameo::{
     actor::{ActorRef, Spawn as _},
     error::SendError,
 };
 use tonic::Status;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::{
     actors::{
         keyholder::KeyHolderState,
         user_agent::{
             OutOfBand, UserAgentConnection, UserAgentSession,
-            session::{
-                BootstrapError, Error, HandleBootstrapEncryptedKey, HandleEvmWalletCreate,
-                HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete, HandleGrantList,
-                HandleQueryVaultState, HandleSignTransaction, HandleUnsealEncryptedKey,
+            session::connection::{
+                BootstrapError, HandleBootstrapEncryptedKey, HandleEvmWalletCreate,
+                HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete,
+                HandleGrantEvmWalletAccess, HandleGrantList, HandleListWalletAccess,
+                HandleNewClientApprove, HandleQueryVaultState, HandleRevokeEvmWalletAccess,
+                HandleSdkClientList, HandleSignTransaction, HandleUnsealEncryptedKey,
                 HandleUnsealRequest, SignTransactionError as SessionSignTransactionError,
                 UnsealError,
             },
         },
     },
-    evm::policies::{
-        Grant, SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit,
-        ether_transfer, token_transfers,
-    },
+    db::models::{CoreEvmWalletAccess, NewEvmWalletAccess},
     evm::{PolicyError, VetError, policies::EvalViolation},
-    grpc::request_tracker::RequestTracker,
-    utils::defer,
+    grpc::{
+        Convert, TryConvert,
+        common::inbound::{RawEvmAddress, RawEvmTransaction},
+        request_tracker::RequestTracker,
+    },
 };
 use alloy::{
     consensus::TxEip1559,
@@ -74,113 +70,8 @@ use alloy::{
     rlp::Decodable,
 };
 mod auth;
-
-fn u256_to_proto_bytes(value: U256) -> Vec<u8> {
-    value.to_be_bytes::<32>().to_vec()
-}
-
-fn meaning_to_proto(meaning: crate::evm::policies::SpecificMeaning) -> ProtoSpecificMeaning {
-    let kind = match meaning {
-        crate::evm::policies::SpecificMeaning::EtherTransfer(meaning) => {
-            ProtoSpecificMeaningKind::EtherTransfer(
-                arbiter_proto::proto::evm::EtherTransferMeaning {
-                    to: meaning.to.to_vec(),
-                    value: u256_to_proto_bytes(meaning.value),
-                },
-            )
-        }
-        crate::evm::policies::SpecificMeaning::TokenTransfer(meaning) => {
-            ProtoSpecificMeaningKind::TokenTransfer(
-                arbiter_proto::proto::evm::TokenTransferMeaning {
-                    token: Some(ProtoTokenInfo {
-                        symbol: meaning.token.symbol.to_string(),
-                        address: meaning.token.contract.to_vec(),
-                        chain_id: meaning.token.chain,
-                    }),
-                    to: meaning.to.to_vec(),
-                    value: u256_to_proto_bytes(meaning.value),
-                },
-            )
-        }
-    };
-
-    ProtoSpecificMeaning {
-        meaning: Some(kind),
-    }
-}
-
-fn violation_to_proto(violation: EvalViolation) -> ProtoEvalViolation {
-    let kind = match violation {
-        EvalViolation::InvalidTarget { target } => {
-            ProtoEvalViolationKind::InvalidTarget(target.to_vec())
-        }
-        EvalViolation::GasLimitExceeded {
-            max_gas_fee_per_gas,
-            max_priority_fee_per_gas,
-        } => ProtoEvalViolationKind::GasLimitExceeded(GasLimitExceededViolation {
-            max_gas_fee_per_gas: max_gas_fee_per_gas.map(u256_to_proto_bytes),
-            max_priority_fee_per_gas: max_priority_fee_per_gas.map(u256_to_proto_bytes),
-        }),
-        EvalViolation::RateLimitExceeded => {
-            ProtoEvalViolationKind::RateLimitExceeded(ProtoEmpty {})
-        }
-        EvalViolation::VolumetricLimitExceeded => {
-            ProtoEvalViolationKind::VolumetricLimitExceeded(ProtoEmpty {})
-        }
-        EvalViolation::InvalidTime => ProtoEvalViolationKind::InvalidTime(ProtoEmpty {}),
-        EvalViolation::InvalidTransactionType => {
-            ProtoEvalViolationKind::InvalidTransactionType(ProtoEmpty {})
-        }
-    };
-
-    ProtoEvalViolation { kind: Some(kind) }
-}
-
-fn eval_error_to_proto(err: VetError) -> Option<TransactionEvalError> {
-    let kind = match err {
-        VetError::ContractCreationNotSupported => {
-            ProtoTransactionEvalErrorKind::ContractCreationNotSupported(ProtoEmpty {})
-        }
-        VetError::UnsupportedTransactionType => {
-            ProtoTransactionEvalErrorKind::UnsupportedTransactionType(ProtoEmpty {})
-        }
-        VetError::Evaluated(meaning, policy_error) => match policy_error {
-            PolicyError::NoMatchingGrant => {
-                ProtoTransactionEvalErrorKind::NoMatchingGrant(NoMatchingGrantError {
-                    meaning: Some(meaning_to_proto(meaning)),
-                })
-            }
-            PolicyError::Violations(violations) => {
-                ProtoTransactionEvalErrorKind::PolicyViolations(PolicyViolationsError {
-                    meaning: Some(meaning_to_proto(meaning)),
-                    violations: violations.into_iter().map(violation_to_proto).collect(),
-                })
-            }
-            PolicyError::Pool(_) | PolicyError::Database(_) => {
-                return None;
-            }
-        },
-    };
-
-    Some(TransactionEvalError { kind: Some(kind) })
-}
-
-fn decode_eip1559_transaction(payload: &[u8]) -> Result<TxEip1559, ()> {
-    let mut body = payload;
-    if let Some((prefix, rest)) = payload.split_first()
-        && *prefix == 0x02
-    {
-        body = rest;
-    }
-
-    let mut cursor = body;
-    let transaction = TxEip1559::decode(&mut cursor).map_err(|_| ())?;
-    if !cursor.is_empty() {
-        return Err(());
-    }
-
-    Ok(transaction)
-}
+mod inbound;
+mod outbound;
 
 pub struct OutOfBandAdapter(mpsc::Sender<OutOfBand>);
 
@@ -204,94 +95,108 @@ async fn dispatch_loop(
         tokio::select! {
             oob = receiver.recv() => {
                 let Some(oob) = oob else {
+                    warn!("Out-of-band message channel closed");
                     return;
                 };
 
-                if send_out_of_band(&mut bi, oob).await.is_err() {
+                let payload = match oob {
+                    OutOfBand::ClientConnectionRequest { profile } => {
+                        UserAgentResponsePayload::SdkClientConnectionRequest(ProtoSdkClientConnectionRequest {
+                            pubkey: profile.pubkey.to_bytes().to_vec(),
+                            info: Some(ProtoClientMetadata {
+                                name: profile.metadata.name,
+                                description: profile.metadata.description,
+                                version: profile.metadata.version,
+                            }),
+                        })
+                    }
+                    OutOfBand::ClientConnectionCancel { pubkey } => {
+                        UserAgentResponsePayload::SdkClientConnectionCancel(ProtoSdkClientConnectionCancel {
+                            pubkey: pubkey.to_bytes().to_vec(),
+                        })
+                    }
+                };
+
+                if bi.send(Ok(UserAgentResponse { id: None, payload: Some(payload) })).await.is_err() {
                     return;
                 }
             }
 
-            conn = bi.recv() => {
-                let Some(conn) = conn else {
+            message = bi.recv() => {
+                let Some(message) = message else { return; };
+
+                let conn = match message {
+                    Ok(conn) => conn,
+                    Err(err) => {
+                        warn!(error = ?err, "Failed to receive user agent request");
+                        return;
+                    }
+                };
+
+                let request_id = match request_tracker.request(conn.id) {
+                    Ok(id) => id,
+                    Err(err) => {
+                        let _ = bi.send(Err(err)).await;
+                        return;
+                    }
+                };
+
+                let Some(payload) = conn.payload else {
+                    let _ = bi.send(Err(Status::invalid_argument("Missing user-agent request payload"))).await;
                     return;
                 };
 
-                if dispatch_conn_message(&mut bi, &actor, &mut request_tracker, conn)
-                    .await
-                    .is_err()
-                {
-                    return;
+                match dispatch_inner(&actor, payload).await {
+                    Ok(Some(response)) => {
+                        if bi.send(Ok(UserAgentResponse {
+                            id: Some(request_id),
+                            payload: Some(response),
+                        })).await.is_err() {
+                            return;
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(status) => {
+                         error!(?status, "Failed to process user agent request");
+                        let _ = bi.send(Err(status)).await;
+                        return;
+                    }
                 }
             }
         }
     }
 }
 
-async fn dispatch_conn_message(
-    bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
+async fn dispatch_inner(
     actor: &ActorRef<UserAgentSession>,
-    request_tracker: &mut RequestTracker,
-    conn: Result<UserAgentRequest, Status>,
-) -> Result<(), ()> {
-    let conn = match conn {
-        Ok(conn) => conn,
-        Err(err) => {
-            warn!(error = ?err, "Failed to receive user agent request");
-            return Err(());
-        }
-    };
-
-    let request_id = match request_tracker.request(conn.id) {
-        Ok(request_id) => request_id,
-        Err(err) => {
-            let _ = bi.send(Err(err)).await;
-            return Err(());
-        }
-    };
-
-    let Some(payload) = conn.payload else {
-        let _ = bi
-            .send(Err(Status::invalid_argument(
-                "Missing user-agent request payload",
-            )))
-            .await;
-        return Err(());
-    };
-
-    let payload = match payload {
+    payload: UserAgentRequestPayload,
+) -> Result<Option<UserAgentResponsePayload>, Status> {
+    let response = match payload {
         UserAgentRequestPayload::UnsealStart(UnsealStart { client_pubkey }) => {
-            let client_pubkey = match <[u8; 32]>::try_from(client_pubkey) {
-                Ok(bytes) => x25519_dalek::PublicKey::from(bytes),
-                Err(_) => {
-                    let _ = bi
-                        .send(Err(Status::invalid_argument("Invalid X25519 public key")))
-                        .await;
-                    return Err(());
-                }
-            };
+            let client_pubkey = <[u8; 32]>::try_from(client_pubkey)
+                .map(x25519_dalek::PublicKey::from)
+                .map_err(|_| Status::invalid_argument("Invalid X25519 public key"))?;
 
-            match actor.ask(HandleUnsealRequest { client_pubkey }).await {
-                Ok(response) => UserAgentResponsePayload::UnsealStartResponse(
-                    arbiter_proto::proto::user_agent::UnsealStartResponse {
-                        server_pubkey: response.server_pubkey.as_bytes().to_vec(),
-                    },
-                ),
-                Err(err) => {
+            let response = actor
+                .ask(HandleUnsealRequest { client_pubkey })
+                .await
+                .map_err(|err| {
                     warn!(error = ?err, "Failed to handle unseal start request");
-                    let _ = bi
-                        .send(Err(Status::internal("Failed to start unseal flow")))
-                        .await;
-                    return Err(());
-                }
-            }
+                    Status::internal("Failed to start unseal flow")
+                })?;
+
+            UserAgentResponsePayload::UnsealStartResponse(
+                arbiter_proto::proto::user_agent::UnsealStartResponse {
+                    server_pubkey: response.server_pubkey.as_bytes().to_vec(),
+                },
+            )
         }
         UserAgentRequestPayload::UnsealEncryptedKey(ProtoUnsealEncryptedKey {
             nonce,
             ciphertext,
             associated_data,
-        }) => UserAgentResponsePayload::UnsealResult(
-            match actor
+        }) => {
+            let result = match actor
                 .ask(HandleUnsealEncryptedKey {
                     nonce,
                     ciphertext,
@@ -305,20 +210,17 @@ async fn dispatch_conn_message(
                 }
                 Err(err) => {
                     warn!(error = ?err, "Failed to handle unseal request");
-                    let _ = bi
-                        .send(Err(Status::internal("Failed to unseal vault")))
-                        .await;
-                    return Err(());
+                    return Err(Status::internal("Failed to unseal vault"));
                 }
-            }
-            .into(),
-        ),
+            };
+            UserAgentResponsePayload::UnsealResult(result.into())
+        }
         UserAgentRequestPayload::BootstrapEncryptedKey(ProtoBootstrapEncryptedKey {
             nonce,
             ciphertext,
             associated_data,
-        }) => UserAgentResponsePayload::BootstrapResult(
-            match actor
+        }) => {
+            let result = match actor
                 .ask(HandleBootstrapEncryptedKey {
                     nonce,
                     ciphertext,
@@ -335,16 +237,13 @@ async fn dispatch_conn_message(
                 }
                 Err(err) => {
                     warn!(error = ?err, "Failed to handle bootstrap request");
-                    let _ = bi
-                        .send(Err(Status::internal("Failed to bootstrap vault")))
-                        .await;
-                    return Err(());
+                    return Err(Status::internal("Failed to bootstrap vault"));
                 }
-            }
-            .into(),
-        ),
-        UserAgentRequestPayload::QueryVaultState(_) => UserAgentResponsePayload::VaultState(
-            match actor.ask(HandleQueryVaultState {}).await {
+            };
+            UserAgentResponsePayload::BootstrapResult(result.into())
+        }
+        UserAgentRequestPayload::QueryVaultState(_) => {
+            let state = match actor.ask(HandleQueryVaultState {}).await {
                 Ok(KeyHolderState::Unbootstrapped) => ProtoVaultState::Unbootstrapped,
                 Ok(KeyHolderState::Sealed) => ProtoVaultState::Sealed,
                 Ok(KeyHolderState::Unsealed) => ProtoVaultState::Unsealed,
@@ -352,92 +251,208 @@ async fn dispatch_conn_message(
                     warn!(error = ?err, "Failed to query vault state");
                     ProtoVaultState::Error
                 }
-            }
-            .into(),
-        ),
-        UserAgentRequestPayload::EvmWalletCreate(_) => UserAgentResponsePayload::EvmWalletCreate(
-            EvmGrantOrWallet::wallet_create_response(actor.ask(HandleEvmWalletCreate {}).await),
-        ),
-        UserAgentRequestPayload::EvmWalletList(_) => UserAgentResponsePayload::EvmWalletList(
-            EvmGrantOrWallet::wallet_list_response(actor.ask(HandleEvmWalletList {}).await),
-        ),
-        UserAgentRequestPayload::EvmGrantList(_) => UserAgentResponsePayload::EvmGrantList(
-            EvmGrantOrWallet::grant_list_response(actor.ask(HandleGrantList {}).await),
-        ),
-        UserAgentRequestPayload::EvmGrantCreate(EvmGrantCreateRequest {
-            client_id,
-            shared,
-            specific,
-        }) => {
-            let (basic, grant) = match parse_grant_request(shared, specific) {
-                Ok(values) => values,
-                Err(status) => {
-                    let _ = bi.send(Err(status)).await;
-                    return Err(());
+            };
+            UserAgentResponsePayload::VaultState(state.into())
+        }
+        UserAgentRequestPayload::EvmWalletCreate(_) => {
+            let result = match actor.ask(HandleEvmWalletCreate {}).await {
+                Ok((wallet_id, address)) => WalletCreateResult::Wallet(WalletEntry {
+                    id: wallet_id,
+                    address: address.to_vec(),
+                }),
+                Err(err) => {
+                    warn!(error = ?err, "Failed to create EVM wallet");
+                    WalletCreateResult::Error(ProtoEvmError::Internal.into())
                 }
             };
+            UserAgentResponsePayload::EvmWalletCreate(WalletCreateResponse {
+                result: Some(result),
+            })
+        }
+        UserAgentRequestPayload::EvmWalletList(_) => {
+            let result = match actor.ask(HandleEvmWalletList {}).await {
+                Ok(wallets) => WalletListResult::Wallets(WalletList {
+                    wallets: wallets
+                        .into_iter()
+                        .map(|(id, address)| WalletEntry {
+                            address: address.to_vec(),
+                            id,
+                        })
+                        .collect(),
+                }),
+                Err(err) => {
+                    warn!(error = ?err, "Failed to list EVM wallets");
+                    WalletListResult::Error(ProtoEvmError::Internal.into())
+                }
+            };
+            UserAgentResponsePayload::EvmWalletList(WalletListResponse {
+                result: Some(result),
+            })
+        }
+        UserAgentRequestPayload::EvmGrantList(_) => {
+            let result = match actor.ask(HandleGrantList {}).await {
+                Ok(grants) => EvmGrantListResult::Grants(EvmGrantList {
+                    grants: grants
+                        .into_iter()
+                        .map(|grant| GrantEntry {
+                            id: grant.id,
+                            wallet_access_id: grant.shared.wallet_access_id,
+                            shared: Some(grant.shared.convert()),
+                            specific: Some(grant.settings.convert()),
+                        })
+                        .collect(),
+                }),
+                Err(err) => {
+                    warn!(error = ?err, "Failed to list EVM grants");
+                    EvmGrantListResult::Error(ProtoEvmError::Internal.into())
+                }
+            };
+            UserAgentResponsePayload::EvmGrantList(EvmGrantListResponse {
+                result: Some(result),
+            })
+        }
+        UserAgentRequestPayload::EvmGrantCreate(EvmGrantCreateRequest { shared, specific }) => {
+            let basic = shared
+                .ok_or_else(|| Status::invalid_argument("Missing shared grant settings"))?
+                .try_convert()?;
+            let grant = specific
+                .ok_or_else(|| Status::invalid_argument("Missing specific grant settings"))?
+                .try_convert()?;
 
-            UserAgentResponsePayload::EvmGrantCreate(EvmGrantOrWallet::grant_create_response(
-                actor
-                    .ask(HandleGrantCreate {
-                        client_id,
-                        basic,
-                        grant,
-                    })
-                    .await,
-            ))
+            let result = match actor.ask(HandleGrantCreate { basic, grant }).await {
+                Ok(grant_id) => EvmGrantCreateResult::GrantId(grant_id),
+                Err(err) => {
+                    warn!(error = ?err, "Failed to create EVM grant");
+                    EvmGrantCreateResult::Error(ProtoEvmError::Internal.into())
+                }
+            };
+            UserAgentResponsePayload::EvmGrantCreate(EvmGrantCreateResponse {
+                result: Some(result),
+            })
         }
         UserAgentRequestPayload::EvmGrantDelete(EvmGrantDeleteRequest { grant_id }) => {
-            UserAgentResponsePayload::EvmGrantDelete(EvmGrantOrWallet::grant_delete_response(
-                actor.ask(HandleGrantDelete { grant_id }).await,
-            ))
+            let result = match actor.ask(HandleGrantDelete { grant_id }).await {
+                Ok(()) => EvmGrantDeleteResult::Ok(()),
+                Err(err) => {
+                    warn!(error = ?err, "Failed to delete EVM grant");
+                    EvmGrantDeleteResult::Error(ProtoEvmError::Internal.into())
+                }
+            };
+            UserAgentResponsePayload::EvmGrantDelete(EvmGrantDeleteResponse {
+                result: Some(result),
+            })
+        }
+        UserAgentRequestPayload::SdkClientConnectionResponse(resp) => {
+            let pubkey_bytes = <[u8; 32]>::try_from(resp.pubkey)
+                .map_err(|_| Status::invalid_argument("Invalid Ed25519 public key length"))?;
+            let pubkey = ed25519_dalek::VerifyingKey::from_bytes(&pubkey_bytes)
+                .map_err(|_| Status::invalid_argument("Invalid Ed25519 public key"))?;
+
+            actor
+                .ask(HandleNewClientApprove {
+                    approved: resp.approved,
+                    pubkey,
+                })
+                .await
+                .map_err(|err| {
+                    warn!(?err, "Failed to process client connection response");
+                    Status::internal("Failed to process response")
+                })?;
+
+            return Ok(None);
+        }
+        UserAgentRequestPayload::SdkClientRevoke(_) => todo!(),
+        UserAgentRequestPayload::SdkClientList(_) => {
+            let result = match actor.ask(HandleSdkClientList {}).await {
+                Ok(clients) => ProtoSdkClientListResult::Clients(ProtoSdkClientList {
+                    clients: clients
+                        .into_iter()
+                        .map(|(client, metadata)| ProtoSdkClientEntry {
+                            id: client.id,
+                            pubkey: client.public_key,
+                            info: Some(ProtoClientMetadata {
+                                name: metadata.name,
+                                description: metadata.description,
+                                version: metadata.version,
+                            }),
+                            created_at: client.created_at.0.timestamp() as i32,
+                        })
+                        .collect(),
+                }),
+                Err(err) => {
+                    warn!(error = ?err, "Failed to list SDK clients");
+                    ProtoSdkClientListResult::Error(ProtoSdkClientError::Internal.into())
+                }
+            };
+            UserAgentResponsePayload::SdkClientListResponse(ProtoSdkClientListResponse {
+                result: Some(result),
+            })
+        }
+        UserAgentRequestPayload::GrantWalletAccess(SdkClientGrantWalletAccess { accesses }) => {
+            let entries: Vec<NewEvmWalletAccess> =
+                accesses.into_iter().map(|a| a.convert()).collect();
+
+            match actor.ask(HandleGrantEvmWalletAccess { entries }).await {
+                Ok(()) => {
+                    info!("Successfully granted wallet access");
+                    return Ok(None);
+                }
+                Err(err) => {
+                    warn!(error = ?err, "Failed to grant wallet access");
+                    return Err(Status::internal("Failed to grant wallet access"));
+                }
+            }
+        }
+        UserAgentRequestPayload::RevokeWalletAccess(SdkClientRevokeWalletAccess { accesses }) => {
+            match actor
+                .ask(HandleRevokeEvmWalletAccess { entries: accesses })
+                .await
+            {
+                Ok(()) => {
+                    info!("Successfully revoked wallet access");
+                    return Ok(None);
+                }
+                Err(err) => {
+                    warn!(error = ?err, "Failed to revoke wallet access");
+                    return Err(Status::internal("Failed to revoke wallet access"));
+                }
+            }
+        }
+        UserAgentRequestPayload::ListWalletAccess(_) => {
+            let result = match actor.ask(HandleListWalletAccess {}).await {
+                Ok(accesses) => ListWalletAccessResponse {
+                    accesses: accesses.into_iter().map(|a| a.convert()).collect(),
+                },
+                Err(err) => {
+                    warn!(error = ?err, "Failed to list wallet access");
+                    return Err(Status::internal("Failed to list wallet access"));
+                }
+            };
+            UserAgentResponsePayload::ListWalletAccessResponse(result)
+        }
+        UserAgentRequestPayload::AuthChallengeRequest(..)
+        | UserAgentRequestPayload::AuthChallengeSolution(..) => {
+            warn!(?payload, "Unsupported post-auth user agent request");
+            return Err(Status::invalid_argument("Unsupported user-agent request"));
         }
         UserAgentRequestPayload::EvmSignTransaction(UserAgentEvmSignTransactionRequest {
             client_id,
             request,
         }) => {
-            if client_id <= 0 {
-                let _ = bi
-                    .send(Err(Status::invalid_argument("Invalid SDK client id")))
-                    .await;
-                return Err(());
-            }
-
             let Some(request) = request else {
-                let _ = bi
-                    .send(Err(Status::invalid_argument(
-                        "Missing EVM sign transaction payload",
-                    )))
-                    .await;
-                return Err(());
+                warn!("Missing transaction signing request");
+                return Err(Status::invalid_argument(
+                    "Missing transaction signing request",
+                ));
             };
 
-            let wallet_address = match <[u8; 20]>::try_from(request.wallet_address.as_slice()) {
-                Ok(address) => Address::from(address),
-                Err(_) => {
-                    let _ = bi
-                        .send(Err(Status::invalid_argument("Invalid EVM wallet address")))
-                        .await;
-                    return Err(());
-                }
-            };
-
-            let transaction = match decode_eip1559_transaction(&request.rlp_transaction) {
-                Ok(transaction) => transaction,
-                Err(()) => {
-                    let _ = bi
-                        .send(Err(Status::invalid_argument(
-                            "Invalid EIP-1559 RLP transaction",
-                        )))
-                        .await;
-                    return Err(());
-                }
-            };
+            let address: Address = RawEvmAddress(request.wallet_address).try_convert()?;
+            let transaction = RawEvmTransaction(request.rlp_transaction).try_convert()?;
 
             let response = match actor
                 .ask(HandleSignTransaction {
                     client_id,
-                    wallet_address,
+                    wallet_address: address,
                     transaction,
                 })
                 .await
@@ -448,16 +463,7 @@ async fn dispatch_conn_message(
                     )),
                 },
                 Err(SendError::HandlerError(SessionSignTransactionError::Vet(vet_error))) => {
-                    match eval_error_to_proto(vet_error) {
-                        Some(eval_error) => EvmSignTransactionResponse {
-                            result: Some(EvmSignTransactionResult::EvalError(eval_error)),
-                        },
-                        None => EvmSignTransactionResponse {
-                            result: Some(EvmSignTransactionResult::Error(
-                                ProtoEvmError::Internal.into(),
-                            )),
-                        },
-                    }
+                    EvmSignTransactionResponse { result: Some(vet_error.convert()) }
                 }
                 Err(SendError::HandlerError(SessionSignTransactionError::Internal)) => {
                     EvmSignTransactionResponse {
@@ -475,309 +481,11 @@ async fn dispatch_conn_message(
                     }
                 }
             };
-
             UserAgentResponsePayload::EvmSignTransaction(response)
         }
-        payload => {
-            warn!(?payload, "Unsupported post-auth user agent request");
-            let _ = bi
-                .send(Err(Status::invalid_argument(
-                    "Unsupported user-agent request",
-                )))
-                .await;
-            return Err(());
-        }
     };
 
-    bi.send(Ok(UserAgentResponse {
-        id: Some(request_id),
-        payload: Some(payload),
-    }))
-    .await
-    .map_err(|_| ())
-}
-
-async fn send_out_of_band(
-    bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
-    oob: OutOfBand,
-) -> Result<(), ()> {
-    let payload = match oob {
-        // The current protobuf response payload carries only an approval boolean.
-        // Keep emitting this shape until a dedicated out-of-band request/cancel payload
-        // is reintroduced in the protocol definition.
-        OutOfBand::ClientConnectionRequest { pubkey: _ } => {
-            UserAgentResponsePayload::SdkClientConnectionResponse(
-                ProtoSdkClientConnectionResponse { approved: false },
-            )
-        }
-        OutOfBand::ClientConnectionCancel => UserAgentResponsePayload::SdkClientConnectionResponse(
-            ProtoSdkClientConnectionResponse { approved: false },
-        ),
-    };
-
-    bi.send(Ok(UserAgentResponse {
-        id: None,
-        payload: Some(payload),
-    }))
-    .await
-    .map_err(|_| ())
-}
-
-fn parse_grant_request(
-    shared: Option<ProtoSharedSettings>,
-    specific: Option<ProtoSpecificGrant>,
-) -> Result<(SharedGrantSettings, SpecificGrant), Status> {
-    let shared = shared.ok_or_else(|| Status::invalid_argument("Missing shared grant settings"))?;
-    let specific =
-        specific.ok_or_else(|| Status::invalid_argument("Missing specific grant settings"))?;
-
-    Ok((
-        shared_settings_from_proto(shared)?,
-        specific_grant_from_proto(specific)?,
-    ))
-}
-
-fn shared_settings_from_proto(shared: ProtoSharedSettings) -> Result<SharedGrantSettings, Status> {
-    Ok(SharedGrantSettings {
-        wallet_id: shared.wallet_id,
-        client_id: 0,
-        chain: shared.chain_id,
-        valid_from: shared.valid_from.map(proto_timestamp_to_utc).transpose()?,
-        valid_until: shared.valid_until.map(proto_timestamp_to_utc).transpose()?,
-        max_gas_fee_per_gas: shared
-            .max_gas_fee_per_gas
-            .as_deref()
-            .map(u256_from_proto_bytes)
-            .transpose()?,
-        max_priority_fee_per_gas: shared
-            .max_priority_fee_per_gas
-            .as_deref()
-            .map(u256_from_proto_bytes)
-            .transpose()?,
-        rate_limit: shared.rate_limit.map(|limit| TransactionRateLimit {
-            count: limit.count,
-            window: chrono::Duration::seconds(limit.window_secs),
-        }),
-    })
-}
-
-fn specific_grant_from_proto(specific: ProtoSpecificGrant) -> Result<SpecificGrant, Status> {
-    match specific.grant {
-        Some(ProtoSpecificGrantType::EtherTransfer(ProtoEtherTransferSettings {
-            targets,
-            limit,
-        })) => Ok(SpecificGrant::EtherTransfer(ether_transfer::Settings {
-            target: targets
-                .into_iter()
-                .map(address_from_bytes)
-                .collect::<Result<_, _>>()?,
-            limit: volume_rate_limit_from_proto(limit.ok_or_else(|| {
-                Status::invalid_argument("Missing ether transfer volume rate limit")
-            })?)?,
-        })),
-        Some(ProtoSpecificGrantType::TokenTransfer(ProtoTokenTransferSettings {
-            token_contract,
-            target,
-            volume_limits,
-        })) => Ok(SpecificGrant::TokenTransfer(token_transfers::Settings {
-            token_contract: address_from_bytes(token_contract)?,
-            target: target.map(address_from_bytes).transpose()?,
-            volume_limits: volume_limits
-                .into_iter()
-                .map(volume_rate_limit_from_proto)
-                .collect::<Result<_, _>>()?,
-        })),
-        None => Err(Status::invalid_argument("Missing specific grant kind")),
-    }
-}
-
-fn volume_rate_limit_from_proto(limit: ProtoVolumeRateLimit) -> Result<VolumeRateLimit, Status> {
-    Ok(VolumeRateLimit {
-        max_volume: u256_from_proto_bytes(&limit.max_volume)?,
-        window: chrono::Duration::seconds(limit.window_secs),
-    })
-}
-
-fn address_from_bytes(bytes: Vec<u8>) -> Result<Address, Status> {
-    if bytes.len() != 20 {
-        return Err(Status::invalid_argument("Invalid EVM address"));
-    }
-
-    Ok(Address::from_slice(&bytes))
-}
-
-fn u256_from_proto_bytes(bytes: &[u8]) -> Result<U256, Status> {
-    if bytes.len() > 32 {
-        return Err(Status::invalid_argument("Invalid U256 byte length"));
-    }
-
-    Ok(U256::from_be_slice(bytes))
-}
-
-fn proto_timestamp_to_utc(timestamp: ProtoTimestamp) -> Result<chrono::DateTime<Utc>, Status> {
-    Utc.timestamp_opt(timestamp.seconds, timestamp.nanos as u32)
-        .single()
-        .ok_or_else(|| Status::invalid_argument("Invalid timestamp"))
-}
-
-fn shared_settings_to_proto(shared: SharedGrantSettings) -> ProtoSharedSettings {
-    ProtoSharedSettings {
-        wallet_id: shared.wallet_id,
-        chain_id: shared.chain,
-        valid_from: shared.valid_from.map(|time| ProtoTimestamp {
-            seconds: time.timestamp(),
-            nanos: time.timestamp_subsec_nanos() as i32,
-        }),
-        valid_until: shared.valid_until.map(|time| ProtoTimestamp {
-            seconds: time.timestamp(),
-            nanos: time.timestamp_subsec_nanos() as i32,
-        }),
-        max_gas_fee_per_gas: shared
-            .max_gas_fee_per_gas
-            .map(|value| value.to_be_bytes::<32>().to_vec()),
-        max_priority_fee_per_gas: shared
-            .max_priority_fee_per_gas
-            .map(|value| value.to_be_bytes::<32>().to_vec()),
-        rate_limit: shared.rate_limit.map(|limit| ProtoTransactionRateLimit {
-            count: limit.count,
-            window_secs: limit.window.num_seconds(),
-        }),
-    }
-}
-
-fn specific_grant_to_proto(grant: SpecificGrant) -> ProtoSpecificGrant {
-    let grant = match grant {
-        SpecificGrant::EtherTransfer(settings) => {
-            ProtoSpecificGrantType::EtherTransfer(ProtoEtherTransferSettings {
-                targets: settings
-                    .target
-                    .into_iter()
-                    .map(|address| address.to_vec())
-                    .collect(),
-                limit: Some(ProtoVolumeRateLimit {
-                    max_volume: settings.limit.max_volume.to_be_bytes::<32>().to_vec(),
-                    window_secs: settings.limit.window.num_seconds(),
-                }),
-            })
-        }
-        SpecificGrant::TokenTransfer(settings) => {
-            ProtoSpecificGrantType::TokenTransfer(ProtoTokenTransferSettings {
-                token_contract: settings.token_contract.to_vec(),
-                target: settings.target.map(|address| address.to_vec()),
-                volume_limits: settings
-                    .volume_limits
-                    .into_iter()
-                    .map(|limit| ProtoVolumeRateLimit {
-                        max_volume: limit.max_volume.to_be_bytes::<32>().to_vec(),
-                        window_secs: limit.window.num_seconds(),
-                    })
-                    .collect(),
-            })
-        }
-    };
-
-    ProtoSpecificGrant { grant: Some(grant) }
-}
-
-struct EvmGrantOrWallet;
-
-impl EvmGrantOrWallet {
-    fn wallet_create_response<M>(
-        result: Result<Address, SendError<M, Error>>,
-    ) -> WalletCreateResponse {
-        let result = match result {
-            Ok(wallet) => WalletCreateResult::Wallet(WalletEntry {
-                address: wallet.to_vec(),
-            }),
-            Err(err) => {
-                warn!(error = ?err, "Failed to create EVM wallet");
-                WalletCreateResult::Error(ProtoEvmError::Internal.into())
-            }
-        };
-
-        WalletCreateResponse {
-            result: Some(result),
-        }
-    }
-
-    fn wallet_list_response<M>(
-        result: Result<Vec<Address>, SendError<M, Error>>,
-    ) -> WalletListResponse {
-        let result = match result {
-            Ok(wallets) => WalletListResult::Wallets(WalletList {
-                wallets: wallets
-                    .into_iter()
-                    .map(|wallet| WalletEntry {
-                        address: wallet.to_vec(),
-                    })
-                    .collect(),
-            }),
-            Err(err) => {
-                warn!(error = ?err, "Failed to list EVM wallets");
-                WalletListResult::Error(ProtoEvmError::Internal.into())
-            }
-        };
-
-        WalletListResponse {
-            result: Some(result),
-        }
-    }
-
-    fn grant_create_response<M>(
-        result: Result<i32, SendError<M, Error>>,
-    ) -> EvmGrantCreateResponse {
-        let result = match result {
-            Ok(grant_id) => EvmGrantCreateResult::GrantId(grant_id),
-            Err(err) => {
-                warn!(error = ?err, "Failed to create EVM grant");
-                EvmGrantCreateResult::Error(ProtoEvmError::Internal.into())
-            }
-        };
-
-        EvmGrantCreateResponse {
-            result: Some(result),
-        }
-    }
-
-    fn grant_delete_response<M>(result: Result<(), SendError<M, Error>>) -> EvmGrantDeleteResponse {
-        let result = match result {
-            Ok(()) => EvmGrantDeleteResult::Ok(ProtoEmpty {}),
-            Err(err) => {
-                warn!(error = ?err, "Failed to delete EVM grant");
-                EvmGrantDeleteResult::Error(ProtoEvmError::Internal.into())
-            }
-        };
-
-        EvmGrantDeleteResponse {
-            result: Some(result),
-        }
-    }
-
-    fn grant_list_response<M>(
-        result: Result<Vec<Grant<SpecificGrant>>, SendError<M, Error>>,
-    ) -> EvmGrantListResponse {
-        let result = match result {
-            Ok(grants) => EvmGrantListResult::Grants(EvmGrantList {
-                grants: grants
-                    .into_iter()
-                    .map(|grant| GrantEntry {
-                        id: grant.id,
-                        client_id: grant.shared.client_id,
-                        shared: Some(shared_settings_to_proto(grant.shared)),
-                        specific: Some(specific_grant_to_proto(grant.settings)),
-                    })
-                    .collect(),
-            }),
-            Err(err) => {
-                warn!(error = ?err, "Failed to list EVM grants");
-                EvmGrantListResult::Error(ProtoEvmError::Internal.into())
-            }
-        };
-
-        EvmGrantListResponse {
-            result: Some(result),
-        }
-    }
+    Ok(Some(response))
 }
 
 pub async fn start(
@@ -785,10 +493,8 @@ pub async fn start(
     mut bi: GrpcBi<UserAgentRequest, UserAgentResponse>,
 ) {
     let mut request_tracker = RequestTracker::default();
-    let mut response_id = None;
 
-    let pubkey = match auth::start(&mut conn, &mut bi, &mut request_tracker, &mut response_id).await
-    {
+    let pubkey = match auth::start(&mut conn, &mut bi, &mut request_tracker).await {
         Ok(pubkey) => pubkey,
         Err(e) => {
             warn!(error = ?e, "Authentication failed");
@@ -802,10 +508,7 @@ pub async fn start(
     let actor = UserAgentSession::spawn(UserAgentSession::new(conn, Box::new(oob_adapter)));
     let actor_for_cleanup = actor.clone();
 
-    let _ = defer(move || {
-        actor_for_cleanup.kill();
-    });
-
     info!(?pubkey, "User authenticated successfully");
     dispatch_loop(bi, actor, oob_receiver, request_tracker).await;
+    actor_for_cleanup.kill();
 }

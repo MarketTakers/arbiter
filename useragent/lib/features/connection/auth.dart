@@ -66,7 +66,7 @@ Future<Connection> connectAndAuthorize(
         KeyAlgorithm.ed25519 => KeyType.KEY_TYPE_ED25519,
       },
     );
-    final response = await connection.request(
+    final response = await connection.ask(
       UserAgentRequest(authChallengeRequest: req),
     );
     talker.info(
@@ -94,7 +94,7 @@ Future<Connection> connectAndAuthorize(
     );
 
     final signature = await key.sign(challenge);
-    final solutionResponse = await connection.request(
+    final solutionResponse = await connection.ask(
       UserAgentRequest(authChallengeSolution: AuthChallengeSolution(signature: signature)),
     );
 
