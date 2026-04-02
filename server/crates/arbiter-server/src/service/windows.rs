@@ -203,8 +203,9 @@ fn ensure_admin_rights() -> miette::Result<()> {
 }
 
 fn ensure_token_acl_contract(data_dir: &Path) -> miette::Result<()> {
-    // IMPORTANT: This ACL setup is intentionally explicit and should not be simplified away,
-    // because service-account and interactive-user access requirements are different in production.
+    // IMPORTANT: Keep this ACL setup explicit.
+    // The service account needs write access, while the interactive user only needs read access
+    // to the bootstrap token and service data directory.
     let target = data_dir.as_os_str();
 
     let status = Command::new("icacls")
