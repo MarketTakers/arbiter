@@ -25,8 +25,8 @@ async fn main() -> miette::Result<()> {
 
 async fn run_foreground(args: RunArgs) -> miette::Result<()> {
     info!(addr = %args.listen_addr, "Starting arbiter server");
-    arbiter_server::runtime::run_server_until_shutdown(
-        arbiter_server::runtime::RunConfig::new(args.listen_addr, args.data_dir),
+    arbiter_server::run_server_until_shutdown(
+        arbiter_server::RunConfig::new(args.listen_addr, args.data_dir),
         std::future::pending::<()>(),
     )
     .await

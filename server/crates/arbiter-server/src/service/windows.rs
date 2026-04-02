@@ -19,7 +19,7 @@ use windows_service::{
 };
 
 use crate::cli::{ServiceInstallArgs, ServiceRunArgs};
-use arbiter_server::runtime::{RunConfig, run_server_until_shutdown};
+use arbiter_server::{RunConfig, run_server_until_shutdown};
 
 const SERVICE_NAME: &str = "ArbiterServer";
 const SERVICE_DISPLAY_NAME: &str = "Arbiter Server";
