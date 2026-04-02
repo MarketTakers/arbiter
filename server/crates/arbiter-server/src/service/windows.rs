@@ -58,7 +58,7 @@ pub fn install_service(args: ServiceInstallArgs) -> miette::Result<()> {
         name: OsString::from(SERVICE_NAME),
         display_name: OsString::from(SERVICE_DISPLAY_NAME),
         service_type: ServiceType::OWN_PROCESS,
-        start_type: ServiceStartType::OnDemand,
+        start_type: ServiceStartType::AutoStart,
         error_control: ServiceErrorControl::Normal,
         executable_path: executable,
         launch_arguments,
