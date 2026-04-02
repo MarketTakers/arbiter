@@ -36,8 +36,8 @@ use super::{DatabaseID, EvalContext, EvalViolation};
 // Plain ether transfer
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Meaning {
-    to: Address,
-    value: U256,
+    pub(crate) to: Address,
+    pub(crate) value: U256,
 }
 impl Display for Meaning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

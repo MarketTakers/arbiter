@@ -6,10 +6,11 @@ use arbiter_proto::{
         evm::{
             EvmError as ProtoEvmError, EvmGrantCreateRequest, EvmGrantCreateResponse,
             EvmGrantDeleteRequest, EvmGrantDeleteResponse, EvmGrantList, EvmGrantListResponse,
-            GrantEntry, WalletCreateResponse, WalletEntry, WalletList, WalletListResponse,
-            evm_grant_create_response::Result as EvmGrantCreateResult,
+            EvmSignTransactionResponse, GrantEntry, WalletCreateResponse, WalletEntry, WalletList,
+            WalletListResponse, evm_grant_create_response::Result as EvmGrantCreateResult,
             evm_grant_delete_response::Result as EvmGrantDeleteResult,
             evm_grant_list_response::Result as EvmGrantListResult,
+            evm_sign_transaction_response::Result as EvmSignTransactionResult,
             wallet_create_response::Result as WalletCreateResult,
             wallet_list_response::Result as WalletListResult,
         },
@@ -22,8 +23,8 @@ use arbiter_proto::{
             SdkClientGrantWalletAccess, SdkClientList as ProtoSdkClientList,
             SdkClientListResponse as ProtoSdkClientListResponse, SdkClientRevokeWalletAccess,
             SdkClientWalletAccess, UnsealEncryptedKey as ProtoUnsealEncryptedKey,
-            UnsealResult as ProtoUnsealResult, UnsealStart, UserAgentRequest, UserAgentResponse,
-            VaultState as ProtoVaultState,
+            UnsealResult as ProtoUnsealResult, UnsealStart, UserAgentEvmSignTransactionRequest,
+            UserAgentRequest, UserAgentResponse, VaultState as ProtoVaultState,
             sdk_client_list_response::Result as ProtoSdkClientListResult,
             user_agent_request::Payload as UserAgentRequestPayload,
             user_agent_response::Payload as UserAgentResponsePayload,
@@ -49,12 +50,24 @@ use crate::{
                 HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete,
                 HandleGrantEvmWalletAccess, HandleGrantList, HandleListWalletAccess,
                 HandleNewClientApprove, HandleQueryVaultState, HandleRevokeEvmWalletAccess,
-                HandleSdkClientList, HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError,
+                HandleSdkClientList, HandleSignTransaction, HandleUnsealEncryptedKey,
+                HandleUnsealRequest, SignTransactionError as SessionSignTransactionError,
+                UnsealError,
             },
         },
     },
     db::models::{CoreEvmWalletAccess, NewEvmWalletAccess},
-    grpc::{Convert, TryConvert, request_tracker::RequestTracker},
+    evm::{PolicyError, VetError, policies::EvalViolation},
+    grpc::{
+        Convert, TryConvert,
+        common::inbound::{RawEvmAddress, RawEvmTransaction},
+        request_tracker::RequestTracker,
+    },
+};
+use alloy::{
+    consensus::TxEip1559,
+    primitives::{Address, U256},
+    rlp::Decodable,
 };
 mod auth;
 mod inbound;
@@ -178,7 +191,6 @@ async fn dispatch_inner(
                 },
             )
         }
-
         UserAgentRequestPayload::UnsealEncryptedKey(ProtoUnsealEncryptedKey {
             nonce,
             ciphertext,
@@ -203,7 +215,6 @@ async fn dispatch_inner(
             };
             UserAgentResponsePayload::UnsealResult(result.into())
         }
-
         UserAgentRequestPayload::BootstrapEncryptedKey(ProtoBootstrapEncryptedKey {
             nonce,
             ciphertext,
@@ -231,7 +242,6 @@ async fn dispatch_inner(
             };
             UserAgentResponsePayload::BootstrapResult(result.into())
         }
-
         UserAgentRequestPayload::QueryVaultState(_) => {
             let state = match actor.ask(HandleQueryVaultState {}).await {
                 Ok(KeyHolderState::Unbootstrapped) => ProtoVaultState::Unbootstrapped,
@@ -244,7 +254,6 @@ async fn dispatch_inner(
             };
             UserAgentResponsePayload::VaultState(state.into())
         }
-
         UserAgentRequestPayload::EvmWalletCreate(_) => {
             let result = match actor.ask(HandleEvmWalletCreate {}).await {
                 Ok((wallet_id, address)) => WalletCreateResult::Wallet(WalletEntry {
@@ -260,7 +269,6 @@ async fn dispatch_inner(
                 result: Some(result),
             })
         }
-
         UserAgentRequestPayload::EvmWalletList(_) => {
             let result = match actor.ask(HandleEvmWalletList {}).await {
                 Ok(wallets) => WalletListResult::Wallets(WalletList {
@@ -281,7 +289,6 @@ async fn dispatch_inner(
                 result: Some(result),
             })
         }
-
         UserAgentRequestPayload::EvmGrantList(_) => {
             let result = match actor.ask(HandleGrantList {}).await {
                 Ok(grants) => EvmGrantListResult::Grants(EvmGrantList {
@@ -304,7 +311,6 @@ async fn dispatch_inner(
                 result: Some(result),
             })
         }
-
         UserAgentRequestPayload::EvmGrantCreate(EvmGrantCreateRequest { shared, specific }) => {
             let basic = shared
                 .ok_or_else(|| Status::invalid_argument("Missing shared grant settings"))?
@@ -324,7 +330,6 @@ async fn dispatch_inner(
                 result: Some(result),
             })
         }
-
         UserAgentRequestPayload::EvmGrantDelete(EvmGrantDeleteRequest { grant_id }) => {
             let result = match actor.ask(HandleGrantDelete { grant_id }).await {
                 Ok(()) => EvmGrantDeleteResult::Ok(()),
@@ -337,7 +342,6 @@ async fn dispatch_inner(
                 result: Some(result),
             })
         }
-
         UserAgentRequestPayload::SdkClientConnectionResponse(resp) => {
             let pubkey_bytes = <[u8; 32]>::try_from(resp.pubkey)
                 .map_err(|_| Status::invalid_argument("Invalid Ed25519 public key length"))?;
@@ -357,9 +361,7 @@ async fn dispatch_inner(
 
             return Ok(None);
         }
-
         UserAgentRequestPayload::SdkClientRevoke(_) => todo!(),
-
         UserAgentRequestPayload::SdkClientList(_) => {
             let result = match actor.ask(HandleSdkClientList {}).await {
                 Ok(clients) => ProtoSdkClientListResult::Clients(ProtoSdkClientList {
@@ -386,7 +388,6 @@ async fn dispatch_inner(
                 result: Some(result),
             })
         }
-
         UserAgentRequestPayload::GrantWalletAccess(SdkClientGrantWalletAccess { accesses }) => {
             let entries: Vec<NewEvmWalletAccess> =
                 accesses.into_iter().map(|a| a.convert()).collect();
@@ -402,9 +403,11 @@ async fn dispatch_inner(
                 }
             }
         }
-
         UserAgentRequestPayload::RevokeWalletAccess(SdkClientRevokeWalletAccess { accesses }) => {
-            match actor.ask(HandleRevokeEvmWalletAccess { entries: accesses }).await {
+            match actor
+                .ask(HandleRevokeEvmWalletAccess { entries: accesses })
+                .await
+            {
                 Ok(()) => {
                     info!("Successfully revoked wallet access");
                     return Ok(None);
@@ -415,7 +418,6 @@ async fn dispatch_inner(
                 }
             }
         }
-
         UserAgentRequestPayload::ListWalletAccess(_) => {
             let result = match actor.ask(HandleListWalletAccess {}).await {
                 Ok(accesses) => ListWalletAccessResponse {
@@ -428,11 +430,58 @@ async fn dispatch_inner(
             };
             UserAgentResponsePayload::ListWalletAccessResponse(result)
         }
-
         UserAgentRequestPayload::AuthChallengeRequest(..)
         | UserAgentRequestPayload::AuthChallengeSolution(..) => {
             warn!(?payload, "Unsupported post-auth user agent request");
             return Err(Status::invalid_argument("Unsupported user-agent request"));
+        }
+        UserAgentRequestPayload::EvmSignTransaction(UserAgentEvmSignTransactionRequest {
+            client_id,
+            request,
+        }) => {
+            let Some(request) = request else {
+                warn!("Missing transaction signing request");
+                return Err(Status::invalid_argument(
+                    "Missing transaction signing request",
+                ));
+            };
+
+            let address: Address = RawEvmAddress(request.wallet_address).try_convert()?;
+            let transaction = RawEvmTransaction(request.rlp_transaction).try_convert()?;
+
+            let response = match actor
+                .ask(HandleSignTransaction {
+                    client_id,
+                    wallet_address: address,
+                    transaction,
+                })
+                .await
+            {
+                Ok(signature) => EvmSignTransactionResponse {
+                    result: Some(EvmSignTransactionResult::Signature(
+                        signature.as_bytes().to_vec(),
+                    )),
+                },
+                Err(SendError::HandlerError(SessionSignTransactionError::Vet(vet_error))) => {
+                    EvmSignTransactionResponse { result: Some(vet_error.convert()) }
+                }
+                Err(SendError::HandlerError(SessionSignTransactionError::Internal)) => {
+                    EvmSignTransactionResponse {
+                        result: Some(EvmSignTransactionResult::Error(
+                            ProtoEvmError::Internal.into(),
+                        )),
+                    }
+                }
+                Err(err) => {
+                    warn!(error = ?err, "Failed to sign EVM transaction via user-agent");
+                    EvmSignTransactionResponse {
+                        result: Some(EvmSignTransactionResult::Error(
+                            ProtoEvmError::Internal.into(),
+                        )),
+                    }
+                }
+            };
+            UserAgentResponsePayload::EvmSignTransaction(response)
         }
     };
 

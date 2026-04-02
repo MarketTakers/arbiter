@@ -1,8 +1,15 @@
+use alloy::primitives::Address;
 use arbiter_proto::{
-    proto::client::{
-        ClientRequest, ClientResponse, VaultState as ProtoVaultState,
-        client_request::Payload as ClientRequestPayload,
-        client_response::Payload as ClientResponsePayload,
+    proto::{
+        client::{
+            ClientRequest, ClientResponse, VaultState as ProtoVaultState,
+            client_request::Payload as ClientRequestPayload,
+            client_response::Payload as ClientResponsePayload,
+        },
+        evm::{
+            EvmError as ProtoEvmError, EvmSignTransactionResponse,
+            evm_sign_transaction_response::Result as EvmSignTransactionResult,
+        },
     },
     transport::{Receiver, Sender, grpc::GrpcBi},
 };
@@ -17,11 +24,18 @@ use crate::{
     actors::{
         client::{
             self, ClientConnection,
-            session::{ClientSession, Error, HandleQueryVaultState},
+            session::{
+                ClientSession, Error, HandleQueryVaultState, HandleSignTransaction,
+                SignTransactionRpcError,
+            },
         },
         keyholder::KeyHolderState,
     },
-    grpc::request_tracker::RequestTracker,
+    grpc::{
+        Convert, TryConvert,
+        common::inbound::{RawEvmAddress, RawEvmTransaction},
+        request_tracker::RequestTracker,
+    },
 };
 
 mod auth;
@@ -34,7 +48,9 @@ async fn dispatch_loop(
     mut request_tracker: RequestTracker,
 ) {
     loop {
-        let Some(message) = bi.recv().await else { return };
+        let Some(message) = bi.recv().await else {
+            return;
+        };
 
         let conn = match message {
             Ok(conn) => conn,
@@ -53,16 +69,24 @@ async fn dispatch_loop(
         };
 
         let Some(payload) = conn.payload else {
-            let _ = bi.send(Err(Status::invalid_argument("Missing client request payload"))).await;
+            let _ = bi
+                .send(Err(Status::invalid_argument(
+                    "Missing client request payload",
+                )))
+                .await;
             return;
         };
 
         match dispatch_inner(&actor, payload).await {
             Ok(response) => {
-                if bi.send(Ok(ClientResponse {
-                    request_id: Some(request_id),
-                    payload: Some(response),
-                })).await.is_err() {
+                if bi
+                    .send(Ok(ClientResponse {
+                        request_id: Some(request_id),
+                        payload: Some(response),
+                    }))
+                    .await
+                    .is_err()
+                {
                     return;
                 }
             }
@@ -92,6 +116,47 @@ async fn dispatch_inner(
             };
             Ok(ClientResponsePayload::VaultState(state.into()))
         }
+        ClientRequestPayload::EvmSignTransaction(request) => {
+            let address: Address = RawEvmAddress(request.wallet_address).try_convert()?;
+            let transaction = RawEvmTransaction(request.rlp_transaction).try_convert()?;
+
+            let response = match actor
+                .ask(HandleSignTransaction {
+                    wallet_address: address,
+                    transaction,
+                })
+                .await
+            {
+                Ok(signature) => EvmSignTransactionResponse {
+                    result: Some(EvmSignTransactionResult::Signature(
+                        signature.as_bytes().to_vec(),
+                    )),
+                },
+                Err(kameo::error::SendError::HandlerError(SignTransactionRpcError::Vet(
+                    vet_error,
+                ))) => EvmSignTransactionResponse {
+                    result: Some(vet_error.convert()),
+                },
+
+                Err(kameo::error::SendError::HandlerError(SignTransactionRpcError::Internal)) => {
+                    EvmSignTransactionResponse {
+                        result: Some(EvmSignTransactionResult::Error(
+                            ProtoEvmError::Internal.into(),
+                        )),
+                    }
+                }
+                Err(err) => {
+                    warn!(error = ?err, "Failed to sign EVM transaction");
+                    EvmSignTransactionResponse {
+                        result: Some(EvmSignTransactionResult::Error(
+                            ProtoEvmError::Internal.into(),
+                        )),
+                    }
+                }
+            };
+
+            Ok(ClientResponsePayload::EvmSignTransaction(response))
+        }
         payload => {
             warn!(?payload, "Unsupported post-auth client request");
             Err(Status::invalid_argument("Unsupported client request"))
@@ -102,14 +167,21 @@ async fn dispatch_inner(
 pub async fn start(mut conn: ClientConnection, mut bi: GrpcBi<ClientRequest, ClientResponse>) {
     let mut request_tracker = RequestTracker::default();
 
-    if let Err(e) = auth::start(&mut conn, &mut bi, &mut request_tracker).await {
-        let mut transport = auth::AuthTransportAdapter::new(&mut bi, &mut request_tracker);
-        let _ = transport.send(Err(e.clone())).await;
-        warn!(error = ?e, "Client authentication failed");
-        return;
+    let client_id = match auth::start(&mut conn, &mut bi, &mut request_tracker).await {
+        Ok(id) => id,
+        Err(err) => {
+            let _ = bi
+                .send(Err(Status::unauthenticated(format!(
+                    "Authentication failed: {}",
+                    err
+                ))))
+                .await;
+            warn!(error = ?err, "Client authentication failed");
+            return;
+        }
     };
 
-    let actor = client::session::ClientSession::spawn(client::session::ClientSession::new(conn));
+    let actor = ClientSession::spawn(ClientSession::new(conn, client_id));
     let actor_for_cleanup = actor.clone();
 
     info!("Client authenticated successfully");

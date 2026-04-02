@@ -1,5 +1,6 @@
 use arbiter_proto::{
-    ClientMetadata, format_challenge, transport::{Bi, expect_message}
+    ClientMetadata, format_challenge,
+    transport::{Bi, expect_message},
 };
 use chrono::Utc;
 use diesel::{
@@ -83,7 +84,6 @@ async fn get_client_and_nonce(
     })?;
 
     conn.exclusive_transaction(|conn| {
-        let pubkey_bytes = pubkey_bytes.clone();
         Box::pin(async move {
             let Some((client_id, current_nonce)) = program_client::table
                 .filter(program_client::public_key.eq(&pubkey_bytes))
@@ -290,7 +290,7 @@ where
 pub async fn authenticate<T>(
     props: &mut ClientConnection,
     transport: &mut T,
-) -> Result<VerifyingKey, Error>
+) -> Result<i32, Error>
 where
     T: Bi<Inbound, Result<Outbound, Error>> + Send + ?Sized,
 {
@@ -318,7 +318,6 @@ where
     };
 
     sync_client_metadata(&props.db, info.id, &metadata).await?;
-
     challenge_client(transport, pubkey, info.current_nonce).await?;
     
     transport
@@ -329,5 +328,5 @@ where
             Error::Transport
         })?;
 
-    Ok(pubkey)
+    Ok(info.id)
 }

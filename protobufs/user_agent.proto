@@ -154,6 +154,11 @@ message ListWalletAccessResponse {
   repeated SdkClientWalletAccess accesses = 1;
 }
 
+message UserAgentEvmSignTransactionRequest {
+  int32 client_id = 1;
+  arbiter.evm.EvmSignTransactionRequest request = 2;
+}
+
 message UserAgentRequest {
   int32 id = 16;
   oneof payload {
@@ -174,6 +179,7 @@ message UserAgentRequest {
     SdkClientGrantWalletAccess grant_wallet_access = 15;
     SdkClientRevokeWalletAccess revoke_wallet_access = 17;
     google.protobuf.Empty list_wallet_access = 18;
+    UserAgentEvmSignTransactionRequest evm_sign_transaction = 19;
   }
 }
 message UserAgentResponse {
@@ -195,5 +201,6 @@ message UserAgentResponse {
     SdkClientListResponse sdk_client_list_response = 14;
     BootstrapResult bootstrap_result = 15;
     ListWalletAccessResponse list_wallet_access_response = 17;
+    arbiter.evm.EvmSignTransactionResponse evm_sign_transaction = 18;
   }
 }
