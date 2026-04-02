@@ -31,6 +31,7 @@ pub struct ClientMetadata {
 }
 
 pub static BOOTSTRAP_PATH: &str = "bootstrap_token";
+pub const DEFAULT_SERVER_PORT: u16 = 50051;
 static HOME_OVERRIDE: LazyLock<RwLock<Option<PathBuf>>> = LazyLock::new(|| RwLock::new(None));
 
 pub fn set_home_path_override(path: Option<PathBuf>) -> Result<(), std::io::Error> {

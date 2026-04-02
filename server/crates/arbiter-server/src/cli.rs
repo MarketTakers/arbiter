@@ -1,8 +1,14 @@
-use std::{net::SocketAddr, path::PathBuf};
+use std::{
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    path::PathBuf,
+};
 
 use clap::{Args, Parser, Subcommand};
 
-const DEFAULT_LISTEN_ADDR: &str = "127.0.0.1:50051";
+const DEFAULT_LISTEN_ADDR: SocketAddr = SocketAddr::V4(SocketAddrV4::new(
+    Ipv4Addr::LOCALHOST,
+    arbiter_proto::DEFAULT_SERVER_PORT,
+));
 
 #[derive(Debug, Parser)]
 #[command(name = "arbiter-server")]
@@ -25,7 +31,7 @@ pub enum Command {
 
 #[derive(Debug, Clone, Args)]
 pub struct RunArgs {
-    #[arg(long, default_value = DEFAULT_LISTEN_ADDR)]
+    #[arg(long, default_value_t = DEFAULT_LISTEN_ADDR)]
     pub listen_addr: SocketAddr,
     #[arg(long)]
     pub data_dir: Option<PathBuf>,
@@ -34,9 +40,7 @@ pub struct RunArgs {
 impl Default for RunArgs {
     fn default() -> Self {
         Self {
-            listen_addr: DEFAULT_LISTEN_ADDR
-                .parse()
-                .expect("listen address literal must be valid"),
+            listen_addr: DEFAULT_LISTEN_ADDR,
             data_dir: None,
         }
     }
@@ -61,7 +65,7 @@ pub struct ServiceInstallArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct ServiceRunArgs {
-    #[arg(long, default_value = DEFAULT_LISTEN_ADDR)]
+    #[arg(long, default_value_t = DEFAULT_LISTEN_ADDR)]
     pub listen_addr: SocketAddr,
     #[arg(long)]
     pub data_dir: Option<PathBuf>,
