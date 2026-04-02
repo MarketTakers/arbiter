@@ -6,6 +6,7 @@ pub mod context;
 pub mod db;
 pub mod evm;
 pub mod grpc;
+pub mod runtime;
 pub mod safe_cell;
 pub mod utils;
 
