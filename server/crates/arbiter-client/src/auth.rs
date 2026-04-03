@@ -1,9 +1,17 @@
 use arbiter_proto::{
     ClientMetadata, format_challenge,
-    proto::client::{
-        AuthChallengeRequest, AuthChallengeSolution, AuthResult, ClientInfo as ProtoClientInfo,
-        ClientRequest, client_request::Payload as ClientRequestPayload,
-        client_response::Payload as ClientResponsePayload,
+    proto::{
+        client::{
+            ClientRequest,
+            auth::{
+                self as proto_auth, AuthChallenge, AuthChallengeRequest, AuthChallengeSolution,
+                AuthResult, request::Payload as AuthRequestPayload,
+                response::Payload as AuthResponsePayload,
+            },
+            client_request::Payload as ClientRequestPayload,
+            client_response::Payload as ClientResponsePayload,
+        },
+        shared::ClientInfo as ProtoClientInfo,
     },
 };
 use ed25519_dalek::Signer as _;
@@ -51,16 +59,16 @@ async fn send_auth_challenge_request(
     transport
         .send(ClientRequest {
             request_id: next_request_id(),
-            payload: Some(ClientRequestPayload::AuthChallengeRequest(
-                AuthChallengeRequest {
+            payload: Some(ClientRequestPayload::Auth(proto_auth::Request {
+                payload: Some(AuthRequestPayload::ChallengeRequest(AuthChallengeRequest {
                     pubkey: key.verifying_key().to_bytes().to_vec(),
                     client_info: Some(ProtoClientInfo {
                         name: metadata.name,
                         description: metadata.description,
                         version: metadata.version,
                     }),
-                },
-            )),
+                })),
+            })),
         })
         .await
         .map_err(|_| AuthError::UnexpectedAuthResponse)
@@ -68,7 +76,7 @@ async fn send_auth_challenge_request(
 
 async fn receive_auth_challenge(
     transport: &mut ClientTransport,
-) -> std::result::Result<arbiter_proto::proto::client::AuthChallenge, AuthError> {
+) -> std::result::Result<AuthChallenge, AuthError> {
     let response = transport
         .recv()
         .await
@@ -76,8 +84,11 @@ async fn receive_auth_challenge(
 
     let payload = response.payload.ok_or(AuthError::MissingAuthChallenge)?;
     match payload {
-        ClientResponsePayload::AuthChallenge(challenge) => Ok(challenge),
-        ClientResponsePayload::AuthResult(result) => Err(map_auth_result(result)),
+        ClientResponsePayload::Auth(response) => match response.payload {
+            Some(AuthResponsePayload::Challenge(challenge)) => Ok(challenge),
+            Some(AuthResponsePayload::Result(result)) => Err(map_auth_result(result)),
+            None => Err(AuthError::MissingAuthChallenge),
+        },
         _ => Err(AuthError::UnexpectedAuthResponse),
     }
 }
@@ -85,7 +96,7 @@ async fn receive_auth_challenge(
 async fn send_auth_challenge_solution(
     transport: &mut ClientTransport,
     key: &ed25519_dalek::SigningKey,
-    challenge: arbiter_proto::proto::client::AuthChallenge,
+    challenge: AuthChallenge,
 ) -> std::result::Result<(), AuthError> {
     let challenge_payload = format_challenge(challenge.nonce, &challenge.pubkey);
     let signature = key.sign(&challenge_payload).to_bytes().to_vec();
@@ -93,9 +104,11 @@ async fn send_auth_challenge_solution(
     transport
         .send(ClientRequest {
             request_id: next_request_id(),
-            payload: Some(ClientRequestPayload::AuthChallengeSolution(
-                AuthChallengeSolution { signature },
-            )),
+            payload: Some(ClientRequestPayload::Auth(proto_auth::Request {
+                payload: Some(AuthRequestPayload::ChallengeSolution(
+                    AuthChallengeSolution { signature },
+                )),
+            })),
         })
         .await
         .map_err(|_| AuthError::UnexpectedAuthResponse)
@@ -113,12 +126,15 @@ async fn receive_auth_confirmation(
         .payload
         .ok_or(AuthError::UnexpectedAuthResponse)?;
     match payload {
-        ClientResponsePayload::AuthResult(result)
-            if AuthResult::try_from(result).ok() == Some(AuthResult::Success) =>
-        {
-            Ok(())
-        }
-        ClientResponsePayload::AuthResult(result) => Err(map_auth_result(result)),
+        ClientResponsePayload::Auth(response) => match response.payload {
+            Some(AuthResponsePayload::Result(result))
+                if AuthResult::try_from(result).ok() == Some(AuthResult::Success) =>
+            {
+                Ok(())
+            }
+            Some(AuthResponsePayload::Result(result)) => Err(map_auth_result(result)),
+            _ => Err(AuthError::UnexpectedAuthResponse),
+        },
         _ => Err(AuthError::UnexpectedAuthResponse),
     }
 }

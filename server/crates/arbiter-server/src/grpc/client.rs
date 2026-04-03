@@ -1,8 +1,12 @@
 use arbiter_proto::{
-    proto::client::{
-        ClientRequest, ClientResponse, VaultState as ProtoVaultState,
-        client_request::Payload as ClientRequestPayload,
-        client_response::Payload as ClientResponsePayload,
+    proto::{
+        client::{
+            ClientRequest, ClientResponse,
+            client_request::Payload as ClientRequestPayload,
+            client_response::Payload as ClientResponsePayload,
+            vault::{self as proto_vault, request::Payload as VaultRequestPayload, response::Payload as VaultResponsePayload},
+        },
+        shared::VaultState as ProtoVaultState,
     },
     transport::{Receiver, Sender, grpc::GrpcBi},
 };
@@ -79,7 +83,24 @@ async fn dispatch_inner(
     payload: ClientRequestPayload,
 ) -> Result<ClientResponsePayload, Status> {
     match payload {
-        ClientRequestPayload::QueryVaultState(_) => {
+        ClientRequestPayload::Vault(req) => dispatch_vault_request(actor, req).await,
+        payload => {
+            warn!(?payload, "Unsupported post-auth client request");
+            Err(Status::invalid_argument("Unsupported client request"))
+        }
+    }
+}
+
+async fn dispatch_vault_request(
+    actor: &ActorRef<ClientSession>,
+    req: proto_vault::Request,
+) -> Result<ClientResponsePayload, Status> {
+    let Some(payload) = req.payload else {
+        return Err(Status::invalid_argument("Missing client vault request payload"));
+    };
+
+    match payload {
+        VaultRequestPayload::QueryState(_) => {
             let state = match actor.ask(HandleQueryVaultState {}).await {
                 Ok(KeyHolderState::Unbootstrapped) => ProtoVaultState::Unbootstrapped,
                 Ok(KeyHolderState::Sealed) => ProtoVaultState::Sealed,
@@ -90,11 +111,9 @@ async fn dispatch_inner(
                     ProtoVaultState::Error
                 }
             };
-            Ok(ClientResponsePayload::VaultState(state.into()))
-        }
-        payload => {
-            warn!(?payload, "Unsupported post-auth client request");
-            Err(Status::invalid_argument("Unsupported client request"))
+            Ok(ClientResponsePayload::Vault(proto_vault::Response {
+                payload: Some(VaultResponsePayload::State(state.into())),
+            }))
         }
     }
 }

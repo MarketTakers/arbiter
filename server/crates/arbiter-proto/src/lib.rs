@@ -6,6 +6,14 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 pub mod proto {
     tonic::include_proto!("arbiter");
 
+    pub mod shared {
+        tonic::include_proto!("arbiter.shared");
+
+        pub mod evm {
+            tonic::include_proto!("arbiter.shared.evm");
+        }
+    }
+
     pub mod user_agent {
         tonic::include_proto!("arbiter.user_agent");
 
@@ -36,6 +44,18 @@ pub mod proto {
 
     pub mod client {
         tonic::include_proto!("arbiter.client");
+
+        pub mod auth {
+            tonic::include_proto!("arbiter.client.auth");
+        }
+
+        pub mod evm {
+            tonic::include_proto!("arbiter.client.evm");
+        }
+
+        pub mod vault {
+            tonic::include_proto!("arbiter.client.vault");
+        }
     }
 
     pub mod evm {

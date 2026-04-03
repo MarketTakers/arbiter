@@ -1,7 +1,7 @@
 use arbiter_proto::proto::user_agent::{
     user_agent_response::Payload as UserAgentResponsePayload,
     vault::{
-        self as proto_vault, VaultState as ProtoVaultState,
+        self as proto_vault,
         bootstrap::{
             self as proto_bootstrap, BootstrapEncryptedKey as ProtoBootstrapEncryptedKey,
             BootstrapResult as ProtoBootstrapResult,
@@ -16,6 +16,7 @@ use arbiter_proto::proto::user_agent::{
         },
     },
 };
+use arbiter_proto::proto::shared::VaultState as ProtoVaultState;
 use kameo::{actor::ActorRef, error::SendError};
 use tonic::Status;
 use tracing::warn;

@@ -1,5 +1,4 @@
 use arbiter_proto::proto::{
-    client::ClientInfo as ProtoClientMetadata,
     user_agent::{
         sdk_client::{
             self as proto_sdk_client, ConnectionCancel as ProtoSdkClientConnectionCancel,
@@ -14,6 +13,7 @@ use arbiter_proto::proto::{
         },
         user_agent_response::Payload as UserAgentResponsePayload,
     },
+    shared::ClientInfo as ProtoClientMetadata,
 };
 use kameo::actor::ActorRef;
 use tonic::Status;
