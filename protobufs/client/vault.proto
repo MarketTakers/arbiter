@@ -1,24 +1,18 @@
 syntax = "proto3";
 
-package arbiter.user_agent.vault;
+package arbiter.client.vault;
 
 import "google/protobuf/empty.proto";
 import "shared/vault.proto";
-import "user_agent/vault/bootstrap.proto";
-import "user_agent/vault/unseal.proto";
 
 message Request {
   oneof payload {
     google.protobuf.Empty query_state = 1;
-    unseal.Request unseal = 2;
-    bootstrap.Request bootstrap = 3;
   }
 }
 
 message Response {
   oneof payload {
     arbiter.shared.VaultState state = 1;
-    unseal.Response unseal = 2;
-    bootstrap.Response bootstrap = 3;
   }
 }

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package arbiter.user_agent.sdk_client;
 
-import "client.proto";
+import "shared/client.proto";
 import "google/protobuf/empty.proto";
 
 enum Error {
@@ -20,7 +20,7 @@ message RevokeRequest {
 message Entry {
   int32 id = 1;
   bytes pubkey = 2;
-  arbiter.client.ClientInfo info = 3;
+  arbiter.shared.ClientInfo info = 3;
   int32 created_at = 4;
 }
 
@@ -44,7 +44,7 @@ message ListResponse {
 
 message ConnectionRequest {
   bytes pubkey = 1;
-  arbiter.client.ClientInfo info = 2;
+  arbiter.shared.ClientInfo info = 2;
 }
 
 message ConnectionResponse {
