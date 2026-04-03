@@ -27,7 +27,7 @@ impl TryConvert for RawEvmTransaction {
 
     type Error = tonic::Status;
 
-    fn try_convert(mut self) -> Result<Self::Output, Self::Error> {
+    fn try_convert(self) -> Result<Self::Output, Self::Error> {
         let tx = TxEip1559::decode(&mut self.0.as_slice()).map_err(|_| {
             tonic::Status::invalid_argument("Invalid EVM transaction format")
         })?;

@@ -2,12 +2,11 @@ use std::sync::Mutex;
 
 use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
-use diesel::sql_types::ops::Add;
-use diesel::{BoolExpressionMethods as _, ExpressionMethods as _, QueryDsl as _, SelectableHelper};
+use diesel::{ExpressionMethods as _, QueryDsl as _, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::error::SendError;
 use kameo::prelude::Context;
-use kameo::{message, messages};
+use kameo::messages;
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
@@ -15,9 +14,8 @@ use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnsw
 use crate::actors::keyholder::KeyHolderState;
 use crate::actors::user_agent::session::Error;
 use crate::db::models::{
-    CoreEvmWalletAccess, EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
+    EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
 };
-use crate::db::schema::evm_wallet_access;
 use crate::evm::policies::{Grant, SpecificGrant};
 use crate::safe_cell::SafeCell;
 use crate::{
