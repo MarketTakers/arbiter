@@ -128,6 +128,52 @@ The central abstraction is the `Policy` trait. Each implementation handles one s
 4. **Evaluate** — `Policy::evaluate` checks the decoded meaning against the grant's policy-specific constraints and returns any violations.
 5. **Record** — If `RunKind::Execution` and there are no violations, the engine writes to `evm_transaction_log` and calls `Policy::record_transaction` for any policy-specific logging (e.g., token transfer volume).
 
+The detailed branch structure is shown below:
+
+```mermaid
+flowchart TD
+    A[SDK Client sends sign transaction request] --> B[Server resolves wallet]
+    B --> C{Wallet exists?}
+
+    C -- No --> Z1[Return wallet not found error]
+    C -- Yes --> D[Check SDK client wallet visibility]
+
+    D --> E{Wallet visible to SDK client?}
+    E -- No --> F[Start wallet visibility voting flow]
+    F --> G{Vote approved?}
+    G -- No --> Z2[Return wallet access denied error]
+    G -- Yes --> H[Persist wallet visibility]
+    E -- Yes --> I[Classify transaction meaning]
+    H --> I
+
+    I --> J{Meaning supported?}
+    J -- No --> Z3[Return unsupported transaction error]
+    J -- Yes --> K[Find matching grant]
+
+    K --> L{Grant exists?}
+    L -- Yes --> M[Check grant limits]
+    L -- No --> N[Start execution or grant voting flow]
+
+    N --> O{User-agent decision}
+    O -- Reject --> Z4[Return no matching grant error]
+    O -- Allow once --> M
+    O -- Create grant --> P[Create grant with user-selected limits]
+    P --> Q[Persist grant]
+    Q --> M
+
+    M --> R{Limits exceeded?}
+    R -- Yes --> Z5[Return evaluation error]
+    R -- No --> S[Record transaction in logs]
+    S --> T[Produce signature]
+    T --> U[Return signature to SDK client]
+
+    note1[Limit checks include volume, count, and gas constraints.]
+    note2[Grant lookup depends on classified meaning, such as ether transfer or token transfer.]
+
+    K -. uses .-> note2
+    M -. checks .-> note1
+```
+
 ### Policy Trait
 
 | Method | Purpose |
