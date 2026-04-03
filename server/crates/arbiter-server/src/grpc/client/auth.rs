@@ -14,7 +14,7 @@ use arbiter_proto::{
         },
         shared::ClientInfo as ProtoClientInfo,
     },
-    transport::{Bi, Error as TransportError, Receiver, Sender, grpc::GrpcBi}
+    transport::{Bi, Error as TransportError, Receiver, Sender, grpc::GrpcBi},
 };
 use async_trait::async_trait;
 use tonic::Status;
@@ -49,7 +49,9 @@ impl<'a> AuthTransportAdapter<'a> {
                     nonce,
                 })
             }
-            auth::Outbound::AuthSuccess => AuthResponsePayload::Result(ProtoAuthResult::Success.into()),
+            auth::Outbound::AuthSuccess => {
+                AuthResponsePayload::Result(ProtoAuthResult::Success.into())
+            }
         }
     }
 
@@ -197,8 +199,7 @@ pub async fn start(
     conn: &mut ClientConnection,
     bi: &mut GrpcBi<ClientRequest, ClientResponse>,
     request_tracker: &mut RequestTracker,
-) -> Result<(), auth::Error> {
+) -> Result<i32, auth::Error> {
     let mut transport = AuthTransportAdapter::new(bi, request_tracker);
-    client::auth::authenticate(conn, &mut transport).await?;
-    Ok(())
+    client::auth::authenticate(conn, &mut transport).await
 }

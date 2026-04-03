@@ -32,7 +32,7 @@ mod utils;
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
 pub enum PolicyError {
     #[error("Database error")]
-    Error(#[from] crate::db::DatabaseError),
+    Database(#[from] crate::db::DatabaseError),
     #[error("Transaction violates policy: {0:?}")]
     #[diagnostic(code(arbiter_server::evm::policy_error::violation))]
     Violations(Vec<EvalViolation>),

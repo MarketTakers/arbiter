@@ -5,6 +5,11 @@ package arbiter.user_agent.evm;
 import "evm.proto";
 import "google/protobuf/empty.proto";
 
+message SignTransactionRequest {
+  int32 client_id = 1;
+  arbiter.evm.EvmSignTransactionRequest request = 2;
+}
+
 message Request {
   oneof payload {
     google.protobuf.Empty wallet_create = 1;
@@ -12,6 +17,7 @@ message Request {
     arbiter.evm.EvmGrantCreateRequest grant_create = 3;
     arbiter.evm.EvmGrantDeleteRequest grant_delete = 4;
     arbiter.evm.EvmGrantListRequest grant_list = 5;
+    SignTransactionRequest sign_transaction = 6;
   }
 }
 
@@ -22,5 +28,6 @@ message Response {
     arbiter.evm.EvmGrantCreateResponse grant_create = 3;
     arbiter.evm.EvmGrantDeleteResponse grant_delete = 4;
     arbiter.evm.EvmGrantListResponse grant_list = 5;
+    arbiter.evm.EvmSignTransactionResponse sign_transaction = 6;
   }
 }

@@ -3,7 +3,7 @@ use kameo::actor::Spawn;
 use tracing::{error, info};
 
 use crate::{
-    actors::{GlobalActors, client::{ session::ClientSession}},
+    actors::{GlobalActors, client::session::ClientSession},
     db,
 };
 
@@ -20,7 +20,10 @@ pub struct ClientConnection {
 
 impl ClientConnection {
     pub fn new(db: db::DatabasePool, actors: GlobalActors) -> Self {
-        Self { db, actors }
+        Self {
+            db,
+            actors,
+        }
     }
 }
 
@@ -32,8 +35,8 @@ where
     T: Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> + Send + ?Sized,
 {
     match auth::authenticate(&mut props, transport).await {
-        Ok(_pubkey) => {
-            ClientSession::spawn(ClientSession::new(props));
+        Ok(client_id) => {
+            ClientSession::spawn(ClientSession::new(props, client_id));
             info!("Client authenticated, session started");
         }
         Err(err) => {

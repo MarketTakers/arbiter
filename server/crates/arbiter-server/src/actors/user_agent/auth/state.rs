@@ -210,12 +210,15 @@ where
             }
         };
 
-        if valid {
-            self.transport
-                .send(Ok(Outbound::AuthSuccess))
-                .await
-                .map_err(|_| Error::Transport)?;
+        if !valid {
+            error!("Invalid challenge solution signature");
+            return Err(Error::InvalidChallengeSolution);
         }
+
+        self.transport
+            .send(Ok(Outbound::AuthSuccess))
+            .await
+            .map_err(|_| Error::Transport)?;
 
         Ok(key.clone())
     }
