@@ -1,6 +1,6 @@
-import 'package:arbiter/proto/client.pb.dart';
 import 'package:arbiter/proto/evm.pb.dart';
-import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/proto/shared/client.pb.dart';
+import 'package:arbiter/proto/user_agent/sdk_client.pb.dart';
 import 'package:arbiter/providers/evm/evm.dart';
 import 'package:arbiter/providers/sdk_clients/list.dart';
 import 'package:arbiter/providers/sdk_clients/wallet_access.dart';
@@ -30,7 +30,7 @@ void main() {
   testWidgets('renders client summary and wallet access controls', (
     tester,
   ) async {
-    final client = SdkClientEntry(
+    final client = Entry(
       id: 42,
       createdAt: 1,
       info: ClientInfo(

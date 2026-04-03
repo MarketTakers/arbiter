@@ -15,13 +15,13 @@ final sdkClientsProvider = SdkClientsProvider._();
 final class SdkClientsProvider
     extends
         $FunctionalProvider<
-          AsyncValue<List<SdkClientEntry>?>,
-          List<SdkClientEntry>?,
-          FutureOr<List<SdkClientEntry>?>
+          AsyncValue<List<ua_sdk.Entry>?>,
+          List<ua_sdk.Entry>?,
+          FutureOr<List<ua_sdk.Entry>?>
         >
     with
-        $FutureModifier<List<SdkClientEntry>?>,
-        $FutureProvider<List<SdkClientEntry>?> {
+        $FutureModifier<List<ua_sdk.Entry>?>,
+        $FutureProvider<List<ua_sdk.Entry>?> {
   SdkClientsProvider._()
     : super(
         from: null,
@@ -38,14 +38,14 @@ final class SdkClientsProvider
 
   @$internal
   @override
-  $FutureProviderElement<List<SdkClientEntry>?> $createElement(
+  $FutureProviderElement<List<ua_sdk.Entry>?> $createElement(
     $ProviderPointer pointer,
   ) => $FutureProviderElement(pointer);
 
   @override
-  FutureOr<List<SdkClientEntry>?> create(Ref ref) {
+  FutureOr<List<ua_sdk.Entry>?> create(Ref ref) {
     return sdkClients(ref);
   }
 }
 
-String _$sdkClientsHash() => r'9b50ef901a7b68e4e604d6d0b4777dbd3e6499e1';
+String _$sdkClientsHash() => r'9b966083effea11035d6edde379e71cc2a0f85c0';

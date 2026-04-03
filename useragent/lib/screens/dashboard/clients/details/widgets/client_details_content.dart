@@ -1,4 +1,4 @@
-import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/proto/user_agent/sdk_client.pb.dart' as ua_sdk;
 import 'package:arbiter/providers/sdk_clients/wallet_access.dart';
 import 'package:arbiter/screens/dashboard/clients/details/widgets/client_details_header.dart';
 import 'package:arbiter/screens/dashboard/clients/details/widgets/client_summary_card.dart';
@@ -16,7 +16,7 @@ class ClientDetailsContent extends ConsumerWidget {
   });
 
   final int clientId;
-  final SdkClientEntry client;
+  final ua_sdk.Entry client;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

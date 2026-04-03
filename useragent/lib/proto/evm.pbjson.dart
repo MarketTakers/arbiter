@@ -327,308 +327,6 @@ final $typed_data.Uint8List specificGrantDescriptor = $convert.base64Decode(
     'AiABKAsyIi5hcmJpdGVyLmV2bS5Ub2tlblRyYW5zZmVyU2V0dGluZ3NIAFINdG9rZW5UcmFuc2'
     'ZlckIHCgVncmFudA==');
 
-@$core.Deprecated('Use etherTransferMeaningDescriptor instead')
-const EtherTransferMeaning$json = {
-  '1': 'EtherTransferMeaning',
-  '2': [
-    {'1': 'to', '3': 1, '4': 1, '5': 12, '10': 'to'},
-    {'1': 'value', '3': 2, '4': 1, '5': 12, '10': 'value'},
-  ],
-};
-
-/// Descriptor for `EtherTransferMeaning`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List etherTransferMeaningDescriptor = $convert.base64Decode(
-    'ChRFdGhlclRyYW5zZmVyTWVhbmluZxIOCgJ0bxgBIAEoDFICdG8SFAoFdmFsdWUYAiABKAxSBX'
-    'ZhbHVl');
-
-@$core.Deprecated('Use tokenInfoDescriptor instead')
-const TokenInfo$json = {
-  '1': 'TokenInfo',
-  '2': [
-    {'1': 'symbol', '3': 1, '4': 1, '5': 9, '10': 'symbol'},
-    {'1': 'address', '3': 2, '4': 1, '5': 12, '10': 'address'},
-    {'1': 'chain_id', '3': 3, '4': 1, '5': 4, '10': 'chainId'},
-  ],
-};
-
-/// Descriptor for `TokenInfo`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List tokenInfoDescriptor = $convert.base64Decode(
-    'CglUb2tlbkluZm8SFgoGc3ltYm9sGAEgASgJUgZzeW1ib2wSGAoHYWRkcmVzcxgCIAEoDFIHYW'
-    'RkcmVzcxIZCghjaGFpbl9pZBgDIAEoBFIHY2hhaW5JZA==');
-
-@$core.Deprecated('Use tokenTransferMeaningDescriptor instead')
-const TokenTransferMeaning$json = {
-  '1': 'TokenTransferMeaning',
-  '2': [
-    {
-      '1': 'token',
-      '3': 1,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.TokenInfo',
-      '10': 'token'
-    },
-    {'1': 'to', '3': 2, '4': 1, '5': 12, '10': 'to'},
-    {'1': 'value', '3': 3, '4': 1, '5': 12, '10': 'value'},
-  ],
-};
-
-/// Descriptor for `TokenTransferMeaning`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List tokenTransferMeaningDescriptor = $convert.base64Decode(
-    'ChRUb2tlblRyYW5zZmVyTWVhbmluZxIsCgV0b2tlbhgBIAEoCzIWLmFyYml0ZXIuZXZtLlRva2'
-    'VuSW5mb1IFdG9rZW4SDgoCdG8YAiABKAxSAnRvEhQKBXZhbHVlGAMgASgMUgV2YWx1ZQ==');
-
-@$core.Deprecated('Use specificMeaningDescriptor instead')
-const SpecificMeaning$json = {
-  '1': 'SpecificMeaning',
-  '2': [
-    {
-      '1': 'ether_transfer',
-      '3': 1,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.EtherTransferMeaning',
-      '9': 0,
-      '10': 'etherTransfer'
-    },
-    {
-      '1': 'token_transfer',
-      '3': 2,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.TokenTransferMeaning',
-      '9': 0,
-      '10': 'tokenTransfer'
-    },
-  ],
-  '8': [
-    {'1': 'meaning'},
-  ],
-};
-
-/// Descriptor for `SpecificMeaning`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List specificMeaningDescriptor = $convert.base64Decode(
-    'Cg9TcGVjaWZpY01lYW5pbmcSSgoOZXRoZXJfdHJhbnNmZXIYASABKAsyIS5hcmJpdGVyLmV2bS'
-    '5FdGhlclRyYW5zZmVyTWVhbmluZ0gAUg1ldGhlclRyYW5zZmVyEkoKDnRva2VuX3RyYW5zZmVy'
-    'GAIgASgLMiEuYXJiaXRlci5ldm0uVG9rZW5UcmFuc2Zlck1lYW5pbmdIAFINdG9rZW5UcmFuc2'
-    'ZlckIJCgdtZWFuaW5n');
-
-@$core.Deprecated('Use gasLimitExceededViolationDescriptor instead')
-const GasLimitExceededViolation$json = {
-  '1': 'GasLimitExceededViolation',
-  '2': [
-    {
-      '1': 'max_gas_fee_per_gas',
-      '3': 1,
-      '4': 1,
-      '5': 12,
-      '9': 0,
-      '10': 'maxGasFeePerGas',
-      '17': true
-    },
-    {
-      '1': 'max_priority_fee_per_gas',
-      '3': 2,
-      '4': 1,
-      '5': 12,
-      '9': 1,
-      '10': 'maxPriorityFeePerGas',
-      '17': true
-    },
-  ],
-  '8': [
-    {'1': '_max_gas_fee_per_gas'},
-    {'1': '_max_priority_fee_per_gas'},
-  ],
-};
-
-/// Descriptor for `GasLimitExceededViolation`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List gasLimitExceededViolationDescriptor = $convert.base64Decode(
-    'ChlHYXNMaW1pdEV4Y2VlZGVkVmlvbGF0aW9uEjEKE21heF9nYXNfZmVlX3Blcl9nYXMYASABKA'
-    'xIAFIPbWF4R2FzRmVlUGVyR2FziAEBEjsKGG1heF9wcmlvcml0eV9mZWVfcGVyX2dhcxgCIAEo'
-    'DEgBUhRtYXhQcmlvcml0eUZlZVBlckdhc4gBAUIWChRfbWF4X2dhc19mZWVfcGVyX2dhc0IbCh'
-    'lfbWF4X3ByaW9yaXR5X2ZlZV9wZXJfZ2Fz');
-
-@$core.Deprecated('Use evalViolationDescriptor instead')
-const EvalViolation$json = {
-  '1': 'EvalViolation',
-  '2': [
-    {
-      '1': 'invalid_target',
-      '3': 1,
-      '4': 1,
-      '5': 12,
-      '9': 0,
-      '10': 'invalidTarget'
-    },
-    {
-      '1': 'gas_limit_exceeded',
-      '3': 2,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.GasLimitExceededViolation',
-      '9': 0,
-      '10': 'gasLimitExceeded'
-    },
-    {
-      '1': 'rate_limit_exceeded',
-      '3': 3,
-      '4': 1,
-      '5': 11,
-      '6': '.google.protobuf.Empty',
-      '9': 0,
-      '10': 'rateLimitExceeded'
-    },
-    {
-      '1': 'volumetric_limit_exceeded',
-      '3': 4,
-      '4': 1,
-      '5': 11,
-      '6': '.google.protobuf.Empty',
-      '9': 0,
-      '10': 'volumetricLimitExceeded'
-    },
-    {
-      '1': 'invalid_time',
-      '3': 5,
-      '4': 1,
-      '5': 11,
-      '6': '.google.protobuf.Empty',
-      '9': 0,
-      '10': 'invalidTime'
-    },
-    {
-      '1': 'invalid_transaction_type',
-      '3': 6,
-      '4': 1,
-      '5': 11,
-      '6': '.google.protobuf.Empty',
-      '9': 0,
-      '10': 'invalidTransactionType'
-    },
-  ],
-  '8': [
-    {'1': 'kind'},
-  ],
-};
-
-/// Descriptor for `EvalViolation`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List evalViolationDescriptor = $convert.base64Decode(
-    'Cg1FdmFsVmlvbGF0aW9uEicKDmludmFsaWRfdGFyZ2V0GAEgASgMSABSDWludmFsaWRUYXJnZX'
-    'QSVgoSZ2FzX2xpbWl0X2V4Y2VlZGVkGAIgASgLMiYuYXJiaXRlci5ldm0uR2FzTGltaXRFeGNl'
-    'ZWRlZFZpb2xhdGlvbkgAUhBnYXNMaW1pdEV4Y2VlZGVkEkgKE3JhdGVfbGltaXRfZXhjZWVkZW'
-    'QYAyABKAsyFi5nb29nbGUucHJvdG9idWYuRW1wdHlIAFIRcmF0ZUxpbWl0RXhjZWVkZWQSVAoZ'
-    'dm9sdW1ldHJpY19saW1pdF9leGNlZWRlZBgEIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eU'
-    'gAUhd2b2x1bWV0cmljTGltaXRFeGNlZWRlZBI7CgxpbnZhbGlkX3RpbWUYBSABKAsyFi5nb29n'
-    'bGUucHJvdG9idWYuRW1wdHlIAFILaW52YWxpZFRpbWUSUgoYaW52YWxpZF90cmFuc2FjdGlvbl'
-    '90eXBlGAYgASgLMhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5SABSFmludmFsaWRUcmFuc2FjdGlv'
-    'blR5cGVCBgoEa2luZA==');
-
-@$core.Deprecated('Use noMatchingGrantErrorDescriptor instead')
-const NoMatchingGrantError$json = {
-  '1': 'NoMatchingGrantError',
-  '2': [
-    {
-      '1': 'meaning',
-      '3': 1,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.SpecificMeaning',
-      '10': 'meaning'
-    },
-  ],
-};
-
-/// Descriptor for `NoMatchingGrantError`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List noMatchingGrantErrorDescriptor = $convert.base64Decode(
-    'ChROb01hdGNoaW5nR3JhbnRFcnJvchI2CgdtZWFuaW5nGAEgASgLMhwuYXJiaXRlci5ldm0uU3'
-    'BlY2lmaWNNZWFuaW5nUgdtZWFuaW5n');
-
-@$core.Deprecated('Use policyViolationsErrorDescriptor instead')
-const PolicyViolationsError$json = {
-  '1': 'PolicyViolationsError',
-  '2': [
-    {
-      '1': 'meaning',
-      '3': 1,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.SpecificMeaning',
-      '10': 'meaning'
-    },
-    {
-      '1': 'violations',
-      '3': 2,
-      '4': 3,
-      '5': 11,
-      '6': '.arbiter.evm.EvalViolation',
-      '10': 'violations'
-    },
-  ],
-};
-
-/// Descriptor for `PolicyViolationsError`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List policyViolationsErrorDescriptor = $convert.base64Decode(
-    'ChVQb2xpY3lWaW9sYXRpb25zRXJyb3ISNgoHbWVhbmluZxgBIAEoCzIcLmFyYml0ZXIuZXZtLl'
-    'NwZWNpZmljTWVhbmluZ1IHbWVhbmluZxI6Cgp2aW9sYXRpb25zGAIgAygLMhouYXJiaXRlci5l'
-    'dm0uRXZhbFZpb2xhdGlvblIKdmlvbGF0aW9ucw==');
-
-@$core.Deprecated('Use transactionEvalErrorDescriptor instead')
-const TransactionEvalError$json = {
-  '1': 'TransactionEvalError',
-  '2': [
-    {
-      '1': 'contract_creation_not_supported',
-      '3': 1,
-      '4': 1,
-      '5': 11,
-      '6': '.google.protobuf.Empty',
-      '9': 0,
-      '10': 'contractCreationNotSupported'
-    },
-    {
-      '1': 'unsupported_transaction_type',
-      '3': 2,
-      '4': 1,
-      '5': 11,
-      '6': '.google.protobuf.Empty',
-      '9': 0,
-      '10': 'unsupportedTransactionType'
-    },
-    {
-      '1': 'no_matching_grant',
-      '3': 3,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.NoMatchingGrantError',
-      '9': 0,
-      '10': 'noMatchingGrant'
-    },
-    {
-      '1': 'policy_violations',
-      '3': 4,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.PolicyViolationsError',
-      '9': 0,
-      '10': 'policyViolations'
-    },
-  ],
-  '8': [
-    {'1': 'kind'},
-  ],
-};
-
-/// Descriptor for `TransactionEvalError`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List transactionEvalErrorDescriptor = $convert.base64Decode(
-    'ChRUcmFuc2FjdGlvbkV2YWxFcnJvchJfCh9jb250cmFjdF9jcmVhdGlvbl9ub3Rfc3VwcG9ydG'
-    'VkGAEgASgLMhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5SABSHGNvbnRyYWN0Q3JlYXRpb25Ob3RT'
-    'dXBwb3J0ZWQSWgocdW5zdXBwb3J0ZWRfdHJhbnNhY3Rpb25fdHlwZRgCIAEoCzIWLmdvb2dsZS'
-    '5wcm90b2J1Zi5FbXB0eUgAUhp1bnN1cHBvcnRlZFRyYW5zYWN0aW9uVHlwZRJPChFub19tYXRj'
-    'aGluZ19ncmFudBgDIAEoCzIhLmFyYml0ZXIuZXZtLk5vTWF0Y2hpbmdHcmFudEVycm9ySABSD2'
-    '5vTWF0Y2hpbmdHcmFudBJRChFwb2xpY3lfdmlvbGF0aW9ucxgEIAEoCzIiLmFyYml0ZXIuZXZt'
-    'LlBvbGljeVZpb2xhdGlvbnNFcnJvckgAUhBwb2xpY3lWaW9sYXRpb25zQgYKBGtpbmQ=');
-
 @$core.Deprecated('Use evmGrantCreateRequestDescriptor instead')
 const EvmGrantCreateRequest$json = {
   '1': 'EvmGrantCreateRequest',
@@ -865,7 +563,7 @@ const EvmSignTransactionResponse$json = {
       '3': 2,
       '4': 1,
       '5': 11,
-      '6': '.arbiter.evm.TransactionEvalError',
+      '6': '.arbiter.shared.evm.TransactionEvalError',
       '9': 0,
       '10': 'evalError'
     },
@@ -887,9 +585,9 @@ const EvmSignTransactionResponse$json = {
 /// Descriptor for `EvmSignTransactionResponse`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List evmSignTransactionResponseDescriptor = $convert.base64Decode(
     'ChpFdm1TaWduVHJhbnNhY3Rpb25SZXNwb25zZRIeCglzaWduYXR1cmUYASABKAxIAFIJc2lnbm'
-    'F0dXJlEkIKCmV2YWxfZXJyb3IYAiABKAsyIS5hcmJpdGVyLmV2bS5UcmFuc2FjdGlvbkV2YWxF'
-    'cnJvckgAUglldmFsRXJyb3ISLQoFZXJyb3IYAyABKA4yFS5hcmJpdGVyLmV2bS5Fdm1FcnJvck'
-    'gAUgVlcnJvckIICgZyZXN1bHQ=');
+    'F0dXJlEkkKCmV2YWxfZXJyb3IYAiABKAsyKC5hcmJpdGVyLnNoYXJlZC5ldm0uVHJhbnNhY3Rp'
+    'b25FdmFsRXJyb3JIAFIJZXZhbEVycm9yEi0KBWVycm9yGAMgASgOMhUuYXJiaXRlci5ldm0uRX'
+    'ZtRXJyb3JIAFIFZXJyb3JCCAoGcmVzdWx0');
 
 @$core.Deprecated('Use evmAnalyzeTransactionRequestDescriptor instead')
 const EvmAnalyzeTransactionRequest$json = {
@@ -915,7 +613,7 @@ const EvmAnalyzeTransactionResponse$json = {
       '3': 1,
       '4': 1,
       '5': 11,
-      '6': '.arbiter.evm.SpecificMeaning',
+      '6': '.arbiter.shared.evm.SpecificMeaning',
       '9': 0,
       '10': 'meaning'
     },
@@ -924,7 +622,7 @@ const EvmAnalyzeTransactionResponse$json = {
       '3': 2,
       '4': 1,
       '5': 11,
-      '6': '.arbiter.evm.TransactionEvalError',
+      '6': '.arbiter.shared.evm.TransactionEvalError',
       '9': 0,
       '10': 'evalError'
     },
@@ -945,7 +643,8 @@ const EvmAnalyzeTransactionResponse$json = {
 
 /// Descriptor for `EvmAnalyzeTransactionResponse`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List evmAnalyzeTransactionResponseDescriptor = $convert.base64Decode(
-    'Ch1Fdm1BbmFseXplVHJhbnNhY3Rpb25SZXNwb25zZRI4CgdtZWFuaW5nGAEgASgLMhwuYXJiaX'
-    'Rlci5ldm0uU3BlY2lmaWNNZWFuaW5nSABSB21lYW5pbmcSQgoKZXZhbF9lcnJvchgCIAEoCzIh'
-    'LmFyYml0ZXIuZXZtLlRyYW5zYWN0aW9uRXZhbEVycm9ySABSCWV2YWxFcnJvchItCgVlcnJvch'
-    'gDIAEoDjIVLmFyYml0ZXIuZXZtLkV2bUVycm9ySABSBWVycm9yQggKBnJlc3VsdA==');
+    'Ch1Fdm1BbmFseXplVHJhbnNhY3Rpb25SZXNwb25zZRI/CgdtZWFuaW5nGAEgASgLMiMuYXJiaX'
+    'Rlci5zaGFyZWQuZXZtLlNwZWNpZmljTWVhbmluZ0gAUgdtZWFuaW5nEkkKCmV2YWxfZXJyb3IY'
+    'AiABKAsyKC5hcmJpdGVyLnNoYXJlZC5ldm0uVHJhbnNhY3Rpb25FdmFsRXJyb3JIAFIJZXZhbE'
+    'Vycm9yEi0KBWVycm9yGAMgASgOMhUuYXJiaXRlci5ldm0uRXZtRXJyb3JIAFIFZXJyb3JCCAoG'
+    'cmVzdWx0');

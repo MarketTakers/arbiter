@@ -5,6 +5,7 @@ import 'package:arbiter/features/connection/connection.dart';
 import 'package:arbiter/features/connection/server_info_storage.dart';
 import 'package:arbiter/features/identity/pk_manager.dart';
 import 'package:arbiter/proto/arbiter.pbgrpc.dart';
+import 'package:arbiter/proto/user_agent/auth.pb.dart' as ua_auth;
 import 'package:arbiter/proto/user_agent.pb.dart';
 import 'package:grpc/grpc.dart';
 import 'package:mtcore/markettakers.dart';
@@ -12,22 +13,22 @@ import 'package:mtcore/markettakers.dart';
 class AuthorizationException implements Exception {
   const AuthorizationException(this.result);
 
-  final AuthResult result;
+  final ua_auth.AuthResult result;
 
   String get message => switch (result) {
-    AuthResult.AUTH_RESULT_INVALID_KEY =>
+    ua_auth.AuthResult.AUTH_RESULT_INVALID_KEY =>
       'Authentication failed: this device key is not registered on the server.',
-    AuthResult.AUTH_RESULT_INVALID_SIGNATURE =>
+    ua_auth.AuthResult.AUTH_RESULT_INVALID_SIGNATURE =>
       'Authentication failed: the server rejected the signature for this device key.',
-    AuthResult.AUTH_RESULT_BOOTSTRAP_REQUIRED =>
+    ua_auth.AuthResult.AUTH_RESULT_BOOTSTRAP_REQUIRED =>
       'Authentication failed: the server requires bootstrap before this device can connect.',
-    AuthResult.AUTH_RESULT_TOKEN_INVALID =>
+    ua_auth.AuthResult.AUTH_RESULT_TOKEN_INVALID =>
       'Authentication failed: the bootstrap token is invalid.',
-    AuthResult.AUTH_RESULT_INTERNAL =>
+    ua_auth.AuthResult.AUTH_RESULT_INTERNAL =>
       'Authentication failed: the server hit an internal error.',
-    AuthResult.AUTH_RESULT_UNSPECIFIED =>
+    ua_auth.AuthResult.AUTH_RESULT_UNSPECIFIED =>
       'Authentication failed: the server returned an unspecified auth error.',
-    AuthResult.AUTH_RESULT_SUCCESS => 'Authentication succeeded.',
+    ua_auth.AuthResult.AUTH_RESULT_SUCCESS => 'Authentication succeeded.',
     _ => 'Authentication failed: ${result.name}.',
   };
 
@@ -57,56 +58,76 @@ Future<Connection> connectAndAuthorize(
     );
     final pubkey = await key.getPublicKey();
 
-    final req = AuthChallengeRequest(
+    final req = ua_auth.AuthChallengeRequest(
       pubkey: pubkey,
       bootstrapToken: bootstrapToken,
       keyType: switch (key.alg) {
-        KeyAlgorithm.rsa => KeyType.KEY_TYPE_RSA,
-        KeyAlgorithm.ecdsa => KeyType.KEY_TYPE_ECDSA_SECP256K1,
-        KeyAlgorithm.ed25519 => KeyType.KEY_TYPE_ED25519,
+        KeyAlgorithm.rsa => ua_auth.KeyType.KEY_TYPE_RSA,
+        KeyAlgorithm.ecdsa => ua_auth.KeyType.KEY_TYPE_ECDSA_SECP256K1,
+        KeyAlgorithm.ed25519 => ua_auth.KeyType.KEY_TYPE_ED25519,
       },
     );
     final response = await connection.ask(
-      UserAgentRequest(authChallengeRequest: req),
+      UserAgentRequest(auth: ua_auth.Request(challengeRequest: req)),
     );
     talker.info(
       "Sent auth challenge request with pubkey ${base64Encode(pubkey)}",
     );
     talker.info('Received response from server, checking auth flow...');
 
-    if (response.hasAuthResult()) {
-      if (response.authResult != AuthResult.AUTH_RESULT_SUCCESS) {
-        throw AuthorizationException(response.authResult);
+    if (!response.hasAuth()) {
+      throw ConnectionException(
+        'Expected auth response, got ${response.whichPayload()}',
+      );
+    }
+
+    final authResponse = response.auth;
+
+    if (authResponse.hasResult()) {
+      if (authResponse.result != ua_auth.AuthResult.AUTH_RESULT_SUCCESS) {
+        throw AuthorizationException(authResponse.result);
       }
       talker.info('Authentication successful, connection established');
       return connection;
     }
 
-    if (!response.hasAuthChallenge()) {
+    if (!authResponse.hasChallenge()) {
       throw ConnectionException(
-        'Expected AuthChallengeResponse, got ${response.whichPayload()}',
+        'Expected auth challenge response, got ${authResponse.whichPayload()}',
       );
     }
 
-    final challenge = _formatChallenge(response.authChallenge, pubkey);
+    final challenge = _formatChallenge(authResponse.challenge, pubkey);
     talker.info(
       'Received auth challenge, signing with key ${base64Encode(pubkey)}',
     );
 
     final signature = await key.sign(challenge);
     final solutionResponse = await connection.ask(
-      UserAgentRequest(authChallengeSolution: AuthChallengeSolution(signature: signature)),
+      UserAgentRequest(
+        auth: ua_auth.Request(
+          challengeSolution: ua_auth.AuthChallengeSolution(signature: signature),
+        ),
+      ),
     );
 
     talker.info('Sent auth challenge solution, waiting for server response...');
 
-    if (!solutionResponse.hasAuthResult()) {
+    if (!solutionResponse.hasAuth()) {
       throw ConnectionException(
-        'Expected AuthChallengeSolutionResponse, got ${solutionResponse.whichPayload()}',
+        'Expected auth solution response, got ${solutionResponse.whichPayload()}',
       );
     }
-    if (solutionResponse.authResult != AuthResult.AUTH_RESULT_SUCCESS) {
-      throw AuthorizationException(solutionResponse.authResult);
+
+    final authSolutionResponse = solutionResponse.auth;
+
+    if (!authSolutionResponse.hasResult()) {
+      throw ConnectionException(
+        'Expected auth solution result, got ${authSolutionResponse.whichPayload()}',
+      );
+    }
+    if (authSolutionResponse.result != ua_auth.AuthResult.AUTH_RESULT_SUCCESS) {
+      throw AuthorizationException(authSolutionResponse.result);
     }
 
     talker.info('Authentication successful, connection established');
@@ -147,7 +168,7 @@ Future<Connection> _connect(StoredServerInfo serverInfo) async {
   return Connection(channel: channel, tx: tx, rx: rx);
 }
 
-List<int> _formatChallenge(AuthChallenge challenge, List<int> pubkey) {
+List<int> _formatChallenge(ua_auth.AuthChallenge challenge, List<int> pubkey) {
   final encodedPubkey = base64Encode(pubkey);
   final payload = "${challenge.nonce}:$encodedPubkey";
   return utf8.encode(payload);

@@ -1,5 +1,5 @@
 import 'package:arbiter/proto/evm.pb.dart';
-import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/proto/user_agent/sdk_client.pb.dart' as ua_sdk;
 import 'package:arbiter/providers/evm/evm.dart';
 import 'package:arbiter/providers/evm/evm_grants.dart';
 import 'package:arbiter/providers/sdk_clients/list.dart';
@@ -45,7 +45,7 @@ class GrantCard extends ConsumerWidget {
     final muted = Palette.ink.withValues(alpha: 0.62);
 
     // Resolve wallet_access_id → wallet address + client name
-    final accessById = <int, SdkClientWalletAccess>{
+    final accessById = <int, ua_sdk.WalletAccessEntry>{
       for (final a in walletAccesses) a.id: a,
     };
     final walletById = <int, WalletEntry>{
