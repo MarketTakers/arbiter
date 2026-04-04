@@ -11,6 +11,7 @@ Arbiter distinguishes two kinds of peers:
 
 - **User Agent** — A client application used by the owner to manage the vault (create wallets, approve SDK clients, configure policies).
 - **SDK Client** — A consumer of signing capabilities, typically an automation tool. In the future, this could include a browser-based wallet.
+- **Recovery Operator** — A dormant recovery participant with narrowly scoped authority used only for custody recovery and operator replacement.
 
 ---
 
@@ -54,6 +55,8 @@ Voting is based on the total number of registered operators:
 - **2 operators:** full consensus is required; both operators must approve.
 - **3 or more operators:** quorum is `floor(N / 2) + 1`.
 
+For a decision to count, the operator's approval or rejection must be signed by that operator's associated key. Unsigned votes, or votes that fail signature verification, are ignored.
+
 Examples:
 
 - **3 operators:** 2 approvals required
@@ -67,6 +70,7 @@ In multi-operator mode, a successful vote is required for:
 - granting an SDK client visibility to a wallet
 - approving a one-off transaction
 - approving creation of a persistent grant
+- approving operator replacement
 - approving server updates
 - updating Shamir secret-sharing parameters
 
@@ -80,7 +84,104 @@ This is stricter than ordinary governance actions because rotating the root key 
 
 When the vault has multiple operators, the vault root key is protected using Shamir secret sharing.
 
-This ensures that root-key recovery and governance-sensitive changes are aligned with the multi-operator model rather than delegated to a single operator-held secret.
+The vault root key is encrypted in a way that requires reconstruction from user-held shares rather than from a single shared password.
+
+For ordinary operators, the Shamir threshold matches the ordinary governance quorum. For example:
+
+- **2 operators:** `2-of-2`
+- **3 operators:** `2-of-3`
+- **4 operators:** `3-of-4`
+
+In practice, the Shamir share set also includes Recovery Operator shares. This means the effective Shamir parameters are computed over the combined share pool while keeping the same threshold. For example:
+
+- **3 ordinary operators + 2 recovery shares:** `2-of-5`
+
+This ensures that the normal custody threshold follows the ordinary operator quorum, while still allowing dormant recovery shares to exist for break-glass recovery flows.
+
+### 3.5 Recovery Operators
+
+Recovery Operators are a separate peer type from ordinary vault operators.
+
+Their role is intentionally narrow. They can only:
+
+- participate in unsealing the vault
+- vote for operator replacement
+
+Recovery Operators do not participate in routine governance such as approving SDK clients, granting wallet visibility, approving transactions, creating grants, approving server updates, or changing Shamir parameters.
+
+### 3.6 Sleeping and Waking Recovery Operators
+
+By default, Recovery Operators are **sleeping** and do not participate in any active flow.
+
+Any ordinary operator may request that Recovery Operators **wake up**.
+
+Any ordinary operator may also cancel a pending wake-up request.
+
+This creates a dispute window before recovery powers become active. The default wake-up delay is **14 days**.
+
+Recovery Operators are therefore part of the break-glass recovery path rather than the normal operating quorum.
+
+The high-level recovery flow is:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Op as Ordinary Operator
+    participant Server
+    actor Other as Other Operator
+    actor Rec as Recovery Operator
+
+    Op->>Server: Request recovery wake-up
+    Server-->>Op: Wake-up pending
+    Note over Server: Default dispute window: 14 days
+
+    alt Wake-up cancelled during dispute window
+        Other->>Server: Cancel wake-up
+        Server-->>Op: Recovery cancelled
+        Server-->>Rec: Stay sleeping
+    else No cancellation for 14 days
+        Server-->>Rec: Wake up
+        Rec->>Server: Join recovery flow
+        critical Recovery authority
+            Rec->>Server: Participate in unseal
+            Rec->>Server: Vote on operator replacement
+        end
+        Server-->>Op: Recovery mode active
+    end
+```
+
+### 3.7 Committee Formation
+
+There are two ways to form a multi-operator committee:
+
+- convert an existing single-operator vault by adding new operators
+- bootstrap an unbootstrapped vault directly into multi-operator mode
+
+In both cases, committee formation is a coordinated process. Arbiter does not allow multi-operator custody to emerge implicitly from unrelated registrations.
+
+### 3.8 Bootstrapping an Unbootstrapped Vault into Multi-Operator Mode
+
+When an unbootstrapped vault is initialized as a multi-operator vault, the setup proceeds as follows:
+
+1. An operator connects to the unbootstrapped vault using a User Agent and the bootstrap token.
+2. During bootstrap setup, that operator declares:
+   - the total number of ordinary operators
+   - the total number of Recovery Operators
+3. The vault enters **multi-bootstrap mode**.
+4. While in multi-bootstrap mode:
+   - every ordinary operator must connect with a User Agent using the bootstrap token
+   - every Recovery Operator must also connect using the bootstrap token
+   - each participant is registered individually
+   - each participant's share is created and protected with that participant's credentials
+5. The vault is considered fully bootstrapped only after all declared operator and recovery-share registrations have completed successfully.
+
+This means the operator and recovery set is fixed at bootstrap completion time, based on the counts declared when multi-bootstrap mode was entered.
+
+### 3.9 Special Bootstrap Constraint for Two-Operator Vaults
+
+If a vault is declared with exactly **2 ordinary operators**, Arbiter requires at least **1 Recovery Operator** to be configured during bootstrap.
+
+This prevents the worst-case custody failure in which a `2-of-2` operator set becomes permanently unrecoverable after loss of a single operator.
 
 ---
 
