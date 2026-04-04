@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/proto/user_agent/sdk_client.pb.dart' as ua_sdk;
 import 'package:arbiter/providers/connection/connection_manager.dart';
 import 'package:arbiter/router.gr.dart';
 import 'package:arbiter/providers/sdk_clients/list.dart';
@@ -175,7 +175,7 @@ class _ClientTableHeader extends StatelessWidget {
 class _ClientTableRow extends HookWidget {
   const _ClientTableRow({required this.client});
 
-  final SdkClientEntry client;
+  final ua_sdk.Entry client;
 
   @override
   Widget build(BuildContext context) {
@@ -366,7 +366,7 @@ class _ClientTableRow extends HookWidget {
 class _ClientTable extends StatelessWidget {
   const _ClientTable({required this.clients});
 
-  final List<SdkClientEntry> clients;
+  final List<ua_sdk.Entry> clients;
 
   @override
   Widget build(BuildContext context) {

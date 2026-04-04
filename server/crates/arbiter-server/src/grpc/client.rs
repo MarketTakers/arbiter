@@ -1,46 +1,24 @@
-use alloy::primitives::Address;
 use arbiter_proto::{
-    proto::{
-        client::{
-            ClientRequest, ClientResponse, VaultState as ProtoVaultState,
-            client_request::Payload as ClientRequestPayload,
-            client_response::Payload as ClientResponsePayload,
-        },
-        evm::{
-            EvmError as ProtoEvmError, EvmSignTransactionResponse,
-            evm_sign_transaction_response::Result as EvmSignTransactionResult,
-        },
+    proto::client::{
+        ClientRequest, ClientResponse, client_request::Payload as ClientRequestPayload,
+        client_response::Payload as ClientResponsePayload,
     },
     transport::{Receiver, Sender, grpc::GrpcBi},
 };
-use kameo::{
-    actor::{ActorRef, Spawn as _},
-    error::SendError,
-};
+use kameo::actor::{ActorRef, Spawn as _};
 use tonic::Status;
 use tracing::{info, warn};
 
 use crate::{
-    actors::{
-        client::{
-            self, ClientConnection,
-            session::{
-                ClientSession, Error, HandleQueryVaultState, HandleSignTransaction,
-                SignTransactionRpcError,
-            },
-        },
-        keyholder::KeyHolderState,
-    },
-    grpc::{
-        Convert, TryConvert,
-        common::inbound::{RawEvmAddress, RawEvmTransaction},
-        request_tracker::RequestTracker,
-    },
+    actors::client::{ClientConnection, session::ClientSession},
+    grpc::request_tracker::RequestTracker,
 };
 
 mod auth;
+mod evm;
 mod inbound;
 mod outbound;
+mod vault;
 
 async fn dispatch_loop(
     mut bi: GrpcBi<ClientRequest, ClientResponse>,
@@ -103,62 +81,10 @@ async fn dispatch_inner(
     payload: ClientRequestPayload,
 ) -> Result<ClientResponsePayload, Status> {
     match payload {
-        ClientRequestPayload::QueryVaultState(_) => {
-            let state = match actor.ask(HandleQueryVaultState {}).await {
-                Ok(KeyHolderState::Unbootstrapped) => ProtoVaultState::Unbootstrapped,
-                Ok(KeyHolderState::Sealed) => ProtoVaultState::Sealed,
-                Ok(KeyHolderState::Unsealed) => ProtoVaultState::Unsealed,
-                Err(SendError::HandlerError(Error::Internal)) => ProtoVaultState::Error,
-                Err(err) => {
-                    warn!(error = ?err, "Failed to query vault state");
-                    ProtoVaultState::Error
-                }
-            };
-            Ok(ClientResponsePayload::VaultState(state.into()))
-        }
-        ClientRequestPayload::EvmSignTransaction(request) => {
-            let address: Address = RawEvmAddress(request.wallet_address).try_convert()?;
-            let transaction = RawEvmTransaction(request.rlp_transaction).try_convert()?;
-
-            let response = match actor
-                .ask(HandleSignTransaction {
-                    wallet_address: address,
-                    transaction,
-                })
-                .await
-            {
-                Ok(signature) => EvmSignTransactionResponse {
-                    result: Some(EvmSignTransactionResult::Signature(
-                        signature.as_bytes().to_vec(),
-                    )),
-                },
-                Err(kameo::error::SendError::HandlerError(SignTransactionRpcError::Vet(
-                    vet_error,
-                ))) => EvmSignTransactionResponse {
-                    result: Some(vet_error.convert()),
-                },
-
-                Err(kameo::error::SendError::HandlerError(SignTransactionRpcError::Internal)) => {
-                    EvmSignTransactionResponse {
-                        result: Some(EvmSignTransactionResult::Error(
-                            ProtoEvmError::Internal.into(),
-                        )),
-                    }
-                }
-                Err(err) => {
-                    warn!(error = ?err, "Failed to sign EVM transaction");
-                    EvmSignTransactionResponse {
-                        result: Some(EvmSignTransactionResult::Error(
-                            ProtoEvmError::Internal.into(),
-                        )),
-                    }
-                }
-            };
-
-            Ok(ClientResponsePayload::EvmSignTransaction(response))
-        }
-        payload => {
-            warn!(?payload, "Unsupported post-auth client request");
+        ClientRequestPayload::Vault(req) => vault::dispatch(actor, req).await,
+        ClientRequestPayload::Evm(req) => evm::dispatch(actor, req).await,
+        ClientRequestPayload::Auth(..) => {
+            warn!("Unsupported post-auth client auth request");
             Err(Status::invalid_argument("Unsupported client request"))
         }
     }

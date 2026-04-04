@@ -1,6 +1,5 @@
-import 'package:arbiter/proto/client.pb.dart';
+import 'package:arbiter/proto/shared/client.pb.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:hooks_riverpod/experimental/mutation.dart';
 
 part 'callout_event.freezed.dart';
 

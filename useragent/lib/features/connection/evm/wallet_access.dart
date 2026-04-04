@@ -1,4 +1,5 @@
 import 'package:arbiter/features/connection/connection.dart';
+import 'package:arbiter/proto/user_agent/sdk_client.pb.dart' as ua_sdk;
 import 'package:arbiter/proto/user_agent.pb.dart';
 import 'package:protobuf/well_known_types/google/protobuf/empty.pb.dart';
 
@@ -7,31 +8,47 @@ Future<Set<int>> readClientWalletAccess(
   required int clientId,
 }) async {
   final response = await connection.ask(
-    UserAgentRequest(listWalletAccess: Empty()),
+    UserAgentRequest(
+      sdkClient: ua_sdk.Request(listWalletAccess: Empty()),
+    ),
   );
-  if (!response.hasListWalletAccessResponse()) {
+  if (!response.hasSdkClient()) {
     throw Exception(
-      'Expected list wallet access response, got ${response.whichPayload()}',
+      'Expected SDK client response, got ${response.whichPayload()}',
+    );
+  }
+  final sdkClientResponse = response.sdkClient;
+  if (!sdkClientResponse.hasListWalletAccess()) {
+    throw Exception(
+      'Expected list wallet access response, got ${sdkClientResponse.whichPayload()}',
     );
   }
   return {
-    for (final entry in response.listWalletAccessResponse.accesses)
+    for (final entry in sdkClientResponse.listWalletAccess.accesses)
       if (entry.access.sdkClientId == clientId) entry.access.walletId,
   };
 }
 
-Future<List<SdkClientWalletAccess>> listAllWalletAccesses(
+Future<List<ua_sdk.WalletAccessEntry>> listAllWalletAccesses(
   Connection connection,
 ) async {
   final response = await connection.ask(
-    UserAgentRequest(listWalletAccess: Empty()),
+    UserAgentRequest(
+      sdkClient: ua_sdk.Request(listWalletAccess: Empty()),
+    ),
   );
-  if (!response.hasListWalletAccessResponse()) {
+  if (!response.hasSdkClient()) {
     throw Exception(
-      'Expected list wallet access response, got ${response.whichPayload()}',
+      'Expected SDK client response, got ${response.whichPayload()}',
     );
   }
-  return response.listWalletAccessResponse.accesses.toList(growable: false);
+  final sdkClientResponse = response.sdkClient;
+  if (!sdkClientResponse.hasListWalletAccess()) {
+    throw Exception(
+      'Expected list wallet access response, got ${sdkClientResponse.whichPayload()}',
+    );
+  }
+  return sdkClientResponse.listWalletAccess.accesses.toList(growable: false);
 }
 
 Future<void> writeClientWalletAccess(
@@ -47,11 +64,13 @@ Future<void> writeClientWalletAccess(
   if (toGrant.isNotEmpty) {
     await connection.tell(
       UserAgentRequest(
-        grantWalletAccess: SdkClientGrantWalletAccess(
-          accesses: [
-            for (final walletId in toGrant)
-              WalletAccess(sdkClientId: clientId, walletId: walletId),
-          ],
+        sdkClient: ua_sdk.Request(
+          grantWalletAccess: ua_sdk.GrantWalletAccess(
+            accesses: [
+              for (final walletId in toGrant)
+                ua_sdk.WalletAccess(sdkClientId: clientId, walletId: walletId),
+            ],
+          ),
         ),
       ),
     );
@@ -60,11 +79,12 @@ Future<void> writeClientWalletAccess(
   if (toRevoke.isNotEmpty) {
     await connection.tell(
       UserAgentRequest(
-        revokeWalletAccess: SdkClientRevokeWalletAccess(
-          accesses: [
-            for (final walletId in toRevoke)
-              walletId
-          ],
+        sdkClient: ua_sdk.Request(
+          revokeWalletAccess: ua_sdk.RevokeWalletAccess(
+            accesses: [
+              for (final walletId in toRevoke) walletId,
+            ],
+          ),
         ),
       ),
     );

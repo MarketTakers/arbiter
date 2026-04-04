@@ -1,0 +1,182 @@
+// This is a generated file - do not edit.
+//
+// Generated from user_agent/auth.proto.
+
+// @dart = 3.3
+
+// ignore_for_file: annotate_overrides, camel_case_types, comment_references
+// ignore_for_file: constant_identifier_names
+// ignore_for_file: curly_braces_in_flow_control_structures
+// ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
+// ignore_for_file: non_constant_identifier_names, prefer_relative_imports
+// ignore_for_file: unused_import
+
+import 'dart:convert' as $convert;
+import 'dart:core' as $core;
+import 'dart:typed_data' as $typed_data;
+
+@$core.Deprecated('Use keyTypeDescriptor instead')
+const KeyType$json = {
+  '1': 'KeyType',
+  '2': [
+    {'1': 'KEY_TYPE_UNSPECIFIED', '2': 0},
+    {'1': 'KEY_TYPE_ED25519', '2': 1},
+    {'1': 'KEY_TYPE_ECDSA_SECP256K1', '2': 2},
+    {'1': 'KEY_TYPE_RSA', '2': 3},
+  ],
+};
+
+/// Descriptor for `KeyType`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List keyTypeDescriptor = $convert.base64Decode(
+    'CgdLZXlUeXBlEhgKFEtFWV9UWVBFX1VOU1BFQ0lGSUVEEAASFAoQS0VZX1RZUEVfRUQyNTUxOR'
+    'ABEhwKGEtFWV9UWVBFX0VDRFNBX1NFQ1AyNTZLMRACEhAKDEtFWV9UWVBFX1JTQRAD');
+
+@$core.Deprecated('Use authResultDescriptor instead')
+const AuthResult$json = {
+  '1': 'AuthResult',
+  '2': [
+    {'1': 'AUTH_RESULT_UNSPECIFIED', '2': 0},
+    {'1': 'AUTH_RESULT_SUCCESS', '2': 1},
+    {'1': 'AUTH_RESULT_INVALID_KEY', '2': 2},
+    {'1': 'AUTH_RESULT_INVALID_SIGNATURE', '2': 3},
+    {'1': 'AUTH_RESULT_BOOTSTRAP_REQUIRED', '2': 4},
+    {'1': 'AUTH_RESULT_TOKEN_INVALID', '2': 5},
+    {'1': 'AUTH_RESULT_INTERNAL', '2': 6},
+  ],
+};
+
+/// Descriptor for `AuthResult`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List authResultDescriptor = $convert.base64Decode(
+    'CgpBdXRoUmVzdWx0EhsKF0FVVEhfUkVTVUxUX1VOU1BFQ0lGSUVEEAASFwoTQVVUSF9SRVNVTF'
+    'RfU1VDQ0VTUxABEhsKF0FVVEhfUkVTVUxUX0lOVkFMSURfS0VZEAISIQodQVVUSF9SRVNVTFRf'
+    'SU5WQUxJRF9TSUdOQVRVUkUQAxIiCh5BVVRIX1JFU1VMVF9CT09UU1RSQVBfUkVRVUlSRUQQBB'
+    'IdChlBVVRIX1JFU1VMVF9UT0tFTl9JTlZBTElEEAUSGAoUQVVUSF9SRVNVTFRfSU5URVJOQUwQ'
+    'Bg==');
+
+@$core.Deprecated('Use authChallengeRequestDescriptor instead')
+const AuthChallengeRequest$json = {
+  '1': 'AuthChallengeRequest',
+  '2': [
+    {'1': 'pubkey', '3': 1, '4': 1, '5': 12, '10': 'pubkey'},
+    {
+      '1': 'bootstrap_token',
+      '3': 2,
+      '4': 1,
+      '5': 9,
+      '9': 0,
+      '10': 'bootstrapToken',
+      '17': true
+    },
+    {
+      '1': 'key_type',
+      '3': 3,
+      '4': 1,
+      '5': 14,
+      '6': '.arbiter.user_agent.auth.KeyType',
+      '10': 'keyType'
+    },
+  ],
+  '8': [
+    {'1': '_bootstrap_token'},
+  ],
+};
+
+/// Descriptor for `AuthChallengeRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List authChallengeRequestDescriptor = $convert.base64Decode(
+    'ChRBdXRoQ2hhbGxlbmdlUmVxdWVzdBIWCgZwdWJrZXkYASABKAxSBnB1YmtleRIsCg9ib290c3'
+    'RyYXBfdG9rZW4YAiABKAlIAFIOYm9vdHN0cmFwVG9rZW6IAQESOwoIa2V5X3R5cGUYAyABKA4y'
+    'IC5hcmJpdGVyLnVzZXJfYWdlbnQuYXV0aC5LZXlUeXBlUgdrZXlUeXBlQhIKEF9ib290c3RyYX'
+    'BfdG9rZW4=');
+
+@$core.Deprecated('Use authChallengeDescriptor instead')
+const AuthChallenge$json = {
+  '1': 'AuthChallenge',
+  '2': [
+    {'1': 'nonce', '3': 1, '4': 1, '5': 5, '10': 'nonce'},
+  ],
+};
+
+/// Descriptor for `AuthChallenge`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List authChallengeDescriptor = $convert
+    .base64Decode('Cg1BdXRoQ2hhbGxlbmdlEhQKBW5vbmNlGAEgASgFUgVub25jZQ==');
+
+@$core.Deprecated('Use authChallengeSolutionDescriptor instead')
+const AuthChallengeSolution$json = {
+  '1': 'AuthChallengeSolution',
+  '2': [
+    {'1': 'signature', '3': 1, '4': 1, '5': 12, '10': 'signature'},
+  ],
+};
+
+/// Descriptor for `AuthChallengeSolution`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List authChallengeSolutionDescriptor = $convert.base64Decode(
+    'ChVBdXRoQ2hhbGxlbmdlU29sdXRpb24SHAoJc2lnbmF0dXJlGAEgASgMUglzaWduYXR1cmU=');
+
+@$core.Deprecated('Use requestDescriptor instead')
+const Request$json = {
+  '1': 'Request',
+  '2': [
+    {
+      '1': 'challenge_request',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.auth.AuthChallengeRequest',
+      '9': 0,
+      '10': 'challengeRequest'
+    },
+    {
+      '1': 'challenge_solution',
+      '3': 2,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.auth.AuthChallengeSolution',
+      '9': 0,
+      '10': 'challengeSolution'
+    },
+  ],
+  '8': [
+    {'1': 'payload'},
+  ],
+};
+
+/// Descriptor for `Request`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List requestDescriptor = $convert.base64Decode(
+    'CgdSZXF1ZXN0ElwKEWNoYWxsZW5nZV9yZXF1ZXN0GAEgASgLMi0uYXJiaXRlci51c2VyX2FnZW'
+    '50LmF1dGguQXV0aENoYWxsZW5nZVJlcXVlc3RIAFIQY2hhbGxlbmdlUmVxdWVzdBJfChJjaGFs'
+    'bGVuZ2Vfc29sdXRpb24YAiABKAsyLi5hcmJpdGVyLnVzZXJfYWdlbnQuYXV0aC5BdXRoQ2hhbG'
+    'xlbmdlU29sdXRpb25IAFIRY2hhbGxlbmdlU29sdXRpb25CCQoHcGF5bG9hZA==');
+
+@$core.Deprecated('Use responseDescriptor instead')
+const Response$json = {
+  '1': 'Response',
+  '2': [
+    {
+      '1': 'challenge',
+      '3': 1,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.user_agent.auth.AuthChallenge',
+      '9': 0,
+      '10': 'challenge'
+    },
+    {
+      '1': 'result',
+      '3': 2,
+      '4': 1,
+      '5': 14,
+      '6': '.arbiter.user_agent.auth.AuthResult',
+      '9': 0,
+      '10': 'result'
+    },
+  ],
+  '8': [
+    {'1': 'payload'},
+  ],
+};
+
+/// Descriptor for `Response`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List responseDescriptor = $convert.base64Decode(
+    'CghSZXNwb25zZRJGCgljaGFsbGVuZ2UYASABKAsyJi5hcmJpdGVyLnVzZXJfYWdlbnQuYXV0aC'
+    '5BdXRoQ2hhbGxlbmdlSABSCWNoYWxsZW5nZRI9CgZyZXN1bHQYAiABKA4yIy5hcmJpdGVyLnVz'
+    'ZXJfYWdlbnQuYXV0aC5BdXRoUmVzdWx0SABSBnJlc3VsdEIJCgdwYXlsb2Fk');

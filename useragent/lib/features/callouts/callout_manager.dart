@@ -2,7 +2,7 @@ import 'package:arbiter/features/callouts/active_callout.dart';
 import 'package:arbiter/features/callouts/callout_event.dart';
 import 'package:arbiter/features/callouts/types/sdk_connect_approve.dart'
     as connect_approve;
-import 'package:arbiter/proto/client.pb.dart';
+import 'package:arbiter/proto/shared/client.pb.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'callout_manager.g.dart';

@@ -9,7 +9,7 @@ use rand::{SeedableRng, rng, rngs::StdRng};
 use crate::{
     actors::keyholder::{CreateNew, Decrypt, KeyHolder},
     db::{
-        self, DatabaseError, DatabasePool,
+        DatabaseError, DatabasePool,
         models::{self, SqliteTimestamp},
         schema,
     },

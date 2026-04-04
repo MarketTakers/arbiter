@@ -2,205 +2,27 @@ syntax = "proto3";
 
 package arbiter.user_agent;
 
-import "client.proto";
-import "evm.proto";
-import "google/protobuf/empty.proto";
-
-enum KeyType {
-  KEY_TYPE_UNSPECIFIED = 0;
-  KEY_TYPE_ED25519 = 1;
-  KEY_TYPE_ECDSA_SECP256K1 = 2;
-  KEY_TYPE_RSA = 3;
-}
-
-// --- SDK client management ---
-
-enum SdkClientError {
-  SDK_CLIENT_ERROR_UNSPECIFIED = 0;
-  SDK_CLIENT_ERROR_ALREADY_EXISTS = 1;
-  SDK_CLIENT_ERROR_NOT_FOUND = 2;
-  SDK_CLIENT_ERROR_HAS_RELATED_DATA = 3; // hard-delete blocked by FK (client has grants or transaction logs)
-  SDK_CLIENT_ERROR_INTERNAL = 4;
-}
-
-message SdkClientRevokeRequest {
-  int32 client_id = 1;
-}
-
-message SdkClientEntry {
-  int32 id = 1;
-  bytes pubkey = 2;
-  arbiter.client.ClientInfo info = 3;
-  int32 created_at = 4;
-}
-
-message SdkClientList {
-  repeated SdkClientEntry clients = 1;
-}
-
-message SdkClientRevokeResponse {
-  oneof result {
-    google.protobuf.Empty ok = 1;
-    SdkClientError error = 2;
-  }
-}
-
-message SdkClientListResponse {
-  oneof result {
-    SdkClientList clients = 1;
-    SdkClientError error = 2;
-  }
-}
-
-message AuthChallengeRequest {
-  bytes pubkey = 1;
-  optional string bootstrap_token = 2;
-  KeyType key_type = 3;
-}
-
-message AuthChallenge {
-  int32 nonce = 2;
-  reserved 1;
-}
-
-message AuthChallengeSolution {
-  bytes signature = 1;
-}
-
-enum AuthResult {
-  AUTH_RESULT_UNSPECIFIED = 0;
-  AUTH_RESULT_SUCCESS = 1;
-  AUTH_RESULT_INVALID_KEY = 2;
-  AUTH_RESULT_INVALID_SIGNATURE = 3;
-  AUTH_RESULT_BOOTSTRAP_REQUIRED = 4;
-  AUTH_RESULT_TOKEN_INVALID = 5;
-  AUTH_RESULT_INTERNAL = 6;
-}
-
-message UnsealStart {
-  bytes client_pubkey = 1;
-}
-
-message UnsealStartResponse {
-  bytes server_pubkey = 1;
-}
-message UnsealEncryptedKey {
-  bytes nonce = 1;
-  bytes ciphertext = 2;
-  bytes associated_data = 3;
-}
-
-message BootstrapEncryptedKey {
-  bytes nonce = 1;
-  bytes ciphertext = 2;
-  bytes associated_data = 3;
-}
-
-enum UnsealResult {
-  UNSEAL_RESULT_UNSPECIFIED = 0;
-  UNSEAL_RESULT_SUCCESS = 1;
-  UNSEAL_RESULT_INVALID_KEY = 2;
-  UNSEAL_RESULT_UNBOOTSTRAPPED = 3;
-}
-
-enum BootstrapResult {
-  BOOTSTRAP_RESULT_UNSPECIFIED = 0;
-  BOOTSTRAP_RESULT_SUCCESS = 1;
-  BOOTSTRAP_RESULT_ALREADY_BOOTSTRAPPED = 2;
-  BOOTSTRAP_RESULT_INVALID_KEY = 3;
-}
-
-enum VaultState {
-  VAULT_STATE_UNSPECIFIED = 0;
-  VAULT_STATE_UNBOOTSTRAPPED = 1;
-  VAULT_STATE_SEALED = 2;
-  VAULT_STATE_UNSEALED = 3;
-  VAULT_STATE_ERROR = 4;
-}
-
-message SdkClientConnectionRequest {
-  bytes pubkey = 1;
-  arbiter.client.ClientInfo info = 2;
-}
-
-message SdkClientConnectionResponse {
-  bool approved = 1;
-  bytes pubkey = 2;
-}
-
-message SdkClientConnectionCancel {
-  bytes pubkey = 1;
-}
-
-message WalletAccess {
-  int32 wallet_id = 1;
-  int32 sdk_client_id = 2;
-}
-
-message SdkClientWalletAccess {
-  int32 id = 1;
-  WalletAccess access = 2;
-}
-
-message SdkClientGrantWalletAccess {
-  repeated WalletAccess accesses = 1;
-}
-
-message SdkClientRevokeWalletAccess {
-  repeated int32 accesses = 1;
-}
-
-message ListWalletAccessResponse {
-  repeated SdkClientWalletAccess accesses = 1;
-}
-
-message UserAgentEvmSignTransactionRequest {
-  int32 client_id = 1;
-  arbiter.evm.EvmSignTransactionRequest request = 2;
-}
+import "user_agent/auth.proto";
+import "user_agent/evm.proto";
+import "user_agent/sdk_client.proto";
+import "user_agent/vault/vault.proto";
 
 message UserAgentRequest {
   int32 id = 16;
   oneof payload {
-    AuthChallengeRequest auth_challenge_request = 1;
-    AuthChallengeSolution auth_challenge_solution = 2;
-    UnsealStart unseal_start = 3;
-    UnsealEncryptedKey unseal_encrypted_key = 4;
-    google.protobuf.Empty query_vault_state = 5;
-    google.protobuf.Empty evm_wallet_create = 6;
-    google.protobuf.Empty evm_wallet_list = 7;
-    arbiter.evm.EvmGrantCreateRequest evm_grant_create = 8;
-    arbiter.evm.EvmGrantDeleteRequest evm_grant_delete = 9;
-    arbiter.evm.EvmGrantListRequest evm_grant_list = 10;
-    SdkClientConnectionResponse sdk_client_connection_response = 11;
-    SdkClientRevokeRequest sdk_client_revoke = 12;
-    google.protobuf.Empty sdk_client_list = 13;
-    BootstrapEncryptedKey bootstrap_encrypted_key = 14;
-    SdkClientGrantWalletAccess grant_wallet_access = 15;
-    SdkClientRevokeWalletAccess revoke_wallet_access = 17;
-    google.protobuf.Empty list_wallet_access = 18;
-    UserAgentEvmSignTransactionRequest evm_sign_transaction = 19;
+    auth.Request auth = 1;
+    vault.Request vault = 2;
+    evm.Request evm = 3;
+    sdk_client.Request sdk_client = 4;
   }
 }
+
 message UserAgentResponse {
   optional int32 id = 16;
   oneof payload {
-    AuthChallenge auth_challenge = 1;
-    AuthResult auth_result = 2;
-    UnsealStartResponse unseal_start_response = 3;
-    UnsealResult unseal_result = 4;
-    VaultState vault_state = 5;
-    arbiter.evm.WalletCreateResponse evm_wallet_create = 6;
-    arbiter.evm.WalletListResponse evm_wallet_list = 7;
-    arbiter.evm.EvmGrantCreateResponse evm_grant_create = 8;
-    arbiter.evm.EvmGrantDeleteResponse evm_grant_delete = 9;
-    arbiter.evm.EvmGrantListResponse evm_grant_list = 10;
-    SdkClientConnectionRequest sdk_client_connection_request = 11;
-    SdkClientConnectionCancel sdk_client_connection_cancel = 12;
-    SdkClientRevokeResponse sdk_client_revoke_response = 13;
-    SdkClientListResponse sdk_client_list_response = 14;
-    BootstrapResult bootstrap_result = 15;
-    ListWalletAccessResponse list_wallet_access_response = 17;
-    arbiter.evm.EvmSignTransactionResponse evm_sign_transaction = 18;
+    auth.Response auth = 1;
+    vault.Response vault = 2;
+    evm.Response evm = 3;
+    sdk_client.Response sdk_client = 4;
   }
 }

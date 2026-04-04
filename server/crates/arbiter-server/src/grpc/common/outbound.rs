@@ -1,12 +1,14 @@
 use alloy::primitives::U256;
-use arbiter_proto::proto::evm::{
-    EvalViolation as ProtoEvalViolation, EvmError as ProtoEvmError, GasLimitExceededViolation,
-    NoMatchingGrantError, PolicyViolationsError, SpecificMeaning as ProtoSpecificMeaning,
-    TokenInfo as ProtoTokenInfo, TransactionEvalError as ProtoTransactionEvalError,
-    eval_violation::Kind as ProtoEvalViolationKind,
-    evm_sign_transaction_response::Result as EvmSignTransactionResult,
-    specific_meaning::Meaning as ProtoSpecificMeaningKind,
-    transaction_eval_error::Kind as ProtoTransactionEvalErrorKind,
+use arbiter_proto::proto::{
+    evm::{EvmError as ProtoEvmError, evm_sign_transaction_response::Result as EvmSignTransactionResult},
+    shared::evm::{
+        EvalViolation as ProtoEvalViolation, GasLimitExceededViolation,
+        NoMatchingGrantError, PolicyViolationsError, SpecificMeaning as ProtoSpecificMeaning,
+        TokenInfo as ProtoTokenInfo, TransactionEvalError as ProtoTransactionEvalError,
+        eval_violation::Kind as ProtoEvalViolationKind,
+        specific_meaning::Meaning as ProtoSpecificMeaningKind,
+        transaction_eval_error::Kind as ProtoTransactionEvalErrorKind,
+    },
 };
 
 use crate::{
@@ -27,13 +29,13 @@ impl Convert for SpecificMeaning {
     fn convert(self) -> Self::Output {
         let kind = match self {
             SpecificMeaning::EtherTransfer(meaning) => ProtoSpecificMeaningKind::EtherTransfer(
-                arbiter_proto::proto::evm::EtherTransferMeaning {
+                arbiter_proto::proto::shared::evm::EtherTransferMeaning {
                     to: meaning.to.to_vec(),
                     value: u256_to_proto_bytes(meaning.value),
                 },
             ),
             SpecificMeaning::TokenTransfer(meaning) => ProtoSpecificMeaningKind::TokenTransfer(
-                arbiter_proto::proto::evm::TokenTransferMeaning {
+                arbiter_proto::proto::shared::evm::TokenTransferMeaning {
                     token: Some(ProtoTokenInfo {
                         symbol: meaning.token.symbol.to_string(),
                         address: meaning.token.contract.to_vec(),

@@ -15,11 +15,11 @@ final clientDetailsProvider = ClientDetailsFamily._();
 final class ClientDetailsProvider
     extends
         $FunctionalProvider<
-          AsyncValue<SdkClientEntry?>,
-          SdkClientEntry?,
-          FutureOr<SdkClientEntry?>
+          AsyncValue<ua_sdk.Entry?>,
+          ua_sdk.Entry?,
+          FutureOr<ua_sdk.Entry?>
         >
-    with $FutureModifier<SdkClientEntry?>, $FutureProvider<SdkClientEntry?> {
+    with $FutureModifier<ua_sdk.Entry?>, $FutureProvider<ua_sdk.Entry?> {
   ClientDetailsProvider._({
     required ClientDetailsFamily super.from,
     required int super.argument,
@@ -43,12 +43,12 @@ final class ClientDetailsProvider
 
   @$internal
   @override
-  $FutureProviderElement<SdkClientEntry?> $createElement(
+  $FutureProviderElement<ua_sdk.Entry?> $createElement(
     $ProviderPointer pointer,
   ) => $FutureProviderElement(pointer);
 
   @override
-  FutureOr<SdkClientEntry?> create(Ref ref) {
+  FutureOr<ua_sdk.Entry?> create(Ref ref) {
     final argument = this.argument as int;
     return clientDetails(ref, argument);
   }
@@ -64,10 +64,10 @@ final class ClientDetailsProvider
   }
 }
 
-String _$clientDetailsHash() => r'21449a1a2cc4fa4e65ce761e6342e97c1d957a7a';
+String _$clientDetailsHash() => r'907fd39230cc630dcaad3bbe924f343a84a2375e';
 
 final class ClientDetailsFamily extends $Family
-    with $FunctionalFamilyOverride<FutureOr<SdkClientEntry?>, int> {
+    with $FunctionalFamilyOverride<FutureOr<ua_sdk.Entry?>, int> {
   ClientDetailsFamily._()
     : super(
         retry: null,

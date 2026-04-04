@@ -3,7 +3,6 @@ use std::io::{self, Write};
 
 use arbiter_client::ArbiterClient;
 use arbiter_proto::{ClientMetadata, url::ArbiterUrl};
-use tonic::ConnectError;
 
 #[tokio::main]
 async fn main() {

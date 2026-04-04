@@ -14,9 +14,9 @@ ast-grep = "0.42.0"
 "cargo:cargo-edit" = "0.13.9"
 
 [tasks.codegen]
-sources = ['protobufs/*.proto']
-outputs = ['useragent/lib/proto/*']
+sources = ['protobufs/*.proto', 'protobufs/**/*.proto']
+outputs = ['useragent/lib/proto/**']
 run = '''
 dart pub global activate protoc_plugin && \
-protoc --dart_out=grpc:useragent/lib/proto --proto_path=protobufs/ protobufs/*.proto
+protoc --dart_out=grpc:useragent/lib/proto --proto_path=protobufs/ $(find protobufs -name '*.proto' | sort)
 '''

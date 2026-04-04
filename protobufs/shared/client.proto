@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package arbiter.shared;
+
+message ClientInfo {
+  string name = 1;
+  optional string description = 2;
+  optional string version = 3;
+}
