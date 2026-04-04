@@ -86,56 +86,6 @@ impl UserAgentSession {
             }
         }
     }
-
-    async fn backfill_missing_useragent_pubkey_integrity_tags(&mut self) -> Result<(), Error> {
-        use crate::db::schema::useragent_client;
-
-        let mut conn = self.props.db.get().await?;
-        let missing_rows: Vec<(i32, Vec<u8>, KeyType)> = useragent_client::table
-            .filter(useragent_client::pubkey_integrity_tag.is_null())
-            .select((
-                useragent_client::id,
-                useragent_client::public_key,
-                useragent_client::key_type,
-            ))
-            .load(&mut conn)
-            .await?;
-        drop(conn);
-
-        if missing_rows.is_empty() {
-            return Ok(());
-        }
-
-        let mut updates = Vec::with_capacity(missing_rows.len());
-        for (id, public_key, key_type) in missing_rows {
-            let tag = self
-                .props
-                .actors
-                .key_holder
-                .ask(SignIntegrityTag {
-                    purpose_tag: USERAGENT_INTEGRITY_TAG.to_vec(),
-                    data_parts: vec![(key_type as i32).to_be_bytes().to_vec(), public_key],
-                })
-                .await
-                .map_err(|err| {
-                    error!(?err, "Failed to sign integrity tag");
-                    Error::internal("Failed to sign integrity tag")
-                })?;
-            updates.push((id, tag));
-        }
-
-        let mut conn = self.props.db.get().await?;
-        for (id, tag) in updates {
-            update(useragent_client::table)
-                .filter(useragent_client::id.eq(id))
-                .set(useragent_client::pubkey_integrity_tag.eq(Some(tag)))
-                .execute(&mut conn)
-                .await?;
-        }
-
-        info!("Backfilled missing user-agent pubkey integrity tags");
-        Ok(())
-    }
 }
 
 pub struct UnsealStartResponse {
@@ -223,8 +173,6 @@ impl UserAgentSession {
             .await
         {
             Ok(_) => {
-                self.backfill_missing_useragent_pubkey_integrity_tags()
-                    .await?;
                 info!("Successfully unsealed key with client-provided key");
                 self.transition(UserAgentEvents::ReceivedValidKey)?;
                 Ok(())
@@ -286,8 +234,6 @@ impl UserAgentSession {
             .await
         {
             Ok(_) => {
-                self.backfill_missing_useragent_pubkey_integrity_tags()
-                    .await?;
                 info!("Successfully bootstrapped vault with client-provided key");
                 self.transition(UserAgentEvents::ReceivedValidKey)?;
                 Ok(())
