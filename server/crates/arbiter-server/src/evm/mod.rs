@@ -8,8 +8,10 @@ use alloy::{
 use chrono::Utc;
 use diesel::{ExpressionMethods as _, QueryDsl as _, QueryResult, insert_into, sqlite::Sqlite};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use kameo::actor::ActorRef;
 
 use crate::{
+    actors::keyholder::KeyHolder,
     db::{
         self, DatabaseError,
         models::{
@@ -22,6 +24,7 @@ use crate::{
         SpecificGrant, SpecificMeaning, ether_transfer::EtherTransfer,
         token_transfers::TokenTransfer,
     },
+    integrity,
 };
 
 pub mod policies;
@@ -36,6 +39,10 @@ pub enum PolicyError {
     Violations(Vec<EvalViolation>),
     #[error("No matching grant found")]
     NoMatchingGrant,
+
+    #[error("Integrity error: {0}")]
+    #[diagnostic(code(arbiter_server::evm::policy_error::integrity))]
+    Integrity(#[from] integrity::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -115,6 +122,7 @@ async fn check_shared_constraints(
 // Supporting only EIP-1559 transactions for now, but we can easily extend this to support legacy transactions if needed
 pub struct Engine {
     db: db::DatabasePool,
+    keyholder: ActorRef<KeyHolder>,
 }
 
 impl Engine {
@@ -123,13 +131,24 @@ impl Engine {
         context: EvalContext,
         meaning: &P::Meaning,
         run_kind: RunKind,
-    ) -> Result<(), PolicyError> {
+    ) -> Result<(), PolicyError>
+    where
+        P::Settings: Clone,
+    {
         let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
 
         let grant = P::try_find_grant(&context, &mut conn)
             .await
             .map_err(DatabaseError::from)?
             .ok_or(PolicyError::NoMatchingGrant)?;
+
+        let signed_grant = integrity::evm::SignedEvmGrant::from_active_grant(&Grant {
+            id: grant.id,
+            shared_grant_id: grant.shared_grant_id,
+            shared: grant.shared.clone(),
+            settings: grant.settings.clone().into(),
+        });
+        integrity::verify_entity(&mut conn, &self.keyholder, &signed_grant).await?;
 
         let mut violations =
             check_shared_constraints(&context, &grant.shared, grant.shared_grant_id, &mut conn)
@@ -143,7 +162,9 @@ impl Engine {
 
         if !violations.is_empty() {
             return Err(PolicyError::Violations(violations));
-        } else if run_kind == RunKind::Execution {
+        }
+        
+        if run_kind == RunKind::Execution {
             conn.transaction(|conn| {
                 Box::pin(async move {
                     let log_id: i32 = insert_into(evm_transaction_log::table)
@@ -172,15 +193,19 @@ impl Engine {
 }
 
 impl Engine {
-    pub fn new(db: db::DatabasePool) -> Self {
-        Self { db }
+    pub fn new(db: db::DatabasePool, keyholder: ActorRef<KeyHolder>) -> Self {
+        Self { db, keyholder }
     }
 
     pub async fn create_grant<P: Policy>(
         &self,
         full_grant: FullGrant<P::Settings>,
-    ) -> Result<i32, DatabaseError> {
+    ) -> Result<i32, DatabaseError>
+    where
+        P::Settings: Clone,
+    {
         let mut conn = self.db.get().await?;
+        let keyholder = self.keyholder.clone();
 
         let id = conn
             .transaction(|conn| {
@@ -217,7 +242,20 @@ impl Engine {
                         .get_result(conn)
                         .await?;
 
-                    P::create_grant(&basic_grant, &full_grant.specific, conn).await
+                    P::create_grant(&basic_grant, &full_grant.specific, conn).await?;
+
+                    let signed_grant = integrity::evm::SignedEvmGrant {
+                        basic_grant_id: basic_grant.id,
+                        shared: full_grant.basic.clone(),
+                        specific: full_grant.specific.clone().into(),
+                        revoked_at: basic_grant.revoked_at.map(Into::into),
+                    };
+
+                    integrity::sign_entity(conn, &keyholder, &signed_grant)
+                        .await
+                        .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+
+                    QueryResult::Ok(basic_grant.id)
                 })
             })
             .await?;
@@ -252,6 +290,16 @@ impl Engine {
                     settings: SpecificGrant::TokenTransfer(g.settings),
                 }),
         );
+
+        for grant in &grants {
+            let signed = integrity::evm::SignedEvmGrant::from_active_grant(grant);
+            integrity::verify_entity(&mut conn, &self.keyholder, &signed)
+                .await
+                .map_err(|err| match err {
+                    integrity::Error::Database(db_err) => db_err,
+                    _ => DatabaseError::Connection(diesel::result::Error::RollbackTransaction),
+                })?;
+        }
 
         Ok(grants)
     }

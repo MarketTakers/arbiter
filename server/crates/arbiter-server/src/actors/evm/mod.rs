@@ -7,7 +7,7 @@ use kameo::{Actor, actor::ActorRef, messages};
 use rand::{SeedableRng, rng, rngs::StdRng};
 
 use crate::{
-    actors::keyholder::{CreateNew, Decrypt, KeyHolder},
+    actors::keyholder::{CreateNew, Decrypt, GetState, KeyHolder, KeyHolderState},
     db::{
         DatabaseError, DatabasePool,
         models::{self, SqliteTimestamp},
@@ -20,6 +20,7 @@ use crate::{
             ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
         },
     },
+    integrity,
     safe_cell::{SafeCell, SafeCellHandle as _},
 };
 
@@ -56,6 +57,10 @@ pub enum Error {
 
     #[error("Database error: {0}")]
     Database(#[from] DatabaseError),
+
+    #[error("Vault is sealed")]
+    #[diagnostic(code(arbiter::evm::vault_sealed))]
+    VaultSealed,
 }
 
 #[derive(Actor)]
@@ -71,13 +76,27 @@ impl EvmActor {
         // is it safe to seed rng from system once?
         // todo: audit
         let rng = StdRng::from_rng(&mut rng());
-        let engine = evm::Engine::new(db.clone());
+        let engine = evm::Engine::new(db.clone(), keyholder.clone());
         Self {
             keyholder,
             db,
             rng,
             engine,
         }
+    }
+
+    async fn ensure_unsealed(&self) -> Result<(), Error> {
+        let state = self
+            .keyholder
+            .ask(GetState)
+            .await
+            .map_err(|_| Error::KeyholderSend)?;
+
+        if state != KeyHolderState::Unsealed {
+            return Err(Error::VaultSealed);
+        }
+
+        Ok(())
     }
 }
 
@@ -132,7 +151,9 @@ impl EvmActor {
         &mut self,
         basic: SharedGrantSettings,
         grant: SpecificGrant,
-    ) -> Result<i32, DatabaseError> {
+    ) -> Result<i32, Error> {
+        self.ensure_unsealed().await?;
+
         match grant {
             SpecificGrant::EtherTransfer(settings) => {
                 self.engine
@@ -141,6 +162,7 @@ impl EvmActor {
                         specific: settings,
                     })
                     .await
+                    .map_err(Error::from)
             }
             SpecificGrant::TokenTransfer(settings) => {
                 self.engine
@@ -149,29 +171,43 @@ impl EvmActor {
                         specific: settings,
                     })
                     .await
+                    .map_err(Error::from)
             }
         }
     }
 
     #[message]
     pub async fn useragent_delete_grant(&mut self, grant_id: i32) -> Result<(), Error> {
+        self.ensure_unsealed().await?;
+
         let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
-        diesel::update(schema::evm_basic_grant::table)
-            .filter(schema::evm_basic_grant::id.eq(grant_id))
-            .set(schema::evm_basic_grant::revoked_at.eq(SqliteTimestamp::now()))
-            .execute(&mut conn)
-            .await
-            .map_err(DatabaseError::from)?;
+        let keyholder = self.keyholder.clone();
+
+        diesel_async::AsyncConnection::transaction(&mut conn, |conn| {
+            Box::pin(async move {
+                diesel::update(schema::evm_basic_grant::table)
+                    .filter(schema::evm_basic_grant::id.eq(grant_id))
+                    .set(schema::evm_basic_grant::revoked_at.eq(SqliteTimestamp::now()))
+                    .execute(conn)
+                    .await?;
+
+                let signed = integrity::evm::load_signed_grant_by_basic_id(conn, grant_id).await?;
+                integrity::sign_entity(conn, &keyholder, &signed)
+                    .await
+                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+
+                diesel::result::QueryResult::Ok(())
+            })
+        })
+        .await
+        .map_err(DatabaseError::from)?;
+
         Ok(())
     }
 
     #[message]
     pub async fn useragent_list_grants(&mut self) -> Result<Vec<Grant<SpecificGrant>>, Error> {
-        Ok(self
-            .engine
-            .list_all_grants()
-            .await
-            .map_err(DatabaseError::from)?)
+        Ok(self.engine.list_all_grants().await?)
     }
 
     #[message]

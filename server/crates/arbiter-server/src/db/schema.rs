@@ -140,6 +140,19 @@ diesel::table! {
 }
 
 diesel::table! {
+    integrity_envelope (id) {
+        id -> Integer,
+        entity_kind -> Text,
+        entity_id -> Binary,
+        payload_version -> Integer,
+        key_version -> Integer,
+        mac -> Binary,
+        signed_at -> Integer,
+        created_at -> Integer,
+    }
+}
+
+diesel::table! {
     program_client (id) {
         id -> Integer,
         nonce -> Integer,
@@ -220,6 +233,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     evm_transaction_log,
     evm_wallet,
     evm_wallet_access,
+    integrity_envelope,
     program_client,
     root_key_history,
     tls_history,

@@ -26,8 +26,8 @@ use crate::{
     actors::user_agent::{
         UserAgentSession,
         session::connection::{
-            HandleEvmWalletCreate, HandleEvmWalletList, HandleGrantCreate, HandleGrantDelete,
-            HandleGrantList, HandleSignTransaction,
+            GrantMutationError, HandleEvmWalletCreate, HandleEvmWalletList, HandleGrantCreate,
+            HandleGrantDelete, HandleGrantList, HandleSignTransaction,
             SignTransactionError as SessionSignTransactionError,
         },
     },
@@ -114,7 +114,7 @@ async fn handle_grant_list(
             grants: grants
                 .into_iter()
                 .map(|grant| GrantEntry {
-                    id: grant.id,
+                    id: grant.shared_grant_id,
                     wallet_access_id: grant.shared.wallet_access_id,
                     shared: Some(grant.shared.convert()),
                     specific: Some(grant.settings.convert()),
@@ -148,6 +148,9 @@ async fn handle_grant_create(
 
     let result = match actor.ask(HandleGrantCreate { basic, grant }).await {
         Ok(grant_id) => EvmGrantCreateResult::GrantId(grant_id),
+        Err(kameo::error::SendError::HandlerError(GrantMutationError::VaultSealed)) => {
+            EvmGrantCreateResult::Error(ProtoEvmError::VaultSealed.into())
+        }
         Err(err) => {
             warn!(error = ?err, "Failed to create EVM grant");
             EvmGrantCreateResult::Error(ProtoEvmError::Internal.into())
@@ -171,6 +174,9 @@ async fn handle_grant_delete(
         .await
     {
         Ok(()) => EvmGrantDeleteResult::Ok(()),
+        Err(kameo::error::SendError::HandlerError(GrantMutationError::VaultSealed)) => {
+            EvmGrantDeleteResult::Error(ProtoEvmError::VaultSealed.into())
+        }
         Err(err) => {
             warn!(error = ?err, "Failed to delete EVM grant");
             EvmGrantDeleteResult::Error(ProtoEvmError::Internal.into())
