@@ -1,7 +1,5 @@
 use arbiter_server::{
-    actors::keyholder::{Error, KeyHolder},
-    db::{self, models, schema},
-    safe_cell::{SafeCell, SafeCellHandle as _},
+    actors::keyholder::{Error, KeyHolder}, crypto::encryption::v1::{Nonce, ROOT_KEY_TAG}, db::{self, models, schema}, safe_cell::{SafeCell, SafeCellHandle as _}
 };
 use diesel::{QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
@@ -27,13 +25,13 @@ async fn test_bootstrap() {
     assert_eq!(row.schema_version, 1);
     assert_eq!(
         row.tag,
-        arbiter_server::actors::keyholder::encryption::v1::ROOT_KEY_TAG
+        ROOT_KEY_TAG
     );
     assert!(!row.ciphertext.is_empty());
     assert!(!row.salt.is_empty());
     assert_eq!(
         row.data_encryption_nonce,
-        arbiter_server::actors::keyholder::encryption::v1::Nonce::default().to_vec()
+        Nonce::default().to_vec()
     );
 }
 
