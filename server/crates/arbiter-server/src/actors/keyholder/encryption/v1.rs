@@ -172,15 +172,15 @@ pub fn derive_seal_key(mut password: SafeCell<Vec<u8>>, salt: &Salt) -> KeyCell 
     key.into()
 }
 
-/// Derives a dedicated key used only for user-agent pubkey integrity tags.
-pub fn derive_useragent_integrity_key(seal_key: &mut KeyCell) -> KeyCell {
+/// Derives a dedicated key used for integrity tags within a specific domain.
+pub fn derive_integrity_key(seal_key: &mut KeyCell, derive_tag: &[u8]) -> KeyCell {
     type HmacSha256 = hmac::Hmac<sha2::Sha256>;
 
     let mut derived = SafeCell::new(Key::default());
     seal_key.0.read_inline(|seal_key_bytes| {
         let mut mac = <HmacSha256 as hmac::Mac>::new_from_slice(seal_key_bytes.as_ref())
             .expect("HMAC key initialization must not fail for 32-byte key");
-        mac.update(USERAGENT_INTEGRITY_DERIVE_TAG);
+        mac.update(derive_tag);
         let output = mac.finalize().into_bytes();
 
         let mut writer = derived.write();
@@ -191,25 +191,29 @@ pub fn derive_useragent_integrity_key(seal_key: &mut KeyCell) -> KeyCell {
     derived.into()
 }
 
-/// Computes an integrity tag for a user-agent pubkey DB entry.
-pub fn compute_useragent_pubkey_integrity_tag(
+/// Computes an integrity tag for a specific domain and payload shape.
+pub fn compute_integrity_tag<'a, I>(
     integrity_key: &mut KeyCell,
-    key_type_discriminant: i32,
-    public_key: &[u8],
-) -> [u8; 32] {
+    purpose_tag: &[u8],
+    data_parts: I,
+) -> [u8; 32]
+where
+    I: IntoIterator<Item = &'a [u8]>,
+{
     type HmacSha256 = hmac::Hmac<sha2::Sha256>;
 
-    let mut tag = [0u8; 32];
+    let mut output_tag = [0u8; 32];
     integrity_key.0.read_inline(|integrity_key_bytes| {
         let mut mac = <HmacSha256 as hmac::Mac>::new_from_slice(integrity_key_bytes.as_ref())
             .expect("HMAC key initialization must not fail for 32-byte key");
-        mac.update(USERAGENT_INTEGRITY_TAG);
-        mac.update(&key_type_discriminant.to_be_bytes());
-        mac.update(public_key);
-        tag.copy_from_slice(&mac.finalize().into_bytes());
+        mac.update(purpose_tag);
+        for data_part in data_parts {
+            mac.update(data_part);
+        }
+        output_tag.copy_from_slice(&mac.finalize().into_bytes());
     });
 
-    tag
+    output_tag
 }
 
 #[cfg(test)]
@@ -285,22 +289,41 @@ mod tests {
     }
 
     #[test]
-    pub fn useragent_integrity_tag_deterministic() {
+    pub fn integrity_tag_deterministic() {
         let salt = generate_salt();
         let mut seal_key = derive_seal_key(SafeCell::new(b"password".to_vec()), &salt);
-        let mut integrity_key = derive_useragent_integrity_key(&mut seal_key);
-        let t1 = compute_useragent_pubkey_integrity_tag(&mut integrity_key, 1, b"pubkey");
-        let t2 = compute_useragent_pubkey_integrity_tag(&mut integrity_key, 1, b"pubkey");
+        let mut integrity_key = derive_integrity_key(&mut seal_key, USERAGENT_INTEGRITY_DERIVE_TAG);
+        let key_type = 1i32.to_be_bytes();
+        let t1 = compute_integrity_tag(
+            &mut integrity_key,
+            USERAGENT_INTEGRITY_TAG,
+            [key_type.as_slice(), b"pubkey".as_ref()],
+        );
+        let t2 = compute_integrity_tag(
+            &mut integrity_key,
+            USERAGENT_INTEGRITY_TAG,
+            [key_type.as_slice(), b"pubkey".as_ref()],
+        );
         assert_eq!(t1, t2);
     }
 
     #[test]
-    pub fn useragent_integrity_tag_changes_with_key_type() {
+    pub fn integrity_tag_changes_with_payload() {
         let salt = generate_salt();
         let mut seal_key = derive_seal_key(SafeCell::new(b"password".to_vec()), &salt);
-        let mut integrity_key = derive_useragent_integrity_key(&mut seal_key);
-        let t1 = compute_useragent_pubkey_integrity_tag(&mut integrity_key, 1, b"pubkey");
-        let t2 = compute_useragent_pubkey_integrity_tag(&mut integrity_key, 2, b"pubkey");
+        let mut integrity_key = derive_integrity_key(&mut seal_key, USERAGENT_INTEGRITY_DERIVE_TAG);
+        let key_type_1 = 1i32.to_be_bytes();
+        let key_type_2 = 2i32.to_be_bytes();
+        let t1 = compute_integrity_tag(
+            &mut integrity_key,
+            USERAGENT_INTEGRITY_TAG,
+            [key_type_1.as_slice(), b"pubkey".as_ref()],
+        );
+        let t2 = compute_integrity_tag(
+            &mut integrity_key,
+            USERAGENT_INTEGRITY_TAG,
+            [key_type_2.as_slice(), b"pubkey".as_ref()],
+        );
         assert_ne!(t1, t2);
     }
 }
