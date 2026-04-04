@@ -14,6 +14,13 @@ use crate::{
     db::schema,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttestationStatus {
+    Attested,
+    NotAttested,
+    Unavailable,
+}
+
 pub struct ChallengeRequest {
     pub pubkey: AuthPublicKey,
 }
@@ -133,8 +140,12 @@ where
         &mut self,
         ChallengeRequest { pubkey }: ChallengeRequest,
     ) -> Result<ChallengeContext, Self::Error> {
-        self.verify_pubkey_integrity_before_challenge(&pubkey)
-            .await?;
+        match self.verify_pubkey_attestation_status(&pubkey).await? {
+            AttestationStatus::Attested | AttestationStatus::Unavailable => {}
+            AttestationStatus::NotAttested => {
+                return Err(Error::InvalidChallengeSolution);
+            }
+        }
 
         let stored_bytes = pubkey.to_stored_bytes();
         let nonce = create_nonce(&self.conn.db, &stored_bytes, pubkey.key_type()).await?;
@@ -290,10 +301,10 @@ where
         }
     }
 
-    async fn verify_pubkey_integrity_before_challenge(
+    async fn verify_pubkey_attestation_status(
         &self,
         pubkey: &AuthPublicKey,
-    ) -> Result<(), Error> {
+    ) -> Result<AttestationStatus, Error> {
         let stored_tag: Option<Option<Vec<u8>>> = {
             let mut conn = self.conn.db.get().await.map_err(|e| {
                 error!(error = ?e, "Database pool error");
@@ -319,19 +330,19 @@ where
 
         let Some(expected_tag) = self.try_sign_pubkey_integrity_tag(pubkey).await? else {
             // Vault sealed/unbootstrapped: cannot verify integrity yet.
-            return Ok(());
+            return Ok(AttestationStatus::Unavailable);
         };
 
-        let Some(stored_tag) = stored_tag else {
-            error!("Missing pubkey integrity tag for registered key while vault is unsealed");
-            return Err(Error::InvalidChallengeSolution);
-        };
-
-        if stored_tag != expected_tag {
-            error!("User-agent pubkey integrity tag mismatch");
-            return Err(Error::InvalidChallengeSolution);
+        match stored_tag {
+            Some(stored_tag) if stored_tag == expected_tag => Ok(AttestationStatus::Attested),
+            Some(_) => {
+                error!("User-agent pubkey integrity tag mismatch");
+                Ok(AttestationStatus::NotAttested)
+            }
+            None => {
+                error!("Missing pubkey integrity tag for registered key while vault is unsealed");
+                Ok(AttestationStatus::NotAttested)
+            }
         }
-
-        Ok(())
     }
 }
