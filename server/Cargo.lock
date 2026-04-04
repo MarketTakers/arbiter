@@ -744,6 +744,7 @@ dependencies = [
  "kameo",
  "memsafe",
  "pem",
+ "prost",
  "prost-types",
  "rand 0.10.0",
  "rcgen",

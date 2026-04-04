@@ -61,6 +61,10 @@ pub mod proto {
     pub mod evm {
         tonic::include_proto!("arbiter.evm");
     }
+
+    pub mod integrity {
+        tonic::include_proto!("arbiter.integrity");
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -5,7 +5,7 @@ use crate::db::schema::{
     self, aead_encrypted, arbiter_settings, evm_basic_grant, evm_ether_transfer_grant,
     evm_ether_transfer_grant_target, evm_ether_transfer_limit, evm_token_transfer_grant,
     evm_token_transfer_log, evm_token_transfer_volume_limit, evm_transaction_log, evm_wallet,
-    root_key_history, tls_history,
+    integrity_envelope, root_key_history, tls_history,
 };
 use chrono::{DateTime, Utc};
 use diesel::{prelude::*, sqlite::Sqlite};
@@ -375,5 +375,24 @@ pub struct EvmTokenTransferLog {
     pub token_contract: Vec<u8>,
     pub recipient_address: Vec<u8>,
     pub value: Vec<u8>,
+    pub created_at: SqliteTimestamp,
+}
+
+#[derive(Models, Queryable, Debug, Insertable, Selectable)]
+#[diesel(table_name = integrity_envelope, check_for_backend(Sqlite))]
+#[view(
+    NewIntegrityEnvelope,
+    derive(Insertable),
+    omit(id, signed_at, created_at),
+    attributes_with = "deriveless"
+)]
+pub struct IntegrityEnvelope {
+    pub id: i32,
+    pub entity_kind: String,
+    pub entity_id: Vec<u8>,
+    pub payload_version: i32,
+    pub key_version: i32,
+    pub mac: Vec<u8>,
+    pub signed_at: SqliteTimestamp,
     pub created_at: SqliteTimestamp,
 }

@@ -52,6 +52,7 @@ hmac = "0.12"
 spki.workspace = true
 alloy.workspace = true
 prost-types.workspace = true
+prost.workspace = true
 arbiter-tokens-registry.path = "../arbiter-tokens-registry"
 anyhow = "1.0.102"
 

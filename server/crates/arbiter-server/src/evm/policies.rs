@@ -151,7 +151,7 @@ pub struct SharedGrantSettings {
 }
 
 impl SharedGrantSettings {
-    fn try_from_model(model: EvmBasicGrant) -> QueryResult<Self> {
+    pub(crate) fn try_from_model(model: EvmBasicGrant) -> QueryResult<Self> {
         Ok(Self {
             wallet_access_id: model.wallet_access_id,
             chain: model.chain_id as u64, // safe because chain_id is stored as i32 but is guaranteed to be a valid ChainId by the API when creating grants
