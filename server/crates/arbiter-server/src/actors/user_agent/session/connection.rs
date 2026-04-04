@@ -23,7 +23,7 @@ use crate::{
         evm::{
             Generate, ListWallets, UseragentCreateGrant, UseragentDeleteGrant, UseragentListGrants,
         },
-        keyholder::{self, Bootstrap, SignUseragentPubkeyIntegrityTag, TryUnseal},
+        keyholder::{self, Bootstrap, SignIntegrityTag, TryUnseal},
         user_agent::session::{
             UserAgentSession,
             state::{UnsealContext, UserAgentEvents, UserAgentStates},
@@ -111,14 +111,14 @@ impl UserAgentSession {
                 .props
                 .actors
                 .key_holder
-                .ask(SignUseragentPubkeyIntegrityTag {
-                    public_key,
-                    key_type,
+                .ask(SignIntegrityTag {
+                    purpose_tag: keyholder::encryption::v1::USERAGENT_INTEGRITY_TAG.to_vec(),
+                    data_parts: vec![(key_type as i32).to_be_bytes().to_vec(), public_key],
                 })
                 .await
                 .map_err(|err| {
-                    error!(?err, "Failed to sign user-agent pubkey integrity tag");
-                    Error::internal("Failed to sign user-agent pubkey integrity tag")
+                    error!(?err, "Failed to sign integrity tag");
+                    Error::internal("Failed to sign integrity tag")
                 })?;
             updates.push((id, tag));
         }

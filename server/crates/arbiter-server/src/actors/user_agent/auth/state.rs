@@ -8,7 +8,7 @@ use super::Error;
 use crate::{
     actors::{
         bootstrap::ConsumeToken,
-        keyholder::{self, SignUseragentPubkeyIntegrityTag},
+        keyholder::{self, SignIntegrityTag},
         user_agent::{AuthPublicKey, UserAgentConnection, auth::Outbound},
     },
     db::schema,
@@ -257,9 +257,12 @@ where
             .conn
             .actors
             .key_holder
-            .ask(SignUseragentPubkeyIntegrityTag {
-                public_key: pubkey.to_stored_bytes(),
-                key_type: pubkey.key_type(),
+            .ask(SignIntegrityTag {
+                purpose_tag: keyholder::encryption::v1::USERAGENT_INTEGRITY_TAG.to_vec(),
+                data_parts: vec![
+                    (pubkey.key_type() as i32).to_be_bytes().to_vec(),
+                    pubkey.to_stored_bytes(),
+                ],
             })
             .await;
 

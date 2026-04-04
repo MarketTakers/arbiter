@@ -32,7 +32,7 @@ enum State {
     Unsealed {
         root_key_history_id: i32,
         root_key: KeyCell,
-        useragent_integrity_key: KeyCell,
+        integrity_key: KeyCell,
     },
 }
 
@@ -146,7 +146,8 @@ impl KeyHolder {
         }
         let salt = v1::generate_salt();
         let mut seal_key = v1::derive_seal_key(seal_key_raw, &salt);
-        let useragent_integrity_key = v1::derive_useragent_integrity_key(&mut seal_key);
+        let integrity_key =
+            v1::derive_integrity_key(&mut seal_key, v1::USERAGENT_INTEGRITY_DERIVE_TAG);
         let mut root_key = KeyCell::new_secure_random();
 
         // Zero nonces are fine because they are one-time
@@ -195,7 +196,7 @@ impl KeyHolder {
         self.state = State::Unsealed {
             root_key,
             root_key_history_id,
-            useragent_integrity_key,
+            integrity_key,
         };
 
         info!("Keyholder bootstrapped successfully");
@@ -229,7 +230,8 @@ impl KeyHolder {
             Error::BrokenDatabase
         })?;
         let mut seal_key = v1::derive_seal_key(seal_key_raw, &salt);
-        let useragent_integrity_key = v1::derive_useragent_integrity_key(&mut seal_key);
+        let integrity_key =
+            v1::derive_integrity_key(&mut seal_key, v1::USERAGENT_INTEGRITY_DERIVE_TAG);
 
         let mut root_key = SafeCell::new(current_key.ciphertext.clone());
 
@@ -253,7 +255,7 @@ impl KeyHolder {
                 error!(?err, "Broken database: invalid encryption key size");
                 Error::BrokenDatabase
             })?,
-            useragent_integrity_key,
+            integrity_key,
         };
 
         info!("Keyholder unsealed successfully");
@@ -263,23 +265,19 @@ impl KeyHolder {
 
     // Decrypts the `aead_encrypted` entry with the given ID and returns the plaintext
     #[message]
-    pub fn sign_useragent_pubkey_integrity_tag(
+    pub fn sign_integrity_tag(
         &mut self,
-        public_key: Vec<u8>,
-        key_type: models::KeyType,
+        purpose_tag: Vec<u8>,
+        data_parts: Vec<Vec<u8>>,
     ) -> Result<Vec<u8>, Error> {
-        let State::Unsealed {
-            useragent_integrity_key,
-            ..
-        } = &mut self.state
-        else {
+        let State::Unsealed { integrity_key, .. } = &mut self.state else {
             return Err(Error::NotBootstrapped);
         };
 
-        let tag = v1::compute_useragent_pubkey_integrity_tag(
-            useragent_integrity_key,
-            key_type as i32,
-            &public_key,
+        let tag = v1::compute_integrity_tag(
+            integrity_key,
+            &purpose_tag,
+            data_parts.iter().map(Vec::as_slice),
         );
         Ok(tag.to_vec())
     }
