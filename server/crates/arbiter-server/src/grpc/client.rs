@@ -34,7 +34,9 @@ async fn dispatch_loop(
     mut request_tracker: RequestTracker,
 ) {
     loop {
-        let Some(message) = bi.recv().await else { return };
+        let Some(message) = bi.recv().await else {
+            return;
+        };
 
         let conn = match message {
             Ok(conn) => conn,
@@ -53,16 +55,24 @@ async fn dispatch_loop(
         };
 
         let Some(payload) = conn.payload else {
-            let _ = bi.send(Err(Status::invalid_argument("Missing client request payload"))).await;
+            let _ = bi
+                .send(Err(Status::invalid_argument(
+                    "Missing client request payload",
+                )))
+                .await;
             return;
         };
 
         match dispatch_inner(&actor, payload).await {
             Ok(response) => {
-                if bi.send(Ok(ClientResponse {
-                    request_id: Some(request_id),
-                    payload: Some(response),
-                })).await.is_err() {
+                if bi
+                    .send(Ok(ClientResponse {
+                        request_id: Some(request_id),
+                        payload: Some(response),
+                    }))
+                    .await
+                    .is_err()
+                {
                     return;
                 }
             }

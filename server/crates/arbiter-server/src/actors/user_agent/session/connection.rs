@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use alloy::primitives::Address;
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
-use diesel::{ExpressionMethods as _, QueryDsl as _, SelectableHelper, dsl::update};
+use diesel::{ExpressionMethods as _, QueryDsl as _, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::error::SendError;
 use kameo::messages;
@@ -13,9 +13,8 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
 use crate::actors::keyholder::KeyHolderState;
 use crate::actors::user_agent::session::Error;
-use crate::crypto::integrity::v1::USERAGENT_INTEGRITY_TAG;
 use crate::db::models::{
-    EvmWalletAccess, KeyType, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
+    EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
 };
 use crate::evm::policies::{Grant, SpecificGrant};
 use crate::safe_cell::SafeCell;
@@ -24,7 +23,7 @@ use crate::{
         evm::{
             Generate, ListWallets, UseragentCreateGrant, UseragentDeleteGrant, UseragentListGrants,
         },
-        keyholder::{self, Bootstrap, SignIntegrityTag, TryUnseal},
+        keyholder::{self, Bootstrap, TryUnseal},
         user_agent::session::{
             UserAgentSession,
             state::{UnsealContext, UserAgentEvents, UserAgentStates},

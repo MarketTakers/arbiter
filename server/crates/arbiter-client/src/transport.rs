@@ -1,6 +1,4 @@
-use arbiter_proto::proto::{
-    client::{ClientRequest, ClientResponse},
-};
+use arbiter_proto::proto::client::{ClientRequest, ClientResponse};
 use std::sync::atomic::{AtomicI32, Ordering};
 use tokio::sync::mpsc;
 
@@ -36,9 +34,7 @@ impl ClientTransport {
             .map_err(|_| ClientSignError::ChannelClosed)
     }
 
-    pub(crate) async fn recv(
-        &mut self,
-    ) -> std::result::Result<ClientResponse, ClientSignError> {
+    pub(crate) async fn recv(&mut self) -> std::result::Result<ClientResponse, ClientSignError> {
         match self.receiver.message().await {
             Ok(Some(resp)) => Ok(resp),
             Ok(None) => Err(ClientSignError::ConnectionClosed),

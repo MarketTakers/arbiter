@@ -8,7 +8,14 @@ use kameo::{Actor, Reply, messages};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
 
-use crate::{crypto::{KeyCell, derive_key, encryption::v1::{self, Nonce}, integrity::v1::compute_integrity_tag}, safe_cell::SafeCell};
+use crate::{
+    crypto::{
+        KeyCell, derive_key,
+        encryption::v1::{self, Nonce},
+        integrity::v1::compute_integrity_tag,
+    },
+    safe_cell::SafeCell,
+};
 use crate::{
     db::{
         self,
@@ -17,7 +24,6 @@ use crate::{
     },
     safe_cell::SafeCellHandle as _,
 };
-
 
 #[derive(Default, EnumDiscriminants)]
 #[strum_discriminants(derive(Reply), vis(pub), name(KeyHolderState))]
@@ -112,14 +118,13 @@ impl KeyHolder {
                         .first(conn)
                         .await?;
 
-                    let mut nonce =
-                        Nonce::try_from(current_nonce.as_slice()).map_err(|_| {
-                            error!(
-                                "Broken database: invalid nonce for root key history id={}",
-                                root_key_id
-                            );
-                            Error::BrokenDatabase
-                        })?;
+                    let mut nonce = Nonce::try_from(current_nonce.as_slice()).map_err(|_| {
+                        error!(
+                            "Broken database: invalid nonce for root key history id={}",
+                            root_key_id
+                        );
+                        Error::BrokenDatabase
+                    })?;
                     nonce.increment();
 
                     update(schema::root_key_history::table)
@@ -265,11 +270,8 @@ impl KeyHolder {
             return Err(Error::NotBootstrapped);
         };
 
-        let tag = compute_integrity_tag(
-            root_key,
-            &purpose_tag,
-            data_parts.iter().map(Vec::as_slice),
-        );
+        let tag =
+            compute_integrity_tag(root_key, &purpose_tag, data_parts.iter().map(Vec::as_slice));
         Ok(tag.to_vec())
     }
 

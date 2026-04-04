@@ -10,7 +10,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use prost_types::Timestamp as ProtoTimestamp;
 use tonic::Status;
 
-use crate::db::models::{CoreEvmWalletAccess, NewEvmWallet, NewEvmWalletAccess};
+use crate::db::models::{CoreEvmWalletAccess, NewEvmWalletAccess};
 use crate::grpc::Convert;
 use crate::{
     evm::policies::{

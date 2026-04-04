@@ -5,9 +5,12 @@ use chacha20poly1305::{
     AeadInPlace, Key, KeyInit as _, XChaCha20Poly1305, XNonce,
     aead::{AeadMut, Error, Payload},
 };
-use rand::{Rng as _, SeedableRng as _, rngs::{StdRng, SysRng}};
+use rand::{
+    Rng as _, SeedableRng as _,
+    rngs::{StdRng, SysRng},
+};
 
-use crate::{safe_cell::{SafeCell, SafeCellHandle as _}};
+use crate::safe_cell::{SafeCell, SafeCellHandle as _};
 
 pub mod encryption;
 pub mod integrity;
@@ -124,8 +127,11 @@ pub fn derive_key(mut password: SafeCell<Vec<u8>>, salt: &Salt) -> KeyCell {
 
 #[cfg(test)]
 mod tests {
-    use crate::{safe_cell::{SafeCell, SafeCellHandle as _}};
-    use super::{derive_key, encryption::v1::{Nonce, generate_salt}};
+    use super::{
+        derive_key,
+        encryption::v1::{Nonce, generate_salt},
+    };
+    use crate::safe_cell::{SafeCell, SafeCellHandle as _};
 
     #[test]
     pub fn encrypt_decrypt() {

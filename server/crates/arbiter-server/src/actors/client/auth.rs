@@ -1,5 +1,6 @@
 use arbiter_proto::{
-    ClientMetadata, format_challenge, transport::{Bi, expect_message}
+    ClientMetadata, format_challenge,
+    transport::{Bi, expect_message},
 };
 use chrono::Utc;
 use diesel::{
@@ -320,7 +321,7 @@ where
     sync_client_metadata(&props.db, info.id, &metadata).await?;
 
     challenge_client(transport, pubkey, info.current_nonce).await?;
-    
+
     transport
         .send(Ok(Outbound::AuthSuccess))
         .await

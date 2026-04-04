@@ -8,7 +8,6 @@ use alloy::{
 use chrono::Utc;
 use diesel::{ExpressionMethods as _, QueryDsl as _, QueryResult, insert_into, sqlite::Sqlite};
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use tracing_subscriber::registry::Data;
 
 use crate::{
     db::{

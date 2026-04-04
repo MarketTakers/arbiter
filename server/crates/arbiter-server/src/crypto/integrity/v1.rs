@@ -2,9 +2,8 @@ use crate::{crypto::KeyCell, safe_cell::SafeCellHandle as _};
 use chacha20poly1305::Key;
 use hmac::Mac as _;
 
-    pub const USERAGENT_INTEGRITY_DERIVE_TAG: &[u8] = "arbiter/useragent/integrity-key/v1".as_bytes();
-    pub const USERAGENT_INTEGRITY_TAG: &[u8] = "arbiter/useragent/pubkey-entry/v1".as_bytes();
-
+pub const USERAGENT_INTEGRITY_DERIVE_TAG: &[u8] = "arbiter/useragent/integrity-key/v1".as_bytes();
+pub const USERAGENT_INTEGRITY_TAG: &[u8] = "arbiter/useragent/pubkey-entry/v1".as_bytes();
 
 /// Computes an integrity tag for a specific domain and payload shape.
 pub fn compute_integrity_tag<'a, I>(
@@ -33,10 +32,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{crypto::{derive_key, encryption::v1::generate_salt}, safe_cell::{SafeCell, SafeCellHandle as _}};
+    use crate::{
+        crypto::{derive_key, encryption::v1::generate_salt},
+        safe_cell::{SafeCell, SafeCellHandle as _},
+    };
 
-    use super::{compute_integrity_tag, USERAGENT_INTEGRITY_TAG};
-
+    use super::{USERAGENT_INTEGRITY_TAG, compute_integrity_tag};
 
     #[test]
     pub fn integrity_tag_deterministic() {
