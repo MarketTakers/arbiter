@@ -1,9 +1,4 @@
 use alloy::primitives::Address;
-use arbiter_proto::proto::integrity::{
-    IntegrityEtherTransferSettings, IntegrityEvmGrantPayloadV1, IntegritySharedGrantSettings,
-    IntegritySpecificGrant, IntegrityTokenTransferSettings, IntegrityTransactionRateLimit,
-    IntegrityVolumeRateLimit, integrity_specific_grant,
-};
 use chrono::{DateTime, Utc};
 use diesel::sqlite::Sqlite;
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, SelectableHelper as _};
@@ -18,6 +13,88 @@ use crate::{
 };
 
 pub const EVM_GRANT_ENTITY_KIND: &str = "evm_grant";
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntegrityVolumeRateLimit {
+    #[prost(bytes, tag = "1")]
+    pub max_volume: Vec<u8>,
+    #[prost(int64, tag = "2")]
+    pub window_secs: i64,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntegrityTransactionRateLimit {
+    #[prost(uint32, tag = "1")]
+    pub count: u32,
+    #[prost(int64, tag = "2")]
+    pub window_secs: i64,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntegritySharedGrantSettings {
+    #[prost(int32, tag = "1")]
+    pub wallet_access_id: i32,
+    #[prost(uint64, tag = "2")]
+    pub chain_id: u64,
+    #[prost(message, optional, tag = "3")]
+    pub valid_from: Option<::prost_types::Timestamp>,
+    #[prost(message, optional, tag = "4")]
+    pub valid_until: Option<::prost_types::Timestamp>,
+    #[prost(bytes, optional, tag = "5")]
+    pub max_gas_fee_per_gas: Option<Vec<u8>>,
+    #[prost(bytes, optional, tag = "6")]
+    pub max_priority_fee_per_gas: Option<Vec<u8>>,
+    #[prost(message, optional, tag = "7")]
+    pub rate_limit: Option<IntegrityTransactionRateLimit>,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntegrityEtherTransferSettings {
+    #[prost(bytes, repeated, tag = "1")]
+    pub targets: Vec<Vec<u8>>,
+    #[prost(message, optional, tag = "2")]
+    pub limit: Option<IntegrityVolumeRateLimit>,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntegrityTokenTransferSettings {
+    #[prost(bytes, tag = "1")]
+    pub token_contract: Vec<u8>,
+    #[prost(bytes, optional, tag = "2")]
+    pub target: Option<Vec<u8>>,
+    #[prost(message, repeated, tag = "3")]
+    pub volume_limits: Vec<IntegrityVolumeRateLimit>,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntegritySpecificGrant {
+    #[prost(oneof = "integrity_specific_grant::Grant", tags = "1, 2")]
+    pub grant: Option<integrity_specific_grant::Grant>,
+}
+
+pub mod integrity_specific_grant {
+    use super::*;
+
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Grant {
+        #[prost(message, tag = "1")]
+        EtherTransfer(IntegrityEtherTransferSettings),
+        #[prost(message, tag = "2")]
+        TokenTransfer(IntegrityTokenTransferSettings),
+    }
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntegrityEvmGrantPayloadV1 {
+    #[prost(int32, tag = "1")]
+    pub basic_grant_id: i32,
+    #[prost(message, optional, tag = "2")]
+    pub shared: Option<IntegritySharedGrantSettings>,
+    #[prost(message, optional, tag = "3")]
+    pub specific: Option<IntegritySpecificGrant>,
+    #[prost(message, optional, tag = "4")]
+    pub revoked_at: Option<::prost_types::Timestamp>,
+}
 
 #[derive(Debug, Clone)]
 pub struct SignedEvmGrant {
