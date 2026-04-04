@@ -5,8 +5,8 @@ use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use diesel::{ExpressionMethods as _, QueryDsl as _, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::error::SendError;
-use kameo::prelude::Context;
 use kameo::messages;
+use kameo::prelude::Context;
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 

@@ -20,10 +20,7 @@ pub struct ClientConnection {
 
 impl ClientConnection {
     pub fn new(db: db::DatabasePool, actors: GlobalActors) -> Self {
-        Self {
-            db,
-            actors,
-        }
+        Self { db, actors }
     }
 }
 

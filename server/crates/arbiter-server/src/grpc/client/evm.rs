@@ -34,7 +34,9 @@ pub(super) async fn dispatch(
     req: proto_evm::Request,
 ) -> Result<ClientResponsePayload, Status> {
     let Some(payload) = req.payload else {
-        return Err(Status::invalid_argument("Missing client EVM request payload"));
+        return Err(Status::invalid_argument(
+            "Missing client EVM request payload",
+        ));
     };
 
     match payload {
@@ -59,13 +61,13 @@ pub(super) async fn dispatch(
                 ))) => EvmSignTransactionResponse {
                     result: Some(vet_error.convert()),
                 },
-                Err(kameo::error::SendError::HandlerError(
-                    SignTransactionRpcError::Internal,
-                )) => EvmSignTransactionResponse {
-                    result: Some(EvmSignTransactionResult::Error(
-                        ProtoEvmError::Internal.into(),
-                    )),
-                },
+                Err(kameo::error::SendError::HandlerError(SignTransactionRpcError::Internal)) => {
+                    EvmSignTransactionResponse {
+                        result: Some(EvmSignTransactionResult::Error(
+                            ProtoEvmError::Internal.into(),
+                        )),
+                    }
+                }
                 Err(err) => {
                     warn!(error = ?err, "Failed to sign EVM transaction");
                     EvmSignTransactionResponse {
@@ -78,8 +80,8 @@ pub(super) async fn dispatch(
 
             Ok(wrap_response(EvmResponsePayload::SignTransaction(response)))
         }
-        EvmRequestPayload::AnalyzeTransaction(_) => {
-            Err(Status::unimplemented("EVM transaction analysis is not yet implemented"))
-        }
+        EvmRequestPayload::AnalyzeTransaction(_) => Err(Status::unimplemented(
+            "EVM transaction analysis is not yet implemented",
+        )),
     }
 }

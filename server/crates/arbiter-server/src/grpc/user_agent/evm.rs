@@ -3,8 +3,7 @@ use arbiter_proto::proto::{
         EvmError as ProtoEvmError, EvmGrantCreateRequest, EvmGrantCreateResponse,
         EvmGrantDeleteRequest, EvmGrantDeleteResponse, EvmGrantList, EvmGrantListResponse,
         EvmSignTransactionResponse, GrantEntry, WalletCreateResponse, WalletEntry, WalletList,
-        WalletListResponse,
-        evm_grant_create_response::Result as EvmGrantCreateResult,
+        WalletListResponse, evm_grant_create_response::Result as EvmGrantCreateResult,
         evm_grant_delete_response::Result as EvmGrantDeleteResult,
         evm_grant_list_response::Result as EvmGrantListResult,
         evm_sign_transaction_response::Result as EvmSignTransactionResult,
@@ -165,7 +164,12 @@ async fn handle_grant_delete(
     actor: &ActorRef<UserAgentSession>,
     req: EvmGrantDeleteRequest,
 ) -> Result<Option<UserAgentResponsePayload>, Status> {
-    let result = match actor.ask(HandleGrantDelete { grant_id: req.grant_id }).await {
+    let result = match actor
+        .ask(HandleGrantDelete {
+            grant_id: req.grant_id,
+        })
+        .await
+    {
         Ok(()) => EvmGrantDeleteResult::Ok(()),
         Err(err) => {
             warn!(error = ?err, "Failed to delete EVM grant");
@@ -202,18 +206,18 @@ async fn handle_sign_transaction(
                 signature.as_bytes().to_vec(),
             )),
         },
-        Err(kameo::error::SendError::HandlerError(
-            SessionSignTransactionError::Vet(vet_error),
-        )) => EvmSignTransactionResponse {
-            result: Some(vet_error.convert()),
-        },
-        Err(kameo::error::SendError::HandlerError(
-            SessionSignTransactionError::Internal,
-        )) => EvmSignTransactionResponse {
-            result: Some(EvmSignTransactionResult::Error(
-                ProtoEvmError::Internal.into(),
-            )),
-        },
+        Err(kameo::error::SendError::HandlerError(SessionSignTransactionError::Vet(vet_error))) => {
+            EvmSignTransactionResponse {
+                result: Some(vet_error.convert()),
+            }
+        }
+        Err(kameo::error::SendError::HandlerError(SessionSignTransactionError::Internal)) => {
+            EvmSignTransactionResponse {
+                result: Some(EvmSignTransactionResult::Error(
+                    ProtoEvmError::Internal.into(),
+                )),
+            }
+        }
         Err(err) => {
             warn!(error = ?err, "Failed to sign EVM transaction");
             EvmSignTransactionResponse {
@@ -224,7 +228,7 @@ async fn handle_sign_transaction(
         }
     };
 
-    Ok(Some(wrap_evm_response(EvmResponsePayload::SignTransaction(
-        response,
-    ))))
+    Ok(Some(wrap_evm_response(
+        EvmResponsePayload::SignTransaction(response),
+    )))
 }

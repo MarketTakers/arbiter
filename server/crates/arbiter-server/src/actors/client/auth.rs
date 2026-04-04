@@ -287,10 +287,7 @@ where
     Ok(())
 }
 
-pub async fn authenticate<T>(
-    props: &mut ClientConnection,
-    transport: &mut T,
-) -> Result<i32, Error>
+pub async fn authenticate<T>(props: &mut ClientConnection, transport: &mut T) -> Result<i32, Error>
 where
     T: Bi<Inbound, Result<Outbound, Error>> + Send + ?Sized,
 {
@@ -319,7 +316,7 @@ where
 
     sync_client_metadata(&props.db, info.id, &metadata).await?;
     challenge_client(transport, pubkey, info.current_nonce).await?;
-    
+
     transport
         .send(Ok(Outbound::AuthSuccess))
         .await

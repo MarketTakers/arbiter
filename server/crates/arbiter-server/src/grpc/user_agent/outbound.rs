@@ -5,9 +5,7 @@ use arbiter_proto::proto::{
         TransactionRateLimit as ProtoTransactionRateLimit, VolumeRateLimit as ProtoVolumeRateLimit,
         specific_grant::Grant as ProtoSpecificGrantType,
     },
-    user_agent::sdk_client::{
-        WalletAccess, WalletAccessEntry as ProtoSdkClientWalletAccess,
-    },
+    user_agent::sdk_client::{WalletAccess, WalletAccessEntry as ProtoSdkClientWalletAccess},
 };
 use chrono::{DateTime, Utc};
 use prost_types::Timestamp as ProtoTimestamp;

@@ -1,4 +1,3 @@
-
 use std::io::{self, Write};
 
 use arbiter_client::ArbiterClient;
@@ -22,8 +21,6 @@ async fn main() {
         return;
     }
 
-   
-
     let url = match ArbiterUrl::try_from(input) {
         Ok(url) => url,
         Err(err) => {
@@ -32,7 +29,7 @@ async fn main() {
         }
     };
 
-     println!("{:#?}", url);
+    println!("{:#?}", url);
 
     let metadata = ClientMetadata {
         name: "arbiter-client test_connect".to_string(),

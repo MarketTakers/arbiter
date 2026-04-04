@@ -12,11 +12,9 @@ use kameo::{actor::ActorRef, error::SendError};
 use tonic::Status;
 use tracing::warn;
 
-use crate::{
-    actors::{
-        client::session::{ClientSession, Error, HandleQueryVaultState},
-        keyholder::KeyHolderState,
-    },
+use crate::actors::{
+    client::session::{ClientSession, Error, HandleQueryVaultState},
+    keyholder::KeyHolderState,
 };
 
 pub(super) async fn dispatch(
@@ -24,7 +22,9 @@ pub(super) async fn dispatch(
     req: proto_vault::Request,
 ) -> Result<ClientResponsePayload, Status> {
     let Some(payload) = req.payload else {
-        return Err(Status::invalid_argument("Missing client vault request payload"));
+        return Err(Status::invalid_argument(
+            "Missing client vault request payload",
+        ));
     };
 
     match payload {

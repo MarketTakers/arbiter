@@ -1,4 +1,5 @@
 use arbiter_proto::proto::{
+    shared::ClientInfo as ProtoClientMetadata,
     user_agent::{
         sdk_client::{
             self as proto_sdk_client, ConnectionCancel as ProtoSdkClientConnectionCancel,
@@ -13,7 +14,6 @@ use arbiter_proto::proto::{
         },
         user_agent_response::Payload as UserAgentResponsePayload,
     },
-    shared::ClientInfo as ProtoClientMetadata,
 };
 use kameo::actor::ActorRef;
 use tonic::Status;
@@ -62,18 +62,22 @@ pub(super) async fn dispatch(
     req: proto_sdk_client::Request,
 ) -> Result<Option<UserAgentResponsePayload>, Status> {
     let Some(payload) = req.payload else {
-        return Err(Status::invalid_argument("Missing SDK client request payload"));
+        return Err(Status::invalid_argument(
+            "Missing SDK client request payload",
+        ));
     };
 
     match payload {
         SdkClientRequestPayload::ConnectionResponse(resp) => {
             handle_connection_response(actor, resp).await
         }
-        SdkClientRequestPayload::Revoke(_) => {
-            Err(Status::unimplemented("SdkClientRevoke is not yet implemented"))
-        }
+        SdkClientRequestPayload::Revoke(_) => Err(Status::unimplemented(
+            "SdkClientRevoke is not yet implemented",
+        )),
         SdkClientRequestPayload::List(_) => handle_list(actor).await,
-        SdkClientRequestPayload::GrantWalletAccess(req) => handle_grant_wallet_access(actor, req).await,
+        SdkClientRequestPayload::GrantWalletAccess(req) => {
+            handle_grant_wallet_access(actor, req).await
+        }
         SdkClientRequestPayload::RevokeWalletAccess(req) => {
             handle_revoke_wallet_access(actor, req).await
         }
@@ -128,11 +132,11 @@ async fn handle_list(
             ProtoSdkClientListResult::Error(ProtoSdkClientError::Internal.into())
         }
     };
-    Ok(Some(wrap_sdk_client_response(SdkClientResponsePayload::List(
-        ProtoSdkClientListResponse {
+    Ok(Some(wrap_sdk_client_response(
+        SdkClientResponsePayload::List(ProtoSdkClientListResponse {
             result: Some(result),
-        },
-    ))))
+        }),
+    )))
 }
 
 async fn handle_grant_wallet_access(

@@ -1,9 +1,12 @@
 use alloy::primitives::U256;
 use arbiter_proto::proto::{
-    evm::{EvmError as ProtoEvmError, evm_sign_transaction_response::Result as EvmSignTransactionResult},
+    evm::{
+        EvmError as ProtoEvmError,
+        evm_sign_transaction_response::Result as EvmSignTransactionResult,
+    },
     shared::evm::{
-        EvalViolation as ProtoEvalViolation, GasLimitExceededViolation,
-        NoMatchingGrantError, PolicyViolationsError, SpecificMeaning as ProtoSpecificMeaning,
+        EvalViolation as ProtoEvalViolation, GasLimitExceededViolation, NoMatchingGrantError,
+        PolicyViolationsError, SpecificMeaning as ProtoSpecificMeaning,
         TokenInfo as ProtoTokenInfo, TransactionEvalError as ProtoTransactionEvalError,
         eval_violation::Kind as ProtoEvalViolationKind,
         specific_meaning::Meaning as ProtoSpecificMeaningKind,

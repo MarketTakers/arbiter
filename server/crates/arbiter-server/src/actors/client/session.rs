@@ -6,11 +6,10 @@ use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
 use crate::{
     actors::{
         GlobalActors,
-        client::ClientConnection, flow_coordinator::RegisterClient,
-       
+        client::ClientConnection,
         evm::{ClientSignTransaction, SignTransactionError},
+        flow_coordinator::RegisterClient,
         keyholder::KeyHolderState,
-       
     },
     db,
     evm::VetError,
@@ -95,7 +94,10 @@ impl Actor for ClientSession {
 impl ClientSession {
     pub fn new_test(db: db::DatabasePool, actors: GlobalActors) -> Self {
         let props = ClientConnection::new(db, actors);
-        Self { props, client_id: 0 }
+        Self {
+            props,
+            client_id: 0,
+        }
     }
 }
 

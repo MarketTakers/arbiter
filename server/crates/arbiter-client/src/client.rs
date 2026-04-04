@@ -1,11 +1,16 @@
-use arbiter_proto::{ClientMetadata, proto::arbiter_service_client::ArbiterServiceClient, url::ArbiterUrl};
+use arbiter_proto::{
+    ClientMetadata, proto::arbiter_service_client::ArbiterServiceClient, url::ArbiterUrl,
+};
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::ClientTlsConfig;
 
 use crate::{
-    StorageError, auth::{AuthError, authenticate}, storage::{FileSigningKeyStorage, SigningKeyStorage}, transport::{BUFFER_LENGTH, ClientTransport}
+    StorageError,
+    auth::{AuthError, authenticate},
+    storage::{FileSigningKeyStorage, SigningKeyStorage},
+    transport::{BUFFER_LENGTH, ClientTransport},
 };
 
 #[cfg(feature = "evm")]
@@ -30,7 +35,6 @@ pub enum Error {
 
     #[error("Storage error")]
     Storage(#[from] StorageError),
-    
 }
 
 pub struct ArbiterClient {
@@ -61,10 +65,11 @@ impl ArbiterClient {
         let anchor = webpki::anchor_from_trusted_cert(&url.ca_cert)?.to_owned();
         let tls = ClientTlsConfig::new().trust_anchor(anchor);
 
-        let channel = tonic::transport::Channel::from_shared(format!("https://{}:{}", url.host, url.port))?
-            .tls_config(tls)?
-            .connect()
-            .await?;
+        let channel =
+            tonic::transport::Channel::from_shared(format!("https://{}:{}", url.host, url.port))?
+                .tls_config(tls)?
+                .connect()
+                .await?;
 
         let mut client = ArbiterServiceClient::new(channel);
         let (tx, rx) = mpsc::channel(BUFFER_LENGTH);

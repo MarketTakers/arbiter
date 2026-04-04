@@ -28,39 +28,32 @@ pub mod policies;
 mod utils;
 
 /// Errors that can only occur once the transaction meaning is known (during policy evaluation)
-#[derive(Debug, thiserror::Error, miette::Diagnostic)]
+#[derive(Debug, thiserror::Error)]
 pub enum PolicyError {
     #[error("Database error")]
     Database(#[from] crate::db::DatabaseError),
     #[error("Transaction violates policy: {0:?}")]
-    #[diagnostic(code(arbiter_server::evm::policy_error::violation))]
     Violations(Vec<EvalViolation>),
     #[error("No matching grant found")]
-    #[diagnostic(code(arbiter_server::evm::policy_error::no_matching_grant))]
     NoMatchingGrant,
 }
 
-#[derive(Debug, thiserror::Error, miette::Diagnostic)]
+#[derive(Debug, thiserror::Error)]
 pub enum VetError {
     #[error("Contract creation transactions are not supported")]
-    #[diagnostic(code(arbiter_server::evm::vet_error::contract_creation_unsupported))]
     ContractCreationNotSupported,
     #[error("Engine can't classify this transaction")]
-    #[diagnostic(code(arbiter_server::evm::vet_error::unsupported))]
     UnsupportedTransactionType,
     #[error("Policy evaluation failed: {1}")]
-    #[diagnostic(code(arbiter_server::evm::vet_error::evaluated))]
     Evaluated(SpecificMeaning, #[source] PolicyError),
 }
 
-#[derive(Debug, thiserror::Error, miette::Diagnostic)]
+#[derive(Debug, thiserror::Error)]
 pub enum AnalyzeError {
     #[error("Engine doesn't support granting permissions for contract creation")]
-    #[diagnostic(code(arbiter_server::evm::analyze_error::contract_creation_not_supported))]
     ContractCreationNotSupported,
 
     #[error("Unsupported transaction type")]
-    #[diagnostic(code(arbiter_server::evm::analyze_error::unsupported_transaction_type))]
     UnsupportedTransactionType,
 }
 

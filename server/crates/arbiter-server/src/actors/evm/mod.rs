@@ -25,45 +25,36 @@ use crate::{
 
 pub use crate::evm::safe_signer;
 
-#[derive(Debug, thiserror::Error, miette::Diagnostic)]
+#[derive(Debug, thiserror::Error)]
 pub enum SignTransactionError {
     #[error("Wallet not found")]
-    #[diagnostic(code(arbiter::evm::sign::wallet_not_found))]
     WalletNotFound,
 
     #[error("Database error: {0}")]
-    #[diagnostic(code(arbiter::evm::sign::database))]
     Database(#[from] DatabaseError),
 
     #[error("Keyholder error: {0}")]
-    #[diagnostic(code(arbiter::evm::sign::keyholder))]
     Keyholder(#[from] crate::actors::keyholder::Error),
 
     #[error("Keyholder mailbox error")]
-    #[diagnostic(code(arbiter::evm::sign::keyholder_send))]
     KeyholderSend,
 
     #[error("Signing error: {0}")]
-    #[diagnostic(code(arbiter::evm::sign::signing))]
     Signing(#[from] alloy::signers::Error),
 
     #[error("Policy error: {0}")]
-    #[diagnostic(code(arbiter::evm::sign::vet))]
     Vet(#[from] evm::VetError),
 }
 
-#[derive(Debug, thiserror::Error, miette::Diagnostic)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Keyholder error: {0}")]
-    #[diagnostic(code(arbiter::evm::keyholder))]
     Keyholder(#[from] crate::actors::keyholder::Error),
 
     #[error("Keyholder mailbox error")]
-    #[diagnostic(code(arbiter::evm::keyholder_send))]
     KeyholderSend,
 
     #[error("Database error: {0}")]
-    #[diagnostic(code(arbiter::evm::database))]
     Database(#[from] DatabaseError),
 }
 

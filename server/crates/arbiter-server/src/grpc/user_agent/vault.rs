@@ -1,3 +1,4 @@
+use arbiter_proto::proto::shared::VaultState as ProtoVaultState;
 use arbiter_proto::proto::user_agent::{
     user_agent_response::Payload as UserAgentResponsePayload,
     vault::{
@@ -11,25 +12,21 @@ use arbiter_proto::proto::user_agent::{
         unseal::{
             self as proto_unseal, UnsealEncryptedKey as ProtoUnsealEncryptedKey,
             UnsealResult as ProtoUnsealResult, UnsealStart,
-            request::Payload as UnsealRequestPayload,
-            response::Payload as UnsealResponsePayload,
+            request::Payload as UnsealRequestPayload, response::Payload as UnsealResponsePayload,
         },
     },
 };
-use arbiter_proto::proto::shared::VaultState as ProtoVaultState;
 use kameo::{actor::ActorRef, error::SendError};
 use tonic::Status;
 use tracing::warn;
 
-use crate::{
-    actors::{
-        keyholder::KeyHolderState,
-        user_agent::{
-            UserAgentSession,
-            session::connection::{
-                BootstrapError, HandleBootstrapEncryptedKey, HandleQueryVaultState,
-                HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError,
-            },
+use crate::actors::{
+    keyholder::KeyHolderState,
+    user_agent::{
+        UserAgentSession,
+        session::connection::{
+            BootstrapError, HandleBootstrapEncryptedKey, HandleQueryVaultState,
+            HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError,
         },
     },
 };
@@ -151,7 +148,9 @@ async fn handle_bootstrap_encrypted_key(
         .await
     {
         Ok(()) => ProtoBootstrapResult::Success,
-        Err(SendError::HandlerError(BootstrapError::InvalidKey)) => ProtoBootstrapResult::InvalidKey,
+        Err(SendError::HandlerError(BootstrapError::InvalidKey)) => {
+            ProtoBootstrapResult::InvalidKey
+        }
         Err(SendError::HandlerError(BootstrapError::AlreadyBootstrapped)) => {
             ProtoBootstrapResult::AlreadyBootstrapped
         }

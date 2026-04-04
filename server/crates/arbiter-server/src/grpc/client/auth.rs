@@ -140,7 +140,9 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
         let Some(payload) = auth_request.payload else {
             let _ = self
                 .bi
-                .send(Err(Status::invalid_argument("Missing client auth request payload")))
+                .send(Err(Status::invalid_argument(
+                    "Missing client auth request payload",
+                )))
                 .await;
             return None;
         };
@@ -170,9 +172,7 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
                     metadata: client_metadata_from_proto(client_info),
                 })
             }
-            AuthRequestPayload::ChallengeSolution(ProtoAuthChallengeSolution {
-                signature,
-            }) => {
+            AuthRequestPayload::ChallengeSolution(ProtoAuthChallengeSolution { signature }) => {
                 let Ok(signature) = ed25519_dalek::Signature::try_from(signature.as_slice()) else {
                     let _ = self
                         .send_auth_result(ProtoAuthResult::InvalidSignature)

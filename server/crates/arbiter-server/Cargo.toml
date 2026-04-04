@@ -25,7 +25,6 @@ tonic.features = ["tls-aws-lc"]
 tokio.workspace = true
 rustls.workspace = true
 smlang.workspace = true
-miette.workspace = true
 thiserror.workspace = true
 fatality = "0.1.1"
 diesel_migrations = { version = "2.3.1", features = ["sqlite"] }
@@ -53,6 +52,7 @@ spki.workspace = true
 alloy.workspace = true
 prost-types.workspace = true
 arbiter-tokens-registry.path = "../arbiter-tokens-registry"
+anyhow = "1.0.102"
 
 [dev-dependencies]
 insta = "1.46.3"

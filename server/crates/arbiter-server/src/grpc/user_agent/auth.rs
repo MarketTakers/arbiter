@@ -1,12 +1,14 @@
 use arbiter_proto::{
     proto::user_agent::{
-        UserAgentRequest, UserAgentResponse, auth::{
+        UserAgentRequest, UserAgentResponse,
+        auth::{
             self as proto_auth, AuthChallenge as ProtoAuthChallenge,
             AuthChallengeRequest as ProtoAuthChallengeRequest,
             AuthChallengeSolution as ProtoAuthChallengeSolution, AuthResult as ProtoAuthResult,
             KeyType as ProtoKeyType, request::Payload as AuthRequestPayload,
             response::Payload as AuthResponsePayload,
-        }, user_agent_request::Payload as UserAgentRequestPayload,
+        },
+        user_agent_request::Payload as UserAgentRequestPayload,
         user_agent_response::Payload as UserAgentResponsePayload,
     },
     transport::{Bi, Error as TransportError, Receiver, Sender, grpc::GrpcBi},
@@ -63,7 +65,9 @@ impl Sender<Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {
             Ok(Outbound::AuthChallenge { nonce }) => {
                 AuthResponsePayload::Challenge(ProtoAuthChallenge { nonce })
             }
-            Ok(Outbound::AuthSuccess) => AuthResponsePayload::Result(ProtoAuthResult::Success.into()),
+            Ok(Outbound::AuthSuccess) => {
+                AuthResponsePayload::Result(ProtoAuthResult::Success.into())
+            }
             Err(Error::UnregisteredPublicKey) => {
                 AuthResponsePayload::Result(ProtoAuthResult::InvalidKey.into())
             }
@@ -171,9 +175,9 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
                     bootstrap_token,
                 })
             }
-            AuthRequestPayload::ChallengeSolution(ProtoAuthChallengeSolution {
-                signature,
-            }) => Some(auth::Inbound::AuthChallengeSolution { signature }),
+            AuthRequestPayload::ChallengeSolution(ProtoAuthChallengeSolution { signature }) => {
+                Some(auth::Inbound::AuthChallengeSolution { signature })
+            }
         }
     }
 }

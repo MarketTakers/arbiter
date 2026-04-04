@@ -7,7 +7,6 @@ const ARBITER_URL_SCHEME: &str = "arbiter";
 const CERT_QUERY_KEY: &str = "cert";
 const BOOTSTRAP_TOKEN_QUERY_KEY: &str = "bootstrap_token";
 
-
 #[derive(Debug, Clone)]
 pub struct ArbiterUrl {
     pub host: String,

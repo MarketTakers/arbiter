@@ -1,12 +1,10 @@
 use tokio::sync::mpsc;
 
 use arbiter_proto::{
-    proto::{
-        user_agent::{
-            UserAgentRequest, UserAgentResponse,
-            user_agent_request::Payload as UserAgentRequestPayload,
-            user_agent_response::Payload as UserAgentResponsePayload,
-        },
+    proto::user_agent::{
+        UserAgentRequest, UserAgentResponse,
+        user_agent_request::Payload as UserAgentRequestPayload,
+        user_agent_response::Payload as UserAgentResponsePayload,
     },
     transport::{Error as TransportError, Receiver, Sender, grpc::GrpcBi},
 };
