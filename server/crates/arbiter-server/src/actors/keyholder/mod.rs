@@ -263,7 +263,7 @@ impl KeyHolder {
         Ok(())
     }
 
-    // Decrypts the `aead_encrypted` entry with the given ID and returns the plaintext
+    // Signs a generic integrity payload using the vault-derived integrity key
     #[message]
     pub fn sign_integrity_tag(
         &mut self,
