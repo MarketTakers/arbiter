@@ -15,7 +15,7 @@ use crate::actors::{
 pub struct Args {
     pub client: ClientProfile,
     pub user_agents: Vec<ActorRef<UserAgentSession>>,
-    pub reply: ReplySender<Result<bool, ApprovalError>>
+    pub reply: ReplySender<Result<bool, ApprovalError>>,
 }
 
 pub struct ClientApprovalController {
@@ -39,7 +39,11 @@ impl Actor for ClientApprovalController {
     type Error = ();
 
     async fn on_start(
-        Args { client, mut user_agents, reply }: Self::Args,
+        Args {
+            client,
+            mut user_agents,
+            reply,
+        }: Self::Args,
         actor_ref: ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
         let this = Self {

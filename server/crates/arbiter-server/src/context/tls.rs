@@ -116,9 +116,7 @@ impl TlsCa {
         ];
         params
             .subject_alt_names
-            .push(SanType::IpAddress(IpAddr::from([
-                127, 0, 0, 1,
-            ])));
+            .push(SanType::IpAddress(IpAddr::from([127, 0, 0, 1])));
 
         let mut dn = DistinguishedName::new();
         dn.push(DnType::CommonName, "Arbiter Instance Leaf");

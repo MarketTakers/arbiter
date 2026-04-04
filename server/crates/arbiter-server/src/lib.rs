@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 use crate::context::ServerContext;
 
-pub mod crypto;
 pub mod actors;
 pub mod context;
+pub mod crypto;
 pub mod db;
 pub mod evm;
 pub mod grpc;

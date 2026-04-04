@@ -1,11 +1,13 @@
 use arbiter_proto::{
-    ClientMetadata, proto::client::{
+    ClientMetadata,
+    proto::client::{
         AuthChallenge as ProtoAuthChallenge, AuthChallengeRequest as ProtoAuthChallengeRequest,
         AuthChallengeSolution as ProtoAuthChallengeSolution, AuthResult as ProtoAuthResult,
         ClientInfo as ProtoClientInfo, ClientRequest, ClientResponse,
         client_request::Payload as ClientRequestPayload,
         client_response::Payload as ClientResponsePayload,
-    }, transport::{Bi, Error as TransportError, Receiver, Sender, grpc::GrpcBi}
+    },
+    transport::{Bi, Error as TransportError, Receiver, Sender, grpc::GrpcBi},
 };
 use async_trait::async_trait;
 use tonic::Status;

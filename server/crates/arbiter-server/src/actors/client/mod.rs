@@ -3,7 +3,7 @@ use kameo::actor::Spawn;
 use tracing::{error, info};
 
 use crate::{
-    actors::{GlobalActors, client::{ session::ClientSession}},
+    actors::{GlobalActors, client::session::ClientSession},
     db,
 };
 

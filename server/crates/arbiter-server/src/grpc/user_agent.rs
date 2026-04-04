@@ -20,8 +20,7 @@ use arbiter_proto::{
             SdkClientConnectionRequest as ProtoSdkClientConnectionRequest,
             SdkClientEntry as ProtoSdkClientEntry, SdkClientError as ProtoSdkClientError,
             SdkClientGrantWalletAccess, SdkClientList as ProtoSdkClientList,
-            SdkClientListResponse as ProtoSdkClientListResponse, SdkClientRevokeWalletAccess,
-            SdkClientWalletAccess, UnsealEncryptedKey as ProtoUnsealEncryptedKey,
+            SdkClientListResponse as ProtoSdkClientListResponse, SdkClientRevokeWalletAccess, UnsealEncryptedKey as ProtoUnsealEncryptedKey,
             UnsealResult as ProtoUnsealResult, UnsealStart, UserAgentRequest, UserAgentResponse,
             VaultState as ProtoVaultState,
             sdk_client_list_response::Result as ProtoSdkClientListResult,
@@ -53,7 +52,7 @@ use crate::{
             },
         },
     },
-    db::models::{CoreEvmWalletAccess, NewEvmWalletAccess},
+    db::models::NewEvmWalletAccess,
     grpc::{Convert, TryConvert, request_tracker::RequestTracker},
 };
 mod auth;
@@ -404,7 +403,10 @@ async fn dispatch_inner(
         }
 
         UserAgentRequestPayload::RevokeWalletAccess(SdkClientRevokeWalletAccess { accesses }) => {
-            match actor.ask(HandleRevokeEvmWalletAccess { entries: accesses }).await {
+            match actor
+                .ask(HandleRevokeEvmWalletAccess { entries: accesses })
+                .await
+            {
                 Ok(()) => {
                     info!("Successfully revoked wallet access");
                     return Ok(None);

@@ -109,9 +109,7 @@ async fn receive_auth_confirmation(
         .await
         .map_err(|_| AuthError::UnexpectedAuthResponse)?;
 
-    let payload = response
-        .payload
-        .ok_or(AuthError::UnexpectedAuthResponse)?;
+    let payload = response.payload.ok_or(AuthError::UnexpectedAuthResponse)?;
     match payload {
         ClientResponsePayload::AuthResult(result)
             if AuthResult::try_from(result).ok() == Some(AuthResult::Success) =>

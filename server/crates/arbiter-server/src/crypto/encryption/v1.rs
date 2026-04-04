@@ -5,7 +5,6 @@ use rand::{
     rngs::{StdRng, SysRng},
 };
 
-
 pub const ROOT_KEY_TAG: &[u8] = "arbiter/seal/v1".as_bytes();
 pub const TAG: &[u8] = "arbiter/private-key/v1".as_bytes();
 
@@ -42,8 +41,6 @@ impl<'a> TryFrom<&'a [u8]> for Nonce {
     }
 }
 
-
-
 pub type Salt = [u8; ArgonSalt::RECOMMENDED_LENGTH];
 
 pub fn generate_salt() -> Salt {
@@ -62,7 +59,10 @@ mod tests {
     use std::ops::Deref as _;
 
     use super::*;
-    use crate::{crypto::derive_key, safe_cell::{SafeCell, SafeCellHandle as _}};
+    use crate::{
+        crypto::derive_key,
+        safe_cell::{SafeCell, SafeCellHandle as _},
+    };
 
     #[test]
     pub fn derive_seal_key_deterministic() {
@@ -92,8 +92,6 @@ mod tests {
 
         assert_ne!(key_ref.as_slice(), &[0u8; 32][..]);
     }
-
-    
 
     #[test]
     // We should fuzz this
