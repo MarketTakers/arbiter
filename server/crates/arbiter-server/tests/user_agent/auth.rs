@@ -279,8 +279,12 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
         .await
         .unwrap();
 
+    let expected_err = task.await.unwrap();
+
+    println!("Received expected error: {expected_err:#?}");
+
     assert!(matches!(
-        task.await.unwrap(),
+        expected_err,
         Err(auth::Error::InvalidChallengeSolution)
     ));
 }

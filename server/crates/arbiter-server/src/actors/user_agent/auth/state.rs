@@ -10,8 +10,7 @@ use crate::{
         bootstrap::ConsumeToken,
         keyholder::{self, SignIntegrityTag},
         user_agent::{AuthPublicKey, UserAgentConnection, auth::Outbound},
-    },
-    db::schema,
+    }, crypto::integrity::v1::USERAGENT_INTEGRITY_TAG, db::schema
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -269,7 +268,7 @@ where
             .actors
             .key_holder
             .ask(SignIntegrityTag {
-                purpose_tag: keyholder::encryption::v1::USERAGENT_INTEGRITY_TAG.to_vec(),
+                purpose_tag: USERAGENT_INTEGRITY_TAG.to_vec(),
                 data_parts: vec![
                     (pubkey.key_type() as i32).to_be_bytes().to_vec(),
                     pubkey.to_stored_bytes(),

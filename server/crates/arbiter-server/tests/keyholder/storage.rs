@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 
 use arbiter_server::{
-    actors::keyholder::{Error, encryption::v1},
-    db::{self, models, schema},
-    safe_cell::{SafeCell, SafeCellHandle as _},
+    actors::keyholder::Error, crypto::encryption::v1::Nonce, db::{self, models, schema}, safe_cell::{SafeCell, SafeCellHandle as _}
 };
 use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper, dsl::update};
 use diesel_async::RunQueryDsl;
@@ -102,7 +100,7 @@ async fn test_nonce_never_reused() {
     assert_eq!(nonces.len(), unique.len(), "all nonces must be unique");
 
     for (i, row) in rows.iter().enumerate() {
-        let mut expected = v1::Nonce::default();
+        let mut expected = Nonce::default();
         for _ in 0..=i {
             expected.increment();
         }

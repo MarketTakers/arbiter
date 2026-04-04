@@ -13,6 +13,7 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
 use crate::actors::keyholder::KeyHolderState;
 use crate::actors::user_agent::session::Error;
+use crate::crypto::integrity::v1::USERAGENT_INTEGRITY_TAG;
 use crate::db::models::{
     EvmWalletAccess, KeyType, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
 };
@@ -112,7 +113,7 @@ impl UserAgentSession {
                 .actors
                 .key_holder
                 .ask(SignIntegrityTag {
-                    purpose_tag: keyholder::encryption::v1::USERAGENT_INTEGRITY_TAG.to_vec(),
+                    purpose_tag: USERAGENT_INTEGRITY_TAG.to_vec(),
                     data_parts: vec![(key_type as i32).to_be_bytes().to_vec(), public_key],
                 })
                 .await

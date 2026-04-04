@@ -8,7 +8,7 @@ use kameo::{Actor, Reply, messages};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
 
-use crate::safe_cell::SafeCell;
+use crate::{crypto::{KeyCell, derive_key, encryption::v1::{self, Nonce}, integrity::v1::compute_integrity_tag}, safe_cell::SafeCell};
 use crate::{
     db::{
         self,
@@ -17,9 +17,7 @@ use crate::{
     },
     safe_cell::SafeCellHandle as _,
 };
-use encryption::v1::{self, KeyCell, Nonce};
 
-pub mod encryption;
 
 #[derive(Default, EnumDiscriminants)]
 #[strum_discriminants(derive(Reply), vis(pub), name(KeyHolderState))]
@@ -32,7 +30,6 @@ enum State {
     Unsealed {
         root_key_history_id: i32,
         root_key: KeyCell,
-        integrity_key: KeyCell,
     },
 }
 
@@ -116,7 +113,7 @@ impl KeyHolder {
                         .await?;
 
                     let mut nonce =
-                        v1::Nonce::try_from(current_nonce.as_slice()).map_err(|_| {
+                        Nonce::try_from(current_nonce.as_slice()).map_err(|_| {
                             error!(
                                 "Broken database: invalid nonce for root key history id={}",
                                 root_key_id
@@ -145,14 +142,12 @@ impl KeyHolder {
             return Err(Error::AlreadyBootstrapped);
         }
         let salt = v1::generate_salt();
-        let mut seal_key = v1::derive_seal_key(seal_key_raw, &salt);
-        let integrity_key =
-            v1::derive_integrity_key(&mut seal_key, v1::USERAGENT_INTEGRITY_DERIVE_TAG);
+        let mut seal_key = derive_key(seal_key_raw, &salt);
         let mut root_key = KeyCell::new_secure_random();
 
         // Zero nonces are fine because they are one-time
-        let root_key_nonce = v1::Nonce::default();
-        let data_encryption_nonce = v1::Nonce::default();
+        let root_key_nonce = Nonce::default();
+        let data_encryption_nonce = Nonce::default();
 
         let root_key_ciphertext: Vec<u8> = root_key.0.read_inline(|reader| {
             let root_key_reader = reader.as_slice();
@@ -196,7 +191,6 @@ impl KeyHolder {
         self.state = State::Unsealed {
             root_key,
             root_key_history_id,
-            integrity_key,
         };
 
         info!("Keyholder bootstrapped successfully");
@@ -229,9 +223,7 @@ impl KeyHolder {
             error!("Broken database: invalid salt for root key");
             Error::BrokenDatabase
         })?;
-        let mut seal_key = v1::derive_seal_key(seal_key_raw, &salt);
-        let integrity_key =
-            v1::derive_integrity_key(&mut seal_key, v1::USERAGENT_INTEGRITY_DERIVE_TAG);
+        let mut seal_key = derive_key(seal_key_raw, &salt);
 
         let mut root_key = SafeCell::new(current_key.ciphertext.clone());
 
@@ -251,11 +243,10 @@ impl KeyHolder {
 
         self.state = State::Unsealed {
             root_key_history_id: current_key.id,
-            root_key: v1::KeyCell::try_from(root_key).map_err(|err| {
+            root_key: KeyCell::try_from(root_key).map_err(|err| {
                 error!(?err, "Broken database: invalid encryption key size");
                 Error::BrokenDatabase
             })?,
-            integrity_key,
         };
 
         info!("Keyholder unsealed successfully");
@@ -270,12 +261,12 @@ impl KeyHolder {
         purpose_tag: Vec<u8>,
         data_parts: Vec<Vec<u8>>,
     ) -> Result<Vec<u8>, Error> {
-        let State::Unsealed { integrity_key, .. } = &mut self.state else {
+        let State::Unsealed { root_key, .. } = &mut self.state else {
             return Err(Error::NotBootstrapped);
         };
 
-        let tag = v1::compute_integrity_tag(
-            integrity_key,
+        let tag = compute_integrity_tag(
+            root_key,
             &purpose_tag,
             data_parts.iter().map(Vec::as_slice),
         );
