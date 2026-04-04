@@ -8,7 +8,7 @@ when:
       include: [".woodpecker/server-*.yaml", "server/**"]
 
 steps:
-  - name: test
+  - name: compile
     image: jdxcode/mise:latest
     directory: server
     environment:
@@ -20,7 +20,7 @@ steps:
       - cargo-registry:/usr/local/cargo/registry
     commands:
       - apt-get update && apt-get install -y pkg-config
-      # Install only the necessary Rust toolchain and test runner to speed up the CI
+      # Install only the necessary Rust toolchain
       - mise install rust
       - mise install protoc
       - cargo check --all-features
