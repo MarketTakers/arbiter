@@ -10,7 +10,9 @@ use crate::{
         bootstrap::ConsumeToken,
         keyholder::{self, SignIntegrityTag},
         user_agent::{AuthPublicKey, UserAgentConnection, auth::Outbound},
-    }, crypto::integrity::v1::USERAGENT_INTEGRITY_TAG, db::schema
+    },
+    crypto::integrity::v1::USERAGENT_INTEGRITY_TAG,
+    db::schema,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,14 +246,22 @@ where
             }
         };
 
-        if valid {
-            self.transport
-                .send(Ok(Outbound::AuthSuccess))
-                .await
-                .map_err(|_| Error::Transport)?;
+        match valid {
+            true => {
+                self.transport
+                    .send(Ok(Outbound::AuthSuccess))
+                    .await
+                    .map_err(|_| Error::Transport)?;
+                Ok(key.clone())
+            }
+            false => {
+                self.transport
+                    .send(Err(Error::InvalidChallengeSolution))
+                    .await
+                    .map_err(|_| Error::Transport)?;
+                Err(Error::InvalidChallengeSolution)
+            }
         }
-
-        Ok(key.clone())
     }
 }
 
