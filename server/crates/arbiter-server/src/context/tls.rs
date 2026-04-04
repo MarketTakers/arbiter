@@ -1,4 +1,4 @@
-use std::{net::IpAddr, string::FromUtf8Error};
+use std::{net::{IpAddr, Ipv4Addr}, string::FromUtf8Error};
 
 use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper as _};
 use diesel_async::{AsyncConnection, RunQueryDsl};
@@ -110,7 +110,7 @@ impl TlsCa {
         ];
         params
             .subject_alt_names
-            .push(SanType::IpAddress(IpAddr::from([127, 0, 0, 1])));
+            .push(SanType::IpAddress(Ipv4Addr::LOCALHOST.into()));
 
         let mut dn = DistinguishedName::new();
         dn.push(DnType::CommonName, "Arbiter Instance Leaf");
