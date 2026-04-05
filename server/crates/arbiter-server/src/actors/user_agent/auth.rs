@@ -37,6 +37,13 @@ impl Error {
     }
 }
 
+impl From<diesel::result::Error> for Error {
+    fn from(e: diesel::result::Error) -> Self {
+        error!(?e, "Database error");
+        Self::internal("Database error")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Outbound {
     AuthChallenge { nonce: i32 },

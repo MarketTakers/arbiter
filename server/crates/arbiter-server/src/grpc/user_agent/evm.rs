@@ -114,10 +114,10 @@ async fn handle_grant_list(
             grants: grants
                 .into_iter()
                 .map(|grant| GrantEntry {
-                    id: grant.shared_grant_id,
-                    wallet_access_id: grant.shared.wallet_access_id,
-                    shared: Some(grant.shared.convert()),
-                    specific: Some(grant.settings.convert()),
+                    id: grant.common_settings_id,
+                    wallet_access_id: grant.settings.shared.wallet_access_id,
+                    shared: Some(grant.settings.shared.convert()),
+                    specific: Some(grant.settings.specific.convert()),
                 })
                 .collect(),
         }),

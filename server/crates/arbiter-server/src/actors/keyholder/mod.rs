@@ -4,9 +4,8 @@ use diesel::{
     dsl::{insert_into, update},
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use hmac::{Hmac, Mac as _};
+use hmac::Mac as _;
 use kameo::{Actor, Reply, messages};
-use sha2::Sha256;
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
 
@@ -14,7 +13,7 @@ use crate::{
     crypto::{
         KeyCell, derive_key,
         encryption::v1::{self, Nonce},
-        integrity::v1::compute_integrity_tag,
+        integrity::v1::HmacSha256,
     },
     safe_cell::SafeCell,
 };
@@ -26,13 +25,6 @@ use crate::{
     },
     safe_cell::SafeCellHandle as _,
 };
-use encryption::v1::{self, KeyCell, Nonce};
-
-type HmacSha256 = Hmac<Sha256>;
-
-const INTEGRITY_SUBKEY_TAG: &[u8] = b"arbiter/db-integrity-key/v1";
-
-pub mod encryption;
 
 #[derive(Default, EnumDiscriminants)]
 #[strum_discriminants(derive(Reply), vis(pub), name(KeyHolderState))]
@@ -140,19 +132,6 @@ impl KeyHolder {
             .await?;
 
         Ok(nonce)
-    }
-
-    fn derive_integrity_key(root_key: &mut KeyCell) -> [u8; 32] {
-        root_key.0.read_inline(|root_key_bytes| {
-            let mut hmac = match HmacSha256::new_from_slice(root_key_bytes.as_slice()) {
-                Ok(v) => v,
-                Err(_) => unreachable!("HMAC accepts keys of any size"),
-            };
-            hmac.update(INTEGRITY_SUBKEY_TAG);
-            let mut out = [0u8; 32];
-            out.copy_from_slice(&hmac.finalize().into_bytes());
-            out
-        })
     }
 
     #[message]
@@ -272,22 +251,6 @@ impl KeyHolder {
         Ok(())
     }
 
-    // Signs a generic integrity payload using the vault-derived integrity key
-    #[message]
-    pub fn sign_integrity_tag(
-        &mut self,
-        purpose_tag: Vec<u8>,
-        data_parts: Vec<Vec<u8>>,
-    ) -> Result<Vec<u8>, Error> {
-        let State::Unsealed { root_key, .. } = &mut self.state else {
-            return Err(Error::NotBootstrapped);
-        };
-
-        let tag =
-            compute_integrity_tag(root_key, &purpose_tag, data_parts.iter().map(Vec::as_slice));
-        Ok(tag.to_vec())
-    }
-
     #[message]
     pub async fn decrypt(&mut self, aead_id: i32) -> Result<SafeCell<Vec<u8>>, Error> {
         let State::Unsealed { root_key, .. } = &mut self.state else {
@@ -371,12 +334,12 @@ impl KeyHolder {
             return Err(Error::NotBootstrapped);
         };
 
-        let integrity_key = Self::derive_integrity_key(root_key);
-
-        let mut hmac = match HmacSha256::new_from_slice(&integrity_key) {
-            Ok(v) => v,
-            Err(_) => unreachable!("HMAC accepts keys of any size"),
-        };
+        let mut hmac = root_key
+            .0
+            .read_inline(|k| match HmacSha256::new_from_slice(k) {
+                Ok(v) => v,
+                Err(_) => unreachable!("HMAC accepts keys of any size"),
+            });
         hmac.update(&root_key_history_id.to_be_bytes());
         hmac.update(&mac_input);
 
@@ -403,11 +366,12 @@ impl KeyHolder {
             return Ok(false);
         }
 
-        let integrity_key = Self::derive_integrity_key(root_key);
-        let mut hmac = match HmacSha256::new_from_slice(&integrity_key) {
-            Ok(v) => v,
-            Err(_) => unreachable!("HMAC accepts keys of any size"),
-        };
+        let mut hmac = root_key
+            .0
+            .read_inline(|k| match HmacSha256::new_from_slice(k) {
+                Ok(v) => v,
+                Err(_) => unreachable!("HMAC accepts keys of any size"),
+            });
         hmac.update(&key_version.to_be_bytes());
         hmac.update(&mac_input);
 

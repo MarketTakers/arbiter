@@ -11,7 +11,10 @@ use crate::db::{
 };
 use crate::evm::{
     abi::IERC20::transferCall,
-    policies::{EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings, VolumeRateLimit},
+    policies::{
+        CombinedSettings, EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings,
+        VolumeRateLimit,
+    },
     utils,
 };
 
@@ -134,9 +137,11 @@ async fn evaluate_rejects_nonzero_eth_value() {
 
     let grant = Grant {
         id: 999,
-        shared_grant_id: 999,
-        shared: shared(),
-        settings: make_settings(None, None),
+        common_settings_id: 999,
+        settings: CombinedSettings {
+            shared: shared(),
+            specific: make_settings(None, None),
+        },
     };
     let calldata = transfer_calldata(RECIPIENT, U256::from(100u64));
     let mut context = ctx(DAI, calldata);
@@ -163,9 +168,11 @@ async fn evaluate_passes_any_recipient_when_no_restriction() {
 
     let grant = Grant {
         id: 999,
-        shared_grant_id: 999,
-        shared: shared(),
-        settings: make_settings(None, None),
+        common_settings_id: 999,
+        settings: CombinedSettings {
+            shared: shared(),
+            specific: make_settings(None, None),
+        },
     };
     let calldata = transfer_calldata(RECIPIENT, U256::from(100u64));
     let context = ctx(DAI, calldata);
@@ -183,9 +190,11 @@ async fn evaluate_passes_matching_restricted_recipient() {
 
     let grant = Grant {
         id: 999,
-        shared_grant_id: 999,
-        shared: shared(),
-        settings: make_settings(Some(RECIPIENT), None),
+        common_settings_id: 999,
+        settings: CombinedSettings {
+            shared: shared(),
+            specific: make_settings(Some(RECIPIENT), None),
+        },
     };
     let calldata = transfer_calldata(RECIPIENT, U256::from(100u64));
     let context = ctx(DAI, calldata);
@@ -203,9 +212,11 @@ async fn evaluate_rejects_wrong_restricted_recipient() {
 
     let grant = Grant {
         id: 999,
-        shared_grant_id: 999,
-        shared: shared(),
-        settings: make_settings(Some(RECIPIENT), None),
+        common_settings_id: 999,
+        settings: CombinedSettings {
+            shared: shared(),
+            specific: make_settings(Some(RECIPIENT), None),
+        },
     };
     let calldata = transfer_calldata(OTHER, U256::from(100u64));
     let context = ctx(DAI, calldata);
@@ -247,9 +258,11 @@ async fn evaluate_passes_volume_at_exact_limit() {
 
     let grant = Grant {
         id: grant_id,
-        shared_grant_id: basic.id,
-        shared: shared(),
-        settings,
+        common_settings_id: basic.id,
+        settings: CombinedSettings {
+            shared: shared(),
+            specific: settings,
+        },
     };
     let calldata = transfer_calldata(RECIPIENT, U256::from(100u64));
     let context = ctx(DAI, calldata);
@@ -290,9 +303,11 @@ async fn evaluate_rejects_volume_over_limit() {
 
     let grant = Grant {
         id: grant_id,
-        shared_grant_id: basic.id,
-        shared: shared(),
-        settings,
+        common_settings_id: basic.id,
+        settings: CombinedSettings {
+            shared: shared(),
+            specific: settings,
+        },
     };
     let calldata = transfer_calldata(RECIPIENT, U256::from(1u64));
     let context = ctx(DAI, calldata);
@@ -313,9 +328,11 @@ async fn evaluate_no_volume_limits_always_passes() {
 
     let grant = Grant {
         id: 999,
-        shared_grant_id: 999,
-        shared: shared(),
-        settings: make_settings(None, None), // no volume limits
+        common_settings_id: 999,
+        settings: CombinedSettings {
+            shared: shared(),
+            specific: make_settings(None, None), // no volume limits
+        },
     };
     let calldata = transfer_calldata(RECIPIENT, U256::from(u64::MAX));
     let context = ctx(DAI, calldata);
@@ -349,10 +366,13 @@ async fn try_find_grant_roundtrip() {
 
     assert!(found.is_some());
     let g = found.unwrap();
-    assert_eq!(g.settings.token_contract, DAI);
-    assert_eq!(g.settings.target, Some(RECIPIENT));
-    assert_eq!(g.settings.volume_limits.len(), 1);
-    assert_eq!(g.settings.volume_limits[0].max_volume, U256::from(5_000u64));
+    assert_eq!(g.settings.specific.token_contract, DAI);
+    assert_eq!(g.settings.specific.target, Some(RECIPIENT));
+    assert_eq!(g.settings.specific.volume_limits.len(), 1);
+    assert_eq!(
+        g.settings.specific.volume_limits[0].max_volume,
+        U256::from(5_000u64)
+    );
 }
 
 #[tokio::test]
@@ -434,9 +454,9 @@ async fn find_all_grants_loads_volume_limits() {
 
     let all = TokenTransfer::find_all_grants(&mut *conn).await.unwrap();
     assert_eq!(all.len(), 1);
-    assert_eq!(all[0].settings.volume_limits.len(), 1);
+    assert_eq!(all[0].settings.specific.volume_limits.len(), 1);
     assert_eq!(
-        all[0].settings.volume_limits[0].max_volume,
+        all[0].settings.specific.volume_limits[0].max_volume,
         U256::from(9_999u64)
     );
 }
