@@ -8,8 +8,11 @@ use alloy::{
 use chrono::Utc;
 use diesel::{ExpressionMethods as _, QueryDsl as _, QueryResult, insert_into, sqlite::Sqlite};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use kameo::actor::ActorRef;
 
 use crate::{
+    actors::keyholder::KeyHolder,
+    crypto::integrity,
     db::{
         self, DatabaseError,
         models::{
@@ -18,7 +21,7 @@ use crate::{
         schema::{self, evm_transaction_log},
     },
     evm::policies::{
-        DatabaseID, EvalContext, EvalViolation, FullGrant, Grant, Policy, SharedGrantSettings,
+        DatabaseID, EvalContext, EvalViolation, Grant, Policy, CombinedSettings, SharedGrantSettings,
         SpecificGrant, SpecificMeaning, ether_transfer::EtherTransfer,
         token_transfers::TokenTransfer,
     },
@@ -36,6 +39,9 @@ pub enum PolicyError {
     Violations(Vec<EvalViolation>),
     #[error("No matching grant found")]
     NoMatchingGrant,
+
+    #[error("Integrity error: {0}")]
+    Integrity(#[from] integrity::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -55,6 +61,15 @@ pub enum AnalyzeError {
 
     #[error("Unsupported transaction type")]
     UnsupportedTransactionType,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ListError {
+    #[error("Database error")]
+    Database(#[from] crate::db::DatabaseError),
+
+    #[error("Integrity verification failed for grant")]
+    Integrity(#[from] integrity::Error),
 }
 
 /// Controls whether a transaction should be executed or only validated
@@ -115,6 +130,7 @@ async fn check_shared_constraints(
 // Supporting only EIP-1559 transactions for now, but we can easily extend this to support legacy transactions if needed
 pub struct Engine {
     db: db::DatabasePool,
+    keyholder: ActorRef<KeyHolder>,
 }
 
 impl Engine {
@@ -123,7 +139,10 @@ impl Engine {
         context: EvalContext,
         meaning: &P::Meaning,
         run_kind: RunKind,
-    ) -> Result<(), PolicyError> {
+    ) -> Result<(), PolicyError>
+    where
+        P::Settings: Clone,
+    {
         let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
 
         let grant = P::try_find_grant(&context, &mut conn)
@@ -131,10 +150,16 @@ impl Engine {
             .map_err(DatabaseError::from)?
             .ok_or(PolicyError::NoMatchingGrant)?;
 
-        let mut violations =
-            check_shared_constraints(&context, &grant.shared, grant.shared_grant_id, &mut conn)
-                .await
-                .map_err(DatabaseError::from)?;
+        integrity::verify_entity(&mut conn, &self.keyholder, &grant.settings, grant.id).await?;
+
+        let mut violations = check_shared_constraints(
+            &context,
+            &grant.settings.shared,
+            grant.common_settings_id,
+            &mut conn,
+        )
+        .await
+        .map_err(DatabaseError::from)?;
         violations.extend(
             P::evaluate(&context, meaning, &grant, &mut conn)
                 .await
@@ -143,12 +168,14 @@ impl Engine {
 
         if !violations.is_empty() {
             return Err(PolicyError::Violations(violations));
-        } else if run_kind == RunKind::Execution {
+        }
+
+        if run_kind == RunKind::Execution {
             conn.transaction(|conn| {
                 Box::pin(async move {
                     let log_id: i32 = insert_into(evm_transaction_log::table)
                         .values(&NewEvmTransactionLog {
-                            grant_id: grant.shared_grant_id,
+                            grant_id: grant.common_settings_id,
                             wallet_access_id: context.target.id,
                             chain_id: context.chain as i32,
                             eth_value: utils::u256_to_bytes(context.value).to_vec(),
@@ -172,15 +199,19 @@ impl Engine {
 }
 
 impl Engine {
-    pub fn new(db: db::DatabasePool) -> Self {
-        Self { db }
+    pub fn new(db: db::DatabasePool, keyholder: ActorRef<KeyHolder>) -> Self {
+        Self { db, keyholder }
     }
 
     pub async fn create_grant<P: Policy>(
         &self,
-        full_grant: FullGrant<P::Settings>,
-    ) -> Result<i32, DatabaseError> {
+        full_grant: CombinedSettings<P::Settings>,
+    ) -> Result<i32, DatabaseError>
+    where
+        P::Settings: Clone,
+    {
         let mut conn = self.db.get().await?;
+        let keyholder = self.keyholder.clone();
 
         let id = conn
             .transaction(|conn| {
@@ -189,25 +220,25 @@ impl Engine {
 
                     let basic_grant: EvmBasicGrant = insert_into(evm_basic_grant::table)
                         .values(&NewEvmBasicGrant {
-                            chain_id: full_grant.basic.chain as i32,
-                            wallet_access_id: full_grant.basic.wallet_access_id,
-                            valid_from: full_grant.basic.valid_from.map(SqliteTimestamp),
-                            valid_until: full_grant.basic.valid_until.map(SqliteTimestamp),
+                            chain_id: full_grant.shared.chain as i32,
+                            wallet_access_id: full_grant.shared.wallet_access_id,
+                            valid_from: full_grant.shared.valid_from.map(SqliteTimestamp),
+                            valid_until: full_grant.shared.valid_until.map(SqliteTimestamp),
                             max_gas_fee_per_gas: full_grant
-                                .basic
+                                .shared
                                 .max_gas_fee_per_gas
                                 .map(|fee| utils::u256_to_bytes(fee).to_vec()),
                             max_priority_fee_per_gas: full_grant
-                                .basic
+                                .shared
                                 .max_priority_fee_per_gas
                                 .map(|fee| utils::u256_to_bytes(fee).to_vec()),
                             rate_limit_count: full_grant
-                                .basic
+                                .shared
                                 .rate_limit
                                 .as_ref()
                                 .map(|rl| rl.count as i32),
                             rate_limit_window_secs: full_grant
-                                .basic
+                                .shared
                                 .rate_limit
                                 .as_ref()
                                 .map(|rl| rl.window.num_seconds() as i32),
@@ -217,7 +248,18 @@ impl Engine {
                         .get_result(conn)
                         .await?;
 
-                    P::create_grant(&basic_grant, &full_grant.specific, conn).await
+                    P::create_grant(&basic_grant, &full_grant.specific, conn).await?;
+
+                    integrity::sign_entity(
+                        conn,
+                        &keyholder,
+                        &full_grant,
+                    basic_grant.id,
+                    )
+                    .await
+                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+
+                    QueryResult::Ok(basic_grant.id)
                 })
             })
             .await?;
@@ -225,33 +267,36 @@ impl Engine {
         Ok(id)
     }
 
-    pub async fn list_all_grants(&self) -> Result<Vec<Grant<SpecificGrant>>, DatabaseError> {
-        let mut conn = self.db.get().await?;
+    async fn list_one_kind<Kind: Policy, Y>(
+        &self,
+        conn: &mut impl AsyncConnection<Backend = Sqlite>,
+    ) -> Result<impl Iterator<Item = Grant<Y>>, ListError>
+    where
+        Y: From<Kind::Settings>,
+    {
+        let all_grants = Kind::find_all_grants(conn)
+            .await
+            .map_err(DatabaseError::from)?;
+
+        // Verify integrity of all grants before returning any results
+        for grant in &all_grants {
+            integrity::verify_entity(conn, &self.keyholder, &grant.settings, grant.id).await?;
+        }
+
+        Ok(all_grants.into_iter().map(|g| Grant {
+            id: g.id,
+            common_settings_id: g.common_settings_id,
+            settings: g.settings.generalize(),
+        }))
+    }
+
+    pub async fn list_all_grants(&self) -> Result<Vec<Grant<SpecificGrant>>, ListError> {
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
 
         let mut grants: Vec<Grant<SpecificGrant>> = Vec::new();
 
-        grants.extend(
-            EtherTransfer::find_all_grants(&mut conn)
-                .await?
-                .into_iter()
-                .map(|g| Grant {
-                    id: g.id,
-                    shared_grant_id: g.shared_grant_id,
-                    shared: g.shared,
-                    settings: SpecificGrant::EtherTransfer(g.settings),
-                }),
-        );
-        grants.extend(
-            TokenTransfer::find_all_grants(&mut conn)
-                .await?
-                .into_iter()
-                .map(|g| Grant {
-                    id: g.id,
-                    shared_grant_id: g.shared_grant_id,
-                    shared: g.shared,
-                    settings: SpecificGrant::TokenTransfer(g.settings),
-                }),
-        );
+        grants.extend(self.list_one_kind::<EtherTransfer, _>(&mut conn).await?);
+        grants.extend(self.list_one_kind::<TokenTransfer, _>(&mut conn).await?);
 
         Ok(grants)
     }

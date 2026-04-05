@@ -4,6 +4,7 @@ use diesel::{
     dsl::{insert_into, update},
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use hmac::Mac as _;
 use kameo::{Actor, Reply, messages};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
@@ -12,7 +13,7 @@ use crate::{
     crypto::{
         KeyCell, derive_key,
         encryption::v1::{self, Nonce},
-        integrity::v1::compute_integrity_tag,
+        integrity::v1::HmacSha256,
     },
     safe_cell::SafeCell,
 };
@@ -250,22 +251,6 @@ impl KeyHolder {
         Ok(())
     }
 
-    // Signs a generic integrity payload using the vault-derived integrity key
-    #[message]
-    pub fn sign_integrity_tag(
-        &mut self,
-        purpose_tag: Vec<u8>,
-        data_parts: Vec<Vec<u8>>,
-    ) -> Result<Vec<u8>, Error> {
-        let State::Unsealed { root_key, .. } = &mut self.state else {
-            return Err(Error::NotBootstrapped);
-        };
-
-        let tag =
-            compute_integrity_tag(root_key, &purpose_tag, data_parts.iter().map(Vec::as_slice));
-        Ok(tag.to_vec())
-    }
-
     #[message]
     pub async fn decrypt(&mut self, aead_id: i32) -> Result<SafeCell<Vec<u8>>, Error> {
         let State::Unsealed { root_key, .. } = &mut self.state else {
@@ -337,6 +322,60 @@ impl KeyHolder {
     #[message]
     pub fn get_state(&self) -> KeyHolderState {
         self.state.discriminant()
+    }
+
+    #[message]
+    pub fn sign_integrity(&mut self, mac_input: Vec<u8>) -> Result<(i32, Vec<u8>), Error> {
+        let State::Unsealed {
+            root_key,
+            root_key_history_id,
+        } = &mut self.state
+        else {
+            return Err(Error::NotBootstrapped);
+        };
+
+        let mut hmac = root_key
+            .0
+            .read_inline(|k| match HmacSha256::new_from_slice(k) {
+                Ok(v) => v,
+                Err(_) => unreachable!("HMAC accepts keys of any size"),
+            });
+        hmac.update(&root_key_history_id.to_be_bytes());
+        hmac.update(&mac_input);
+
+        let mac = hmac.finalize().into_bytes().to_vec();
+        Ok((*root_key_history_id, mac))
+    }
+
+    #[message]
+    pub fn verify_integrity(
+        &mut self,
+        mac_input: Vec<u8>,
+        expected_mac: Vec<u8>,
+        key_version: i32,
+    ) -> Result<bool, Error> {
+        let State::Unsealed {
+            root_key,
+            root_key_history_id,
+        } = &mut self.state
+        else {
+            return Err(Error::NotBootstrapped);
+        };
+
+        if *root_key_history_id != key_version {
+            return Ok(false);
+        }
+
+        let mut hmac = root_key
+            .0
+            .read_inline(|k| match HmacSha256::new_from_slice(k) {
+                Ok(v) => v,
+                Err(_) => unreachable!("HMAC accepts keys of any size"),
+            });
+        hmac.update(&key_version.to_be_bytes());
+        hmac.update(&mac_input);
+
+        Ok(hmac.verify_slice(&expected_mac).is_ok())
     }
 
     #[message]

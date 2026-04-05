@@ -47,7 +47,6 @@ create table if not exists useragent_client (
     id integer not null primary key,
     nonce integer not null default(1), -- used for auth challenge
     public_key blob not null,
-    pubkey_integrity_tag blob,
     key_type integer not null default(1), -- 1=Ed25519, 2=ECDSA(secp256k1)
     created_at integer not null default(unixepoch ('now')),
     updated_at integer not null default(unixepoch ('now'))
@@ -192,3 +191,19 @@ create table if not exists evm_ether_transfer_grant_target (
 ) STRICT;
 
 create unique index if not exists uniq_ether_transfer_target on evm_ether_transfer_grant_target (grant_id, address);
+
+-- ===============================
+-- Integrity Envelopes
+-- ===============================
+create table if not exists integrity_envelope (
+    id integer not null primary key,
+    entity_kind text not null,
+    entity_id blob not null,
+    payload_version integer not null,
+    key_version integer not null,
+    mac blob not null, -- 20-byte recipient address
+    signed_at integer not null default(unixepoch ('now')),
+    created_at integer not null default(unixepoch ('now'))
+) STRICT;
+
+create unique index if not exists uniq_integrity_envelope_entity on integrity_envelope (entity_kind, entity_id);

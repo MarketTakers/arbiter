@@ -108,12 +108,12 @@ impl Convert for VetError {
                         violations: violations.into_iter().map(Convert::convert).collect(),
                     })
                 }
-                PolicyError::Database(_) => {
+                PolicyError::Database(_)| PolicyError::Integrity(_) => {
                     return EvmSignTransactionResult::Error(ProtoEvmError::Internal.into());
                 }
             },
         };
 
-        EvmSignTransactionResult::EvalError(ProtoTransactionEvalError { kind: Some(kind) }.into())
+        EvmSignTransactionResult::EvalError(ProtoTransactionEvalError { kind: Some(kind) })
     }
 }

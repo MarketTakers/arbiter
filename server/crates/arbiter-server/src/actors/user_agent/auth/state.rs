@@ -1,26 +1,19 @@
 use arbiter_proto::transport::Bi;
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, update};
-use diesel_async::RunQueryDsl;
-use kameo::error::SendError;
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use kameo::{actor::ActorRef, error::SendError};
 use tracing::error;
 
 use super::Error;
 use crate::{
     actors::{
         bootstrap::ConsumeToken,
-        keyholder::{self, SignIntegrityTag},
-        user_agent::{AuthPublicKey, UserAgentConnection, auth::Outbound},
+        keyholder::KeyHolder,
+        user_agent::{AuthPublicKey, UserAgentConnection, UserAgentCredentials, auth::Outbound},
     },
-    crypto::integrity::v1::USERAGENT_INTEGRITY_TAG,
-    db::schema,
+    crypto::integrity::{self, AttestationStatus},
+    db::{DatabasePool, schema::useragent_client},
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AttestationStatus {
-    Attested,
-    NotAttested,
-    Unavailable,
-}
 
 pub struct ChallengeRequest {
     pub pubkey: AuthPublicKey,
@@ -50,11 +43,11 @@ smlang::statemachine!(
     }
 );
 
-async fn create_nonce(
-    db: &crate::db::DatabasePool,
-    pubkey_bytes: &[u8],
-    key_type: crate::db::models::KeyType,
-) -> Result<i32, Error> {
+/// Returns the current nonce, ready to use for the challenge nonce.
+async fn get_current_nonce_and_id(
+    db: &DatabasePool,
+    key: &AuthPublicKey,
+) -> Result<(i32, i32), Error> {
     let mut db_conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
         Error::internal("Database unavailable")
@@ -62,21 +55,12 @@ async fn create_nonce(
     db_conn
         .exclusive_transaction(|conn| {
             Box::pin(async move {
-                let current_nonce = schema::useragent_client::table
-                    .filter(schema::useragent_client::public_key.eq(pubkey_bytes.to_vec()))
-                    .filter(schema::useragent_client::key_type.eq(key_type))
-                    .select(schema::useragent_client::nonce)
-                    .first::<i32>(conn)
-                    .await?;
-
-                update(schema::useragent_client::table)
-                    .filter(schema::useragent_client::public_key.eq(pubkey_bytes.to_vec()))
-                    .filter(schema::useragent_client::key_type.eq(key_type))
-                    .set(schema::useragent_client::nonce.eq(current_nonce + 1))
-                    .execute(conn)
-                    .await?;
-
-                Result::<_, diesel::result::Error>::Ok(current_nonce)
+                useragent_client::table
+                    .filter(useragent_client::public_key.eq(key.to_stored_bytes()))
+                    .filter(useragent_client::key_type.eq(key.key_type()))
+                    .select((useragent_client::id, useragent_client::nonce))
+                    .first::<(i32, i32)>(conn)
+                    .await
             })
         })
         .await
@@ -86,15 +70,92 @@ async fn create_nonce(
             Error::internal("Database operation failed")
         })?
         .ok_or_else(|| {
-            error!(?pubkey_bytes, "Public key not found in database");
+            error!(?key, "Public key not found in database");
             Error::UnregisteredPublicKey
         })
 }
 
-async fn register_key(
-    db: &crate::db::DatabasePool,
+async fn verify_integrity(
+    db: &DatabasePool,
+    keyholder: &ActorRef<KeyHolder>,
     pubkey: &AuthPublicKey,
-    integrity_tag: Option<Vec<u8>>,
+) -> Result<(), Error> {
+    let mut db_conn = db.get().await.map_err(|e| {
+        error!(error = ?e, "Database pool error");
+        Error::internal("Database unavailable")
+    })?;
+
+    let (id, nonce) = get_current_nonce_and_id(db, pubkey).await?;
+
+    let result = integrity::verify_entity(
+        &mut db_conn,
+        keyholder,
+        &UserAgentCredentials {
+            pubkey: pubkey.clone(),
+            nonce,
+        },
+        id,
+    )
+    .await
+    .map_err(|e| {
+        error!(?e, "Integrity verification failed");
+        Error::internal("Integrity verification failed")
+    })?;
+
+    Ok(())
+
+}
+
+async fn create_nonce(
+    db: &DatabasePool,
+    keyholder: &ActorRef<KeyHolder>,
+    pubkey: &AuthPublicKey,
+) -> Result<i32, Error> {
+    let mut db_conn = db.get().await.map_err(|e| {
+        error!(error = ?e, "Database pool error");
+        Error::internal("Database unavailable")
+    })?;
+    let new_nonce = db_conn
+        .exclusive_transaction(|conn| {
+            Box::pin(async move {
+                let (id, new_nonce): (i32, i32) = update(useragent_client::table)
+                    .filter(useragent_client::public_key.eq(pubkey.to_stored_bytes()))
+                    .filter(useragent_client::key_type.eq(pubkey.key_type()))
+                    .set(useragent_client::nonce.eq(useragent_client::nonce + 1))
+                    .returning((useragent_client::id, useragent_client::nonce))
+                    .get_result(conn)
+                    .await
+                    .map_err(|e| {
+                        error!(error = ?e, "Database error");
+                        Error::internal("Database operation failed")
+                    })?;
+
+                integrity::sign_entity(
+                    conn,
+                    keyholder,
+                    &UserAgentCredentials {
+                        pubkey: pubkey.clone(),
+                        nonce: new_nonce,
+                    },
+                    id,
+                )
+                .await
+                .map_err(|e| {
+                    error!(?e, "Integrity signature update failed");
+                    Error::internal("Database error")
+                })?;
+
+                Result::<_, Error>::Ok(new_nonce)
+            })
+        })
+        .await?;
+    Ok(new_nonce)
+}
+
+async fn register_key(
+    db: &DatabasePool,
+    keyholder: &ActorRef<KeyHolder>,
+    pubkey: &AuthPublicKey,
 ) -> Result<(), Error> {
     let pubkey_bytes = pubkey.to_stored_bytes();
     let key_type = pubkey.key_type();
@@ -103,19 +164,40 @@ async fn register_key(
         Error::internal("Database unavailable")
     })?;
 
-    diesel::insert_into(schema::useragent_client::table)
-        .values((
-            schema::useragent_client::public_key.eq(pubkey_bytes),
-            schema::useragent_client::nonce.eq(1),
-            schema::useragent_client::key_type.eq(key_type),
-            schema::useragent_client::pubkey_integrity_tag.eq(integrity_tag),
-        ))
-        .execute(&mut conn)
-        .await
-        .map_err(|e| {
-            error!(error = ?e, "Database error");
-            Error::internal("Database operation failed")
-        })?;
+    conn.transaction(|conn| {
+        Box::pin(async move {
+            const NONCE_START: i32 = 1;
+
+            let id: i32 = diesel::insert_into(useragent_client::table)
+                .values((
+                    useragent_client::public_key.eq(pubkey_bytes),
+                    useragent_client::nonce.eq(NONCE_START),
+                    useragent_client::key_type.eq(key_type),
+                ))
+                .returning(useragent_client::id)
+                .get_result(conn)
+                .await
+                .map_err(|e| {
+                    error!(error = ?e, "Database error");
+                    Error::internal("Database operation failed")
+                })?;
+
+            let entity = UserAgentCredentials {
+                pubkey: pubkey.clone(),
+                nonce: NONCE_START,
+            };
+
+            integrity::sign_entity(conn, &keyholder, &entity, id)
+                .await
+                .map_err(|e| {
+                    error!(error = ?e, "Failed to sign integrity tag for new user-agent key");
+                    Error::internal("Failed to register public key")
+                })?;
+
+            Result::<_, Error>::Ok(())
+        })
+    })
+    .await?;
 
     Ok(())
 }
@@ -141,15 +223,9 @@ where
         &mut self,
         ChallengeRequest { pubkey }: ChallengeRequest,
     ) -> Result<ChallengeContext, Self::Error> {
-        match self.verify_pubkey_attestation_status(&pubkey).await? {
-            AttestationStatus::Attested | AttestationStatus::Unavailable => {}
-            AttestationStatus::NotAttested => {
-                return Err(Error::InvalidChallengeSolution);
-            }
-        }
+        verify_integrity(&self.conn.db, &self.conn.actors.key_holder, &pubkey).await?;
 
-        let stored_bytes = pubkey.to_stored_bytes();
-        let nonce = create_nonce(&self.conn.db, &stored_bytes, pubkey.key_type()).await?;
+        let nonce = create_nonce(&self.conn.db, &self.conn.actors.key_holder, &pubkey).await?;
 
         self.transport
             .send(Ok(Outbound::AuthChallenge { nonce }))
@@ -189,22 +265,24 @@ where
             return Err(Error::InvalidBootstrapToken);
         }
 
-        let integrity_tag = self
-            .try_sign_pubkey_integrity_tag(&pubkey)
-            .await
-            .map_err(|err| {
-                error!(?err, "Failed to sign user-agent pubkey integrity tag");
-                Error::internal("Failed to sign user-agent pubkey integrity tag")
-            })?;
-
-        register_key(&self.conn.db, &pubkey, integrity_tag).await?;
-
-        self.transport
-            .send(Ok(Outbound::AuthSuccess))
-            .await
-            .map_err(|_| Error::Transport)?;
-
-        Ok(pubkey)
+        match token_ok {
+            true => {
+                register_key(&self.conn.db, &self.conn.actors.key_holder, &pubkey).await?;
+                self.transport
+                    .send(Ok(Outbound::AuthSuccess))
+                    .await
+                    .map_err(|_| Error::Transport)?;
+                Ok(pubkey)
+            }
+            false => {
+                error!("Invalid bootstrap token provided");
+                self.transport
+                    .send(Err(Error::InvalidBootstrapToken))
+                    .await
+                    .map_err(|_| Error::Transport)?;
+                Err(Error::InvalidBootstrapToken)
+            }
+        }
     }
 
     #[allow(missing_docs)]
@@ -260,96 +338,6 @@ where
                     .await
                     .map_err(|_| Error::Transport)?;
                 Err(Error::InvalidChallengeSolution)
-            }
-        }
-    }
-}
-
-impl<T> AuthContext<'_, T>
-where
-    T: Bi<super::Inbound, Result<super::Outbound, Error>> + Send,
-{
-    async fn try_sign_pubkey_integrity_tag(
-        &self,
-        pubkey: &AuthPublicKey,
-    ) -> Result<Option<Vec<u8>>, Error> {
-        let signed = self
-            .conn
-            .actors
-            .key_holder
-            .ask(SignIntegrityTag {
-                purpose_tag: USERAGENT_INTEGRITY_TAG.to_vec(),
-                data_parts: vec![
-                    (pubkey.key_type() as i32).to_be_bytes().to_vec(),
-                    pubkey.to_stored_bytes(),
-                ],
-            })
-            .await;
-
-        match signed {
-            Ok(tag) => Ok(Some(tag)),
-            Err(SendError::HandlerError(keyholder::Error::NotBootstrapped)) => Ok(None),
-            Err(SendError::HandlerError(err)) => {
-                error!(
-                    ?err,
-                    "Keyholder failed to sign user-agent pubkey integrity tag"
-                );
-                Err(Error::internal(
-                    "Keyholder failed to sign user-agent pubkey integrity tag",
-                ))
-            }
-            Err(err) => {
-                error!(
-                    ?err,
-                    "Failed to contact keyholder for user-agent pubkey integrity tag"
-                );
-                Err(Error::internal(
-                    "Failed to contact keyholder for user-agent pubkey integrity tag",
-                ))
-            }
-        }
-    }
-
-    async fn verify_pubkey_attestation_status(
-        &self,
-        pubkey: &AuthPublicKey,
-    ) -> Result<AttestationStatus, Error> {
-        let stored_tag: Option<Option<Vec<u8>>> = {
-            let mut conn = self.conn.db.get().await.map_err(|e| {
-                error!(error = ?e, "Database pool error");
-                Error::internal("Database unavailable")
-            })?;
-
-            schema::useragent_client::table
-                .filter(schema::useragent_client::public_key.eq(pubkey.to_stored_bytes()))
-                .filter(schema::useragent_client::key_type.eq(pubkey.key_type()))
-                .select(schema::useragent_client::pubkey_integrity_tag)
-                .first::<Option<Vec<u8>>>(&mut conn)
-                .await
-                .optional()
-                .map_err(|e| {
-                    error!(error = ?e, "Database error");
-                    Error::internal("Database operation failed")
-                })?
-        };
-
-        let Some(stored_tag) = stored_tag else {
-            return Err(Error::UnregisteredPublicKey);
-        };
-
-        let Some(expected_tag) = self.try_sign_pubkey_integrity_tag(pubkey).await? else {
-            return Ok(AttestationStatus::Unavailable);
-        };
-
-        match stored_tag {
-            Some(stored_tag) if stored_tag == expected_tag => Ok(AttestationStatus::Attested),
-            Some(_) => {
-                error!("User-agent pubkey integrity tag mismatch");
-                Ok(AttestationStatus::NotAttested)
-            }
-            None => {
-                error!("Missing pubkey integrity tag for registered key while vault is unsealed");
-                Ok(AttestationStatus::NotAttested)
             }
         }
     }

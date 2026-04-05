@@ -7,18 +7,18 @@ use kameo::{Actor, actor::ActorRef, messages};
 use rand::{SeedableRng, rng, rngs::StdRng};
 
 use crate::{
-    actors::keyholder::{CreateNew, Decrypt, KeyHolder},
+    actors::keyholder::{CreateNew, Decrypt, GetState, KeyHolder, KeyHolderState},
+    crypto::integrity,
     db::{
         DatabaseError, DatabasePool,
         models::{self, SqliteTimestamp},
         schema,
     },
     evm::{
-        self, RunKind,
-        policies::{
-            FullGrant, Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning,
+        self, ListError, RunKind, policies::{
+            CombinedSettings, Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning,
             ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
-        },
+        }
     },
     safe_cell::{SafeCell, SafeCellHandle as _},
 };
@@ -56,6 +56,9 @@ pub enum Error {
 
     #[error("Database error: {0}")]
     Database(#[from] DatabaseError),
+
+    #[error("Integrity violation: {0}")]
+    Integrity(#[from] integrity::Error),
 }
 
 #[derive(Actor)]
@@ -71,7 +74,7 @@ impl EvmActor {
         // is it safe to seed rng from system once?
         // todo: audit
         let rng = StdRng::from_rng(&mut rng());
-        let engine = evm::Engine::new(db.clone());
+        let engine = evm::Engine::new(db.clone(), keyholder.clone());
         Self {
             keyholder,
             db,
@@ -132,46 +135,59 @@ impl EvmActor {
         &mut self,
         basic: SharedGrantSettings,
         grant: SpecificGrant,
-    ) -> Result<i32, DatabaseError> {
+    ) -> Result<i32, Error> {
         match grant {
-            SpecificGrant::EtherTransfer(settings) => {
-                self.engine
-                    .create_grant::<EtherTransfer>(FullGrant {
-                        basic,
-                        specific: settings,
-                    })
-                    .await
-            }
-            SpecificGrant::TokenTransfer(settings) => {
-                self.engine
-                    .create_grant::<TokenTransfer>(FullGrant {
-                        basic,
-                        specific: settings,
-                    })
-                    .await
-            }
+            SpecificGrant::EtherTransfer(settings) => self
+                .engine
+                .create_grant::<EtherTransfer>(CombinedSettings {
+                    shared: basic,
+                    specific: settings,
+                })
+                .await
+                .map_err(Error::from),
+            SpecificGrant::TokenTransfer(settings) => self
+                .engine
+                .create_grant::<TokenTransfer>(CombinedSettings {
+                    shared: basic,
+                    specific: settings,
+                })
+                .await
+                .map_err(Error::from),
         }
     }
 
     #[message]
     pub async fn useragent_delete_grant(&mut self, grant_id: i32) -> Result<(), Error> {
-        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
-        diesel::update(schema::evm_basic_grant::table)
-            .filter(schema::evm_basic_grant::id.eq(grant_id))
-            .set(schema::evm_basic_grant::revoked_at.eq(SqliteTimestamp::now()))
-            .execute(&mut conn)
-            .await
-            .map_err(DatabaseError::from)?;
-        Ok(())
+        // let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
+        // let keyholder = self.keyholder.clone();
+
+        // diesel_async::AsyncConnection::transaction(&mut conn, |conn| {
+        //     Box::pin(async move {
+        //         diesel::update(schema::evm_basic_grant::table)
+        //             .filter(schema::evm_basic_grant::id.eq(grant_id))
+        //             .set(schema::evm_basic_grant::revoked_at.eq(SqliteTimestamp::now()))
+        //             .execute(conn)
+        //             .await?;
+
+        //         let signed = integrity::evm::load_signed_grant_by_basic_id(conn, grant_id).await?;
+
+        //         diesel::result::QueryResult::Ok(())
+        //     })
+        // })
+        // .await
+        // .map_err(DatabaseError::from)?;
+
+        // Ok(())
+        todo!()
     }
 
     #[message]
     pub async fn useragent_list_grants(&mut self) -> Result<Vec<Grant<SpecificGrant>>, Error> {
-        Ok(self
-            .engine
-            .list_all_grants()
-            .await
-            .map_err(DatabaseError::from)?)
+        match self.engine.list_all_grants().await {
+            Ok(grants) => Ok(grants),
+            Err(ListError::Database(db_err)) => Err(Error::Database(db_err)),
+            Err(ListError::Integrity(integrity_err)) => Err(Error::Integrity(integrity_err)),
+        }
     }
 
     #[message]
