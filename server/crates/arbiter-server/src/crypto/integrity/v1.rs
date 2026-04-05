@@ -51,7 +51,6 @@ pub enum Error {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttestationStatus {
     Attested,
-    NotAttested,
     Unavailable,
 }
 
@@ -195,7 +194,7 @@ pub async fn verify_entity<E: Integrable>(
 
     match result {
         Ok(true) => Ok(AttestationStatus::Attested),
-        Ok(false) => Ok(AttestationStatus::NotAttested),
+        Ok(false) => Err(Error::MacMismatch { entity_kind: E::KIND }),
         Err(SendError::HandlerError(keyholder::Error::NotBootstrapped)) => Ok(AttestationStatus::Unavailable),
         Err(_) => Err(Error::KeyholderSend),
     }
