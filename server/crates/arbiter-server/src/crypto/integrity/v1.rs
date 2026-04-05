@@ -1,78 +1,319 @@
-use crate::{crypto::KeyCell, safe_cell::SafeCellHandle as _};
+use crate::{actors::keyholder, crypto::KeyCell,safe_cell::SafeCellHandle as _};
 use chacha20poly1305::Key;
-use hmac::Mac as _;
+use hmac::{Hmac, Mac as _};
+use serde::Serialize;
+use sha2::Sha256;
 
-pub const USERAGENT_INTEGRITY_DERIVE_TAG: &[u8] = "arbiter/useragent/integrity-key/v1".as_bytes();
-pub const USERAGENT_INTEGRITY_TAG: &[u8] = "arbiter/useragent/pubkey-entry/v1".as_bytes();
+use diesel::{ExpressionMethods as _, QueryDsl, dsl::insert_into, sqlite::Sqlite};
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use kameo::{actor::ActorRef, error::SendError};
+use sha2::Digest as _;
 
-/// Computes an integrity tag for a specific domain and payload shape.
-pub fn compute_integrity_tag<'a, I>(
-    integrity_key: &mut KeyCell,
-    purpose_tag: &[u8],
-    data_parts: I,
-) -> [u8; 32]
-where
-    I: IntoIterator<Item = &'a [u8]>,
-{
-    type HmacSha256 = hmac::Hmac<sha2::Sha256>;
+use crate::{
+    actors::keyholder::{KeyHolder, SignIntegrity, VerifyIntegrity},
+    db::{
+        self,
+        models::{IntegrityEnvelope, NewIntegrityEnvelope},
+        schema::integrity_envelope,
+    },
+};
 
-    let mut output_tag = [0u8; 32];
-    integrity_key.0.read_inline(|integrity_key_bytes: &Key| {
-        let mut mac = <HmacSha256 as hmac::Mac>::new_from_slice(integrity_key_bytes.as_ref())
-            .expect("HMAC key initialization must not fail for 32-byte key");
-        mac.update(purpose_tag);
-        for data_part in data_parts {
-            mac.update(data_part);
-        }
-        output_tag.copy_from_slice(&mac.finalize().into_bytes());
-    });
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("Database error: {0}")]
+    Database(#[from] db::DatabaseError),
 
-    output_tag
+    #[error("KeyHolder error: {0}")]
+    Keyholder(#[from] keyholder::Error),
+
+    #[error("KeyHolder mailbox error")]
+    KeyholderSend,
+
+    #[error("Integrity envelope is missing for entity {entity_kind}")]
+    MissingEnvelope { entity_kind: &'static str },
+
+    #[error(
+        "Integrity payload version mismatch for entity {entity_kind}: expected {expected}, found {found}"
+    )]
+    PayloadVersionMismatch {
+        entity_kind: &'static str,
+        expected: i32,
+        found: i32,
+    },
+
+    #[error("Integrity MAC mismatch for entity {entity_kind}")]
+    MacMismatch { entity_kind: &'static str },
+
+    #[error("Payload serialization error: {0}")]
+    PayloadSerialization(#[from] postcard::Error),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttestationStatus {
+    Attested,
+    Unavailable,
+}
+
+pub const CURRENT_PAYLOAD_VERSION: i32 = 1;
+pub const INTEGRITY_SUBKEY_TAG: &[u8] = b"arbiter/db-integrity-key/v1";
+
+pub type HmacSha256 = Hmac<Sha256>;
+
+pub trait Integrable: Serialize {
+    const KIND: &'static str;
+    const VERSION: i32 = 1;
+}
+
+fn payload_hash(payload: &[u8]) -> [u8; 32] {
+    Sha256::digest(payload).into()
+}
+
+fn push_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
+    out.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+    out.extend_from_slice(bytes);
+}
+
+fn build_mac_input(
+    entity_kind: &str,
+    entity_id: &[u8],
+    payload_version: i32,
+    payload_hash: &[u8; 32],
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(8 + entity_kind.len() + entity_id.len() + 32);
+    push_len_prefixed(&mut out, entity_kind.as_bytes());
+    push_len_prefixed(&mut out, entity_id);
+    out.extend_from_slice(&payload_version.to_be_bytes());
+    out.extend_from_slice(payload_hash);
+    out
+}
+
+pub trait IntoId {
+    fn into_id(self) -> Vec<u8>;
+}
+
+impl IntoId for i32 {
+    fn into_id(self) -> Vec<u8> {
+        self.to_be_bytes().to_vec()
+    }
+}
+
+impl IntoId for &'_ [u8] {
+    fn into_id(self) -> Vec<u8> {
+        self.to_vec()
+    }
+}
+
+pub async fn sign_entity<E: Integrable>(
+    conn: &mut impl AsyncConnection<Backend = Sqlite>,
+    keyholder: &ActorRef<KeyHolder>,
+    entity: &E,
+    entity_id: impl IntoId,
+) -> Result<(), Error> {
+    let payload = postcard::to_stdvec(entity)?;
+    let payload_hash = payload_hash(&payload);
+
+    let entity_id = entity_id.into_id();
+
+    let mac_input = build_mac_input(E::KIND, &entity_id, E::VERSION, &payload_hash);
+
+    let (key_version, mac) = keyholder
+        .ask(SignIntegrity { mac_input })
+        .await
+        .map_err(|err| match err {
+            kameo::error::SendError::HandlerError(inner) => Error::Keyholder(inner),
+            _ => Error::KeyholderSend,
+        })?;
+
+    insert_into(integrity_envelope::table)
+        .values(NewIntegrityEnvelope {
+            entity_kind: E::KIND.to_owned(),
+            entity_id: entity_id,
+            payload_version: E::VERSION ,
+            key_version,
+            mac: mac.to_vec(),
+        })
+        .on_conflict((
+            integrity_envelope::entity_id,
+            integrity_envelope::entity_kind,
+        ))
+        .do_update()
+        .set((
+            integrity_envelope::payload_version.eq(E::VERSION),
+            integrity_envelope::key_version.eq(key_version),
+            integrity_envelope::mac.eq(mac),
+        ))
+        .execute(conn)
+        .await
+        .map_err(db::DatabaseError::from)?;
+
+    Ok(())
+}
+
+pub async fn verify_entity<E: Integrable>(
+    conn: &mut impl AsyncConnection<Backend = Sqlite>,
+    keyholder: &ActorRef<KeyHolder>,
+    entity: &E,
+    entity_id: impl IntoId,
+) -> Result<AttestationStatus, Error> {
+    let entity_id = entity_id.into_id();
+    let envelope: IntegrityEnvelope = integrity_envelope::table
+        .filter(integrity_envelope::entity_kind.eq(E::KIND))
+        .filter(integrity_envelope::entity_id.eq(&entity_id))
+        .first(conn)
+        .await
+        .map_err(|err| match err {
+            diesel::result::Error::NotFound => Error::MissingEnvelope { entity_kind: E::KIND },
+            other => Error::Database(db::DatabaseError::from(other)),
+        })?;
+
+    if envelope.payload_version != E::VERSION {
+        return Err(Error::PayloadVersionMismatch {
+            entity_kind: E::KIND,
+            expected: E::VERSION,
+            found: envelope.payload_version,
+        });
+    }
+
+    let payload = postcard::to_stdvec(entity)?;
+    let payload_hash = payload_hash(&payload);
+    let mac_input = build_mac_input(
+        E::KIND,
+        &entity_id,
+        envelope.payload_version,
+        &payload_hash,
+    );
+
+    let result = keyholder
+        .ask(VerifyIntegrity {
+            mac_input,
+            expected_mac: envelope.mac,
+            key_version: envelope.key_version,
+        })
+        .await
+        ;
+
+    match result {
+        Ok(true) => Ok(AttestationStatus::Attested),
+        Ok(false) => Err(Error::MacMismatch { entity_kind: E::KIND }),
+        Err(SendError::HandlerError(keyholder::Error::NotBootstrapped)) => Ok(AttestationStatus::Unavailable),
+        Err(_) => Err(Error::KeyholderSend),
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use diesel::{ExpressionMethods as _, QueryDsl};
+    use diesel_async::RunQueryDsl;
+    use kameo::{actor::ActorRef, prelude::Spawn};
+
     use crate::{
-        crypto::{derive_key, encryption::v1::generate_salt},
+        actors::keyholder::{Bootstrap, KeyHolder},
+        db::{self, schema},
         safe_cell::{SafeCell, SafeCellHandle as _},
     };
 
-    use super::{USERAGENT_INTEGRITY_TAG, compute_integrity_tag};
+    use super::{Error, Integrable, sign_entity, verify_entity};
 
-    #[test]
-    pub fn integrity_tag_deterministic() {
-        let salt = generate_salt();
-        let mut integrity_key = derive_key(SafeCell::new(b"password".to_vec()), &salt);
-        let key_type = 1i32.to_be_bytes();
-        let t1 = compute_integrity_tag(
-            &mut integrity_key,
-            USERAGENT_INTEGRITY_TAG,
-            [key_type.as_slice(), b"pubkey".as_ref()],
-        );
-        let t2 = compute_integrity_tag(
-            &mut integrity_key,
-            USERAGENT_INTEGRITY_TAG,
-            [key_type.as_slice(), b"pubkey".as_ref()],
-        );
-        assert_eq!(t1, t2);
+    #[derive(Clone, serde::Serialize)]
+    struct DummyEntity {
+        payload_version: i32,
+        payload: Vec<u8>,
     }
 
-    #[test]
-    pub fn integrity_tag_changes_with_payload() {
-        let salt = generate_salt();
-        let mut integrity_key = derive_key(SafeCell::new(b"password".to_vec()), &salt);
-        let key_type_1 = 1i32.to_be_bytes();
-        let key_type_2 = 2i32.to_be_bytes();
-        let t1 = compute_integrity_tag(
-            &mut integrity_key,
-            USERAGENT_INTEGRITY_TAG,
-            [key_type_1.as_slice(), b"pubkey".as_ref()],
-        );
-        let t2 = compute_integrity_tag(
-            &mut integrity_key,
-            USERAGENT_INTEGRITY_TAG,
-            [key_type_2.as_slice(), b"pubkey".as_ref()],
-        );
-        assert_ne!(t1, t2);
+    impl Integrable for DummyEntity {
+        const KIND: &'static str = "dummy_entity";
+    }
+
+    async fn bootstrapped_keyholder(db: &db::DatabasePool) -> ActorRef<KeyHolder> {
+        let actor = KeyHolder::spawn(KeyHolder::new(db.clone()).await.unwrap());
+        actor
+            .ask(Bootstrap {
+                seal_key_raw: SafeCell::new(b"integrity-test-seal-key".to_vec()),
+            })
+            .await
+            .unwrap();
+        actor
+    }
+
+    #[tokio::test]
+    async fn sign_writes_envelope_and_verify_passes() {
+        let db = db::create_test_pool().await;
+        let keyholder = bootstrapped_keyholder(&db).await;
+        let mut conn = db.get().await.unwrap();
+
+        const ENTITY_ID: &[u8] = b"entity-id-7";
+
+        let entity = DummyEntity {
+            payload_version: 1,
+            payload: b"payload-v1".to_vec(),
+        };
+
+        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID).await.unwrap();
+
+        let count: i64 = schema::integrity_envelope::table
+            .filter(schema::integrity_envelope::entity_kind.eq("dummy_entity"))
+            .filter(schema::integrity_envelope::entity_id.eq(ENTITY_ID))
+            .count()
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+
+        assert_eq!(count, 1, "envelope row must be created exactly once");
+        verify_entity(&mut conn, &keyholder, &entity, ENTITY_ID).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn tampered_mac_fails_verification() {
+        let db = db::create_test_pool().await;
+        let keyholder = bootstrapped_keyholder(&db).await;
+        let mut conn = db.get().await.unwrap();
+
+        const ENTITY_ID: &[u8] = b"entity-id-11";
+
+        let entity = DummyEntity {
+            payload_version: 1,
+            payload: b"payload-v1".to_vec(),
+        };
+
+        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID).await.unwrap();
+
+        diesel::update(schema::integrity_envelope::table)
+            .filter(schema::integrity_envelope::entity_kind.eq("dummy_entity"))
+            .filter(schema::integrity_envelope::entity_id.eq(ENTITY_ID))
+            .set(schema::integrity_envelope::mac.eq(vec![0u8; 32]))
+            .execute(&mut conn)
+            .await
+            .unwrap();
+
+        let err = verify_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::MacMismatch { .. }));
+    }
+
+    #[tokio::test]
+    async fn changed_payload_fails_verification() {
+        let db = db::create_test_pool().await;
+        let keyholder = bootstrapped_keyholder(&db).await;
+        let mut conn = db.get().await.unwrap();
+
+        const ENTITY_ID: &[u8] = b"entity-id-21";
+
+        let entity = DummyEntity {
+            payload_version: 1,
+            payload: b"payload-v1".to_vec(),
+        };
+
+        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID).await.unwrap();
+
+        let tampered = DummyEntity {
+            payload: b"payload-v1-but-tampered".to_vec(),
+            ..entity
+        };
+
+        let err = verify_entity(&mut conn, &keyholder, &tampered, ENTITY_ID)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::MacMismatch { .. }));
     }
 }

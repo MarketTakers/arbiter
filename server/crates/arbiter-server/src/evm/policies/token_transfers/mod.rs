@@ -10,11 +10,8 @@ use diesel::dsl::{auto_type, insert_into};
 use diesel::sqlite::Sqlite;
 use diesel::{ExpressionMethods, prelude::*};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use serde::Serialize;
 
-use crate::db::models::{
-    EvmBasicGrant, EvmTokenTransferGrant, EvmTokenTransferVolumeLimit, NewEvmTokenTransferGrant,
-    NewEvmTokenTransferLog, NewEvmTokenTransferVolumeLimit, SqliteTimestamp,
-};
 use crate::db::schema::{
     evm_basic_grant, evm_token_transfer_grant, evm_token_transfer_log,
     evm_token_transfer_volume_limit,
@@ -25,6 +22,15 @@ use crate::evm::{
         Grant, Policy, SharedGrantSettings, SpecificGrant, SpecificMeaning, VolumeRateLimit,
     },
     utils,
+};
+use crate::{
+    crypto::integrity::Integrable,
+    db::models::{
+        EvmBasicGrant, EvmTokenTransferGrant, EvmTokenTransferVolumeLimit,
+        NewEvmTokenTransferGrant, NewEvmTokenTransferLog, NewEvmTokenTransferVolumeLimit,
+        SqliteTimestamp,
+    },
+    evm::policies::CombinedSettings,
 };
 
 use super::{DatabaseID, EvalContext, EvalViolation};
@@ -38,9 +44,9 @@ fn grant_join() -> _ {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Meaning {
-    pub(crate) token: &'static TokenInfo,
-    pub(crate) to: Address,
-    pub(crate) value: U256,
+    pub token: &'static TokenInfo,
+    pub to: Address,
+    pub value: U256,
 }
 impl std::fmt::Display for Meaning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -58,11 +64,14 @@ impl From<Meaning> for SpecificMeaning {
 }
 
 // A grant for token transfers, which can be scoped to specific target addresses and volume limits
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Settings {
     pub token_contract: Address,
     pub target: Option<Address>,
     pub volume_limits: Vec<VolumeRateLimit>,
+}
+impl Integrable for Settings {
+    const KIND: &'static str = "TokenTransfer";
 }
 impl From<Settings> for SpecificGrant {
     fn from(val: Settings) -> SpecificGrant {
@@ -106,13 +115,20 @@ async fn check_volume_rate_limits(
 ) -> QueryResult<Vec<EvalViolation>> {
     let mut violations = Vec::new();
 
-    let Some(longest_window) = grant.settings.volume_limits.iter().map(|l| l.window).max() else {
+    let Some(longest_window) = grant
+        .settings
+        .specific
+        .volume_limits
+        .iter()
+        .map(|l| l.window)
+        .max()
+    else {
         return Ok(violations);
     };
 
     let past_transfers = query_relevant_past_transfers(grant.id, longest_window, db).await?;
 
-    for limit in &grant.settings.volume_limits {
+    for limit in &grant.settings.specific.volume_limits {
         let window_start = chrono::Utc::now() - limit.window;
         let prospective_cumulative_volume: U256 = past_transfers
             .iter()
@@ -158,7 +174,7 @@ impl Policy for TokenTransfer {
             return Ok(violations);
         }
 
-        if let Some(allowed) = grant.settings.target
+        if let Some(allowed) = grant.settings.specific.target
             && allowed != meaning.to
         {
             violations.push(EvalViolation::InvalidTarget { target: meaning.to });
@@ -269,9 +285,11 @@ impl Policy for TokenTransfer {
 
         Ok(Some(Grant {
             id: token_grant.id,
-            shared_grant_id: token_grant.basic_grant_id,
-            shared: SharedGrantSettings::try_from_model(basic_grant)?,
-            settings,
+            common_settings_id: token_grant.basic_grant_id,
+            settings: CombinedSettings {
+                shared: SharedGrantSettings::try_from_model(basic_grant)?,
+                specific: settings,
+            },
         }))
     }
 
@@ -369,12 +387,14 @@ impl Policy for TokenTransfer {
 
                 Ok(Grant {
                     id: specific.id,
-                    shared_grant_id: specific.basic_grant_id,
-                    shared: SharedGrantSettings::try_from_model(basic)?,
-                    settings: Settings {
-                        token_contract: Address::from(token_contract),
-                        target,
-                        volume_limits,
+                    common_settings_id: specific.basic_grant_id,
+                    settings: CombinedSettings {
+                        shared: SharedGrantSettings::try_from_model(basic)?,
+                        specific: Settings {
+                            token_contract: Address::from(token_contract),
+                            target,
+                            volume_limits,
+                        },
                     },
                 })
             })

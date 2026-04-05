@@ -7,11 +7,11 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::{
-    db::models::{self, EvmBasicGrant, EvmWalletAccess},
-    evm::utils,
+    crypto::integrity::v1::Integrable, db::models::{self, EvmBasicGrant, EvmWalletAccess}, evm::utils
 };
 
 pub mod ether_transfer;
@@ -59,16 +59,15 @@ pub enum EvalViolation {
 
 pub type DatabaseID = i32;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Grant<PolicySettings> {
     pub id: DatabaseID,
-    pub shared_grant_id: DatabaseID, // ID of the basic grant for shared-logic checks like rate limits and validity periods
-    pub shared: SharedGrantSettings,
-    pub settings: PolicySettings,
+    pub common_settings_id: DatabaseID, // ID of the basic grant for shared-logic checks like rate limits and validity periods
+    pub settings: CombinedSettings<PolicySettings>,
 }
 
 pub trait Policy: Sized {
-    type Settings: Send + Sync + 'static + Into<SpecificGrant>;
+    type Settings: Send + Sync + 'static + Into<SpecificGrant> + Integrable;
     type Meaning: Display + std::fmt::Debug + Send + Sync + 'static + Into<SpecificMeaning>;
 
     fn analyze(context: &EvalContext) -> Option<Self::Meaning>;
@@ -124,19 +123,19 @@ pub enum SpecificMeaning {
     TokenTransfer(token_transfers::Meaning),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
 pub struct TransactionRateLimit {
     pub count: u32,
     pub window: Duration,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
 pub struct VolumeRateLimit {
     pub max_volume: U256,
     pub window: Duration,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
 pub struct SharedGrantSettings {
     pub wallet_access_id: i32,
     pub chain: ChainId,
@@ -151,7 +150,7 @@ pub struct SharedGrantSettings {
 }
 
 impl SharedGrantSettings {
-    fn try_from_model(model: EvmBasicGrant) -> QueryResult<Self> {
+    pub(crate) fn try_from_model(model: EvmBasicGrant) -> QueryResult<Self> {
         Ok(Self {
             wallet_access_id: model.wallet_access_id,
             chain: model.chain_id as u64, // safe because chain_id is stored as i32 but is guaranteed to be a valid ChainId by the API when creating grants
@@ -197,7 +196,23 @@ pub enum SpecificGrant {
     TokenTransfer(token_transfers::Settings),
 }
 
-pub struct FullGrant<PolicyGrant> {
-    pub basic: SharedGrantSettings,
+#[derive(Debug, Serialize)]
+pub struct CombinedSettings<PolicyGrant> {
+    pub shared: SharedGrantSettings,
     pub specific: PolicyGrant,
 }
+
+impl<P> CombinedSettings<P> {
+    pub fn generalize<Y: From<P>>(self) -> CombinedSettings<Y> {
+        CombinedSettings {
+            shared: self.shared,
+            specific: self.specific.into(),
+        }
+    }
+}
+
+impl<P: Integrable> Integrable for CombinedSettings<P> {
+    const KIND: &'static str = P::KIND;
+    const VERSION: i32 = P::VERSION;
+}
+

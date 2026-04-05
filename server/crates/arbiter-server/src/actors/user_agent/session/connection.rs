@@ -120,6 +120,15 @@ pub enum SignTransactionError {
     Internal,
 }
 
+#[derive(Debug, Error)]
+pub enum GrantMutationError {
+    #[error("Vault is sealed")]
+    VaultSealed,
+
+    #[error("Internal grant mutation error")]
+    Internal,
+}
+
 #[messages]
 impl UserAgentSession {
     #[message]
@@ -331,7 +340,7 @@ impl UserAgentSession {
         &mut self,
         basic: crate::evm::policies::SharedGrantSettings,
         grant: crate::evm::policies::SpecificGrant,
-    ) -> Result<i32, Error> {
+    ) -> Result<i32, GrantMutationError> {
         match self
             .props
             .actors
@@ -342,13 +351,16 @@ impl UserAgentSession {
             Ok(grant_id) => Ok(grant_id),
             Err(err) => {
                 error!(?err, "EVM grant create failed");
-                Err(Error::internal("Failed to create EVM grant"))
+                Err(GrantMutationError::Internal)
             }
         }
     }
 
     #[message]
-    pub(crate) async fn handle_grant_delete(&mut self, grant_id: i32) -> Result<(), Error> {
+    pub(crate) async fn handle_grant_delete(
+        &mut self,
+        grant_id: i32,
+    ) -> Result<(), GrantMutationError> {
         match self
             .props
             .actors
@@ -359,7 +371,7 @@ impl UserAgentSession {
             Ok(()) => Ok(()),
             Err(err) => {
                 error!(?err, "EVM grant delete failed");
-                Err(Error::internal("Failed to delete EVM grant"))
+                Err(GrantMutationError::Internal)
             }
         }
     }
