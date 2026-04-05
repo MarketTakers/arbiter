@@ -338,7 +338,6 @@ where
         };
 
         let Some(expected_tag) = self.try_sign_pubkey_integrity_tag(pubkey).await? else {
-            // Vault sealed/unbootstrapped: cannot verify integrity yet.
             return Ok(AttestationStatus::Unavailable);
         };
 

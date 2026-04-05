@@ -4,6 +4,7 @@ package arbiter.evm;
 
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "shared/evm.proto";
 
 enum EvmError {
   EVM_ERROR_UNSPECIFIED = 0;
@@ -74,70 +75,6 @@ message SpecificGrant {
   }
 }
 
-message EtherTransferMeaning {
-  bytes to = 1; // 20-byte Ethereum address
-  bytes value = 2; // U256 as big-endian bytes
-}
-
-message TokenInfo {
-  string symbol = 1;
-  bytes address = 2; // 20-byte Ethereum address
-  uint64 chain_id = 3;
-}
-
-// Mirror of token_transfers::Meaning
-message TokenTransferMeaning {
-  TokenInfo token = 1;
-  bytes to = 2; // 20-byte Ethereum address
-  bytes value = 3; // U256 as big-endian bytes
-}
-
-// Mirror of policies::SpecificMeaning
-message SpecificMeaning {
-  oneof meaning {
-    EtherTransferMeaning ether_transfer = 1;
-    TokenTransferMeaning token_transfer = 2;
-  }
-}
-
-// --- Eval error types ---
-message GasLimitExceededViolation {
-  optional bytes max_gas_fee_per_gas = 1; // U256 as big-endian bytes
-  optional bytes max_priority_fee_per_gas = 2; // U256 as big-endian bytes
-}
-
-message EvalViolation {
-  oneof kind {
-    bytes invalid_target = 1; // 20-byte Ethereum address
-    GasLimitExceededViolation gas_limit_exceeded = 2;
-    google.protobuf.Empty rate_limit_exceeded = 3;
-    google.protobuf.Empty volumetric_limit_exceeded = 4;
-    google.protobuf.Empty invalid_time = 5;
-    google.protobuf.Empty invalid_transaction_type = 6;
-  }
-}
-
-// Transaction was classified but no grant covers it
-message NoMatchingGrantError {
-  SpecificMeaning meaning = 1;
-}
-
-// Transaction was classified and a grant was found, but constraints were violated
-message PolicyViolationsError {
-  SpecificMeaning meaning = 1;
-  repeated EvalViolation violations = 2;
-}
-
-// top-level error returned when transaction evaluation fails
-message TransactionEvalError {
-  oneof kind {
-    google.protobuf.Empty contract_creation_not_supported = 1;
-    google.protobuf.Empty unsupported_transaction_type = 2;
-    NoMatchingGrantError no_matching_grant = 3;
-    PolicyViolationsError policy_violations = 4;
-  }
-}
-
 // --- UserAgent grant management ---
 message EvmGrantCreateRequest {
   SharedSettings shared = 1;
@@ -197,7 +134,7 @@ message EvmSignTransactionRequest {
 message EvmSignTransactionResponse {
   oneof result {
     bytes signature = 1; // 65-byte signature: r[32] || s[32] || v[1]
-    TransactionEvalError eval_error = 2;
+    arbiter.shared.evm.TransactionEvalError eval_error = 2;
     EvmError error = 3;
   }
 }
@@ -209,8 +146,8 @@ message EvmAnalyzeTransactionRequest {
 
 message EvmAnalyzeTransactionResponse {
   oneof result {
-    SpecificMeaning meaning = 1;
-    TransactionEvalError eval_error = 2;
+    arbiter.shared.evm.SpecificMeaning meaning = 1;
+    arbiter.shared.evm.TransactionEvalError eval_error = 2;
     EvmError error = 3;
   }
 }

@@ -47,4 +47,4 @@ final class ConnectApproveEventsProvider
 }
 
 String _$connectApproveEventsHash() =>
-    r'6a0998288afc0836a7c1701a983f64c33d318fd6';
+    r'abab87cc875a9a4834f836c2c0eba4aa7671d82e';

@@ -67,7 +67,18 @@ The `program_client.nonce` column stores the **next usable nonce** — i.e. it i
 ## Cryptography
 
 ### Authentication
-- **Signature scheme:** ed25519
+- **Client protocol:** ed25519
+
+### User-Agent Authentication
+
+User-agent authentication supports multiple signature schemes because platform-provided "hardware-bound" keys do not expose a uniform algorithm across operating systems and hardware.
+
+- **Supported schemes:** RSA, Ed25519, ECDSA (secp256k1)
+- **Why:** the user agent authenticates with keys backed by platform facilities, and those facilities differ by platform
+- **Apple Silicon Secure Enclave / Secure Element:** ECDSA-only in practice
+- **Windows Hello / TPM 2.0:** currently RSA-backed in our integration
+
+This is why the user-agent auth protocol carries an explicit `KeyType`, while the SDK client protocol remains fixed to ed25519.
 
 ### Encryption at Rest
 - **Scheme:** Symmetric AEAD — currently **XChaCha20-Poly1305**
@@ -148,7 +159,7 @@ The central abstraction is the `Policy` trait. Each implementation handles one s
 Every grant has two layers:
 
 - **Shared (`evm_basic_grant`)** — wallet, chain, validity period, gas fee caps, transaction count rate limit. One row per grant regardless of type.
-- **Specific** — policy-owned tables (`evm_ether_transfer_grant`, `evm_token_transfer_grant`, etc.) holding type-specific configuration.
+- **Specific** — policy-owned tables (`evm_ether_transfer_grant`, `evm_token_transfer_grant`) holding type-specific configuration.
 
 `find_all_grants` uses a `#[diesel::auto_type]` base join between the specific and shared tables, then batch-loads related rows (targets, volume limits) in two additional queries to avoid N+1.
 
@@ -171,7 +182,6 @@ These are checked centrally in `check_shared_constraints` before policy evaluati
 - **Only EIP-1559 transactions are supported.** Legacy and EIP-2930 types are rejected outright.
 - **No opaque-calldata (unknown contract) grant type.** The architecture describes a category for unrecognised contracts, but no policy implements it yet. Any transaction that is not a plain ETH transfer or a known ERC-20 transfer is unconditionally rejected.
 - **Token registry is static.** Tokens are recognised only if they appear in the hard-coded `arbiter_tokens_registry` crate. There is no mechanism to register additional contracts at runtime.
-- **Nonce management is not implemented.** The architecture lists nonce deduplication as a core responsibility, but no nonce tracking or enforcement exists yet.
 
 ---
 
@@ -179,5 +189,5 @@ These are checked centrally in `check_shared_constraints` before policy evaluati
 
 The unsealed root key must be held in a hardened memory cell resistant to dumps, page swaps, and hibernation.
 
-- **Current:** Using the `memsafe` crate as an interim solution
-- **Planned:** Custom implementation based on `mlock` (Unix) and `VirtualProtect` (Windows)
+- **Current:** A dedicated memory-protection abstraction is in place, with `memsafe` used behind that abstraction today
+- **Planned:** Additional backends can be introduced behind the same abstraction, including a custom implementation based on `mlock` (Unix) and `VirtualProtect` (Windows)

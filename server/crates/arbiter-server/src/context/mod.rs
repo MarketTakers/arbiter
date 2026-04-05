@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use miette::Diagnostic;
 use thiserror::Error;
 
 use crate::{
@@ -11,30 +10,24 @@ use crate::{
 
 pub mod tls;
 
-#[derive(Error, Debug, Diagnostic)]
+#[derive(Error, Debug)]
 pub enum InitError {
     #[error("Database setup failed: {0}")]
-    #[diagnostic(code(arbiter_server::init::database_setup))]
     DatabaseSetup(#[from] db::DatabaseSetupError),
 
     #[error("Connection acquire failed: {0}")]
-    #[diagnostic(code(arbiter_server::init::database_pool))]
     DatabasePool(#[from] db::PoolError),
 
     #[error("Database query error: {0}")]
-    #[diagnostic(code(arbiter_server::init::database_query))]
     DatabaseQuery(#[from] diesel::result::Error),
 
     #[error("TLS initialization failed: {0}")]
-    #[diagnostic(code(arbiter_server::init::tls_init))]
     Tls(#[from] tls::InitError),
 
     #[error("Actor spawn failed: {0}")]
-    #[diagnostic(code(arbiter_server::init::actor_spawn))]
     ActorSpawn(#[from] crate::actors::SpawnError),
 
     #[error("I/O Error: {0}")]
-    #[diagnostic(code(arbiter_server::init::io))]
     Io(#[from] std::io::Error),
 }
 

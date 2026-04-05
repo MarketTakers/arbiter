@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package arbiter.client.evm;
+
+import "evm.proto";
+
+message Request {
+  oneof payload {
+    arbiter.evm.EvmSignTransactionRequest sign_transaction = 1;
+    arbiter.evm.EvmAnalyzeTransactionRequest analyze_transaction = 2;
+  }
+}
+
+message Response {
+  oneof payload {
+    arbiter.evm.EvmSignTransactionResponse sign_transaction = 1;
+    arbiter.evm.EvmAnalyzeTransactionResponse analyze_transaction = 2;
+  }
+}

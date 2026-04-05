@@ -724,6 +724,7 @@ name = "arbiter-server"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "anyhow",
  "arbiter-proto",
  "arbiter-tokens-registry",
  "argon2",
@@ -742,7 +743,6 @@ dependencies = [
  "k256",
  "kameo",
  "memsafe",
- "miette",
  "pem",
  "prost-types",
  "rand 0.10.0",

@@ -9,7 +9,7 @@
 // coverage:ignore-file
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
-import 'package:arbiter/proto/user_agent.pb.dart' as _i15;
+import 'package:arbiter/proto/user_agent/sdk_client.pb.dart' as _i15;
 import 'package:arbiter/screens/bootstrap.dart' as _i2;
 import 'package:arbiter/screens/dashboard.dart' as _i7;
 import 'package:arbiter/screens/dashboard/about.dart' as _i1;
@@ -63,7 +63,7 @@ class Bootstrap extends _i13.PageRouteInfo<void> {
 class ClientDetails extends _i13.PageRouteInfo<ClientDetailsArgs> {
   ClientDetails({
     _i14.Key? key,
-    required _i15.SdkClientEntry client,
+    required _i15.Entry client,
     List<_i13.PageRouteInfo>? children,
   }) : super(
          ClientDetails.name,
@@ -87,7 +87,7 @@ class ClientDetailsArgs {
 
   final _i14.Key? key;
 
-  final _i15.SdkClientEntry client;
+  final _i15.Entry client;
 
   @override
   String toString() {

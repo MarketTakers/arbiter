@@ -220,7 +220,7 @@ async fn evaluate_rejects_wrong_restricted_recipient() {
 }
 
 #[tokio::test]
-async fn evaluate_passes_volume_within_limit() {
+async fn evaluate_passes_volume_at_exact_limit() {
     let db = db::create_test_pool().await;
     let mut conn = db.get().await.unwrap();
 
@@ -230,7 +230,7 @@ async fn evaluate_passes_volume_within_limit() {
         .await
         .unwrap();
 
-    // Record a past transfer of 500 (within 1000 limit)
+    // Record a past transfer of 900, with current transfer 100 => exactly 1000 limit
     use crate::db::{models::NewEvmTokenTransferLog, schema::evm_token_transfer_log};
     insert_into(evm_token_transfer_log::table)
         .values(NewEvmTokenTransferLog {
@@ -239,7 +239,7 @@ async fn evaluate_passes_volume_within_limit() {
             chain_id: CHAIN_ID as i32,
             token_contract: DAI.to_vec(),
             recipient_address: RECIPIENT.to_vec(),
-            value: utils::u256_to_bytes(U256::from(500u64)).to_vec(),
+            value: utils::u256_to_bytes(U256::from(900u64)).to_vec(),
         })
         .execute(&mut *conn)
         .await
@@ -282,7 +282,7 @@ async fn evaluate_rejects_volume_over_limit() {
             chain_id: CHAIN_ID as i32,
             token_contract: DAI.to_vec(),
             recipient_address: RECIPIENT.to_vec(),
-            value: utils::u256_to_bytes(U256::from(1_001u64)).to_vec(),
+            value: utils::u256_to_bytes(U256::from(1_000u64)).to_vec(),
         })
         .execute(&mut *conn)
         .await
@@ -294,7 +294,7 @@ async fn evaluate_rejects_volume_over_limit() {
         shared: shared(),
         settings,
     };
-    let calldata = transfer_calldata(RECIPIENT, U256::from(100u64));
+    let calldata = transfer_calldata(RECIPIENT, U256::from(1u64));
     let context = ctx(DAI, calldata);
     let m = TokenTransfer::analyze(&context).unwrap();
     let v = TokenTransfer::evaluate(&context, &m, &grant, &mut *conn)

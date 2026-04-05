@@ -1,3 +1,5 @@
+import 'package:arbiter/proto/shared/vault.pbenum.dart';
+import 'package:arbiter/proto/user_agent/vault/vault.pb.dart' as ua_vault;
 import 'package:arbiter/proto/user_agent.pb.dart';
 import 'package:arbiter/providers/connection/connection_manager.dart';
 import 'package:mtcore/markettakers.dart';
@@ -13,13 +15,23 @@ Future<VaultState?> vaultState(Ref ref) async {
     return null;
   }
 
-  final resp = await conn.ask(UserAgentRequest(queryVaultState: Empty()));
-  if (resp.whichPayload() != UserAgentResponse_Payload.vaultState) {
+  final resp = await conn.ask(
+    UserAgentRequest(vault: ua_vault.Request(queryState: Empty())),
+  );
+  if (!resp.hasVault()) {
     talker.warning('Expected vault state response, got ${resp.whichPayload()}');
     return null;
   }
 
-  final vaultState = resp.vaultState;
+  final vaultResponse = resp.vault;
+  if (!vaultResponse.hasState()) {
+    talker.warning(
+      'Expected vault state payload, got ${vaultResponse.whichPayload()}',
+    );
+    return null;
+  }
+
+  final vaultState = vaultResponse.state;
 
   return vaultState;
 }

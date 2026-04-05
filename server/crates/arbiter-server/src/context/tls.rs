@@ -1,8 +1,8 @@
-use std::{net::IpAddr, string::FromUtf8Error};
+use std::{net::Ipv4Addr, string::FromUtf8Error};
 
 use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper as _};
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use miette::Diagnostic;
+
 use pem::Pem;
 use rcgen::{
     BasicConstraints, Certificate, CertificateParams, CertifiedIssuer, DistinguishedName, DnType,
@@ -29,30 +29,24 @@ const ENCODE_CONFIG: pem::EncodeConfig = {
     pem::EncodeConfig::new().set_line_ending(line_ending)
 };
 
-#[derive(Error, Debug, Diagnostic)]
+#[derive(Error, Debug)]
 pub enum InitError {
     #[error("Key generation error during TLS initialization: {0}")]
-    #[diagnostic(code(arbiter_server::tls_init::key_generation))]
     KeyGeneration(#[from] rcgen::Error),
 
     #[error("Key invalid format: {0}")]
-    #[diagnostic(code(arbiter_server::tls_init::key_invalid_format))]
     KeyInvalidFormat(#[from] FromUtf8Error),
 
     #[error("Key deserialization error: {0}")]
-    #[diagnostic(code(arbiter_server::tls_init::key_deserialization))]
     KeyDeserializationError(rcgen::Error),
 
     #[error("Database error during TLS initialization: {0}")]
-    #[diagnostic(code(arbiter_server::tls_init::database_error))]
     DatabaseError(#[from] diesel::result::Error),
 
     #[error("Pem deserialization error during TLS initialization: {0}")]
-    #[diagnostic(code(arbiter_server::tls_init::pem_deserialization))]
     PemDeserializationError(#[from] rustls::pki_types::pem::Error),
 
     #[error("Database pool acquire error during TLS initialization: {0}")]
-    #[diagnostic(code(arbiter_server::tls_init::database_pool_acquire))]
     DatabasePoolAcquire(#[from] db::PoolError),
 }
 
@@ -116,7 +110,7 @@ impl TlsCa {
         ];
         params
             .subject_alt_names
-            .push(SanType::IpAddress(IpAddr::from([127, 0, 0, 1])));
+            .push(SanType::IpAddress(Ipv4Addr::LOCALHOST.into()));
 
         let mut dn = DistinguishedName::new();
         dn.push(DnType::CommonName, "Arbiter Instance Leaf");

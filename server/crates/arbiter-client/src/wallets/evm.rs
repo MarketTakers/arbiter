@@ -8,7 +8,49 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::transport::ClientTransport;
+use arbiter_proto::proto::{
+    client::{
+        ClientRequest,
+        client_request::Payload as ClientRequestPayload,
+        client_response::Payload as ClientResponsePayload,
+        evm::{
+            self as proto_evm, request::Payload as EvmRequestPayload,
+            response::Payload as EvmResponsePayload,
+        },
+    },
+    evm::{
+        EvmSignTransactionRequest,
+        evm_sign_transaction_response::Result as EvmSignTransactionResult,
+    },
+    shared::evm::TransactionEvalError,
+};
+
+use crate::transport::{ClientTransport, next_request_id};
+
+/// A typed error payload returned by [`ArbiterEvmWallet`] transaction signing.
+///
+/// This is wrapped into `alloy::signers::Error::Other`, so consumers can downcast by [`TryFrom`] and
+/// interpret the concrete policy evaluation failure instead of parsing strings.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ArbiterEvmSignTransactionError {
+    #[error("transaction rejected by policy: {0:?}")]
+    PolicyEval(TransactionEvalError),
+}
+
+impl<'a> TryFrom<&'a Error> for &'a ArbiterEvmSignTransactionError {
+    type Error = ();
+
+    fn try_from(value: &'a Error) -> Result<Self, Self::Error> {
+        if let Error::Other(inner) = value
+            && let Some(eval_error) = inner.downcast_ref()
+        {
+            Ok(eval_error)
+        } else {
+            Err(())
+        }
+    }
+}
 
 pub struct ArbiterEvmWallet {
     transport: Arc<Mutex<ClientTransport>>,
@@ -79,11 +121,72 @@ impl TxSigner<Signature> for ArbiterEvmWallet {
         &self,
         tx: &mut dyn SignableTransaction<Signature>,
     ) -> Result<Signature> {
-        let _transport = self.transport.lock().await;
         self.validate_chain_id(tx)?;
 
-        Err(Error::other(
-            "transaction signing is not supported by current arbiter.client protocol",
-        ))
+        let mut transport = self.transport.lock().await;
+        let request_id = next_request_id();
+        let rlp_transaction = tx.encoded_for_signing();
+
+        transport
+            .send(ClientRequest {
+                request_id,
+                payload: Some(ClientRequestPayload::Evm(proto_evm::Request {
+                    payload: Some(EvmRequestPayload::SignTransaction(
+                        EvmSignTransactionRequest {
+                            wallet_address: self.address.to_vec(),
+                            rlp_transaction,
+                        },
+                    )),
+                })),
+            })
+            .await
+            .map_err(|_| Error::other("failed to send evm sign transaction request"))?;
+
+        let response = transport
+            .recv()
+            .await
+            .map_err(|_| Error::other("failed to receive evm sign transaction response"))?;
+
+        if response.request_id != Some(request_id) {
+            return Err(Error::other(
+                "received mismatched response id for evm sign transaction",
+            ));
+        }
+
+        let payload = response
+            .payload
+            .ok_or_else(|| Error::other("missing evm sign transaction response payload"))?;
+
+        let ClientResponsePayload::Evm(proto_evm::Response {
+            payload: Some(payload),
+        }) = payload
+        else {
+            return Err(Error::other(
+                "unexpected response payload for evm sign transaction request",
+            ));
+        };
+
+        let EvmResponsePayload::SignTransaction(response) = payload else {
+            return Err(Error::other(
+                "unexpected evm response payload for sign transaction request",
+            ));
+        };
+
+        let result = response
+            .result
+            .ok_or_else(|| Error::other("missing evm sign transaction result"))?;
+
+        match result {
+            EvmSignTransactionResult::Signature(signature) => {
+                Signature::try_from(signature.as_slice())
+                    .map_err(|_| Error::other("invalid signature returned by server"))
+            }
+            EvmSignTransactionResult::EvalError(eval_error) => Err(Error::other(
+                ArbiterEvmSignTransactionError::PolicyEval(eval_error),
+            )),
+            EvmSignTransactionResult::Error(code) => Err(Error::other(format!(
+                "server failed to sign transaction with error code {code}"
+            ))),
+        }
     }
 }

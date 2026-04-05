@@ -1,5 +1,5 @@
 import 'package:arbiter/providers/sdk_clients/details.dart';
-import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/proto/user_agent/sdk_client.pb.dart' as ua_sdk;
 import 'package:arbiter/screens/dashboard/clients/details/widgets/client_details_content.dart';
 import 'package:arbiter/screens/dashboard/clients/details/widgets/client_details_state_panel.dart';
 import 'package:auto_route/auto_route.dart';
@@ -40,7 +40,7 @@ class _ClientDetailsState extends StatelessWidget {
   const _ClientDetailsState({required this.clientId, required this.client});
 
   final int clientId;
-  final SdkClientEntry? client;
+  final ua_sdk.Entry? client;
 
   @override
   Widget build(BuildContext context) {

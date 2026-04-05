@@ -15,657 +15,46 @@ import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
-@$core.Deprecated('Use keyTypeDescriptor instead')
-const KeyType$json = {
-  '1': 'KeyType',
-  '2': [
-    {'1': 'KEY_TYPE_UNSPECIFIED', '2': 0},
-    {'1': 'KEY_TYPE_ED25519', '2': 1},
-    {'1': 'KEY_TYPE_ECDSA_SECP256K1', '2': 2},
-    {'1': 'KEY_TYPE_RSA', '2': 3},
-  ],
-};
-
-/// Descriptor for `KeyType`. Decode as a `google.protobuf.EnumDescriptorProto`.
-final $typed_data.Uint8List keyTypeDescriptor = $convert.base64Decode(
-    'CgdLZXlUeXBlEhgKFEtFWV9UWVBFX1VOU1BFQ0lGSUVEEAASFAoQS0VZX1RZUEVfRUQyNTUxOR'
-    'ABEhwKGEtFWV9UWVBFX0VDRFNBX1NFQ1AyNTZLMRACEhAKDEtFWV9UWVBFX1JTQRAD');
-
-@$core.Deprecated('Use sdkClientErrorDescriptor instead')
-const SdkClientError$json = {
-  '1': 'SdkClientError',
-  '2': [
-    {'1': 'SDK_CLIENT_ERROR_UNSPECIFIED', '2': 0},
-    {'1': 'SDK_CLIENT_ERROR_ALREADY_EXISTS', '2': 1},
-    {'1': 'SDK_CLIENT_ERROR_NOT_FOUND', '2': 2},
-    {'1': 'SDK_CLIENT_ERROR_HAS_RELATED_DATA', '2': 3},
-    {'1': 'SDK_CLIENT_ERROR_INTERNAL', '2': 4},
-  ],
-};
-
-/// Descriptor for `SdkClientError`. Decode as a `google.protobuf.EnumDescriptorProto`.
-final $typed_data.Uint8List sdkClientErrorDescriptor = $convert.base64Decode(
-    'Cg5TZGtDbGllbnRFcnJvchIgChxTREtfQ0xJRU5UX0VSUk9SX1VOU1BFQ0lGSUVEEAASIwofU0'
-    'RLX0NMSUVOVF9FUlJPUl9BTFJFQURZX0VYSVNUUxABEh4KGlNES19DTElFTlRfRVJST1JfTk9U'
-    'X0ZPVU5EEAISJQohU0RLX0NMSUVOVF9FUlJPUl9IQVNfUkVMQVRFRF9EQVRBEAMSHQoZU0RLX0'
-    'NMSUVOVF9FUlJPUl9JTlRFUk5BTBAE');
-
-@$core.Deprecated('Use authResultDescriptor instead')
-const AuthResult$json = {
-  '1': 'AuthResult',
-  '2': [
-    {'1': 'AUTH_RESULT_UNSPECIFIED', '2': 0},
-    {'1': 'AUTH_RESULT_SUCCESS', '2': 1},
-    {'1': 'AUTH_RESULT_INVALID_KEY', '2': 2},
-    {'1': 'AUTH_RESULT_INVALID_SIGNATURE', '2': 3},
-    {'1': 'AUTH_RESULT_BOOTSTRAP_REQUIRED', '2': 4},
-    {'1': 'AUTH_RESULT_TOKEN_INVALID', '2': 5},
-    {'1': 'AUTH_RESULT_INTERNAL', '2': 6},
-  ],
-};
-
-/// Descriptor for `AuthResult`. Decode as a `google.protobuf.EnumDescriptorProto`.
-final $typed_data.Uint8List authResultDescriptor = $convert.base64Decode(
-    'CgpBdXRoUmVzdWx0EhsKF0FVVEhfUkVTVUxUX1VOU1BFQ0lGSUVEEAASFwoTQVVUSF9SRVNVTF'
-    'RfU1VDQ0VTUxABEhsKF0FVVEhfUkVTVUxUX0lOVkFMSURfS0VZEAISIQodQVVUSF9SRVNVTFRf'
-    'SU5WQUxJRF9TSUdOQVRVUkUQAxIiCh5BVVRIX1JFU1VMVF9CT09UU1RSQVBfUkVRVUlSRUQQBB'
-    'IdChlBVVRIX1JFU1VMVF9UT0tFTl9JTlZBTElEEAUSGAoUQVVUSF9SRVNVTFRfSU5URVJOQUwQ'
-    'Bg==');
-
-@$core.Deprecated('Use unsealResultDescriptor instead')
-const UnsealResult$json = {
-  '1': 'UnsealResult',
-  '2': [
-    {'1': 'UNSEAL_RESULT_UNSPECIFIED', '2': 0},
-    {'1': 'UNSEAL_RESULT_SUCCESS', '2': 1},
-    {'1': 'UNSEAL_RESULT_INVALID_KEY', '2': 2},
-    {'1': 'UNSEAL_RESULT_UNBOOTSTRAPPED', '2': 3},
-  ],
-};
-
-/// Descriptor for `UnsealResult`. Decode as a `google.protobuf.EnumDescriptorProto`.
-final $typed_data.Uint8List unsealResultDescriptor = $convert.base64Decode(
-    'CgxVbnNlYWxSZXN1bHQSHQoZVU5TRUFMX1JFU1VMVF9VTlNQRUNJRklFRBAAEhkKFVVOU0VBTF'
-    '9SRVNVTFRfU1VDQ0VTUxABEh0KGVVOU0VBTF9SRVNVTFRfSU5WQUxJRF9LRVkQAhIgChxVTlNF'
-    'QUxfUkVTVUxUX1VOQk9PVFNUUkFQUEVEEAM=');
-
-@$core.Deprecated('Use bootstrapResultDescriptor instead')
-const BootstrapResult$json = {
-  '1': 'BootstrapResult',
-  '2': [
-    {'1': 'BOOTSTRAP_RESULT_UNSPECIFIED', '2': 0},
-    {'1': 'BOOTSTRAP_RESULT_SUCCESS', '2': 1},
-    {'1': 'BOOTSTRAP_RESULT_ALREADY_BOOTSTRAPPED', '2': 2},
-    {'1': 'BOOTSTRAP_RESULT_INVALID_KEY', '2': 3},
-  ],
-};
-
-/// Descriptor for `BootstrapResult`. Decode as a `google.protobuf.EnumDescriptorProto`.
-final $typed_data.Uint8List bootstrapResultDescriptor = $convert.base64Decode(
-    'Cg9Cb290c3RyYXBSZXN1bHQSIAocQk9PVFNUUkFQX1JFU1VMVF9VTlNQRUNJRklFRBAAEhwKGE'
-    'JPT1RTVFJBUF9SRVNVTFRfU1VDQ0VTUxABEikKJUJPT1RTVFJBUF9SRVNVTFRfQUxSRUFEWV9C'
-    'T09UU1RSQVBQRUQQAhIgChxCT09UU1RSQVBfUkVTVUxUX0lOVkFMSURfS0VZEAM=');
-
-@$core.Deprecated('Use vaultStateDescriptor instead')
-const VaultState$json = {
-  '1': 'VaultState',
-  '2': [
-    {'1': 'VAULT_STATE_UNSPECIFIED', '2': 0},
-    {'1': 'VAULT_STATE_UNBOOTSTRAPPED', '2': 1},
-    {'1': 'VAULT_STATE_SEALED', '2': 2},
-    {'1': 'VAULT_STATE_UNSEALED', '2': 3},
-    {'1': 'VAULT_STATE_ERROR', '2': 4},
-  ],
-};
-
-/// Descriptor for `VaultState`. Decode as a `google.protobuf.EnumDescriptorProto`.
-final $typed_data.Uint8List vaultStateDescriptor = $convert.base64Decode(
-    'CgpWYXVsdFN0YXRlEhsKF1ZBVUxUX1NUQVRFX1VOU1BFQ0lGSUVEEAASHgoaVkFVTFRfU1RBVE'
-    'VfVU5CT09UU1RSQVBQRUQQARIWChJWQVVMVF9TVEFURV9TRUFMRUQQAhIYChRWQVVMVF9TVEFU'
-    'RV9VTlNFQUxFRBADEhUKEVZBVUxUX1NUQVRFX0VSUk9SEAQ=');
-
-@$core.Deprecated('Use sdkClientRevokeRequestDescriptor instead')
-const SdkClientRevokeRequest$json = {
-  '1': 'SdkClientRevokeRequest',
-  '2': [
-    {'1': 'client_id', '3': 1, '4': 1, '5': 5, '10': 'clientId'},
-  ],
-};
-
-/// Descriptor for `SdkClientRevokeRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List sdkClientRevokeRequestDescriptor =
-    $convert.base64Decode(
-        'ChZTZGtDbGllbnRSZXZva2VSZXF1ZXN0EhsKCWNsaWVudF9pZBgBIAEoBVIIY2xpZW50SWQ=');
-
-@$core.Deprecated('Use sdkClientEntryDescriptor instead')
-const SdkClientEntry$json = {
-  '1': 'SdkClientEntry',
-  '2': [
-    {'1': 'id', '3': 1, '4': 1, '5': 5, '10': 'id'},
-    {'1': 'pubkey', '3': 2, '4': 1, '5': 12, '10': 'pubkey'},
-    {
-      '1': 'info',
-      '3': 3,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.client.ClientInfo',
-      '10': 'info'
-    },
-    {'1': 'created_at', '3': 4, '4': 1, '5': 5, '10': 'createdAt'},
-  ],
-};
-
-/// Descriptor for `SdkClientEntry`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List sdkClientEntryDescriptor = $convert.base64Decode(
-    'Cg5TZGtDbGllbnRFbnRyeRIOCgJpZBgBIAEoBVICaWQSFgoGcHVia2V5GAIgASgMUgZwdWJrZX'
-    'kSLgoEaW5mbxgDIAEoCzIaLmFyYml0ZXIuY2xpZW50LkNsaWVudEluZm9SBGluZm8SHQoKY3Jl'
-    'YXRlZF9hdBgEIAEoBVIJY3JlYXRlZEF0');
-
-@$core.Deprecated('Use sdkClientListDescriptor instead')
-const SdkClientList$json = {
-  '1': 'SdkClientList',
-  '2': [
-    {
-      '1': 'clients',
-      '3': 1,
-      '4': 3,
-      '5': 11,
-      '6': '.arbiter.user_agent.SdkClientEntry',
-      '10': 'clients'
-    },
-  ],
-};
-
-/// Descriptor for `SdkClientList`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List sdkClientListDescriptor = $convert.base64Decode(
-    'Cg1TZGtDbGllbnRMaXN0EjwKB2NsaWVudHMYASADKAsyIi5hcmJpdGVyLnVzZXJfYWdlbnQuU2'
-    'RrQ2xpZW50RW50cnlSB2NsaWVudHM=');
-
-@$core.Deprecated('Use sdkClientRevokeResponseDescriptor instead')
-const SdkClientRevokeResponse$json = {
-  '1': 'SdkClientRevokeResponse',
-  '2': [
-    {
-      '1': 'ok',
-      '3': 1,
-      '4': 1,
-      '5': 11,
-      '6': '.google.protobuf.Empty',
-      '9': 0,
-      '10': 'ok'
-    },
-    {
-      '1': 'error',
-      '3': 2,
-      '4': 1,
-      '5': 14,
-      '6': '.arbiter.user_agent.SdkClientError',
-      '9': 0,
-      '10': 'error'
-    },
-  ],
-  '8': [
-    {'1': 'result'},
-  ],
-};
-
-/// Descriptor for `SdkClientRevokeResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List sdkClientRevokeResponseDescriptor = $convert.base64Decode(
-    'ChdTZGtDbGllbnRSZXZva2VSZXNwb25zZRIoCgJvaxgBIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi'
-    '5FbXB0eUgAUgJvaxI6CgVlcnJvchgCIAEoDjIiLmFyYml0ZXIudXNlcl9hZ2VudC5TZGtDbGll'
-    'bnRFcnJvckgAUgVlcnJvckIICgZyZXN1bHQ=');
-
-@$core.Deprecated('Use sdkClientListResponseDescriptor instead')
-const SdkClientListResponse$json = {
-  '1': 'SdkClientListResponse',
-  '2': [
-    {
-      '1': 'clients',
-      '3': 1,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.user_agent.SdkClientList',
-      '9': 0,
-      '10': 'clients'
-    },
-    {
-      '1': 'error',
-      '3': 2,
-      '4': 1,
-      '5': 14,
-      '6': '.arbiter.user_agent.SdkClientError',
-      '9': 0,
-      '10': 'error'
-    },
-  ],
-  '8': [
-    {'1': 'result'},
-  ],
-};
-
-/// Descriptor for `SdkClientListResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List sdkClientListResponseDescriptor = $convert.base64Decode(
-    'ChVTZGtDbGllbnRMaXN0UmVzcG9uc2USPQoHY2xpZW50cxgBIAEoCzIhLmFyYml0ZXIudXNlcl'
-    '9hZ2VudC5TZGtDbGllbnRMaXN0SABSB2NsaWVudHMSOgoFZXJyb3IYAiABKA4yIi5hcmJpdGVy'
-    'LnVzZXJfYWdlbnQuU2RrQ2xpZW50RXJyb3JIAFIFZXJyb3JCCAoGcmVzdWx0');
-
-@$core.Deprecated('Use authChallengeRequestDescriptor instead')
-const AuthChallengeRequest$json = {
-  '1': 'AuthChallengeRequest',
-  '2': [
-    {'1': 'pubkey', '3': 1, '4': 1, '5': 12, '10': 'pubkey'},
-    {
-      '1': 'bootstrap_token',
-      '3': 2,
-      '4': 1,
-      '5': 9,
-      '9': 0,
-      '10': 'bootstrapToken',
-      '17': true
-    },
-    {
-      '1': 'key_type',
-      '3': 3,
-      '4': 1,
-      '5': 14,
-      '6': '.arbiter.user_agent.KeyType',
-      '10': 'keyType'
-    },
-  ],
-  '8': [
-    {'1': '_bootstrap_token'},
-  ],
-};
-
-/// Descriptor for `AuthChallengeRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List authChallengeRequestDescriptor = $convert.base64Decode(
-    'ChRBdXRoQ2hhbGxlbmdlUmVxdWVzdBIWCgZwdWJrZXkYASABKAxSBnB1YmtleRIsCg9ib290c3'
-    'RyYXBfdG9rZW4YAiABKAlIAFIOYm9vdHN0cmFwVG9rZW6IAQESNgoIa2V5X3R5cGUYAyABKA4y'
-    'Gy5hcmJpdGVyLnVzZXJfYWdlbnQuS2V5VHlwZVIHa2V5VHlwZUISChBfYm9vdHN0cmFwX3Rva2'
-    'Vu');
-
-@$core.Deprecated('Use authChallengeDescriptor instead')
-const AuthChallenge$json = {
-  '1': 'AuthChallenge',
-  '2': [
-    {'1': 'nonce', '3': 2, '4': 1, '5': 5, '10': 'nonce'},
-  ],
-  '9': [
-    {'1': 1, '2': 2},
-  ],
-};
-
-/// Descriptor for `AuthChallenge`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List authChallengeDescriptor = $convert.base64Decode(
-    'Cg1BdXRoQ2hhbGxlbmdlEhQKBW5vbmNlGAIgASgFUgVub25jZUoECAEQAg==');
-
-@$core.Deprecated('Use authChallengeSolutionDescriptor instead')
-const AuthChallengeSolution$json = {
-  '1': 'AuthChallengeSolution',
-  '2': [
-    {'1': 'signature', '3': 1, '4': 1, '5': 12, '10': 'signature'},
-  ],
-};
-
-/// Descriptor for `AuthChallengeSolution`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List authChallengeSolutionDescriptor = $convert.base64Decode(
-    'ChVBdXRoQ2hhbGxlbmdlU29sdXRpb24SHAoJc2lnbmF0dXJlGAEgASgMUglzaWduYXR1cmU=');
-
-@$core.Deprecated('Use unsealStartDescriptor instead')
-const UnsealStart$json = {
-  '1': 'UnsealStart',
-  '2': [
-    {'1': 'client_pubkey', '3': 1, '4': 1, '5': 12, '10': 'clientPubkey'},
-  ],
-};
-
-/// Descriptor for `UnsealStart`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List unsealStartDescriptor = $convert.base64Decode(
-    'CgtVbnNlYWxTdGFydBIjCg1jbGllbnRfcHVia2V5GAEgASgMUgxjbGllbnRQdWJrZXk=');
-
-@$core.Deprecated('Use unsealStartResponseDescriptor instead')
-const UnsealStartResponse$json = {
-  '1': 'UnsealStartResponse',
-  '2': [
-    {'1': 'server_pubkey', '3': 1, '4': 1, '5': 12, '10': 'serverPubkey'},
-  ],
-};
-
-/// Descriptor for `UnsealStartResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List unsealStartResponseDescriptor = $convert.base64Decode(
-    'ChNVbnNlYWxTdGFydFJlc3BvbnNlEiMKDXNlcnZlcl9wdWJrZXkYASABKAxSDHNlcnZlclB1Ym'
-    'tleQ==');
-
-@$core.Deprecated('Use unsealEncryptedKeyDescriptor instead')
-const UnsealEncryptedKey$json = {
-  '1': 'UnsealEncryptedKey',
-  '2': [
-    {'1': 'nonce', '3': 1, '4': 1, '5': 12, '10': 'nonce'},
-    {'1': 'ciphertext', '3': 2, '4': 1, '5': 12, '10': 'ciphertext'},
-    {'1': 'associated_data', '3': 3, '4': 1, '5': 12, '10': 'associatedData'},
-  ],
-};
-
-/// Descriptor for `UnsealEncryptedKey`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List unsealEncryptedKeyDescriptor = $convert.base64Decode(
-    'ChJVbnNlYWxFbmNyeXB0ZWRLZXkSFAoFbm9uY2UYASABKAxSBW5vbmNlEh4KCmNpcGhlcnRleH'
-    'QYAiABKAxSCmNpcGhlcnRleHQSJwoPYXNzb2NpYXRlZF9kYXRhGAMgASgMUg5hc3NvY2lhdGVk'
-    'RGF0YQ==');
-
-@$core.Deprecated('Use bootstrapEncryptedKeyDescriptor instead')
-const BootstrapEncryptedKey$json = {
-  '1': 'BootstrapEncryptedKey',
-  '2': [
-    {'1': 'nonce', '3': 1, '4': 1, '5': 12, '10': 'nonce'},
-    {'1': 'ciphertext', '3': 2, '4': 1, '5': 12, '10': 'ciphertext'},
-    {'1': 'associated_data', '3': 3, '4': 1, '5': 12, '10': 'associatedData'},
-  ],
-};
-
-/// Descriptor for `BootstrapEncryptedKey`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List bootstrapEncryptedKeyDescriptor = $convert.base64Decode(
-    'ChVCb290c3RyYXBFbmNyeXB0ZWRLZXkSFAoFbm9uY2UYASABKAxSBW5vbmNlEh4KCmNpcGhlcn'
-    'RleHQYAiABKAxSCmNpcGhlcnRleHQSJwoPYXNzb2NpYXRlZF9kYXRhGAMgASgMUg5hc3NvY2lh'
-    'dGVkRGF0YQ==');
-
-@$core.Deprecated('Use sdkClientConnectionRequestDescriptor instead')
-const SdkClientConnectionRequest$json = {
-  '1': 'SdkClientConnectionRequest',
-  '2': [
-    {'1': 'pubkey', '3': 1, '4': 1, '5': 12, '10': 'pubkey'},
-    {
-      '1': 'info',
-      '3': 2,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.client.ClientInfo',
-      '10': 'info'
-    },
-  ],
-};
-
-/// Descriptor for `SdkClientConnectionRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List sdkClientConnectionRequestDescriptor =
-    $convert.base64Decode(
-        'ChpTZGtDbGllbnRDb25uZWN0aW9uUmVxdWVzdBIWCgZwdWJrZXkYASABKAxSBnB1YmtleRIuCg'
-        'RpbmZvGAIgASgLMhouYXJiaXRlci5jbGllbnQuQ2xpZW50SW5mb1IEaW5mbw==');
-
-@$core.Deprecated('Use sdkClientConnectionResponseDescriptor instead')
-const SdkClientConnectionResponse$json = {
-  '1': 'SdkClientConnectionResponse',
-  '2': [
-    {'1': 'approved', '3': 1, '4': 1, '5': 8, '10': 'approved'},
-    {'1': 'pubkey', '3': 2, '4': 1, '5': 12, '10': 'pubkey'},
-  ],
-};
-
-/// Descriptor for `SdkClientConnectionResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List sdkClientConnectionResponseDescriptor =
-    $convert.base64Decode(
-        'ChtTZGtDbGllbnRDb25uZWN0aW9uUmVzcG9uc2USGgoIYXBwcm92ZWQYASABKAhSCGFwcHJvdm'
-        'VkEhYKBnB1YmtleRgCIAEoDFIGcHVia2V5');
-
-@$core.Deprecated('Use sdkClientConnectionCancelDescriptor instead')
-const SdkClientConnectionCancel$json = {
-  '1': 'SdkClientConnectionCancel',
-  '2': [
-    {'1': 'pubkey', '3': 1, '4': 1, '5': 12, '10': 'pubkey'},
-  ],
-};
-
-/// Descriptor for `SdkClientConnectionCancel`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List sdkClientConnectionCancelDescriptor =
-    $convert.base64Decode(
-        'ChlTZGtDbGllbnRDb25uZWN0aW9uQ2FuY2VsEhYKBnB1YmtleRgBIAEoDFIGcHVia2V5');
-
-@$core.Deprecated('Use walletAccessDescriptor instead')
-const WalletAccess$json = {
-  '1': 'WalletAccess',
-  '2': [
-    {'1': 'wallet_id', '3': 1, '4': 1, '5': 5, '10': 'walletId'},
-    {'1': 'sdk_client_id', '3': 2, '4': 1, '5': 5, '10': 'sdkClientId'},
-  ],
-};
-
-/// Descriptor for `WalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List walletAccessDescriptor = $convert.base64Decode(
-    'CgxXYWxsZXRBY2Nlc3MSGwoJd2FsbGV0X2lkGAEgASgFUgh3YWxsZXRJZBIiCg1zZGtfY2xpZW'
-    '50X2lkGAIgASgFUgtzZGtDbGllbnRJZA==');
-
-@$core.Deprecated('Use sdkClientWalletAccessDescriptor instead')
-const SdkClientWalletAccess$json = {
-  '1': 'SdkClientWalletAccess',
-  '2': [
-    {'1': 'id', '3': 1, '4': 1, '5': 5, '10': 'id'},
-    {
-      '1': 'access',
-      '3': 2,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.user_agent.WalletAccess',
-      '10': 'access'
-    },
-  ],
-};
-
-/// Descriptor for `SdkClientWalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List sdkClientWalletAccessDescriptor = $convert.base64Decode(
-    'ChVTZGtDbGllbnRXYWxsZXRBY2Nlc3MSDgoCaWQYASABKAVSAmlkEjgKBmFjY2VzcxgCIAEoCz'
-    'IgLmFyYml0ZXIudXNlcl9hZ2VudC5XYWxsZXRBY2Nlc3NSBmFjY2Vzcw==');
-
-@$core.Deprecated('Use sdkClientGrantWalletAccessDescriptor instead')
-const SdkClientGrantWalletAccess$json = {
-  '1': 'SdkClientGrantWalletAccess',
-  '2': [
-    {
-      '1': 'accesses',
-      '3': 1,
-      '4': 3,
-      '5': 11,
-      '6': '.arbiter.user_agent.WalletAccess',
-      '10': 'accesses'
-    },
-  ],
-};
-
-/// Descriptor for `SdkClientGrantWalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List sdkClientGrantWalletAccessDescriptor =
-    $convert.base64Decode(
-        'ChpTZGtDbGllbnRHcmFudFdhbGxldEFjY2VzcxI8CghhY2Nlc3NlcxgBIAMoCzIgLmFyYml0ZX'
-        'IudXNlcl9hZ2VudC5XYWxsZXRBY2Nlc3NSCGFjY2Vzc2Vz');
-
-@$core.Deprecated('Use sdkClientRevokeWalletAccessDescriptor instead')
-const SdkClientRevokeWalletAccess$json = {
-  '1': 'SdkClientRevokeWalletAccess',
-  '2': [
-    {'1': 'accesses', '3': 1, '4': 3, '5': 5, '10': 'accesses'},
-  ],
-};
-
-/// Descriptor for `SdkClientRevokeWalletAccess`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List sdkClientRevokeWalletAccessDescriptor =
-    $convert.base64Decode(
-        'ChtTZGtDbGllbnRSZXZva2VXYWxsZXRBY2Nlc3MSGgoIYWNjZXNzZXMYASADKAVSCGFjY2Vzc2'
-        'Vz');
-
-@$core.Deprecated('Use listWalletAccessResponseDescriptor instead')
-const ListWalletAccessResponse$json = {
-  '1': 'ListWalletAccessResponse',
-  '2': [
-    {
-      '1': 'accesses',
-      '3': 1,
-      '4': 3,
-      '5': 11,
-      '6': '.arbiter.user_agent.SdkClientWalletAccess',
-      '10': 'accesses'
-    },
-  ],
-};
-
-/// Descriptor for `ListWalletAccessResponse`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List listWalletAccessResponseDescriptor =
-    $convert.base64Decode(
-        'ChhMaXN0V2FsbGV0QWNjZXNzUmVzcG9uc2USRQoIYWNjZXNzZXMYASADKAsyKS5hcmJpdGVyLn'
-        'VzZXJfYWdlbnQuU2RrQ2xpZW50V2FsbGV0QWNjZXNzUghhY2Nlc3Nlcw==');
-
 @$core.Deprecated('Use userAgentRequestDescriptor instead')
 const UserAgentRequest$json = {
   '1': 'UserAgentRequest',
   '2': [
     {'1': 'id', '3': 16, '4': 1, '5': 5, '10': 'id'},
     {
-      '1': 'auth_challenge_request',
+      '1': 'auth',
       '3': 1,
       '4': 1,
       '5': 11,
-      '6': '.arbiter.user_agent.AuthChallengeRequest',
+      '6': '.arbiter.user_agent.auth.Request',
       '9': 0,
-      '10': 'authChallengeRequest'
+      '10': 'auth'
     },
     {
-      '1': 'auth_challenge_solution',
+      '1': 'vault',
       '3': 2,
       '4': 1,
       '5': 11,
-      '6': '.arbiter.user_agent.AuthChallengeSolution',
+      '6': '.arbiter.user_agent.vault.Request',
       '9': 0,
-      '10': 'authChallengeSolution'
+      '10': 'vault'
     },
     {
-      '1': 'unseal_start',
+      '1': 'evm',
       '3': 3,
       '4': 1,
       '5': 11,
-      '6': '.arbiter.user_agent.UnsealStart',
+      '6': '.arbiter.user_agent.evm.Request',
       '9': 0,
-      '10': 'unsealStart'
+      '10': 'evm'
     },
     {
-      '1': 'unseal_encrypted_key',
+      '1': 'sdk_client',
       '3': 4,
       '4': 1,
       '5': 11,
-      '6': '.arbiter.user_agent.UnsealEncryptedKey',
+      '6': '.arbiter.user_agent.sdk_client.Request',
       '9': 0,
-      '10': 'unsealEncryptedKey'
-    },
-    {
-      '1': 'query_vault_state',
-      '3': 5,
-      '4': 1,
-      '5': 11,
-      '6': '.google.protobuf.Empty',
-      '9': 0,
-      '10': 'queryVaultState'
-    },
-    {
-      '1': 'evm_wallet_create',
-      '3': 6,
-      '4': 1,
-      '5': 11,
-      '6': '.google.protobuf.Empty',
-      '9': 0,
-      '10': 'evmWalletCreate'
-    },
-    {
-      '1': 'evm_wallet_list',
-      '3': 7,
-      '4': 1,
-      '5': 11,
-      '6': '.google.protobuf.Empty',
-      '9': 0,
-      '10': 'evmWalletList'
-    },
-    {
-      '1': 'evm_grant_create',
-      '3': 8,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.EvmGrantCreateRequest',
-      '9': 0,
-      '10': 'evmGrantCreate'
-    },
-    {
-      '1': 'evm_grant_delete',
-      '3': 9,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.EvmGrantDeleteRequest',
-      '9': 0,
-      '10': 'evmGrantDelete'
-    },
-    {
-      '1': 'evm_grant_list',
-      '3': 10,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.EvmGrantListRequest',
-      '9': 0,
-      '10': 'evmGrantList'
-    },
-    {
-      '1': 'sdk_client_connection_response',
-      '3': 11,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.user_agent.SdkClientConnectionResponse',
-      '9': 0,
-      '10': 'sdkClientConnectionResponse'
-    },
-    {
-      '1': 'sdk_client_revoke',
-      '3': 12,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.user_agent.SdkClientRevokeRequest',
-      '9': 0,
-      '10': 'sdkClientRevoke'
-    },
-    {
-      '1': 'sdk_client_list',
-      '3': 13,
-      '4': 1,
-      '5': 11,
-      '6': '.google.protobuf.Empty',
-      '9': 0,
-      '10': 'sdkClientList'
-    },
-    {
-      '1': 'bootstrap_encrypted_key',
-      '3': 14,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.user_agent.BootstrapEncryptedKey',
-      '9': 0,
-      '10': 'bootstrapEncryptedKey'
-    },
-    {
-      '1': 'grant_wallet_access',
-      '3': 15,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.user_agent.SdkClientGrantWalletAccess',
-      '9': 0,
-      '10': 'grantWalletAccess'
-    },
-    {
-      '1': 'revoke_wallet_access',
-      '3': 17,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.user_agent.SdkClientRevokeWalletAccess',
-      '9': 0,
-      '10': 'revokeWalletAccess'
-    },
-    {
-      '1': 'list_wallet_access',
-      '3': 18,
-      '4': 1,
-      '5': 11,
-      '6': '.google.protobuf.Empty',
-      '9': 0,
-      '10': 'listWalletAccess'
+      '10': 'sdkClient'
     },
   ],
   '8': [
@@ -675,33 +64,12 @@ const UserAgentRequest$json = {
 
 /// Descriptor for `UserAgentRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List userAgentRequestDescriptor = $convert.base64Decode(
-    'ChBVc2VyQWdlbnRSZXF1ZXN0Eg4KAmlkGBAgASgFUgJpZBJgChZhdXRoX2NoYWxsZW5nZV9yZX'
-    'F1ZXN0GAEgASgLMiguYXJiaXRlci51c2VyX2FnZW50LkF1dGhDaGFsbGVuZ2VSZXF1ZXN0SABS'
-    'FGF1dGhDaGFsbGVuZ2VSZXF1ZXN0EmMKF2F1dGhfY2hhbGxlbmdlX3NvbHV0aW9uGAIgASgLMi'
-    'kuYXJiaXRlci51c2VyX2FnZW50LkF1dGhDaGFsbGVuZ2VTb2x1dGlvbkgAUhVhdXRoQ2hhbGxl'
-    'bmdlU29sdXRpb24SRAoMdW5zZWFsX3N0YXJ0GAMgASgLMh8uYXJiaXRlci51c2VyX2FnZW50Ll'
-    'Vuc2VhbFN0YXJ0SABSC3Vuc2VhbFN0YXJ0EloKFHVuc2VhbF9lbmNyeXB0ZWRfa2V5GAQgASgL'
-    'MiYuYXJiaXRlci51c2VyX2FnZW50LlVuc2VhbEVuY3J5cHRlZEtleUgAUhJ1bnNlYWxFbmNyeX'
-    'B0ZWRLZXkSRAoRcXVlcnlfdmF1bHRfc3RhdGUYBSABKAsyFi5nb29nbGUucHJvdG9idWYuRW1w'
-    'dHlIAFIPcXVlcnlWYXVsdFN0YXRlEkQKEWV2bV93YWxsZXRfY3JlYXRlGAYgASgLMhYuZ29vZ2'
-    'xlLnByb3RvYnVmLkVtcHR5SABSD2V2bVdhbGxldENyZWF0ZRJACg9ldm1fd2FsbGV0X2xpc3QY'
-    'ByABKAsyFi5nb29nbGUucHJvdG9idWYuRW1wdHlIAFINZXZtV2FsbGV0TGlzdBJOChBldm1fZ3'
-    'JhbnRfY3JlYXRlGAggASgLMiIuYXJiaXRlci5ldm0uRXZtR3JhbnRDcmVhdGVSZXF1ZXN0SABS'
-    'DmV2bUdyYW50Q3JlYXRlEk4KEGV2bV9ncmFudF9kZWxldGUYCSABKAsyIi5hcmJpdGVyLmV2bS'
-    '5Fdm1HcmFudERlbGV0ZVJlcXVlc3RIAFIOZXZtR3JhbnREZWxldGUSSAoOZXZtX2dyYW50X2xp'
-    'c3QYCiABKAsyIC5hcmJpdGVyLmV2bS5Fdm1HcmFudExpc3RSZXF1ZXN0SABSDGV2bUdyYW50TG'
-    'lzdBJ2Ch5zZGtfY2xpZW50X2Nvbm5lY3Rpb25fcmVzcG9uc2UYCyABKAsyLy5hcmJpdGVyLnVz'
-    'ZXJfYWdlbnQuU2RrQ2xpZW50Q29ubmVjdGlvblJlc3BvbnNlSABSG3Nka0NsaWVudENvbm5lY3'
-    'Rpb25SZXNwb25zZRJYChFzZGtfY2xpZW50X3Jldm9rZRgMIAEoCzIqLmFyYml0ZXIudXNlcl9h'
-    'Z2VudC5TZGtDbGllbnRSZXZva2VSZXF1ZXN0SABSD3Nka0NsaWVudFJldm9rZRJACg9zZGtfY2'
-    'xpZW50X2xpc3QYDSABKAsyFi5nb29nbGUucHJvdG9idWYuRW1wdHlIAFINc2RrQ2xpZW50TGlz'
-    'dBJjChdib290c3RyYXBfZW5jcnlwdGVkX2tleRgOIAEoCzIpLmFyYml0ZXIudXNlcl9hZ2VudC'
-    '5Cb290c3RyYXBFbmNyeXB0ZWRLZXlIAFIVYm9vdHN0cmFwRW5jcnlwdGVkS2V5EmAKE2dyYW50'
-    'X3dhbGxldF9hY2Nlc3MYDyABKAsyLi5hcmJpdGVyLnVzZXJfYWdlbnQuU2RrQ2xpZW50R3Jhbn'
-    'RXYWxsZXRBY2Nlc3NIAFIRZ3JhbnRXYWxsZXRBY2Nlc3MSYwoUcmV2b2tlX3dhbGxldF9hY2Nl'
-    'c3MYESABKAsyLy5hcmJpdGVyLnVzZXJfYWdlbnQuU2RrQ2xpZW50UmV2b2tlV2FsbGV0QWNjZX'
-    'NzSABSEnJldm9rZVdhbGxldEFjY2VzcxJGChJsaXN0X3dhbGxldF9hY2Nlc3MYEiABKAsyFi5n'
-    'b29nbGUucHJvdG9idWYuRW1wdHlIAFIQbGlzdFdhbGxldEFjY2Vzc0IJCgdwYXlsb2Fk');
+    'ChBVc2VyQWdlbnRSZXF1ZXN0Eg4KAmlkGBAgASgFUgJpZBI2CgRhdXRoGAEgASgLMiAuYXJiaX'
+    'Rlci51c2VyX2FnZW50LmF1dGguUmVxdWVzdEgAUgRhdXRoEjkKBXZhdWx0GAIgASgLMiEuYXJi'
+    'aXRlci51c2VyX2FnZW50LnZhdWx0LlJlcXVlc3RIAFIFdmF1bHQSMwoDZXZtGAMgASgLMh8uYX'
+    'JiaXRlci51c2VyX2FnZW50LmV2bS5SZXF1ZXN0SABSA2V2bRJHCgpzZGtfY2xpZW50GAQgASgL'
+    'MiYuYXJiaXRlci51c2VyX2FnZW50LnNka19jbGllbnQuUmVxdWVzdEgAUglzZGtDbGllbnRCCQ'
+    'oHcGF5bG9hZA==');
 
 @$core.Deprecated('Use userAgentResponseDescriptor instead')
 const UserAgentResponse$json = {
@@ -709,148 +77,40 @@ const UserAgentResponse$json = {
   '2': [
     {'1': 'id', '3': 16, '4': 1, '5': 5, '9': 1, '10': 'id', '17': true},
     {
-      '1': 'auth_challenge',
+      '1': 'auth',
       '3': 1,
       '4': 1,
       '5': 11,
-      '6': '.arbiter.user_agent.AuthChallenge',
+      '6': '.arbiter.user_agent.auth.Response',
       '9': 0,
-      '10': 'authChallenge'
+      '10': 'auth'
     },
     {
-      '1': 'auth_result',
+      '1': 'vault',
       '3': 2,
       '4': 1,
-      '5': 14,
-      '6': '.arbiter.user_agent.AuthResult',
+      '5': 11,
+      '6': '.arbiter.user_agent.vault.Response',
       '9': 0,
-      '10': 'authResult'
+      '10': 'vault'
     },
     {
-      '1': 'unseal_start_response',
+      '1': 'evm',
       '3': 3,
       '4': 1,
       '5': 11,
-      '6': '.arbiter.user_agent.UnsealStartResponse',
+      '6': '.arbiter.user_agent.evm.Response',
       '9': 0,
-      '10': 'unsealStartResponse'
+      '10': 'evm'
     },
     {
-      '1': 'unseal_result',
+      '1': 'sdk_client',
       '3': 4,
       '4': 1,
-      '5': 14,
-      '6': '.arbiter.user_agent.UnsealResult',
-      '9': 0,
-      '10': 'unsealResult'
-    },
-    {
-      '1': 'vault_state',
-      '3': 5,
-      '4': 1,
-      '5': 14,
-      '6': '.arbiter.user_agent.VaultState',
-      '9': 0,
-      '10': 'vaultState'
-    },
-    {
-      '1': 'evm_wallet_create',
-      '3': 6,
-      '4': 1,
       '5': 11,
-      '6': '.arbiter.evm.WalletCreateResponse',
+      '6': '.arbiter.user_agent.sdk_client.Response',
       '9': 0,
-      '10': 'evmWalletCreate'
-    },
-    {
-      '1': 'evm_wallet_list',
-      '3': 7,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.WalletListResponse',
-      '9': 0,
-      '10': 'evmWalletList'
-    },
-    {
-      '1': 'evm_grant_create',
-      '3': 8,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.EvmGrantCreateResponse',
-      '9': 0,
-      '10': 'evmGrantCreate'
-    },
-    {
-      '1': 'evm_grant_delete',
-      '3': 9,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.EvmGrantDeleteResponse',
-      '9': 0,
-      '10': 'evmGrantDelete'
-    },
-    {
-      '1': 'evm_grant_list',
-      '3': 10,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.evm.EvmGrantListResponse',
-      '9': 0,
-      '10': 'evmGrantList'
-    },
-    {
-      '1': 'sdk_client_connection_request',
-      '3': 11,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.user_agent.SdkClientConnectionRequest',
-      '9': 0,
-      '10': 'sdkClientConnectionRequest'
-    },
-    {
-      '1': 'sdk_client_connection_cancel',
-      '3': 12,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.user_agent.SdkClientConnectionCancel',
-      '9': 0,
-      '10': 'sdkClientConnectionCancel'
-    },
-    {
-      '1': 'sdk_client_revoke_response',
-      '3': 13,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.user_agent.SdkClientRevokeResponse',
-      '9': 0,
-      '10': 'sdkClientRevokeResponse'
-    },
-    {
-      '1': 'sdk_client_list_response',
-      '3': 14,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.user_agent.SdkClientListResponse',
-      '9': 0,
-      '10': 'sdkClientListResponse'
-    },
-    {
-      '1': 'bootstrap_result',
-      '3': 15,
-      '4': 1,
-      '5': 14,
-      '6': '.arbiter.user_agent.BootstrapResult',
-      '9': 0,
-      '10': 'bootstrapResult'
-    },
-    {
-      '1': 'list_wallet_access_response',
-      '3': 17,
-      '4': 1,
-      '5': 11,
-      '6': '.arbiter.user_agent.ListWalletAccessResponse',
-      '9': 0,
-      '10': 'listWalletAccessResponse'
+      '10': 'sdkClient'
     },
   ],
   '8': [
@@ -861,30 +121,9 @@ const UserAgentResponse$json = {
 
 /// Descriptor for `UserAgentResponse`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List userAgentResponseDescriptor = $convert.base64Decode(
-    'ChFVc2VyQWdlbnRSZXNwb25zZRITCgJpZBgQIAEoBUgBUgJpZIgBARJKCg5hdXRoX2NoYWxsZW'
-    '5nZRgBIAEoCzIhLmFyYml0ZXIudXNlcl9hZ2VudC5BdXRoQ2hhbGxlbmdlSABSDWF1dGhDaGFs'
-    'bGVuZ2USQQoLYXV0aF9yZXN1bHQYAiABKA4yHi5hcmJpdGVyLnVzZXJfYWdlbnQuQXV0aFJlc3'
-    'VsdEgAUgphdXRoUmVzdWx0El0KFXVuc2VhbF9zdGFydF9yZXNwb25zZRgDIAEoCzInLmFyYml0'
-    'ZXIudXNlcl9hZ2VudC5VbnNlYWxTdGFydFJlc3BvbnNlSABSE3Vuc2VhbFN0YXJ0UmVzcG9uc2'
-    'USRwoNdW5zZWFsX3Jlc3VsdBgEIAEoDjIgLmFyYml0ZXIudXNlcl9hZ2VudC5VbnNlYWxSZXN1'
-    'bHRIAFIMdW5zZWFsUmVzdWx0EkEKC3ZhdWx0X3N0YXRlGAUgASgOMh4uYXJiaXRlci51c2VyX2'
-    'FnZW50LlZhdWx0U3RhdGVIAFIKdmF1bHRTdGF0ZRJPChFldm1fd2FsbGV0X2NyZWF0ZRgGIAEo'
-    'CzIhLmFyYml0ZXIuZXZtLldhbGxldENyZWF0ZVJlc3BvbnNlSABSD2V2bVdhbGxldENyZWF0ZR'
-    'JJCg9ldm1fd2FsbGV0X2xpc3QYByABKAsyHy5hcmJpdGVyLmV2bS5XYWxsZXRMaXN0UmVzcG9u'
-    'c2VIAFINZXZtV2FsbGV0TGlzdBJPChBldm1fZ3JhbnRfY3JlYXRlGAggASgLMiMuYXJiaXRlci'
-    '5ldm0uRXZtR3JhbnRDcmVhdGVSZXNwb25zZUgAUg5ldm1HcmFudENyZWF0ZRJPChBldm1fZ3Jh'
-    'bnRfZGVsZXRlGAkgASgLMiMuYXJiaXRlci5ldm0uRXZtR3JhbnREZWxldGVSZXNwb25zZUgAUg'
-    '5ldm1HcmFudERlbGV0ZRJJCg5ldm1fZ3JhbnRfbGlzdBgKIAEoCzIhLmFyYml0ZXIuZXZtLkV2'
-    'bUdyYW50TGlzdFJlc3BvbnNlSABSDGV2bUdyYW50TGlzdBJzCh1zZGtfY2xpZW50X2Nvbm5lY3'
-    'Rpb25fcmVxdWVzdBgLIAEoCzIuLmFyYml0ZXIudXNlcl9hZ2VudC5TZGtDbGllbnRDb25uZWN0'
-    'aW9uUmVxdWVzdEgAUhpzZGtDbGllbnRDb25uZWN0aW9uUmVxdWVzdBJwChxzZGtfY2xpZW50X2'
-    'Nvbm5lY3Rpb25fY2FuY2VsGAwgASgLMi0uYXJiaXRlci51c2VyX2FnZW50LlNka0NsaWVudENv'
-    'bm5lY3Rpb25DYW5jZWxIAFIZc2RrQ2xpZW50Q29ubmVjdGlvbkNhbmNlbBJqChpzZGtfY2xpZW'
-    '50X3Jldm9rZV9yZXNwb25zZRgNIAEoCzIrLmFyYml0ZXIudXNlcl9hZ2VudC5TZGtDbGllbnRS'
-    'ZXZva2VSZXNwb25zZUgAUhdzZGtDbGllbnRSZXZva2VSZXNwb25zZRJkChhzZGtfY2xpZW50X2'
-    'xpc3RfcmVzcG9uc2UYDiABKAsyKS5hcmJpdGVyLnVzZXJfYWdlbnQuU2RrQ2xpZW50TGlzdFJl'
-    'c3BvbnNlSABSFXNka0NsaWVudExpc3RSZXNwb25zZRJQChBib290c3RyYXBfcmVzdWx0GA8gAS'
-    'gOMiMuYXJiaXRlci51c2VyX2FnZW50LkJvb3RzdHJhcFJlc3VsdEgAUg9ib290c3RyYXBSZXN1'
-    'bHQSbQobbGlzdF93YWxsZXRfYWNjZXNzX3Jlc3BvbnNlGBEgASgLMiwuYXJiaXRlci51c2VyX2'
-    'FnZW50Lkxpc3RXYWxsZXRBY2Nlc3NSZXNwb25zZUgAUhhsaXN0V2FsbGV0QWNjZXNzUmVzcG9u'
-    'c2VCCQoHcGF5bG9hZEIFCgNfaWQ=');
+    'ChFVc2VyQWdlbnRSZXNwb25zZRITCgJpZBgQIAEoBUgBUgJpZIgBARI3CgRhdXRoGAEgASgLMi'
+    'EuYXJiaXRlci51c2VyX2FnZW50LmF1dGguUmVzcG9uc2VIAFIEYXV0aBI6CgV2YXVsdBgCIAEo'
+    'CzIiLmFyYml0ZXIudXNlcl9hZ2VudC52YXVsdC5SZXNwb25zZUgAUgV2YXVsdBI0CgNldm0YAy'
+    'ABKAsyIC5hcmJpdGVyLnVzZXJfYWdlbnQuZXZtLlJlc3BvbnNlSABSA2V2bRJICgpzZGtfY2xp'
+    'ZW50GAQgASgLMicuYXJiaXRlci51c2VyX2FnZW50LnNka19jbGllbnQuUmVzcG9uc2VIAFIJc2'
+    'RrQ2xpZW50QgkKB3BheWxvYWRCBQoDX2lk');

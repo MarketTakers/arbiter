@@ -15,13 +15,13 @@ final walletAccessListProvider = WalletAccessListProvider._();
 final class WalletAccessListProvider
     extends
         $FunctionalProvider<
-          AsyncValue<List<SdkClientWalletAccess>?>,
-          List<SdkClientWalletAccess>?,
-          FutureOr<List<SdkClientWalletAccess>?>
+          AsyncValue<List<ua_sdk.WalletAccessEntry>?>,
+          List<ua_sdk.WalletAccessEntry>?,
+          FutureOr<List<ua_sdk.WalletAccessEntry>?>
         >
     with
-        $FutureModifier<List<SdkClientWalletAccess>?>,
-        $FutureProvider<List<SdkClientWalletAccess>?> {
+        $FutureModifier<List<ua_sdk.WalletAccessEntry>?>,
+        $FutureProvider<List<ua_sdk.WalletAccessEntry>?> {
   WalletAccessListProvider._()
     : super(
         from: null,
@@ -38,14 +38,14 @@ final class WalletAccessListProvider
 
   @$internal
   @override
-  $FutureProviderElement<List<SdkClientWalletAccess>?> $createElement(
+  $FutureProviderElement<List<ua_sdk.WalletAccessEntry>?> $createElement(
     $ProviderPointer pointer,
   ) => $FutureProviderElement(pointer);
 
   @override
-  FutureOr<List<SdkClientWalletAccess>?> create(Ref ref) {
+  FutureOr<List<ua_sdk.WalletAccessEntry>?> create(Ref ref) {
     return walletAccessList(ref);
   }
 }
 
-String _$walletAccessListHash() => r'c06006d6792ae463105a539723e9bb396192f96b';
+String _$walletAccessListHash() => r'143387471489ebc36de76b2a8ddcb6d857cbad17';

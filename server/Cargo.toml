@@ -22,7 +22,6 @@ chrono = { version = "0.4.44", features = ["serde"] }
 rand = "0.10.0"
 rustls = { version = "0.23.37", features = ["aws-lc-rs"] }
 smlang = "0.8.0"
-miette = { version = "7.6.0", features = ["fancy", "serde"] }
 thiserror = "2.0.18"
 async-trait = "0.1.89"
 futures = "0.3.32"
@@ -43,3 +42,4 @@ k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"] }
 rsa = { version = "0.9", features = ["sha2"] }
 sha2 = "0.10"
 spki = "0.7"
+miette = { version = "7.6.0", features = ["fancy", "serde"] }

@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package arbiter.user_agent.auth;
+
+enum KeyType {
+  KEY_TYPE_UNSPECIFIED = 0;
+  KEY_TYPE_ED25519 = 1;
+  KEY_TYPE_ECDSA_SECP256K1 = 2;
+  KEY_TYPE_RSA = 3;
+}
+
+message AuthChallengeRequest {
+  bytes pubkey = 1;
+  optional string bootstrap_token = 2;
+  KeyType key_type = 3;
+}
+
+message AuthChallenge {
+  int32 nonce = 1;
+}
+
+message AuthChallengeSolution {
+  bytes signature = 1;
+}
+
+enum AuthResult {
+  AUTH_RESULT_UNSPECIFIED = 0;
+  AUTH_RESULT_SUCCESS = 1;
+  AUTH_RESULT_INVALID_KEY = 2;
+  AUTH_RESULT_INVALID_SIGNATURE = 3;
+  AUTH_RESULT_BOOTSTRAP_REQUIRED = 4;
+  AUTH_RESULT_TOKEN_INVALID = 5;
+  AUTH_RESULT_INTERNAL = 6;
+}
+
+message Request {
+  oneof payload {
+    AuthChallengeRequest challenge_request = 1;
+    AuthChallengeSolution challenge_solution = 2;
+  }
+}
+
+message Response {
+  oneof payload {
+    AuthChallenge challenge = 1;
+    AuthResult result = 2;
+  }
+}

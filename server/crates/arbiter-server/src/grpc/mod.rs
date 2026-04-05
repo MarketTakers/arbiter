@@ -14,9 +14,12 @@ use crate::{
     grpc::user_agent::start,
 };
 
-pub mod client;
 mod request_tracker;
+
+pub mod client;
 pub mod user_agent;
+
+mod common;
 
 pub trait Convert {
     type Output;

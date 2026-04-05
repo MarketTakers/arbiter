@@ -1,4 +1,4 @@
-import 'package:arbiter/proto/client.pb.dart';
+import 'package:arbiter/proto/shared/client.pb.dart';
 import 'package:arbiter/theme/palette.dart';
 import 'package:arbiter/widgets/cream_frame.dart';
 import 'package:flutter/material.dart';
