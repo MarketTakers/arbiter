@@ -4,8 +4,9 @@ use arbiter_server::{
         GlobalActors,
         bootstrap::GetToken,
         keyholder::Bootstrap,
-        user_agent::{AuthPublicKey, UserAgentConnection, auth},
+        user_agent::{AuthPublicKey, UserAgentConnection, UserAgentCredentials, auth},
     },
+    crypto::integrity,
     db::{self, schema},
     safe_cell::{SafeCell, SafeCellHandle as _},
 };
@@ -20,6 +21,13 @@ use super::common::ChannelTransport;
 pub async fn test_bootstrap_token_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors
+        .key_holder
+        .ask(Bootstrap {
+            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
+        })
+        .await
+        .unwrap();
     let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
@@ -99,20 +107,39 @@ pub async fn test_bootstrap_invalid_token_auth() {
 pub async fn test_challenge_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors
+        .key_holder
+        .ask(Bootstrap {
+            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
+        })
+        .await
+        .unwrap();
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
 
     {
         let mut conn = db.get().await.unwrap();
-        insert_into(schema::useragent_client::table)
+        let id: i32 = insert_into(schema::useragent_client::table)
             .values((
                 schema::useragent_client::public_key.eq(pubkey_bytes.clone()),
                 schema::useragent_client::key_type.eq(1i32),
             ))
-            .execute(&mut conn)
+            .returning(schema::useragent_client::id)
+            .get_result(&mut conn)
             .await
             .unwrap();
+        integrity::sign_entity(
+            &mut conn,
+            &actors.key_holder,
+            &UserAgentCredentials {
+                pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+                nonce: 1,
+            },
+            id,
+        )
+        .await
+        .unwrap();
     }
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
@@ -210,7 +237,7 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() 
 
     assert!(matches!(
         task.await.unwrap(),
-        Err(auth::Error::InvalidChallengeSolution)
+        Err(auth::Error::Internal { .. })
     ));
 }
 
@@ -219,20 +246,39 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() 
 pub async fn test_challenge_auth_rejects_invalid_signature() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors
+        .key_holder
+        .ask(Bootstrap {
+            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
+        })
+        .await
+        .unwrap();
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
 
     {
         let mut conn = db.get().await.unwrap();
-        insert_into(schema::useragent_client::table)
+        let id: i32 = insert_into(schema::useragent_client::table)
             .values((
                 schema::useragent_client::public_key.eq(pubkey_bytes.clone()),
                 schema::useragent_client::key_type.eq(1i32),
             ))
-            .execute(&mut conn)
+            .returning(schema::useragent_client::id)
+            .get_result(&mut conn)
             .await
             .unwrap();
+        integrity::sign_entity(
+            &mut conn,
+            &actors.key_holder,
+            &UserAgentCredentials {
+                pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+                nonce: 1,
+            },
+            id,
+        )
+        .await
+        .unwrap();
     }
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
