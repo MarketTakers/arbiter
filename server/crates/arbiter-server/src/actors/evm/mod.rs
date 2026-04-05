@@ -1,24 +1,26 @@
 use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
 use diesel::{
-    ExpressionMethods, OptionalExtension as _, QueryDsl, SelectableHelper as _, dsl::insert_into,
+    BoolExpressionMethods as _, ExpressionMethods, OptionalExtension as _, QueryDsl,
+    SelectableHelper as _, dsl::insert_into,
 };
-use diesel_async::RunQueryDsl;
+use diesel_async::{AsyncConnection as _, RunQueryDsl};
 use kameo::{Actor, actor::ActorRef, messages};
 use rand::{SeedableRng, rng, rngs::StdRng};
 
 use crate::{
-    actors::keyholder::{CreateNew, Decrypt, GetState, KeyHolder, KeyHolderState},
+    actors::keyholder::{CreateNew, Decrypt, KeyHolder},
     crypto::integrity,
     db::{
         DatabaseError, DatabasePool,
-        models::{self, SqliteTimestamp},
+        models::{self},
         schema,
     },
     evm::{
-        self, ListError, RunKind, policies::{
+        self, ListError, RunKind,
+        policies::{
             CombinedSettings, Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning,
             ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
-        }
+        },
     },
     safe_cell::{SafeCell, SafeCellHandle as _},
 };
@@ -158,27 +160,114 @@ impl EvmActor {
 
     #[message]
     pub async fn useragent_delete_grant(&mut self, grant_id: i32) -> Result<(), Error> {
-        // let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
-        // let keyholder = self.keyholder.clone();
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
 
-        // diesel_async::AsyncConnection::transaction(&mut conn, |conn| {
-        //     Box::pin(async move {
-        //         diesel::update(schema::evm_basic_grant::table)
-        //             .filter(schema::evm_basic_grant::id.eq(grant_id))
-        //             .set(schema::evm_basic_grant::revoked_at.eq(SqliteTimestamp::now()))
-        //             .execute(conn)
-        //             .await?;
+        // We intentionally perform a hard delete here to avoid leaving revoked grants and their
+        // related rows as long-lived DB garbage. We also don't rely on SQLite FK cascades because
+        // they can be disabled per-connection.
+        conn.transaction(|conn| {
+            Box::pin(async move {
+                // First, resolve policy-specific rows by basic grant id.
+                let token_grant_id: Option<i32> = schema::evm_token_transfer_grant::table
+                    .select(schema::evm_token_transfer_grant::id)
+                    .filter(schema::evm_token_transfer_grant::basic_grant_id.eq(grant_id))
+                    .first::<i32>(conn)
+                    .await
+                    .optional()?;
 
-        //         let signed = integrity::evm::load_signed_grant_by_basic_id(conn, grant_id).await?;
+                let ether_grant: Option<(i32, i32)> = schema::evm_ether_transfer_grant::table
+                    .select((
+                        schema::evm_ether_transfer_grant::id,
+                        schema::evm_ether_transfer_grant::limit_id,
+                    ))
+                    .filter(schema::evm_ether_transfer_grant::basic_grant_id.eq(grant_id))
+                    .first::<(i32, i32)>(conn)
+                    .await
+                    .optional()?;
 
-        //         diesel::result::QueryResult::Ok(())
-        //     })
-        // })
-        // .await
-        // .map_err(DatabaseError::from)?;
+                // Token-transfer: logs must be deleted before transaction logs (FK restrict).
+                if let Some(token_grant_id) = token_grant_id {
+                    diesel::delete(
+                        schema::evm_token_transfer_log::table
+                            .filter(schema::evm_token_transfer_log::grant_id.eq(token_grant_id)),
+                    )
+                    .execute(conn)
+                    .await?;
 
-        // Ok(())
-        todo!()
+                    diesel::delete(schema::evm_token_transfer_volume_limit::table.filter(
+                        schema::evm_token_transfer_volume_limit::grant_id.eq(token_grant_id),
+                    ))
+                    .execute(conn)
+                    .await?;
+
+                    diesel::delete(
+                        schema::evm_token_transfer_grant::table
+                            .filter(schema::evm_token_transfer_grant::id.eq(token_grant_id)),
+                    )
+                    .execute(conn)
+                    .await?;
+                }
+
+                // Shared transaction logs for any grant kind.
+                diesel::delete(
+                    schema::evm_transaction_log::table
+                        .filter(schema::evm_transaction_log::grant_id.eq(grant_id)),
+                )
+                .execute(conn)
+                .await?;
+
+                // Ether-transfer: delete targets, grant row, then its limit row.
+                if let Some((ether_grant_id, limit_id)) = ether_grant {
+                    diesel::delete(schema::evm_ether_transfer_grant_target::table.filter(
+                        schema::evm_ether_transfer_grant_target::grant_id.eq(ether_grant_id),
+                    ))
+                    .execute(conn)
+                    .await?;
+
+                    diesel::delete(
+                        schema::evm_ether_transfer_grant::table
+                            .filter(schema::evm_ether_transfer_grant::id.eq(ether_grant_id)),
+                    )
+                    .execute(conn)
+                    .await?;
+
+                    diesel::delete(
+                        schema::evm_ether_transfer_limit::table
+                            .filter(schema::evm_ether_transfer_limit::id.eq(limit_id)),
+                    )
+                    .execute(conn)
+                    .await?;
+                }
+
+                // Integrity envelopes are not FK-constrained; delete only grant-related kinds to
+                // avoid accidentally deleting other entities that share the same integer ID.
+                let entity_id = grant_id.to_be_bytes().to_vec();
+                diesel::delete(
+                    schema::integrity_envelope::table
+                        .filter(schema::integrity_envelope::entity_id.eq(entity_id))
+                        .filter(
+                            schema::integrity_envelope::entity_kind
+                                .eq("EtherTransfer")
+                                .or(schema::integrity_envelope::entity_kind.eq("TokenTransfer")),
+                        ),
+                )
+                .execute(conn)
+                .await?;
+
+                // Finally remove the basic grant row itself (idempotent if it doesn't exist).
+                diesel::delete(
+                    schema::evm_basic_grant::table.filter(schema::evm_basic_grant::id.eq(grant_id)),
+                )
+                .execute(conn)
+                .await?;
+
+                diesel::result::QueryResult::Ok(())
+            })
+        })
+        .await
+        .map_err(DatabaseError::from)?;
+
+        Ok(())
     }
 
     #[message]
@@ -270,3 +359,6 @@ impl EvmActor {
         Ok(signer.sign_transaction_sync(&mut transaction)?)
     }
 }
+
+#[cfg(test)]
+mod tests;
