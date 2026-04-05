@@ -102,11 +102,21 @@ impl KeyCell {
     }
 }
 
-/// User password might be of different length, have not enough entropy, etc...
 /// Derive a fixed-length key from the password using Argon2id, which is designed for password hashing and key derivation.
 pub fn derive_key(mut password: SafeCell<Vec<u8>>, salt: &Salt) -> KeyCell {
+    let params = {
+    #[cfg(debug_assertions)]
+    {
+        argon2::Params::new(8, 1, 1, None).unwrap()
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        argon2::Params::new(262_144, 3, 4, None).unwrap()
+    }
+};
+
     #[allow(clippy::unwrap_used)]
-    let params = argon2::Params::new(262_144, 3, 4, None).unwrap();
     let hasher = Argon2::new(Algorithm::Argon2id, argon2::Version::V0x13, params);
     let mut key = SafeCell::new(Key::default());
     password.read_inline(|password_source| {
