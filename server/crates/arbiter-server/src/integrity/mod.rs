@@ -23,28 +23,23 @@ pub trait IntegrityEntity {
     fn canonical_payload_bytes(&self) -> Vec<u8>;
 }
 
-#[derive(Debug, thiserror::Error, miette::Diagnostic)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Database error: {0}")]
-    #[diagnostic(code(arbiter::integrity::database))]
     Database(#[from] db::DatabaseError),
 
     #[error("KeyHolder error: {0}")]
-    #[diagnostic(code(arbiter::integrity::keyholder))]
     Keyholder(#[from] crate::actors::keyholder::Error),
 
     #[error("KeyHolder mailbox error")]
-    #[diagnostic(code(arbiter::integrity::keyholder_send))]
     KeyholderSend,
 
     #[error("Integrity envelope is missing for entity {entity_kind}")]
-    #[diagnostic(code(arbiter::integrity::missing_envelope))]
     MissingEnvelope { entity_kind: &'static str },
 
     #[error(
         "Integrity payload version mismatch for entity {entity_kind}: expected {expected}, found {found}"
     )]
-    #[diagnostic(code(arbiter::integrity::payload_version_mismatch))]
     PayloadVersionMismatch {
         entity_kind: &'static str,
         expected: i32,
@@ -52,7 +47,6 @@ pub enum Error {
     },
 
     #[error("Integrity MAC mismatch for entity {entity_kind}")]
-    #[diagnostic(code(arbiter::integrity::mac_mismatch))]
     MacMismatch { entity_kind: &'static str },
 }
 

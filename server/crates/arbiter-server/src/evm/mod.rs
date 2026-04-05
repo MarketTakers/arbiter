@@ -41,7 +41,6 @@ pub enum PolicyError {
     NoMatchingGrant,
 
     #[error("Integrity error: {0}")]
-    #[diagnostic(code(arbiter_server::evm::policy_error::integrity))]
     Integrity(#[from] integrity::Error),
 }
 
