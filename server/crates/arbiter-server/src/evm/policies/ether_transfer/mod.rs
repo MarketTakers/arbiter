@@ -8,13 +8,14 @@ use diesel::sqlite::Sqlite;
 use diesel::{ExpressionMethods, JoinOnDsl, prelude::*};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 
+use crate::crypto::integrity::v1::Integrable;
 use crate::db::models::{
     EvmBasicGrant, EvmEtherTransferGrant, EvmEtherTransferGrantTarget, EvmEtherTransferLimit,
     NewEvmEtherTransferLimit, SqliteTimestamp,
 };
 use crate::db::schema::{evm_basic_grant, evm_ether_transfer_limit, evm_transaction_log};
 use crate::evm::policies::{
-    Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning, VolumeRateLimit,
+    CombinedSettings, Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning, VolumeRateLimit,
 };
 use crate::{
     db::{
@@ -51,10 +52,13 @@ impl From<Meaning> for SpecificMeaning {
 }
 
 // A grant for ether transfers, which can be scoped to specific target addresses and volume limits
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Settings {
     pub target: Vec<Address>,
     pub limit: VolumeRateLimit,
+}
+impl Integrable for Settings {
+    const KIND: &'static str = "EtherTransfer";
 }
 
 impl From<Settings> for SpecificGrant {
@@ -95,17 +99,17 @@ async fn check_rate_limits(
     db: &mut impl AsyncConnection<Backend = Sqlite>,
 ) -> QueryResult<Vec<EvalViolation>> {
     let mut violations = Vec::new();
-    let window = grant.settings.limit.window;
+    let window = grant.settings.specific.limit.window;
 
     let past_transaction = query_relevant_past_transaction(grant.id, window, db).await?;
 
-    let window_start = chrono::Utc::now() - grant.settings.limit.window;
+    let window_start = chrono::Utc::now() - grant.settings.specific.limit.window;
     let prospective_cumulative_volume: U256 = past_transaction
         .iter()
         .filter(|(_, timestamp)| timestamp >= &window_start)
         .fold(current_transfer_value, |acc, (value, _)| acc + *value);
 
-    if prospective_cumulative_volume > grant.settings.limit.max_volume {
+    if prospective_cumulative_volume > grant.settings.specific.limit.max_volume {
         violations.push(EvalViolation::VolumetricLimitExceeded);
     }
 
@@ -138,7 +142,7 @@ impl Policy for EtherTransfer {
         let mut violations = Vec::new();
 
         // Check if the target address is within the grant's allowed targets
-        if !grant.settings.target.contains(&meaning.to) {
+        if !grant.settings.specific.target.contains(&meaning.to) {
             violations.push(EvalViolation::InvalidTarget { target: meaning.to });
         }
 
@@ -247,9 +251,11 @@ impl Policy for EtherTransfer {
 
         Ok(Some(Grant {
             id: grant.id,
-            shared_grant_id: grant.basic_grant_id,
-            shared: SharedGrantSettings::try_from_model(basic_grant)?,
-            settings,
+            common_settings_id: grant.basic_grant_id,
+            settings: CombinedSettings {
+                shared: SharedGrantSettings::try_from_model(basic_grant)?,
+                specific: settings,
+            },
         }))
     }
 
@@ -327,15 +333,17 @@ impl Policy for EtherTransfer {
 
                 Ok(Grant {
                     id: specific.id,
-                    shared_grant_id: specific.basic_grant_id,
-                    shared: SharedGrantSettings::try_from_model(basic)?,
-                    settings: Settings {
-                        target: targets,
-                        limit: VolumeRateLimit {
-                            max_volume: utils::try_bytes_to_u256(&limit.max_volume).map_err(
-                                |e| diesel::result::Error::DeserializationError(Box::new(e)),
-                            )?,
-                            window: Duration::seconds(limit.window_secs as i64),
+                    common_settings_id: specific.basic_grant_id,
+                    settings: CombinedSettings {
+                        shared: SharedGrantSettings::try_from_model(basic)?,
+                        specific: Settings {
+                            target: targets,
+                            limit: VolumeRateLimit {
+                                max_volume: utils::try_bytes_to_u256(&limit.max_volume).map_err(
+                                    |e| diesel::result::Error::DeserializationError(Box::new(e)),
+                                )?,
+                                window: Duration::seconds(limit.window_secs as i64),
+                            },
                         },
                     },
                 })

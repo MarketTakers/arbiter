@@ -349,9 +349,6 @@ impl UserAgentSession {
             .await
         {
             Ok(grant_id) => Ok(grant_id),
-            Err(SendError::HandlerError(crate::actors::evm::Error::VaultSealed)) => {
-                Err(GrantMutationError::VaultSealed)
-            }
             Err(err) => {
                 error!(?err, "EVM grant create failed");
                 Err(GrantMutationError::Internal)
@@ -372,9 +369,6 @@ impl UserAgentSession {
             .await
         {
             Ok(()) => Ok(()),
-            Err(SendError::HandlerError(crate::actors::evm::Error::VaultSealed)) => {
-                Err(GrantMutationError::VaultSealed)
-            }
             Err(err) => {
                 error!(?err, "EVM grant delete failed");
                 Err(GrantMutationError::Internal)

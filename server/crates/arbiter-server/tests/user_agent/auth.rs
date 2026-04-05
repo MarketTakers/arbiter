@@ -187,7 +187,6 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() 
             .values((
                 schema::useragent_client::public_key.eq(pubkey_bytes.clone()),
                 schema::useragent_client::key_type.eq(1i32),
-                schema::useragent_client::pubkey_integrity_tag.eq(Some(vec![0u8; 32])),
             ))
             .execute(&mut conn)
             .await

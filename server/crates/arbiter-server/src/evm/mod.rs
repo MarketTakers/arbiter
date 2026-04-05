@@ -12,6 +12,7 @@ use kameo::actor::ActorRef;
 
 use crate::{
     actors::keyholder::KeyHolder,
+    crypto::integrity,
     db::{
         self, DatabaseError,
         models::{
@@ -20,11 +21,10 @@ use crate::{
         schema::{self, evm_transaction_log},
     },
     evm::policies::{
-        DatabaseID, EvalContext, EvalViolation, FullGrant, Grant, Policy, SharedGrantSettings,
+        DatabaseID, EvalContext, EvalViolation, Grant, Policy, CombinedSettings, SharedGrantSettings,
         SpecificGrant, SpecificMeaning, ether_transfer::EtherTransfer,
         token_transfers::TokenTransfer,
     },
-    integrity,
 };
 
 pub mod policies;
@@ -61,6 +61,15 @@ pub enum AnalyzeError {
 
     #[error("Unsupported transaction type")]
     UnsupportedTransactionType,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ListError {
+    #[error("Database error")]
+    Database(#[from] crate::db::DatabaseError),
+
+    #[error("Integrity verification failed for grant")]
+    Integrity(#[from] integrity::Error),
 }
 
 /// Controls whether a transaction should be executed or only validated
@@ -141,18 +150,16 @@ impl Engine {
             .map_err(DatabaseError::from)?
             .ok_or(PolicyError::NoMatchingGrant)?;
 
-        let signed_grant = integrity::evm::SignedEvmGrant::from_active_grant(&Grant {
-            id: grant.id,
-            shared_grant_id: grant.shared_grant_id,
-            shared: grant.shared.clone(),
-            settings: grant.settings.clone().into(),
-        });
-        integrity::verify_entity(&mut conn, &self.keyholder, &signed_grant).await?;
+        integrity::verify_entity(&mut conn, &self.keyholder, &grant.settings, grant.id).await?;
 
-        let mut violations =
-            check_shared_constraints(&context, &grant.shared, grant.shared_grant_id, &mut conn)
-                .await
-                .map_err(DatabaseError::from)?;
+        let mut violations = check_shared_constraints(
+            &context,
+            &grant.settings.shared,
+            grant.common_settings_id,
+            &mut conn,
+        )
+        .await
+        .map_err(DatabaseError::from)?;
         violations.extend(
             P::evaluate(&context, meaning, &grant, &mut conn)
                 .await
@@ -162,13 +169,13 @@ impl Engine {
         if !violations.is_empty() {
             return Err(PolicyError::Violations(violations));
         }
-        
+
         if run_kind == RunKind::Execution {
             conn.transaction(|conn| {
                 Box::pin(async move {
                     let log_id: i32 = insert_into(evm_transaction_log::table)
                         .values(&NewEvmTransactionLog {
-                            grant_id: grant.shared_grant_id,
+                            grant_id: grant.common_settings_id,
                             wallet_access_id: context.target.id,
                             chain_id: context.chain as i32,
                             eth_value: utils::u256_to_bytes(context.value).to_vec(),
@@ -198,7 +205,7 @@ impl Engine {
 
     pub async fn create_grant<P: Policy>(
         &self,
-        full_grant: FullGrant<P::Settings>,
+        full_grant: CombinedSettings<P::Settings>,
     ) -> Result<i32, DatabaseError>
     where
         P::Settings: Clone,
@@ -213,25 +220,25 @@ impl Engine {
 
                     let basic_grant: EvmBasicGrant = insert_into(evm_basic_grant::table)
                         .values(&NewEvmBasicGrant {
-                            chain_id: full_grant.basic.chain as i32,
-                            wallet_access_id: full_grant.basic.wallet_access_id,
-                            valid_from: full_grant.basic.valid_from.map(SqliteTimestamp),
-                            valid_until: full_grant.basic.valid_until.map(SqliteTimestamp),
+                            chain_id: full_grant.shared.chain as i32,
+                            wallet_access_id: full_grant.shared.wallet_access_id,
+                            valid_from: full_grant.shared.valid_from.map(SqliteTimestamp),
+                            valid_until: full_grant.shared.valid_until.map(SqliteTimestamp),
                             max_gas_fee_per_gas: full_grant
-                                .basic
+                                .shared
                                 .max_gas_fee_per_gas
                                 .map(|fee| utils::u256_to_bytes(fee).to_vec()),
                             max_priority_fee_per_gas: full_grant
-                                .basic
+                                .shared
                                 .max_priority_fee_per_gas
                                 .map(|fee| utils::u256_to_bytes(fee).to_vec()),
                             rate_limit_count: full_grant
-                                .basic
+                                .shared
                                 .rate_limit
                                 .as_ref()
                                 .map(|rl| rl.count as i32),
                             rate_limit_window_secs: full_grant
-                                .basic
+                                .shared
                                 .rate_limit
                                 .as_ref()
                                 .map(|rl| rl.window.num_seconds() as i32),
@@ -243,16 +250,14 @@ impl Engine {
 
                     P::create_grant(&basic_grant, &full_grant.specific, conn).await?;
 
-                    let signed_grant = integrity::evm::SignedEvmGrant {
-                        basic_grant_id: basic_grant.id,
-                        shared: full_grant.basic.clone(),
-                        specific: full_grant.specific.clone().into(),
-                        revoked_at: basic_grant.revoked_at.map(Into::into),
-                    };
-
-                    integrity::sign_entity(conn, &keyholder, &signed_grant)
-                        .await
-                        .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                    integrity::sign_entity(
+                        conn,
+                        &keyholder,
+                        &full_grant,
+                    basic_grant.id,
+                    )
+                    .await
+                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
 
                     QueryResult::Ok(basic_grant.id)
                 })
@@ -262,43 +267,36 @@ impl Engine {
         Ok(id)
     }
 
-    pub async fn list_all_grants(&self) -> Result<Vec<Grant<SpecificGrant>>, DatabaseError> {
-        let mut conn = self.db.get().await?;
+    async fn list_one_kind<Kind: Policy, Y>(
+        &self,
+        conn: &mut impl AsyncConnection<Backend = Sqlite>,
+    ) -> Result<impl Iterator<Item = Grant<Y>>, ListError>
+    where
+        Y: From<Kind::Settings>,
+    {
+        let all_grants = Kind::find_all_grants(conn)
+            .await
+            .map_err(DatabaseError::from)?;
+
+        // Verify integrity of all grants before returning any results
+        for grant in &all_grants {
+            integrity::verify_entity(conn, &self.keyholder, &grant.settings, grant.id).await?;
+        }
+
+        Ok(all_grants.into_iter().map(|g| Grant {
+            id: g.id,
+            common_settings_id: g.common_settings_id,
+            settings: g.settings.generalize(),
+        }))
+    }
+
+    pub async fn list_all_grants(&self) -> Result<Vec<Grant<SpecificGrant>>, ListError> {
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
 
         let mut grants: Vec<Grant<SpecificGrant>> = Vec::new();
 
-        grants.extend(
-            EtherTransfer::find_all_grants(&mut conn)
-                .await?
-                .into_iter()
-                .map(|g| Grant {
-                    id: g.id,
-                    shared_grant_id: g.shared_grant_id,
-                    shared: g.shared,
-                    settings: SpecificGrant::EtherTransfer(g.settings),
-                }),
-        );
-        grants.extend(
-            TokenTransfer::find_all_grants(&mut conn)
-                .await?
-                .into_iter()
-                .map(|g| Grant {
-                    id: g.id,
-                    shared_grant_id: g.shared_grant_id,
-                    shared: g.shared,
-                    settings: SpecificGrant::TokenTransfer(g.settings),
-                }),
-        );
-
-        for grant in &grants {
-            let signed = integrity::evm::SignedEvmGrant::from_active_grant(grant);
-            integrity::verify_entity(&mut conn, &self.keyholder, &signed)
-                .await
-                .map_err(|err| match err {
-                    integrity::Error::Database(db_err) => db_err,
-                    _ => DatabaseError::Connection(diesel::result::Error::RollbackTransaction),
-                })?;
-        }
+        grants.extend(self.list_one_kind::<EtherTransfer, _>(&mut conn).await?);
+        grants.extend(self.list_one_kind::<TokenTransfer, _>(&mut conn).await?);
 
         Ok(grants)
     }

@@ -11,7 +11,10 @@ use crate::db::{
     schema::{evm_basic_grant, evm_transaction_log},
 };
 use crate::evm::{
-    policies::{EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings, VolumeRateLimit},
+    policies::{
+        CombinedSettings, EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings,
+        VolumeRateLimit,
+    },
     utils,
 };
 
@@ -108,9 +111,11 @@ async fn evaluate_passes_for_allowed_target() {
 
     let grant = Grant {
         id: 999,
-        shared_grant_id: 999,
-        shared: shared(),
-        settings: make_settings(vec![ALLOWED], 1_000_000),
+        common_settings_id: 999,
+        settings: CombinedSettings {
+            shared: shared(),
+            specific: make_settings(vec![ALLOWED], 1_000_000),
+        },
     };
     let context = ctx(ALLOWED, U256::from(100u64));
     let m = EtherTransfer::analyze(&context).unwrap();
@@ -127,9 +132,11 @@ async fn evaluate_rejects_disallowed_target() {
 
     let grant = Grant {
         id: 999,
-        shared_grant_id: 999,
-        shared: shared(),
-        settings: make_settings(vec![ALLOWED], 1_000_000),
+        common_settings_id: 999,
+        settings: CombinedSettings {
+            shared: shared(),
+            specific: make_settings(vec![ALLOWED], 1_000_000),
+        },
     };
     let context = ctx(OTHER, U256::from(100u64));
     let m = EtherTransfer::analyze(&context).unwrap();
@@ -167,9 +174,11 @@ async fn evaluate_passes_when_volume_within_limit() {
 
     let grant = Grant {
         id: grant_id,
-        shared_grant_id: basic.id,
-        shared: shared(),
-        settings,
+        common_settings_id: basic.id,
+        settings: CombinedSettings {
+            shared: shared(),
+            specific: settings,
+        },
     };
     let context = ctx(ALLOWED, U256::from(100u64));
     let m = EtherTransfer::analyze(&context).unwrap();
@@ -207,9 +216,11 @@ async fn evaluate_rejects_volume_over_limit() {
 
     let grant = Grant {
         id: grant_id,
-        shared_grant_id: basic.id,
-        shared: shared(),
-        settings,
+        common_settings_id: basic.id,
+        settings: CombinedSettings {
+            shared: shared(),
+            specific: settings,
+        },
     };
     let context = ctx(ALLOWED, U256::from(1u64));
     let m = EtherTransfer::analyze(&context).unwrap();
@@ -248,9 +259,11 @@ async fn evaluate_passes_at_exactly_volume_limit() {
 
     let grant = Grant {
         id: grant_id,
-        shared_grant_id: basic.id,
-        shared: shared(),
-        settings,
+        common_settings_id: basic.id,
+        settings: CombinedSettings {
+            shared: shared(),
+            specific: settings,
+        },
     };
     let context = ctx(ALLOWED, U256::from(100u64));
     let m = EtherTransfer::analyze(&context).unwrap();
@@ -282,8 +295,11 @@ async fn try_find_grant_roundtrip() {
 
     assert!(found.is_some());
     let g = found.unwrap();
-    assert_eq!(g.settings.target, vec![ALLOWED]);
-    assert_eq!(g.settings.limit.max_volume, U256::from(1_000_000u64));
+    assert_eq!(g.settings.specific.target, vec![ALLOWED]);
+    assert_eq!(
+        g.settings.specific.limit.max_volume,
+        U256::from(1_000_000u64)
+    );
 }
 
 #[tokio::test]
@@ -347,7 +363,7 @@ async fn find_all_grants_excludes_revoked() {
 
     let all = EtherTransfer::find_all_grants(&mut *conn).await.unwrap();
     assert_eq!(all.len(), 1);
-    assert_eq!(all[0].settings.target, vec![ALLOWED]);
+    assert_eq!(all[0].settings.specific.target, vec![ALLOWED]);
 }
 
 #[tokio::test]
@@ -363,8 +379,11 @@ async fn find_all_grants_multiple_targets() {
 
     let all = EtherTransfer::find_all_grants(&mut *conn).await.unwrap();
     assert_eq!(all.len(), 1);
-    assert_eq!(all[0].settings.target.len(), 2);
-    assert_eq!(all[0].settings.limit.max_volume, U256::from(1_000_000u64));
+    assert_eq!(all[0].settings.specific.target.len(), 2);
+    assert_eq!(
+        all[0].settings.specific.limit.max_volume,
+        U256::from(1_000_000u64)
+    );
 }
 
 #[tokio::test]
