@@ -59,7 +59,6 @@ pub enum Error {
     Database(#[from] DatabaseError),
 
     #[error("Vault is sealed")]
-    #[diagnostic(code(arbiter::evm::vault_sealed))]
     VaultSealed,
 }
 
