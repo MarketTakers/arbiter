@@ -198,7 +198,7 @@ async fn evaluate_rejects_volume_over_limit() {
             grant_id,
             wallet_access_id: WALLET_ACCESS_ID,
             chain_id: CHAIN_ID as i32,
-            eth_value: utils::u256_to_bytes(U256::from(1_001u64)).to_vec(),
+            eth_value: utils::u256_to_bytes(U256::from(1_000u64)).to_vec(),
             signed_at: SqliteTimestamp(Utc::now()),
         })
         .execute(&mut *conn)
@@ -211,7 +211,7 @@ async fn evaluate_rejects_volume_over_limit() {
         shared: shared(),
         settings,
     };
-    let context = ctx(ALLOWED, U256::from(100u64));
+    let context = ctx(ALLOWED, U256::from(1u64));
     let m = EtherTransfer::analyze(&context).unwrap();
     let v = EtherTransfer::evaluate(&context, &m, &grant, &mut *conn)
         .await
@@ -233,13 +233,13 @@ async fn evaluate_passes_at_exactly_volume_limit() {
         .await
         .unwrap();
 
-    // Exactly at the limit — the check is `>`, so this should not violate
+    // Exactly at the limit including current transfer — check is `>`, so this should not violate
     insert_into(evm_transaction_log::table)
         .values(NewEvmTransactionLog {
             grant_id,
             wallet_access_id: WALLET_ACCESS_ID,
             chain_id: CHAIN_ID as i32,
-            eth_value: utils::u256_to_bytes(U256::from(1_000u64)).to_vec(),
+            eth_value: utils::u256_to_bytes(U256::from(900u64)).to_vec(),
             signed_at: SqliteTimestamp(Utc::now()),
         })
         .execute(&mut *conn)

@@ -1,5 +1,5 @@
 // lib/screens/dashboard/evm/grants/create/fields/client_picker_field.dart
-import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/proto/user_agent/sdk_client.pb.dart' as ua_sdk;
 import 'package:arbiter/providers/sdk_clients/list.dart';
 import 'package:arbiter/screens/dashboard/evm/grants/create/provider.dart';
 import 'package:flutter/material.dart';
@@ -12,7 +12,7 @@ class ClientPickerField extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final clients =
-        ref.watch(sdkClientsProvider).asData?.value ?? const <SdkClientEntry>[];
+        ref.watch(sdkClientsProvider).asData?.value ?? const <ua_sdk.Entry>[];
 
     return FormBuilderDropdown<int>(
       name: 'clientId',

@@ -5,7 +5,9 @@ use arbiter_proto::proto::evm::{
     TransactionRateLimit as ProtoTransactionRateLimit, VolumeRateLimit as ProtoVolumeRateLimit,
     specific_grant::Grant as ProtoSpecificGrantType,
 };
-use arbiter_proto::proto::user_agent::{SdkClientWalletAccess, WalletAccess};
+use arbiter_proto::proto::user_agent::sdk_client::{
+    WalletAccess, WalletAccessEntry as SdkClientWalletAccess,
+};
 use chrono::{DateTime, TimeZone, Utc};
 use prost_types::Timestamp as ProtoTimestamp;
 use tonic::Status;

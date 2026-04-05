@@ -2,7 +2,7 @@ use arbiter_proto::{BOOTSTRAP_PATH, home_path};
 use diesel::QueryDsl;
 use diesel_async::RunQueryDsl;
 use kameo::{Actor, messages};
-use miette::Diagnostic;
+
 use rand::{RngExt, distr::Alphanumeric, make_rng, rngs::StdRng};
 use thiserror::Error;
 
@@ -25,18 +25,15 @@ pub async fn generate_token() -> Result<String, std::io::Error> {
     Ok(token)
 }
 
-#[derive(Error, Debug, Diagnostic)]
+#[derive(Error, Debug)]
 pub enum Error {
     #[error("Database error: {0}")]
-    #[diagnostic(code(arbiter_server::bootstrap::database))]
     Database(#[from] db::PoolError),
 
     #[error("Database query error: {0}")]
-    #[diagnostic(code(arbiter_server::bootstrap::database_query))]
     Query(#[from] diesel::result::Error),
 
     #[error("I/O error: {0}")]
-    #[diagnostic(code(arbiter_server::bootstrap::io))]
     Io(#[from] std::io::Error),
 }
 

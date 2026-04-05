@@ -6,7 +6,7 @@ use diesel::{
     ExpressionMethods as _, QueryDsl, SelectableHelper, result::QueryResult, sqlite::Sqlite,
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use miette::Diagnostic;
+
 use thiserror::Error;
 
 use crate::{
@@ -33,33 +33,27 @@ pub struct EvalContext {
     pub max_priority_fee_per_gas: u128,
 }
 
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Error)]
 pub enum EvalViolation {
     #[error("This grant doesn't allow transactions to the target address {target}")]
-    #[diagnostic(code(arbiter_server::evm::eval_violation::invalid_target))]
     InvalidTarget { target: Address },
 
     #[error("Gas limit exceeded for this grant")]
-    #[diagnostic(code(arbiter_server::evm::eval_violation::gas_limit_exceeded))]
     GasLimitExceeded {
         max_gas_fee_per_gas: Option<U256>,
         max_priority_fee_per_gas: Option<U256>,
     },
 
     #[error("Rate limit exceeded for this grant")]
-    #[diagnostic(code(arbiter_server::evm::eval_violation::rate_limit_exceeded))]
     RateLimitExceeded,
 
     #[error("Transaction exceeds volumetric limits of the grant")]
-    #[diagnostic(code(arbiter_server::evm::eval_violation::volumetric_limit_exceeded))]
     VolumetricLimitExceeded,
 
     #[error("Transaction is outside of the grant's validity period")]
-    #[diagnostic(code(arbiter_server::evm::eval_violation::invalid_time))]
     InvalidTime,
 
     #[error("Transaction type is not allowed by this grant")]
-    #[diagnostic(code(arbiter_server::evm::eval_violation::invalid_transaction_type))]
     InvalidTransactionType,
 }
 

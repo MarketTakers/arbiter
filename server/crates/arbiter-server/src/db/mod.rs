@@ -5,7 +5,7 @@ use diesel_async::{
     sync_connection_wrapper::SyncConnectionWrapper,
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
-use miette::Diagnostic;
+
 use thiserror::Error;
 use tracing::info;
 
@@ -21,26 +21,21 @@ static DB_FILE: &str = "arbiter.sqlite";
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
-#[derive(Error, Diagnostic, Debug)]
+#[derive(Error, Debug)]
 pub enum DatabaseSetupError {
     #[error("Failed to determine home directory")]
-    #[diagnostic(code(arbiter::db::home_dir))]
     HomeDir(std::io::Error),
 
     #[error(transparent)]
-    #[diagnostic(code(arbiter::db::connection))]
     Connection(diesel::ConnectionError),
 
     #[error(transparent)]
-    #[diagnostic(code(arbiter::db::concurrency))]
     ConcurrencySetup(diesel::result::Error),
 
     #[error(transparent)]
-    #[diagnostic(code(arbiter::db::migration))]
     Migration(Box<dyn std::error::Error + Send + Sync>),
 
     #[error(transparent)]
-    #[diagnostic(code(arbiter::db::pool))]
     Pool(#[from] PoolInitError),
 }
 

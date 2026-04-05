@@ -1,21 +1,28 @@
 use kameo::{Actor, messages};
 use tracing::error;
 
+use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
+
 use crate::{
     actors::{
-        GlobalActors, client::ClientConnection, flow_coordinator::RegisterClient,
+        GlobalActors,
+        client::ClientConnection,
+        evm::{ClientSignTransaction, SignTransactionError},
+        flow_coordinator::RegisterClient,
         keyholder::KeyHolderState,
     },
     db,
+    evm::VetError,
 };
 
 pub struct ClientSession {
     props: ClientConnection,
+    client_id: i32,
 }
 
 impl ClientSession {
-    pub(crate) fn new(props: ClientConnection) -> Self {
-        Self { props }
+    pub(crate) fn new(props: ClientConnection, client_id: i32) -> Self {
+        Self { props, client_id }
     }
 }
 
@@ -34,6 +41,34 @@ impl ClientSession {
         };
 
         Ok(vault_state)
+    }
+
+    #[message]
+    pub(crate) async fn handle_sign_transaction(
+        &mut self,
+        wallet_address: Address,
+        transaction: TxEip1559,
+    ) -> Result<Signature, SignTransactionRpcError> {
+        match self
+            .props
+            .actors
+            .evm
+            .ask(ClientSignTransaction {
+                client_id: self.client_id,
+                wallet_address,
+                transaction,
+            })
+            .await
+        {
+            Ok(signature) => Ok(signature),
+            Err(kameo::error::SendError::HandlerError(SignTransactionError::Vet(vet_error))) => {
+                Err(SignTransactionRpcError::Vet(vet_error))
+            }
+            Err(err) => {
+                error!(?err, "Failed to sign EVM transaction in client session");
+                Err(SignTransactionRpcError::Internal)
+            }
+        }
     }
 }
 
@@ -59,7 +94,10 @@ impl Actor for ClientSession {
 impl ClientSession {
     pub fn new_test(db: db::DatabasePool, actors: GlobalActors) -> Self {
         let props = ClientConnection::new(db, actors);
-        Self { props }
+        Self {
+            props,
+            client_id: 0,
+        }
     }
 }
 
@@ -67,6 +105,15 @@ impl ClientSession {
 pub enum Error {
     #[error("Connection registration failed")]
     ConnectionRegistrationFailed,
+    #[error("Internal error")]
+    Internal,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SignTransactionRpcError {
+    #[error("Policy evaluation failed")]
+    Vet(#[from] VetError),
+
     #[error("Internal error")]
     Internal,
 }

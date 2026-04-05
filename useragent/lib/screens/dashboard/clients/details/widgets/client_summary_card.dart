@@ -1,11 +1,11 @@
-import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/proto/user_agent/sdk_client.pb.dart' as ua_sdk;
 import 'package:arbiter/widgets/cream_frame.dart';
 import 'package:flutter/material.dart';
 
 class ClientSummaryCard extends StatelessWidget {
   const ClientSummaryCard({super.key, required this.client});
 
-  final SdkClientEntry client;
+  final ua_sdk.Entry client;
 
   @override
   Widget build(BuildContext context) {

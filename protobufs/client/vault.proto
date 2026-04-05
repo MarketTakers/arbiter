@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package arbiter.client.vault;
+
+import "google/protobuf/empty.proto";
+import "shared/vault.proto";
+
+message Request {
+  oneof payload {
+    google.protobuf.Empty query_state = 1;
+  }
+}
+
+message Response {
+  oneof payload {
+    arbiter.shared.VaultState state = 1;
+  }
+}

@@ -1,5 +1,5 @@
 import 'package:arbiter/proto/evm.pb.dart';
-import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/proto/user_agent/sdk_client.pb.dart' as ua_sdk;
 import 'package:arbiter/providers/evm/evm.dart';
 import 'package:arbiter/providers/evm/evm_grants.dart';
 import 'package:arbiter/providers/sdk_clients/list.dart';
@@ -30,7 +30,6 @@ class GrantCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Enrichment lookups — each watch scopes rebuilds to this card only
     final walletAccesses =
         ref.watch(walletAccessListProvider).asData?.value ?? const [];
     final wallets = ref.watch(evmProvider).asData?.value ?? const [];
@@ -44,8 +43,7 @@ class GrantCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final muted = Palette.ink.withValues(alpha: 0.62);
 
-    // Resolve wallet_access_id → wallet address + client name
-    final accessById = <int, SdkClientWalletAccess>{
+    final accessById = <int, ua_sdk.WalletAccessEntry>{
       for (final a in walletAccesses) a.id: a,
     };
     final walletById = <int, WalletEntry>{
@@ -94,7 +92,6 @@ class GrantCard extends ConsumerWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Accent strip
             Container(
               width: 0.8.w,
               decoration: BoxDecoration(
@@ -104,7 +101,6 @@ class GrantCard extends ConsumerWidget {
                 ),
               ),
             ),
-            // Card body
             Expanded(
               child: Padding(
                 padding: EdgeInsets.symmetric(
@@ -114,7 +110,6 @@ class GrantCard extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Row 1: type badge · chain · spacer · revoke button
                     Row(
                       children: [
                         Container(
@@ -184,7 +179,6 @@ class GrantCard extends ConsumerWidget {
                       ],
                     ),
                     SizedBox(height: 0.8.h),
-                    // Row 2: wallet address · client name
                     Row(
                       children: [
                         Text(

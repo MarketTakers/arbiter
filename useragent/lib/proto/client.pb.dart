@@ -13,305 +13,26 @@
 import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
-import 'package:protobuf/well_known_types/google/protobuf/empty.pb.dart' as $0;
 
-import 'client.pbenum.dart';
-import 'evm.pb.dart' as $1;
+import 'client/auth.pb.dart' as $0;
+import 'client/evm.pb.dart' as $2;
+import 'client/vault.pb.dart' as $1;
 
 export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
 
-export 'client.pbenum.dart';
-
-class ClientInfo extends $pb.GeneratedMessage {
-  factory ClientInfo({
-    $core.String? name,
-    $core.String? description,
-    $core.String? version,
-  }) {
-    final result = create();
-    if (name != null) result.name = name;
-    if (description != null) result.description = description;
-    if (version != null) result.version = version;
-    return result;
-  }
-
-  ClientInfo._();
-
-  factory ClientInfo.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory ClientInfo.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'ClientInfo',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.client'),
-      createEmptyInstance: create)
-    ..aOS(1, _omitFieldNames ? '' : 'name')
-    ..aOS(2, _omitFieldNames ? '' : 'description')
-    ..aOS(3, _omitFieldNames ? '' : 'version')
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  ClientInfo clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  ClientInfo copyWith(void Function(ClientInfo) updates) =>
-      super.copyWith((message) => updates(message as ClientInfo)) as ClientInfo;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static ClientInfo create() => ClientInfo._();
-  @$core.override
-  ClientInfo createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static ClientInfo getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<ClientInfo>(create);
-  static ClientInfo? _defaultInstance;
-
-  @$pb.TagNumber(1)
-  $core.String get name => $_getSZ(0);
-  @$pb.TagNumber(1)
-  set name($core.String value) => $_setString(0, value);
-  @$pb.TagNumber(1)
-  $core.bool hasName() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearName() => $_clearField(1);
-
-  @$pb.TagNumber(2)
-  $core.String get description => $_getSZ(1);
-  @$pb.TagNumber(2)
-  set description($core.String value) => $_setString(1, value);
-  @$pb.TagNumber(2)
-  $core.bool hasDescription() => $_has(1);
-  @$pb.TagNumber(2)
-  void clearDescription() => $_clearField(2);
-
-  @$pb.TagNumber(3)
-  $core.String get version => $_getSZ(2);
-  @$pb.TagNumber(3)
-  set version($core.String value) => $_setString(2, value);
-  @$pb.TagNumber(3)
-  $core.bool hasVersion() => $_has(2);
-  @$pb.TagNumber(3)
-  void clearVersion() => $_clearField(3);
-}
-
-class AuthChallengeRequest extends $pb.GeneratedMessage {
-  factory AuthChallengeRequest({
-    $core.List<$core.int>? pubkey,
-    ClientInfo? clientInfo,
-  }) {
-    final result = create();
-    if (pubkey != null) result.pubkey = pubkey;
-    if (clientInfo != null) result.clientInfo = clientInfo;
-    return result;
-  }
-
-  AuthChallengeRequest._();
-
-  factory AuthChallengeRequest.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory AuthChallengeRequest.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'AuthChallengeRequest',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.client'),
-      createEmptyInstance: create)
-    ..a<$core.List<$core.int>>(
-        1, _omitFieldNames ? '' : 'pubkey', $pb.PbFieldType.OY)
-    ..aOM<ClientInfo>(2, _omitFieldNames ? '' : 'clientInfo',
-        subBuilder: ClientInfo.create)
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  AuthChallengeRequest clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  AuthChallengeRequest copyWith(void Function(AuthChallengeRequest) updates) =>
-      super.copyWith((message) => updates(message as AuthChallengeRequest))
-          as AuthChallengeRequest;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static AuthChallengeRequest create() => AuthChallengeRequest._();
-  @$core.override
-  AuthChallengeRequest createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static AuthChallengeRequest getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<AuthChallengeRequest>(create);
-  static AuthChallengeRequest? _defaultInstance;
-
-  @$pb.TagNumber(1)
-  $core.List<$core.int> get pubkey => $_getN(0);
-  @$pb.TagNumber(1)
-  set pubkey($core.List<$core.int> value) => $_setBytes(0, value);
-  @$pb.TagNumber(1)
-  $core.bool hasPubkey() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearPubkey() => $_clearField(1);
-
-  @$pb.TagNumber(2)
-  ClientInfo get clientInfo => $_getN(1);
-  @$pb.TagNumber(2)
-  set clientInfo(ClientInfo value) => $_setField(2, value);
-  @$pb.TagNumber(2)
-  $core.bool hasClientInfo() => $_has(1);
-  @$pb.TagNumber(2)
-  void clearClientInfo() => $_clearField(2);
-  @$pb.TagNumber(2)
-  ClientInfo ensureClientInfo() => $_ensure(1);
-}
-
-class AuthChallenge extends $pb.GeneratedMessage {
-  factory AuthChallenge({
-    $core.List<$core.int>? pubkey,
-    $core.int? nonce,
-  }) {
-    final result = create();
-    if (pubkey != null) result.pubkey = pubkey;
-    if (nonce != null) result.nonce = nonce;
-    return result;
-  }
-
-  AuthChallenge._();
-
-  factory AuthChallenge.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory AuthChallenge.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'AuthChallenge',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.client'),
-      createEmptyInstance: create)
-    ..a<$core.List<$core.int>>(
-        1, _omitFieldNames ? '' : 'pubkey', $pb.PbFieldType.OY)
-    ..aI(2, _omitFieldNames ? '' : 'nonce')
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  AuthChallenge clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  AuthChallenge copyWith(void Function(AuthChallenge) updates) =>
-      super.copyWith((message) => updates(message as AuthChallenge))
-          as AuthChallenge;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static AuthChallenge create() => AuthChallenge._();
-  @$core.override
-  AuthChallenge createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static AuthChallenge getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<AuthChallenge>(create);
-  static AuthChallenge? _defaultInstance;
-
-  @$pb.TagNumber(1)
-  $core.List<$core.int> get pubkey => $_getN(0);
-  @$pb.TagNumber(1)
-  set pubkey($core.List<$core.int> value) => $_setBytes(0, value);
-  @$pb.TagNumber(1)
-  $core.bool hasPubkey() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearPubkey() => $_clearField(1);
-
-  @$pb.TagNumber(2)
-  $core.int get nonce => $_getIZ(1);
-  @$pb.TagNumber(2)
-  set nonce($core.int value) => $_setSignedInt32(1, value);
-  @$pb.TagNumber(2)
-  $core.bool hasNonce() => $_has(1);
-  @$pb.TagNumber(2)
-  void clearNonce() => $_clearField(2);
-}
-
-class AuthChallengeSolution extends $pb.GeneratedMessage {
-  factory AuthChallengeSolution({
-    $core.List<$core.int>? signature,
-  }) {
-    final result = create();
-    if (signature != null) result.signature = signature;
-    return result;
-  }
-
-  AuthChallengeSolution._();
-
-  factory AuthChallengeSolution.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory AuthChallengeSolution.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'AuthChallengeSolution',
-      package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.client'),
-      createEmptyInstance: create)
-    ..a<$core.List<$core.int>>(
-        1, _omitFieldNames ? '' : 'signature', $pb.PbFieldType.OY)
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  AuthChallengeSolution clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  AuthChallengeSolution copyWith(
-          void Function(AuthChallengeSolution) updates) =>
-      super.copyWith((message) => updates(message as AuthChallengeSolution))
-          as AuthChallengeSolution;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static AuthChallengeSolution create() => AuthChallengeSolution._();
-  @$core.override
-  AuthChallengeSolution createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static AuthChallengeSolution getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<AuthChallengeSolution>(create);
-  static AuthChallengeSolution? _defaultInstance;
-
-  @$pb.TagNumber(1)
-  $core.List<$core.int> get signature => $_getN(0);
-  @$pb.TagNumber(1)
-  set signature($core.List<$core.int> value) => $_setBytes(0, value);
-  @$pb.TagNumber(1)
-  $core.bool hasSignature() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearSignature() => $_clearField(1);
-}
-
-enum ClientRequest_Payload {
-  authChallengeRequest,
-  authChallengeSolution,
-  queryVaultState,
-  notSet
-}
+enum ClientRequest_Payload { auth, vault, evm, notSet }
 
 class ClientRequest extends $pb.GeneratedMessage {
   factory ClientRequest({
-    AuthChallengeRequest? authChallengeRequest,
-    AuthChallengeSolution? authChallengeSolution,
-    $0.Empty? queryVaultState,
+    $0.Request? auth,
+    $1.Request? vault,
+    $2.Request? evm,
     $core.int? requestId,
   }) {
     final result = create();
-    if (authChallengeRequest != null)
-      result.authChallengeRequest = authChallengeRequest;
-    if (authChallengeSolution != null)
-      result.authChallengeSolution = authChallengeSolution;
-    if (queryVaultState != null) result.queryVaultState = queryVaultState;
+    if (auth != null) result.auth = auth;
+    if (vault != null) result.vault = vault;
+    if (evm != null) result.evm = evm;
     if (requestId != null) result.requestId = requestId;
     return result;
   }
@@ -327,9 +48,9 @@ class ClientRequest extends $pb.GeneratedMessage {
 
   static const $core.Map<$core.int, ClientRequest_Payload>
       _ClientRequest_PayloadByTag = {
-    1: ClientRequest_Payload.authChallengeRequest,
-    2: ClientRequest_Payload.authChallengeSolution,
-    3: ClientRequest_Payload.queryVaultState,
+    1: ClientRequest_Payload.auth,
+    2: ClientRequest_Payload.vault,
+    3: ClientRequest_Payload.evm,
     0: ClientRequest_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -337,14 +58,12 @@ class ClientRequest extends $pb.GeneratedMessage {
       package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.client'),
       createEmptyInstance: create)
     ..oo(0, [1, 2, 3])
-    ..aOM<AuthChallengeRequest>(
-        1, _omitFieldNames ? '' : 'authChallengeRequest',
-        subBuilder: AuthChallengeRequest.create)
-    ..aOM<AuthChallengeSolution>(
-        2, _omitFieldNames ? '' : 'authChallengeSolution',
-        subBuilder: AuthChallengeSolution.create)
-    ..aOM<$0.Empty>(3, _omitFieldNames ? '' : 'queryVaultState',
-        subBuilder: $0.Empty.create)
+    ..aOM<$0.Request>(1, _omitFieldNames ? '' : 'auth',
+        subBuilder: $0.Request.create)
+    ..aOM<$1.Request>(2, _omitFieldNames ? '' : 'vault',
+        subBuilder: $1.Request.create)
+    ..aOM<$2.Request>(3, _omitFieldNames ? '' : 'evm',
+        subBuilder: $2.Request.create)
     ..aI(4, _omitFieldNames ? '' : 'requestId')
     ..hasRequiredFields = false;
 
@@ -378,38 +97,37 @@ class ClientRequest extends $pb.GeneratedMessage {
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
-  AuthChallengeRequest get authChallengeRequest => $_getN(0);
+  $0.Request get auth => $_getN(0);
   @$pb.TagNumber(1)
-  set authChallengeRequest(AuthChallengeRequest value) => $_setField(1, value);
+  set auth($0.Request value) => $_setField(1, value);
   @$pb.TagNumber(1)
-  $core.bool hasAuthChallengeRequest() => $_has(0);
+  $core.bool hasAuth() => $_has(0);
   @$pb.TagNumber(1)
-  void clearAuthChallengeRequest() => $_clearField(1);
+  void clearAuth() => $_clearField(1);
   @$pb.TagNumber(1)
-  AuthChallengeRequest ensureAuthChallengeRequest() => $_ensure(0);
+  $0.Request ensureAuth() => $_ensure(0);
 
   @$pb.TagNumber(2)
-  AuthChallengeSolution get authChallengeSolution => $_getN(1);
+  $1.Request get vault => $_getN(1);
   @$pb.TagNumber(2)
-  set authChallengeSolution(AuthChallengeSolution value) =>
-      $_setField(2, value);
+  set vault($1.Request value) => $_setField(2, value);
   @$pb.TagNumber(2)
-  $core.bool hasAuthChallengeSolution() => $_has(1);
+  $core.bool hasVault() => $_has(1);
   @$pb.TagNumber(2)
-  void clearAuthChallengeSolution() => $_clearField(2);
+  void clearVault() => $_clearField(2);
   @$pb.TagNumber(2)
-  AuthChallengeSolution ensureAuthChallengeSolution() => $_ensure(1);
+  $1.Request ensureVault() => $_ensure(1);
 
   @$pb.TagNumber(3)
-  $0.Empty get queryVaultState => $_getN(2);
+  $2.Request get evm => $_getN(2);
   @$pb.TagNumber(3)
-  set queryVaultState($0.Empty value) => $_setField(3, value);
+  set evm($2.Request value) => $_setField(3, value);
   @$pb.TagNumber(3)
-  $core.bool hasQueryVaultState() => $_has(2);
+  $core.bool hasEvm() => $_has(2);
   @$pb.TagNumber(3)
-  void clearQueryVaultState() => $_clearField(3);
+  void clearEvm() => $_clearField(3);
   @$pb.TagNumber(3)
-  $0.Empty ensureQueryVaultState() => $_ensure(2);
+  $2.Request ensureEvm() => $_ensure(2);
 
   @$pb.TagNumber(4)
   $core.int get requestId => $_getIZ(3);
@@ -421,32 +139,19 @@ class ClientRequest extends $pb.GeneratedMessage {
   void clearRequestId() => $_clearField(4);
 }
 
-enum ClientResponse_Payload {
-  authChallenge,
-  authResult,
-  evmSignTransaction,
-  evmAnalyzeTransaction,
-  vaultState,
-  notSet
-}
+enum ClientResponse_Payload { auth, vault, evm, notSet }
 
 class ClientResponse extends $pb.GeneratedMessage {
   factory ClientResponse({
-    AuthChallenge? authChallenge,
-    AuthResult? authResult,
-    $1.EvmSignTransactionResponse? evmSignTransaction,
-    $1.EvmAnalyzeTransactionResponse? evmAnalyzeTransaction,
-    VaultState? vaultState,
+    $0.Response? auth,
+    $1.Response? vault,
+    $2.Response? evm,
     $core.int? requestId,
   }) {
     final result = create();
-    if (authChallenge != null) result.authChallenge = authChallenge;
-    if (authResult != null) result.authResult = authResult;
-    if (evmSignTransaction != null)
-      result.evmSignTransaction = evmSignTransaction;
-    if (evmAnalyzeTransaction != null)
-      result.evmAnalyzeTransaction = evmAnalyzeTransaction;
-    if (vaultState != null) result.vaultState = vaultState;
+    if (auth != null) result.auth = auth;
+    if (vault != null) result.vault = vault;
+    if (evm != null) result.evm = evm;
     if (requestId != null) result.requestId = requestId;
     return result;
   }
@@ -462,30 +167,22 @@ class ClientResponse extends $pb.GeneratedMessage {
 
   static const $core.Map<$core.int, ClientResponse_Payload>
       _ClientResponse_PayloadByTag = {
-    1: ClientResponse_Payload.authChallenge,
-    2: ClientResponse_Payload.authResult,
-    3: ClientResponse_Payload.evmSignTransaction,
-    4: ClientResponse_Payload.evmAnalyzeTransaction,
-    6: ClientResponse_Payload.vaultState,
+    1: ClientResponse_Payload.auth,
+    2: ClientResponse_Payload.vault,
+    3: ClientResponse_Payload.evm,
     0: ClientResponse_Payload.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
       _omitMessageNames ? '' : 'ClientResponse',
       package: const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.client'),
       createEmptyInstance: create)
-    ..oo(0, [1, 2, 3, 4, 6])
-    ..aOM<AuthChallenge>(1, _omitFieldNames ? '' : 'authChallenge',
-        subBuilder: AuthChallenge.create)
-    ..aE<AuthResult>(2, _omitFieldNames ? '' : 'authResult',
-        enumValues: AuthResult.values)
-    ..aOM<$1.EvmSignTransactionResponse>(
-        3, _omitFieldNames ? '' : 'evmSignTransaction',
-        subBuilder: $1.EvmSignTransactionResponse.create)
-    ..aOM<$1.EvmAnalyzeTransactionResponse>(
-        4, _omitFieldNames ? '' : 'evmAnalyzeTransaction',
-        subBuilder: $1.EvmAnalyzeTransactionResponse.create)
-    ..aE<VaultState>(6, _omitFieldNames ? '' : 'vaultState',
-        enumValues: VaultState.values)
+    ..oo(0, [1, 2, 3])
+    ..aOM<$0.Response>(1, _omitFieldNames ? '' : 'auth',
+        subBuilder: $0.Response.create)
+    ..aOM<$1.Response>(2, _omitFieldNames ? '' : 'vault',
+        subBuilder: $1.Response.create)
+    ..aOM<$2.Response>(3, _omitFieldNames ? '' : 'evm',
+        subBuilder: $2.Response.create)
     ..aI(7, _omitFieldNames ? '' : 'requestId')
     ..hasRequiredFields = false;
 
@@ -511,76 +208,52 @@ class ClientResponse extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   @$pb.TagNumber(2)
   @$pb.TagNumber(3)
-  @$pb.TagNumber(4)
-  @$pb.TagNumber(6)
   ClientResponse_Payload whichPayload() =>
       _ClientResponse_PayloadByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(1)
   @$pb.TagNumber(2)
   @$pb.TagNumber(3)
-  @$pb.TagNumber(4)
-  @$pb.TagNumber(6)
   void clearPayload() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
-  AuthChallenge get authChallenge => $_getN(0);
+  $0.Response get auth => $_getN(0);
   @$pb.TagNumber(1)
-  set authChallenge(AuthChallenge value) => $_setField(1, value);
+  set auth($0.Response value) => $_setField(1, value);
   @$pb.TagNumber(1)
-  $core.bool hasAuthChallenge() => $_has(0);
+  $core.bool hasAuth() => $_has(0);
   @$pb.TagNumber(1)
-  void clearAuthChallenge() => $_clearField(1);
+  void clearAuth() => $_clearField(1);
   @$pb.TagNumber(1)
-  AuthChallenge ensureAuthChallenge() => $_ensure(0);
+  $0.Response ensureAuth() => $_ensure(0);
 
   @$pb.TagNumber(2)
-  AuthResult get authResult => $_getN(1);
+  $1.Response get vault => $_getN(1);
   @$pb.TagNumber(2)
-  set authResult(AuthResult value) => $_setField(2, value);
+  set vault($1.Response value) => $_setField(2, value);
   @$pb.TagNumber(2)
-  $core.bool hasAuthResult() => $_has(1);
+  $core.bool hasVault() => $_has(1);
   @$pb.TagNumber(2)
-  void clearAuthResult() => $_clearField(2);
+  void clearVault() => $_clearField(2);
+  @$pb.TagNumber(2)
+  $1.Response ensureVault() => $_ensure(1);
 
   @$pb.TagNumber(3)
-  $1.EvmSignTransactionResponse get evmSignTransaction => $_getN(2);
+  $2.Response get evm => $_getN(2);
   @$pb.TagNumber(3)
-  set evmSignTransaction($1.EvmSignTransactionResponse value) =>
-      $_setField(3, value);
+  set evm($2.Response value) => $_setField(3, value);
   @$pb.TagNumber(3)
-  $core.bool hasEvmSignTransaction() => $_has(2);
+  $core.bool hasEvm() => $_has(2);
   @$pb.TagNumber(3)
-  void clearEvmSignTransaction() => $_clearField(3);
+  void clearEvm() => $_clearField(3);
   @$pb.TagNumber(3)
-  $1.EvmSignTransactionResponse ensureEvmSignTransaction() => $_ensure(2);
-
-  @$pb.TagNumber(4)
-  $1.EvmAnalyzeTransactionResponse get evmAnalyzeTransaction => $_getN(3);
-  @$pb.TagNumber(4)
-  set evmAnalyzeTransaction($1.EvmAnalyzeTransactionResponse value) =>
-      $_setField(4, value);
-  @$pb.TagNumber(4)
-  $core.bool hasEvmAnalyzeTransaction() => $_has(3);
-  @$pb.TagNumber(4)
-  void clearEvmAnalyzeTransaction() => $_clearField(4);
-  @$pb.TagNumber(4)
-  $1.EvmAnalyzeTransactionResponse ensureEvmAnalyzeTransaction() => $_ensure(3);
-
-  @$pb.TagNumber(6)
-  VaultState get vaultState => $_getN(4);
-  @$pb.TagNumber(6)
-  set vaultState(VaultState value) => $_setField(6, value);
-  @$pb.TagNumber(6)
-  $core.bool hasVaultState() => $_has(4);
-  @$pb.TagNumber(6)
-  void clearVaultState() => $_clearField(6);
+  $2.Response ensureEvm() => $_ensure(2);
 
   @$pb.TagNumber(7)
-  $core.int get requestId => $_getIZ(5);
+  $core.int get requestId => $_getIZ(3);
   @$pb.TagNumber(7)
-  set requestId($core.int value) => $_setSignedInt32(5, value);
+  set requestId($core.int value) => $_setSignedInt32(3, value);
   @$pb.TagNumber(7)
-  $core.bool hasRequestId() => $_has(5);
+  $core.bool hasRequestId() => $_has(3);
   @$pb.TagNumber(7)
   void clearRequestId() => $_clearField(7);
 }

@@ -1,6 +1,6 @@
 // lib/screens/dashboard/evm/grants/create/fields/wallet_access_picker_field.dart
 import 'package:arbiter/proto/evm.pb.dart';
-import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/proto/user_agent/sdk_client.pb.dart' as ua_sdk;
 import 'package:arbiter/providers/evm/evm.dart';
 import 'package:arbiter/providers/sdk_clients/wallet_access_list.dart';
 import 'package:arbiter/screens/dashboard/evm/grants/create/provider.dart';
@@ -17,13 +17,13 @@ class WalletAccessPickerField extends ConsumerWidget {
     final state = ref.watch(grantCreationProvider);
     final allAccesses =
         ref.watch(walletAccessListProvider).asData?.value ??
-        const <SdkClientWalletAccess>[];
+        const <ua_sdk.WalletAccessEntry>[];
     final wallets =
         ref.watch(evmProvider).asData?.value ?? const <WalletEntry>[];
 
     final walletById = <int, WalletEntry>{for (final w in wallets) w.id: w};
     final accesses = state.selectedClientId == null
-        ? const <SdkClientWalletAccess>[]
+        ? const <ua_sdk.WalletAccessEntry>[]
         : allAccesses
               .where((a) => a.access.sdkClientId == state.selectedClientId)
               .toList();

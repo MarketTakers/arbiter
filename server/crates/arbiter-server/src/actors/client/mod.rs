@@ -32,8 +32,8 @@ where
     T: Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> + Send + ?Sized,
 {
     match auth::authenticate(&mut props, transport).await {
-        Ok(_pubkey) => {
-            ClientSession::spawn(ClientSession::new(props));
+        Ok(client_id) => {
+            ClientSession::spawn(ClientSession::new(props, client_id));
             info!("Client authenticated, session started");
         }
         Err(err) => {

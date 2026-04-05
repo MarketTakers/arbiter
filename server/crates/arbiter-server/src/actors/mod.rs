@@ -1,5 +1,4 @@
 use kameo::actor::{ActorRef, Spawn};
-use miette::Diagnostic;
 use thiserror::Error;
 
 use crate::{
@@ -17,14 +16,12 @@ pub mod flow_coordinator;
 pub mod keyholder;
 pub mod user_agent;
 
-#[derive(Error, Debug, Diagnostic)]
+#[derive(Error, Debug)]
 pub enum SpawnError {
     #[error("Failed to spawn Bootstrapper actor")]
-    #[diagnostic(code(SpawnError::Bootstrapper))]
     Bootstrapper(#[from] bootstrap::Error),
 
     #[error("Failed to spawn KeyHolder actor")]
-    #[diagnostic(code(SpawnError::KeyHolder))]
     KeyHolder(#[from] keyholder::Error),
 }
 

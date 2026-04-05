@@ -39,36 +39,28 @@ enum State {
     },
 }
 
-#[derive(Debug, thiserror::Error, miette::Diagnostic)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Keyholder is already bootstrapped")]
-    #[diagnostic(code(arbiter::keyholder::already_bootstrapped))]
     AlreadyBootstrapped,
     #[error("Keyholder is not bootstrapped")]
-    #[diagnostic(code(arbiter::keyholder::not_bootstrapped))]
     NotBootstrapped,
     #[error("Invalid key provided")]
-    #[diagnostic(code(arbiter::keyholder::invalid_key))]
     InvalidKey,
 
     #[error("Requested aead entry not found")]
-    #[diagnostic(code(arbiter::keyholder::aead_not_found))]
     NotFound,
 
     #[error("Encryption error: {0}")]
-    #[diagnostic(code(arbiter::keyholder::encryption_error))]
     Encryption(#[from] chacha20poly1305::aead::Error),
 
     #[error("Database error: {0}")]
-    #[diagnostic(code(arbiter::keyholder::database_error))]
     DatabaseConnection(#[from] db::PoolError),
 
     #[error("Database transaction error: {0}")]
-    #[diagnostic(code(arbiter::keyholder::database_transaction_error))]
     DatabaseTransaction(#[from] diesel::result::Error),
 
     #[error("Broken database")]
-    #[diagnostic(code(arbiter::keyholder::broken_database))]
     BrokenDatabase,
 }
 
@@ -217,7 +209,6 @@ impl KeyHolder {
             let mut conn = self.db.get().await?;
             schema::root_key_history::table
                 .filter(schema::root_key_history::id.eq(*root_key_history_id))
-                .select(schema::root_key_history::data_encryption_nonce)
                 .select(RootKeyHistory::as_select())
                 .first(&mut conn)
                 .await?

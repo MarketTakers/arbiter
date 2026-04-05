@@ -1,8 +1,13 @@
 use arbiter_proto::{
     proto::user_agent::{
-        AuthChallenge as ProtoAuthChallenge, AuthChallengeRequest as ProtoAuthChallengeRequest,
-        AuthChallengeSolution as ProtoAuthChallengeSolution, AuthResult as ProtoAuthResult,
-        KeyType as ProtoKeyType, UserAgentRequest, UserAgentResponse,
+        UserAgentRequest, UserAgentResponse,
+        auth::{
+            self as proto_auth, AuthChallenge as ProtoAuthChallenge,
+            AuthChallengeRequest as ProtoAuthChallengeRequest,
+            AuthChallengeSolution as ProtoAuthChallengeSolution, AuthResult as ProtoAuthResult,
+            KeyType as ProtoKeyType, request::Payload as AuthRequestPayload,
+            response::Payload as AuthResponsePayload,
+        },
         user_agent_request::Payload as UserAgentRequestPayload,
         user_agent_response::Payload as UserAgentResponsePayload,
     },
@@ -36,12 +41,14 @@ impl<'a> AuthTransportAdapter<'a> {
 
     async fn send_user_agent_response(
         &mut self,
-        payload: UserAgentResponsePayload,
+        payload: AuthResponsePayload,
     ) -> Result<(), TransportError> {
         self.bi
             .send(Ok(UserAgentResponse {
                 id: Some(self.request_tracker.current_request_id()),
-                payload: Some(payload),
+                payload: Some(UserAgentResponsePayload::Auth(proto_auth::Response {
+                    payload: Some(payload),
+                })),
             }))
             .await
     }
@@ -56,19 +63,19 @@ impl Sender<Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {
         use auth::{Error, Outbound};
         let payload = match item {
             Ok(Outbound::AuthChallenge { nonce }) => {
-                UserAgentResponsePayload::AuthChallenge(ProtoAuthChallenge { nonce })
+                AuthResponsePayload::Challenge(ProtoAuthChallenge { nonce })
             }
             Ok(Outbound::AuthSuccess) => {
-                UserAgentResponsePayload::AuthResult(ProtoAuthResult::Success.into())
+                AuthResponsePayload::Result(ProtoAuthResult::Success.into())
             }
             Err(Error::UnregisteredPublicKey) => {
-                UserAgentResponsePayload::AuthResult(ProtoAuthResult::InvalidKey.into())
+                AuthResponsePayload::Result(ProtoAuthResult::InvalidKey.into())
             }
             Err(Error::InvalidChallengeSolution) => {
-                UserAgentResponsePayload::AuthResult(ProtoAuthResult::InvalidSignature.into())
+                AuthResponsePayload::Result(ProtoAuthResult::InvalidSignature.into())
             }
             Err(Error::InvalidBootstrapToken) => {
-                UserAgentResponsePayload::AuthResult(ProtoAuthResult::TokenInvalid.into())
+                AuthResponsePayload::Result(ProtoAuthResult::TokenInvalid.into())
             }
             Err(Error::Internal { details }) => {
                 return self.bi.send(Err(Status::internal(details))).await;
@@ -112,8 +119,26 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
             return None;
         };
 
+        let UserAgentRequestPayload::Auth(auth_request) = payload else {
+            let _ = self
+                .bi
+                .send(Err(Status::invalid_argument(
+                    "Unsupported user-agent auth request",
+                )))
+                .await;
+            return None;
+        };
+
+        let Some(payload) = auth_request.payload else {
+            warn!(
+                event = "received auth request with empty payload",
+                "grpc.useragent.auth_adapter"
+            );
+            return None;
+        };
+
         match payload {
-            UserAgentRequestPayload::AuthChallengeRequest(ProtoAuthChallengeRequest {
+            AuthRequestPayload::ChallengeRequest(ProtoAuthChallengeRequest {
                 pubkey,
                 bootstrap_token,
                 key_type,
@@ -150,17 +175,8 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
                     bootstrap_token,
                 })
             }
-            UserAgentRequestPayload::AuthChallengeSolution(ProtoAuthChallengeSolution {
-                signature,
-            }) => Some(auth::Inbound::AuthChallengeSolution { signature }),
-            _ => {
-                let _ = self
-                    .bi
-                    .send(Err(Status::invalid_argument(
-                        "Unsupported user-agent auth request",
-                    )))
-                    .await;
-                None
+            AuthRequestPayload::ChallengeSolution(ProtoAuthChallengeSolution { signature }) => {
+                Some(auth::Inbound::AuthChallengeSolution { signature })
             }
         }
     }

@@ -85,7 +85,6 @@ pub async fn test_bootstrap_invalid_token_auth() {
         Err(auth::Error::InvalidBootstrapToken)
     ));
 
-    // Verify no key was registered
     let mut conn = db.get().await.unwrap();
     let count: i64 = schema::useragent_client::table
         .count()
@@ -104,7 +103,6 @@ pub async fn test_challenge_auth() {
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
 
-    // Pre-register key with key_type
     {
         let mut conn = db.get().await.unwrap();
         insert_into(schema::useragent_client::table)
@@ -124,7 +122,6 @@ pub async fn test_challenge_auth() {
         auth::authenticate(&mut props, server_transport).await
     });
 
-    // Send challenge request
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
             pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
@@ -133,7 +130,6 @@ pub async fn test_challenge_auth() {
         .await
         .unwrap();
 
-    // Read the challenge response
     let response = test_transport
         .recv()
         .await
@@ -228,7 +224,6 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
 
-    // Pre-register key with key_type
     {
         let mut conn = db.get().await.unwrap();
         insert_into(schema::useragent_client::table)
@@ -268,7 +263,6 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };
 
-    // Sign a different challenge value so signature format is valid but verification must fail.
     let wrong_challenge = arbiter_proto::format_challenge(challenge + 1, &pubkey_bytes);
     let signature = new_key.sign(&wrong_challenge);
 
@@ -280,9 +274,7 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
         .unwrap();
 
     let expected_err = task.await.unwrap();
-
     println!("Received expected error: {expected_err:#?}");
-
     assert!(matches!(
         expected_err,
         Err(auth::Error::InvalidChallengeSolution)

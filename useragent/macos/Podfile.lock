@@ -1,5 +1,5 @@
 PODS:
-  - biometric_signature (10.2.0):
+  - biometric_signature (11.0.1):
     - FlutterMacOS
   - cryptography_flutter (0.0.1):
     - FlutterMacOS
@@ -35,7 +35,7 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/share_plus/macos
 
 SPEC CHECKSUMS:
-  biometric_signature: 7ef6a703fcc2c3b0e3d937a8560507b1ba9d3414
+  biometric_signature: bae0597fffbc51252959e78b56a2f5afb8d4e1f5
   cryptography_flutter: be2b3e0e31603521b6a1c2bea232a88a2488a91c
   flutter_secure_storage_darwin: acdb3f316ed05a3e68f856e0353b133eec373a23
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1

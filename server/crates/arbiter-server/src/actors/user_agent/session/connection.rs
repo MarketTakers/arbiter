@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use alloy::primitives::Address;
+use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use diesel::{ExpressionMethods as _, QueryDsl as _, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
@@ -21,7 +21,8 @@ use crate::safe_cell::SafeCell;
 use crate::{
     actors::{
         evm::{
-            Generate, ListWallets, UseragentCreateGrant, UseragentDeleteGrant, UseragentListGrants,
+            ClientSignTransaction, Generate, ListWallets, SignTransactionError as EvmSignError,
+            UseragentCreateGrant, UseragentDeleteGrant, UseragentListGrants,
         },
         keyholder::{self, Bootstrap, TryUnseal},
         user_agent::session::{
@@ -108,6 +109,15 @@ pub enum BootstrapError {
 
     #[error("Internal error during bootstrapping process")]
     General(#[from] super::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum SignTransactionError {
+    #[error("Policy evaluation failed")]
+    Vet(#[from] crate::evm::VetError),
+
+    #[error("Internal signing error")]
+    Internal,
 }
 
 #[messages]
@@ -350,6 +360,35 @@ impl UserAgentSession {
             Err(err) => {
                 error!(?err, "EVM grant delete failed");
                 Err(Error::internal("Failed to delete EVM grant"))
+            }
+        }
+    }
+
+    #[message]
+    pub(crate) async fn handle_sign_transaction(
+        &mut self,
+        client_id: i32,
+        wallet_address: Address,
+        transaction: TxEip1559,
+    ) -> Result<Signature, SignTransactionError> {
+        match self
+            .props
+            .actors
+            .evm
+            .ask(ClientSignTransaction {
+                client_id,
+                wallet_address,
+                transaction,
+            })
+            .await
+        {
+            Ok(signature) => Ok(signature),
+            Err(SendError::HandlerError(EvmSignError::Vet(vet_error))) => {
+                Err(SignTransactionError::Vet(vet_error))
+            }
+            Err(err) => {
+                error!(?err, "EVM sign transaction failed in user-agent session");
+                Err(SignTransactionError::Internal)
             }
         }
     }

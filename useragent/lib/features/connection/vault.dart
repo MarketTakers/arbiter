@@ -1,10 +1,13 @@
 import 'package:arbiter/features/connection/connection.dart';
+import 'package:arbiter/proto/user_agent/vault/bootstrap.pb.dart' as ua_bootstrap;
+import 'package:arbiter/proto/user_agent/vault/unseal.pb.dart' as ua_unseal;
+import 'package:arbiter/proto/user_agent/vault/vault.pb.dart' as ua_vault;
 import 'package:arbiter/proto/user_agent.pb.dart';
 import 'package:cryptography/cryptography.dart';
 
 const _vaultKeyAssociatedData = 'arbiter.vault.password';
 
-Future<BootstrapResult> bootstrapVault(
+Future<ua_bootstrap.BootstrapResult> bootstrapVault(
   Connection connection,
   String password,
 ) async {
@@ -12,39 +15,76 @@ Future<BootstrapResult> bootstrapVault(
 
   final response = await connection.ask(
     UserAgentRequest(
-      bootstrapEncryptedKey: BootstrapEncryptedKey(
-        nonce: encryptedKey.nonce,
-        ciphertext: encryptedKey.ciphertext,
-        associatedData: encryptedKey.associatedData,
+      vault: ua_vault.Request(
+        bootstrap: ua_bootstrap.Request(
+          encryptedKey: ua_bootstrap.BootstrapEncryptedKey(
+            nonce: encryptedKey.nonce,
+            ciphertext: encryptedKey.ciphertext,
+            associatedData: encryptedKey.associatedData,
+          ),
+        ),
       ),
     ),
   );
-  if (!response.hasBootstrapResult()) {
+  if (!response.hasVault()) {
     throw Exception(
-      'Expected bootstrap result, got ${response.whichPayload()}',
+      'Expected vault response, got ${response.whichPayload()}',
     );
   }
 
-  return response.bootstrapResult;
+  final vaultResponse = response.vault;
+  if (!vaultResponse.hasBootstrap()) {
+    throw Exception(
+      'Expected bootstrap result, got ${vaultResponse.whichPayload()}',
+    );
+  }
+
+  final bootstrapResponse = vaultResponse.bootstrap;
+  if (!bootstrapResponse.hasResult()) {
+    throw Exception('Expected bootstrap result payload.');
+  }
+
+  return bootstrapResponse.result;
 }
 
-Future<UnsealResult> unsealVault(Connection connection, String password) async {
+Future<ua_unseal.UnsealResult> unsealVault(
+  Connection connection,
+  String password,
+) async {
   final encryptedKey = await _encryptVaultKeyMaterial(connection, password);
 
   final response = await connection.ask(
     UserAgentRequest(
-      unsealEncryptedKey: UnsealEncryptedKey(
-        nonce: encryptedKey.nonce,
-        ciphertext: encryptedKey.ciphertext,
-        associatedData: encryptedKey.associatedData,
+      vault: ua_vault.Request(
+        unseal: ua_unseal.Request(
+          encryptedKey: ua_unseal.UnsealEncryptedKey(
+            nonce: encryptedKey.nonce,
+            ciphertext: encryptedKey.ciphertext,
+            associatedData: encryptedKey.associatedData,
+          ),
+        ),
       ),
     ),
   );
-  if (!response.hasUnsealResult()) {
-    throw Exception('Expected unseal result, got ${response.whichPayload()}');
+  if (!response.hasVault()) {
+    throw Exception('Expected vault response, got ${response.whichPayload()}');
   }
 
-  return response.unsealResult;
+  final vaultResponse = response.vault;
+  if (!vaultResponse.hasUnseal()) {
+    throw Exception(
+      'Expected unseal result, got ${vaultResponse.whichPayload()}',
+    );
+  }
+
+  final unsealResponse = vaultResponse.unseal;
+  if (!unsealResponse.hasResult()) {
+    throw Exception(
+      'Expected unseal result payload, got ${unsealResponse.whichPayload()}',
+    );
+  }
+
+  return unsealResponse.result;
 }
 
 Future<_EncryptedVaultKey> _encryptVaultKeyMaterial(
@@ -57,16 +97,36 @@ Future<_EncryptedVaultKey> _encryptVaultKeyMaterial(
   final clientPublicKey = await clientKeyPair.extractPublicKey();
 
   final handshakeResponse = await connection.ask(
-    UserAgentRequest(unsealStart: UnsealStart(clientPubkey: clientPublicKey.bytes)),
+    UserAgentRequest(
+      vault: ua_vault.Request(
+        unseal: ua_unseal.Request(
+          start: ua_unseal.UnsealStart(clientPubkey: clientPublicKey.bytes),
+        ),
+      ),
+    ),
   );
-  if (!handshakeResponse.hasUnsealStartResponse()) {
+  if (!handshakeResponse.hasVault()) {
     throw Exception(
-      'Expected unseal handshake response, got ${handshakeResponse.whichPayload()}',
+      'Expected vault response, got ${handshakeResponse.whichPayload()}',
+    );
+  }
+
+  final vaultResponse = handshakeResponse.vault;
+  if (!vaultResponse.hasUnseal()) {
+    throw Exception(
+      'Expected unseal handshake response, got ${vaultResponse.whichPayload()}',
+    );
+  }
+
+  final unsealResponse = vaultResponse.unseal;
+  if (!unsealResponse.hasStart()) {
+    throw Exception(
+      'Expected unseal handshake payload, got ${unsealResponse.whichPayload()}',
     );
   }
 
   final serverPublicKey = SimplePublicKey(
-    handshakeResponse.unsealStartResponse.serverPubkey,
+    unsealResponse.start.serverPubkey,
     type: KeyPairType.x25519,
   );
   final sharedSecret = await keyExchange.sharedSecretKey(

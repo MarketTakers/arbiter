@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package arbiter.client.auth;
+
+import "shared/client.proto";
+
+message AuthChallengeRequest {
+  bytes pubkey = 1;
+  arbiter.shared.ClientInfo client_info = 2;
+}
+
+message AuthChallenge {
+  bytes pubkey = 1;
+  int32 nonce = 2;
+}
+
+message AuthChallengeSolution {
+  bytes signature = 1;
+}
+
+enum AuthResult {
+  AUTH_RESULT_UNSPECIFIED = 0;
+  AUTH_RESULT_SUCCESS = 1;
+  AUTH_RESULT_INVALID_KEY = 2;
+  AUTH_RESULT_INVALID_SIGNATURE = 3;
+  AUTH_RESULT_APPROVAL_DENIED = 4;
+  AUTH_RESULT_NO_USER_AGENTS_ONLINE = 5;
+  AUTH_RESULT_INTERNAL = 6;
+}
+
+message Request {
+  oneof payload {
+    AuthChallengeRequest challenge_request = 1;
+    AuthChallengeSolution challenge_solution = 2;
+  }
+}
+
+message Response {
+  oneof payload {
+    AuthChallenge challenge = 1;
+    AuthResult result = 2;
+  }
+}
