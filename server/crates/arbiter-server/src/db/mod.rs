@@ -133,6 +133,7 @@ pub async fn create_pool(url: Option<&str>) -> Result<DatabasePool, DatabaseSetu
     Ok(pool)
 }
 
+#[mutants::skip]
 pub async fn create_test_pool() -> DatabasePool {
     use rand::distr::{Alphanumeric, SampleString as _};
 

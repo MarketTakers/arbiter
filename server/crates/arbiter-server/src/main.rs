@@ -10,6 +10,7 @@ use tracing::info;
 const PORT: u16 = 50051;
 
 #[tokio::main]
+#[mutants::skip]
 async fn main() -> anyhow::Result<()> {
     aws_lc_rs::default_provider().install_default().unwrap();
 
