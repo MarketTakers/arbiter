@@ -9,4 +9,4 @@ pub use client::{ArbiterClient, Error};
 pub use storage::{FileSigningKeyStorage, SigningKeyStorage, StorageError};
 
 #[cfg(feature = "evm")]
-pub use wallets::evm::ArbiterEvmWallet;
+pub use wallets::evm::{ArbiterEvmSignTransactionError, ArbiterEvmWallet};

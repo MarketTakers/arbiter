@@ -24,4 +24,4 @@ steps:
       - mise install rust 
       - mise install protoc
       - mise install cargo:cargo-nextest
-      - mise exec cargo:cargo-nextest -- cargo nextest run --no-fail-fast
+      - mise exec cargo:cargo-nextest -- cargo nextest run --no-fail-fast --all-features
