@@ -101,8 +101,6 @@ fn shared() -> SharedGrantSettings {
     }
 }
 
-// ── analyze ─────────────────────────────────────────────────────────────
-
 #[test]
 fn analyze_known_token_valid_calldata() {
     let calldata = transfer_calldata(RECIPIENT, U256::from(100u64));
@@ -127,8 +125,6 @@ fn analyze_invalid_calldata_returns_none() {
 fn analyze_empty_calldata_returns_none() {
     assert!(TokenTransfer::analyze(&ctx(DAI, Bytes::new())).is_none());
 }
-
-// ── evaluate ────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn evaluate_rejects_nonzero_eth_value() {
@@ -412,7 +408,39 @@ async fn try_find_grant_unknown_token_returns_none() {
     assert!(found.is_none());
 }
 
-// ── find_all_grants ──────────────────────────────────────────────────────
+proptest::proptest! {
+    #[test]
+    fn volume_limits_order_does_not_affect_hash(
+        raw_limits in proptest::collection::vec(
+            (proptest::prelude::any::<u64>(), 1i64..=86400),
+            0..8,
+        ),
+        seed in proptest::prelude::any::<u64>(),
+    ) {
+        use rand::{SeedableRng, seq::SliceRandom};
+        use sha2::Digest;
+        use crate::crypto::integrity::hashing::Hashable;
+
+        let limits: Vec<VolumeRateLimit> = raw_limits
+            .iter()
+            .map(|(max_vol, window_secs)| VolumeRateLimit {
+                max_volume: U256::from(*max_vol),
+                window: Duration::seconds(*window_secs),
+            })
+            .collect();
+
+        let mut shuffled = limits.clone();
+        shuffled.shuffle(&mut rand::rngs::StdRng::seed_from_u64(seed));
+
+        let mut h1 = sha2::Sha256::new();
+        Settings { token_contract: DAI, target: None, volume_limits: limits }.hash(&mut h1);
+
+        let mut h2 = sha2::Sha256::new();
+        Settings { token_contract: DAI, target: None, volume_limits: shuffled }.hash(&mut h2);
+
+        proptest::prop_assert_eq!(h1.finalize(), h2.finalize());
+    }
+}
 
 #[tokio::test]
 async fn find_all_grants_empty_db() {

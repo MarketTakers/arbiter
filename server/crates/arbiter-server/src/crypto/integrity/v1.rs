@@ -1,4 +1,6 @@
-use crate::{actors::keyholder, crypto::integrity::hashing::Hashable, safe_cell::SafeCellHandle as _};
+use crate::{
+    actors::keyholder, crypto::integrity::hashing::Hashable, safe_cell::SafeCellHandle as _,
+};
 use hmac::{Hmac, Mac as _};
 use sha2::Sha256;
 
@@ -43,7 +45,6 @@ pub enum Error {
 
     #[error("Integrity MAC mismatch for entity {entity_kind}")]
     MacMismatch { entity_kind: &'static str },
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,13 +204,19 @@ mod tests {
     use diesel::{ExpressionMethods as _, QueryDsl};
     use diesel_async::RunQueryDsl;
     use kameo::{actor::ActorRef, prelude::Spawn};
+    use rand::seq::SliceRandom;
     use sha2::Digest;
 
+    use proptest::prelude::*;
+
     use crate::{
-        actors::keyholder::{Bootstrap, KeyHolder}, crypto::integrity::hashing::Hashable, db::{self, schema}, safe_cell::{SafeCell, SafeCellHandle as _}
+        actors::keyholder::{Bootstrap, KeyHolder},
+        db::{self, schema},
+        safe_cell::{SafeCell, SafeCellHandle as _},
     };
 
     use super::{Error, Integrable, sign_entity, verify_entity};
+    use super::{hashing::Hashable, payload_hash};
 
     #[derive(Clone)]
     struct DummyEntity {
