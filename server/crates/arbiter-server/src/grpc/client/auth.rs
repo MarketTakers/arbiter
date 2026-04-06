@@ -68,6 +68,7 @@ impl<'a> AuthTransportAdapter<'a> {
                 auth::Error::ApproveError(auth::ApproveError::Internal)
                 | auth::Error::DatabasePoolUnavailable
                 | auth::Error::DatabaseOperationFailed
+                | auth::Error::IntegrityCheckFailed
                 | auth::Error::Transport => ProtoAuthResult::Internal,
             }
             .into(),
