@@ -10,8 +10,6 @@ use diesel::dsl::{auto_type, insert_into};
 use diesel::sqlite::Sqlite;
 use diesel::{ExpressionMethods, prelude::*};
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use serde::Serialize;
-
 use crate::db::schema::{
     evm_basic_grant, evm_token_transfer_grant, evm_token_transfer_log,
     evm_token_transfer_volume_limit,
@@ -64,7 +62,7 @@ impl From<Meaning> for SpecificMeaning {
 }
 
 // A grant for token transfers, which can be scoped to specific target addresses and volume limits
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Settings {
     pub token_contract: Address,
     pub target: Option<Address>,
@@ -73,6 +71,17 @@ pub struct Settings {
 impl Integrable for Settings {
     const KIND: &'static str = "TokenTransfer";
 }
+
+use crate::crypto::integrity::hashing::Hashable;
+
+impl Hashable for Settings {
+    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
+        self.token_contract.hash(hasher);
+        self.target.hash(hasher);
+        self.volume_limits.hash(hasher);
+    }
+}
+
 impl From<Settings> for SpecificGrant {
     fn from(val: Settings) -> SpecificGrant {
         SpecificGrant::TokenTransfer(val)

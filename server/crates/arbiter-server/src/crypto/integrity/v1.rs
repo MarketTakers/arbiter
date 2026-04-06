@@ -1,13 +1,13 @@
-use crate::{actors::keyholder, crypto::KeyCell, safe_cell::SafeCellHandle as _};
-use chacha20poly1305::Key;
+use crate::{actors::keyholder, crypto::integrity::hashing::Hashable, safe_cell::SafeCellHandle as _};
 use hmac::{Hmac, Mac as _};
-use serde::Serialize;
 use sha2::Sha256;
 
 use diesel::{ExpressionMethods as _, QueryDsl, dsl::insert_into, sqlite::Sqlite};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::{actor::ActorRef, error::SendError};
 use sha2::Digest as _;
+
+pub mod hashing;
 
 use crate::{
     actors::keyholder::{KeyHolder, SignIntegrity, VerifyIntegrity},
@@ -44,8 +44,6 @@ pub enum Error {
     #[error("Integrity MAC mismatch for entity {entity_kind}")]
     MacMismatch { entity_kind: &'static str },
 
-    #[error("Payload serialization error: {0}")]
-    PayloadSerialization(#[from] postcard::Error),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,13 +57,15 @@ pub const INTEGRITY_SUBKEY_TAG: &[u8] = b"arbiter/db-integrity-key/v1";
 
 pub type HmacSha256 = Hmac<Sha256>;
 
-pub trait Integrable: Serialize {
+pub trait Integrable: Hashable {
     const KIND: &'static str;
     const VERSION: i32 = 1;
 }
 
-fn payload_hash(payload: &[u8]) -> [u8; 32] {
-    Sha256::digest(payload).into()
+fn payload_hash(payload: &impl Hashable) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    payload.hash(&mut hasher);
+    hasher.finalize().into()
 }
 
 fn push_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
@@ -109,8 +109,7 @@ pub async fn sign_entity<E: Integrable>(
     entity: &E,
     entity_id: impl IntoId,
 ) -> Result<(), Error> {
-    let payload = postcard::to_stdvec(entity)?;
-    let payload_hash = payload_hash(&payload);
+    let payload_hash = payload_hash(&entity);
 
     let entity_id = entity_id.into_id();
 
@@ -176,8 +175,7 @@ pub async fn verify_entity<E: Integrable>(
         });
     }
 
-    let payload = postcard::to_stdvec(entity)?;
-    let payload_hash = payload_hash(&payload);
+    let payload_hash = payload_hash(&entity);
     let mac_input = build_mac_input(E::KIND, &entity_id, envelope.payload_version, &payload_hash);
 
     let result = keyholder
@@ -205,21 +203,26 @@ mod tests {
     use diesel::{ExpressionMethods as _, QueryDsl};
     use diesel_async::RunQueryDsl;
     use kameo::{actor::ActorRef, prelude::Spawn};
+    use sha2::Digest;
 
     use crate::{
-        actors::keyholder::{Bootstrap, KeyHolder},
-        db::{self, schema},
-        safe_cell::{SafeCell, SafeCellHandle as _},
+        actors::keyholder::{Bootstrap, KeyHolder}, crypto::integrity::hashing::Hashable, db::{self, schema}, safe_cell::{SafeCell, SafeCellHandle as _}
     };
 
     use super::{Error, Integrable, sign_entity, verify_entity};
 
-    #[derive(Clone, serde::Serialize)]
+    #[derive(Clone)]
     struct DummyEntity {
         payload_version: i32,
         payload: Vec<u8>,
     }
 
+    impl Hashable for DummyEntity {
+        fn hash<H: Digest>(&self, hasher: &mut H) {
+            self.payload_version.hash(hasher);
+            self.payload.hash(hasher);
+        }
+    }
     impl Integrable for DummyEntity {
         const KIND: &'static str = "dummy_entity";
     }
