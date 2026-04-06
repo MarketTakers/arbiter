@@ -1,9 +1,14 @@
 use arbiter_proto::ClientMetadata;
 use arbiter_proto::transport::{Receiver, Sender};
-use arbiter_server::actors::GlobalActors;
 use arbiter_server::{
-    actors::client::{ClientConnection, auth, connect_client},
-    db,
+    actors::{
+        GlobalActors,
+        client::{ClientConnection, ClientCredentials, auth, connect_client},
+        keyholder::Bootstrap,
+    },
+    crypto::integrity,
+    db::{self, schema},
+    safe_cell::{SafeCell, SafeCellHandle as _},
 };
 use diesel::{ExpressionMethods as _, NullableExpressionMethods as _, QueryDsl as _, insert_into};
 use diesel_async::RunQueryDsl;
@@ -21,7 +26,8 @@ fn metadata(name: &str, description: Option<&str>, version: Option<&str>) -> Cli
 
 async fn insert_registered_client(
     db: &db::DatabasePool,
-    pubkey: Vec<u8>,
+    actors: &GlobalActors,
+    pubkey: ed25519_dalek::VerifyingKey,
     metadata: &ClientMetadata,
 ) {
     use arbiter_server::db::schema::{client_metadata, program_client};
@@ -37,14 +43,55 @@ async fn insert_registered_client(
         .get_result(&mut conn)
         .await
         .unwrap();
-    insert_into(program_client::table)
+    let client_id: i32 = insert_into(program_client::table)
         .values((
-            program_client::public_key.eq(pubkey),
+            program_client::public_key.eq(pubkey.to_bytes().to_vec()),
             program_client::metadata_id.eq(metadata_id),
+        ))
+        .returning(program_client::id)
+        .get_result(&mut conn)
+        .await
+        .unwrap();
+
+    integrity::sign_entity(
+        &mut conn,
+        &actors.key_holder,
+        &ClientCredentials { pubkey, nonce: 1 },
+        client_id,
+    )
+    .await
+    .unwrap();
+}
+
+async fn insert_bootstrap_sentinel_useragent(db: &db::DatabasePool) {
+    let mut conn = db.get().await.unwrap();
+    let sentinel_key = ed25519_dalek::SigningKey::generate(&mut rand::rng())
+        .verifying_key()
+        .to_bytes()
+        .to_vec();
+
+    insert_into(schema::useragent_client::table)
+        .values((
+            schema::useragent_client::public_key.eq(sentinel_key),
+            schema::useragent_client::key_type.eq(1i32),
         ))
         .execute(&mut conn)
         .await
         .unwrap();
+}
+
+async fn spawn_test_actors(db: &db::DatabasePool) -> GlobalActors {
+    insert_bootstrap_sentinel_useragent(db).await;
+
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors
+        .key_holder
+        .ask(Bootstrap {
+            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
+        })
+        .await
+        .unwrap();
+    actors
 }
 
 #[tokio::test]
@@ -53,7 +100,7 @@ pub async fn test_unregistered_pubkey_rejected() {
     let db = db::create_test_pool().await;
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_test_actors(&db).await;
     let props = ClientConnection::new(db.clone(), actors);
     let task = tokio::spawn(async move {
         let mut server_transport = server_transport;
@@ -78,20 +125,19 @@ pub async fn test_unregistered_pubkey_rejected() {
 #[test_log::test]
 pub async fn test_challenge_auth() {
     let db = db::create_test_pool().await;
+    let actors = spawn_test_actors(&db).await;
 
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
-    let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
 
     insert_registered_client(
         &db,
-        pubkey_bytes.clone(),
+        &actors,
+        new_key.verifying_key(),
         &metadata("client", Some("desc"), Some("1.0.0")),
     )
     .await;
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
-
     let props = ClientConnection::new(db.clone(), actors);
     let task = tokio::spawn(async move {
         let mut server_transport = server_transport;
@@ -147,34 +193,13 @@ pub async fn test_challenge_auth() {
 #[test_log::test]
 pub async fn test_metadata_unchanged_does_not_append_history() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
-    let props = ClientConnection::new(db.clone(), actors);
-
+    let actors = spawn_test_actors(&db).await;
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
     let requested = metadata("client", Some("desc"), Some("1.0.0"));
 
-    {
-        use arbiter_server::db::schema::{client_metadata, program_client};
-        let mut conn = db.get().await.unwrap();
-        let metadata_id: i32 = insert_into(client_metadata::table)
-            .values((
-                client_metadata::name.eq(&requested.name),
-                client_metadata::description.eq(&requested.description),
-                client_metadata::version.eq(&requested.version),
-            ))
-            .returning(client_metadata::id)
-            .get_result(&mut conn)
-            .await
-            .unwrap();
-        insert_into(program_client::table)
-            .values((
-                program_client::public_key.eq(new_key.verifying_key().to_bytes().to_vec()),
-                program_client::metadata_id.eq(metadata_id),
-            ))
-            .execute(&mut conn)
-            .await
-            .unwrap();
-    }
+    insert_registered_client(&db, &actors, new_key.verifying_key(), &requested).await;
+
+    let props = ClientConnection::new(db.clone(), actors);
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
     let task = tokio::spawn(async move {
@@ -225,33 +250,18 @@ pub async fn test_metadata_unchanged_does_not_append_history() {
 #[test_log::test]
 pub async fn test_metadata_change_appends_history_and_repoints_binding() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
-    let props = ClientConnection::new(db.clone(), actors);
-
+    let actors = spawn_test_actors(&db).await;
     let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
 
-    {
-        use arbiter_server::db::schema::{client_metadata, program_client};
-        let mut conn = db.get().await.unwrap();
-        let metadata_id: i32 = insert_into(client_metadata::table)
-            .values((
-                client_metadata::name.eq("client"),
-                client_metadata::description.eq(Some("old")),
-                client_metadata::version.eq(Some("1.0.0")),
-            ))
-            .returning(client_metadata::id)
-            .get_result(&mut conn)
-            .await
-            .unwrap();
-        insert_into(program_client::table)
-            .values((
-                program_client::public_key.eq(new_key.verifying_key().to_bytes().to_vec()),
-                program_client::metadata_id.eq(metadata_id),
-            ))
-            .execute(&mut conn)
-            .await
-            .unwrap();
-    }
+    insert_registered_client(
+        &db,
+        &actors,
+        new_key.verifying_key(),
+        &metadata("client", Some("old"), Some("1.0.0")),
+    )
+    .await;
+
+    let props = ClientConnection::new(db.clone(), actors);
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
     let task = tokio::spawn(async move {
@@ -321,4 +331,60 @@ pub async fn test_metadata_change_appends_history_and_repoints_binding() {
             )
         );
     }
+}
+
+#[tokio::test]
+#[test_log::test]
+pub async fn test_challenge_auth_rejects_integrity_tag_mismatch() {
+    let db = db::create_test_pool().await;
+    let actors = spawn_test_actors(&db).await;
+
+    let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
+    let requested = metadata("client", Some("desc"), Some("1.0.0"));
+
+    {
+        use arbiter_server::db::schema::{client_metadata, program_client};
+        let mut conn = db.get().await.unwrap();
+        let metadata_id: i32 = insert_into(client_metadata::table)
+            .values((
+                client_metadata::name.eq(&requested.name),
+                client_metadata::description.eq(&requested.description),
+                client_metadata::version.eq(&requested.version),
+            ))
+            .returning(client_metadata::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+        insert_into(program_client::table)
+            .values((
+                program_client::public_key.eq(new_key.verifying_key().to_bytes().to_vec()),
+                program_client::metadata_id.eq(metadata_id),
+            ))
+            .execute(&mut conn)
+            .await
+            .unwrap();
+    }
+
+    let (server_transport, mut test_transport) = ChannelTransport::new();
+    let props = ClientConnection::new(db.clone(), actors);
+    let task = tokio::spawn(async move {
+        let mut server_transport = server_transport;
+        connect_client(props, &mut server_transport).await;
+    });
+
+    test_transport
+        .send(auth::Inbound::AuthChallengeRequest {
+            pubkey: new_key.verifying_key(),
+            metadata: requested,
+        })
+        .await
+        .unwrap();
+
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive auth rejection");
+    assert!(matches!(response, Err(auth::Error::IntegrityCheckFailed)));
+
+    task.await.unwrap();
 }
