@@ -4,6 +4,7 @@ use tracing::{error, info};
 
 use crate::{
     actors::{GlobalActors, client::session::ClientSession},
+    crypto::integrity::{Integrable, hashing::Hashable},
     db,
 };
 
@@ -11,6 +12,22 @@ use crate::{
 pub struct ClientProfile {
     pub pubkey: ed25519_dalek::VerifyingKey,
     pub metadata: ClientMetadata,
+}
+
+pub struct ClientCredentials {
+    pub pubkey: ed25519_dalek::VerifyingKey,
+    pub nonce: i32,
+}
+
+impl Integrable for ClientCredentials {
+    const KIND: &'static str = "client_credentials";
+}
+
+impl Hashable for ClientCredentials {
+    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
+        hasher.update(self.pubkey.as_bytes());
+        self.nonce.hash(hasher);
+    }
 }
 
 pub struct ClientConnection {

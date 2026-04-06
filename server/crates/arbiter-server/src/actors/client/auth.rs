@@ -9,14 +9,16 @@ use diesel::{
 };
 use diesel_async::RunQueryDsl as _;
 use ed25519_dalek::{Signature, VerifyingKey};
-use kameo::error::SendError;
+use kameo::{actor::ActorRef, error::SendError};
 use tracing::error;
 
 use crate::{
     actors::{
-        client::{ClientConnection, ClientProfile},
+        client::{ClientConnection, ClientCredentials, ClientProfile},
         flow_coordinator::{self, RequestClientApproval},
+        keyholder::KeyHolder,
     },
+    crypto::integrity::{self, AttestationStatus},
     db::{
         self,
         models::{ProgramClientMetadata, SqliteTimestamp},
@@ -30,12 +32,21 @@ pub enum Error {
     DatabasePoolUnavailable,
     #[error("Database operation failed")]
     DatabaseOperationFailed,
+    #[error("Integrity check failed")]
+    IntegrityCheckFailed,
     #[error("Invalid challenge solution")]
     InvalidChallengeSolution,
     #[error("Client approval request failed")]
     ApproveError(#[from] ApproveError),
     #[error("Transport error")]
     Transport,
+}
+
+impl From<diesel::result::Error> for Error {
+    fn from(e: diesel::result::Error) -> Self {
+        error!(?e, "Database error");
+        Self::DatabaseOperationFailed
+    }
 }
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
@@ -65,18 +76,78 @@ pub enum Outbound {
     AuthSuccess,
 }
 
-pub struct ClientInfo {
-    pub id: i32,
-    pub current_nonce: i32,
-}
-
-/// Atomically reads and increments the nonce for a known client.
+/// Returns the current nonce and client ID for a registered client.
 /// Returns `None` if the pubkey is not registered.
-async fn get_client_and_nonce(
+async fn get_current_nonce_and_id(
     db: &db::DatabasePool,
     pubkey: &VerifyingKey,
-) -> Result<Option<ClientInfo>, Error> {
+) -> Result<Option<(i32, i32)>, Error> {
     let pubkey_bytes = pubkey.as_bytes().to_vec();
+    let mut conn = db.get().await.map_err(|e| {
+        error!(error = ?e, "Database pool error");
+        Error::DatabasePoolUnavailable
+    })?;
+    program_client::table
+        .filter(program_client::public_key.eq(&pubkey_bytes))
+        .select((program_client::id, program_client::nonce))
+        .first::<(i32, i32)>(&mut conn)
+        .await
+        .optional()
+        .map_err(|e| {
+            error!(error = ?e, "Database error");
+            Error::DatabaseOperationFailed
+        })
+}
+
+async fn verify_integrity(
+    db: &db::DatabasePool,
+    keyholder: &ActorRef<KeyHolder>,
+    pubkey: &VerifyingKey,
+) -> Result<(), Error> {
+    let mut db_conn = db.get().await.map_err(|e| {
+        error!(error = ?e, "Database pool error");
+        Error::DatabasePoolUnavailable
+    })?;
+
+    let (id, nonce) = get_current_nonce_and_id(db, pubkey)
+        .await?
+        .ok_or_else(|| {
+            error!("Client not found during integrity verification");
+            Error::DatabaseOperationFailed
+        })?;
+
+    let attestation = integrity::verify_entity(
+        &mut db_conn,
+        keyholder,
+        &ClientCredentials {
+            pubkey: pubkey.clone(),
+            nonce,
+        },
+        id,
+    )
+    .await
+    .map_err(|e| {
+        error!(?e, "Integrity verification failed");
+        Error::IntegrityCheckFailed
+    })?;
+
+    if attestation != AttestationStatus::Attested {
+        error!("Integrity attestation unavailable for client {id}");
+        return Err(Error::IntegrityCheckFailed);
+    }
+
+    Ok(())
+}
+
+/// Atomically increments the nonce and re-signs the integrity envelope.
+/// Returns the new nonce, which is used as the challenge nonce.
+async fn create_nonce(
+    db: &db::DatabasePool,
+    keyholder: &ActorRef<KeyHolder>,
+    pubkey: &VerifyingKey,
+) -> Result<i32, Error> {
+    let pubkey_bytes = pubkey.as_bytes().to_vec();
+    let pubkey = pubkey.clone();
 
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
@@ -84,34 +155,35 @@ async fn get_client_and_nonce(
     })?;
 
     conn.exclusive_transaction(|conn| {
+        let keyholder = keyholder.clone();
+        let pubkey = pubkey.clone();
         Box::pin(async move {
-            let Some((client_id, current_nonce)) = program_client::table
+            let (id, new_nonce): (i32, i32) = update(program_client::table)
                 .filter(program_client::public_key.eq(&pubkey_bytes))
-                .select((program_client::id, program_client::nonce))
-                .first::<(i32, i32)>(conn)
-                .await
-                .optional()?
-            else {
-                return Result::<_, diesel::result::Error>::Ok(None);
-            };
-
-            update(program_client::table)
-                .filter(program_client::public_key.eq(&pubkey_bytes))
-                .set(program_client::nonce.eq(current_nonce + 1))
-                .execute(conn)
+                .set(program_client::nonce.eq(program_client::nonce + 1))
+                .returning((program_client::id, program_client::nonce))
+                .get_result(conn)
                 .await?;
 
-            Ok(Some(ClientInfo {
-                id: client_id,
-                current_nonce,
-            }))
+            integrity::sign_entity(
+                conn,
+                &keyholder,
+                &ClientCredentials {
+                    pubkey: pubkey.clone(),
+                    nonce: new_nonce,
+                },
+                id,
+            )
+            .await
+            .map_err(|e| {
+                error!(?e, "Integrity sign failed after nonce update");
+                Error::DatabaseOperationFailed
+            })?;
+
+            Ok(new_nonce)
         })
     })
     .await
-    .map_err(|e| {
-        error!(error = ?e, "Database error");
-        Error::DatabaseOperationFailed
-    })
 }
 
 async fn approve_new_client(
@@ -139,45 +211,65 @@ async fn approve_new_client(
 
 async fn insert_client(
     db: &db::DatabasePool,
+    keyholder: &ActorRef<KeyHolder>,
     pubkey: &VerifyingKey,
     metadata: &ClientMetadata,
 ) -> Result<i32, Error> {
     use crate::db::schema::{client_metadata, program_client};
+    let pubkey = pubkey.clone();
+    let metadata = metadata.clone();
+
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
         Error::DatabasePoolUnavailable
     })?;
 
-    let metadata_id = insert_into(client_metadata::table)
-        .values((
-            client_metadata::name.eq(&metadata.name),
-            client_metadata::description.eq(&metadata.description),
-            client_metadata::version.eq(&metadata.version),
-        ))
-        .returning(client_metadata::id)
-        .get_result::<i32>(&mut conn)
-        .await
-        .map_err(|e| {
-            error!(error = ?e, "Failed to insert client metadata");
-            Error::DatabaseOperationFailed
-        })?;
+    conn.exclusive_transaction(|conn| {
+        let keyholder = keyholder.clone();
+        let pubkey = pubkey.clone();
+        Box::pin(async move {
+            const NONCE_START: i32 = 1;
 
-    let client_id = insert_into(program_client::table)
-        .values((
-            program_client::public_key.eq(pubkey.as_bytes().to_vec()),
-            program_client::metadata_id.eq(metadata_id),
-            program_client::nonce.eq(1), // pre-incremented; challenge uses 0
-        ))
-        .on_conflict_do_nothing()
-        .returning(program_client::id)
-        .get_result::<i32>(&mut conn)
-        .await
-        .map_err(|e| {
-            error!(error = ?e, "Failed to insert client metadata");
-            Error::DatabaseOperationFailed
-        })?;
+            let metadata_id = insert_into(client_metadata::table)
+                .values((
+                    client_metadata::name.eq(&metadata.name),
+                    client_metadata::description.eq(&metadata.description),
+                    client_metadata::version.eq(&metadata.version),
+                ))
+                .returning(client_metadata::id)
+                .get_result::<i32>(conn)
+                .await?;
 
-    Ok(client_id)
+            let client_id = insert_into(program_client::table)
+                .values((
+                    program_client::public_key.eq(pubkey.as_bytes().to_vec()),
+                    program_client::metadata_id.eq(metadata_id),
+                    program_client::nonce.eq(NONCE_START),
+                ))
+                .on_conflict_do_nothing()
+                .returning(program_client::id)
+                .get_result::<i32>(conn)
+                .await?;
+
+            integrity::sign_entity(
+                conn,
+                &keyholder,
+                &ClientCredentials {
+                    pubkey: pubkey.clone(),
+                    nonce: NONCE_START,
+                },
+                client_id,
+            )
+            .await
+            .map_err(|e| {
+                error!(error = ?e, "Failed to sign integrity tag for new client key");
+                Error::DatabaseOperationFailed
+            })?;
+
+            Ok(client_id)
+        })
+    })
+    .await
 }
 
 async fn sync_client_metadata(
@@ -295,8 +387,11 @@ where
         return Err(Error::Transport);
     };
 
-    let info = match get_client_and_nonce(&props.db, &pubkey).await? {
-        Some(nonce) => nonce,
+    let client_id = match get_current_nonce_and_id(&props.db, &pubkey).await? {
+        Some((id, _)) => {
+            verify_integrity(&props.db, &props.actors.key_holder, &pubkey).await?;
+            id
+        }
         None => {
             approve_new_client(
                 &props.actors,
@@ -306,16 +401,13 @@ where
                 },
             )
             .await?;
-            let client_id = insert_client(&props.db, &pubkey, &metadata).await?;
-            ClientInfo {
-                id: client_id,
-                current_nonce: 0,
-            }
+            insert_client(&props.db, &props.actors.key_holder, &pubkey, &metadata).await?
         }
     };
 
-    sync_client_metadata(&props.db, info.id, &metadata).await?;
-    challenge_client(transport, pubkey, info.current_nonce).await?;
+    sync_client_metadata(&props.db, client_id, &metadata).await?;
+    let challenge_nonce = create_nonce(&props.db, &props.actors.key_holder, &pubkey).await?;
+    challenge_client(transport, pubkey, challenge_nonce).await?;
 
     transport
         .send(Ok(Outbound::AuthSuccess))
@@ -325,5 +417,5 @@ where
             Error::Transport
         })?;
 
-    Ok(info.id)
+    Ok(client_id)
 }
