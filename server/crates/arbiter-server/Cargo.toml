@@ -60,6 +60,7 @@ arbiter-tokens-registry.path = "../arbiter-tokens-registry"
 anyhow = "1.0.102"
 serde_with = "3.18.0"
 mutants.workspace = true
+subtle = "2.6.1"
 
 [dev-dependencies]
 insta = "1.46.3"

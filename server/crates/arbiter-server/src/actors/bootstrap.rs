@@ -4,6 +4,7 @@ use diesel_async::RunQueryDsl;
 use kameo::{Actor, messages};
 
 use rand::{RngExt, distr::Alphanumeric, make_rng, rngs::StdRng};
+use subtle::ConstantTimeEq as _;
 use thiserror::Error;
 
 use crate::db::{self, DatabasePool, schema};
@@ -44,14 +45,14 @@ pub struct Bootstrapper {
 
 impl Bootstrapper {
     pub async fn new(db: &DatabasePool) -> Result<Self, Error> {
-        let mut conn = db.get().await?;
+        let row_count: i64 = {
+            let mut conn = db.get().await?;
 
-        let row_count: i64 = schema::useragent_client::table
-            .count()
-            .get_result(&mut conn)
-            .await?;
-
-        drop(conn);
+            schema::useragent_client::table
+                .count()
+                .get_result(&mut conn)
+                .await?
+        };
 
         let token = if row_count == 0 {
             let token = generate_token().await?;
@@ -69,7 +70,13 @@ impl Bootstrapper {
     #[message]
     pub fn is_correct_token(&self, token: String) -> bool {
         match &self.token {
-            Some(expected) => *expected == token,
+            Some(expected) => {
+                let expected_bytes = expected.as_bytes();
+                let token_bytes = token.as_bytes();
+
+                let choice = expected_bytes.ct_eq(token_bytes);
+                bool::from(choice)
+            }
             None => false,
         }
     }
