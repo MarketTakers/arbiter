@@ -11,7 +11,9 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::{
-    crypto::integrity::v1::Integrable, db::models::{self, EvmBasicGrant, EvmWalletAccess}, evm::utils
+    crypto::integrity::v1::Integrable,
+    db::models::{self, EvmBasicGrant, EvmWalletAccess},
+    evm::utils,
 };
 
 pub mod ether_transfer;
@@ -55,6 +57,9 @@ pub enum EvalViolation {
 
     #[error("Transaction type is not allowed by this grant")]
     InvalidTransactionType,
+
+    #[error("Mismatching chain ID")]
+    MismatchingChainId { expected: ChainId, actual: ChainId },
 }
 
 pub type DatabaseID = i32;
@@ -215,4 +220,3 @@ impl<P: Integrable> Integrable for CombinedSettings<P> {
     const KIND: &'static str = P::KIND;
     const VERSION: i32 = P::VERSION;
 }
-

@@ -8,7 +8,7 @@ use arbiter_proto::proto::{
         EvalViolation as ProtoEvalViolation, GasLimitExceededViolation, NoMatchingGrantError,
         PolicyViolationsError, SpecificMeaning as ProtoSpecificMeaning,
         TokenInfo as ProtoTokenInfo, TransactionEvalError as ProtoTransactionEvalError,
-        eval_violation::Kind as ProtoEvalViolationKind,
+        eval_violation as proto_eval_violation, eval_violation::Kind as ProtoEvalViolationKind,
         specific_meaning::Meaning as ProtoSpecificMeaningKind,
         transaction_eval_error::Kind as ProtoTransactionEvalErrorKind,
     },
@@ -79,6 +79,12 @@ impl Convert for EvalViolation {
             EvalViolation::InvalidTransactionType => {
                 ProtoEvalViolationKind::InvalidTransactionType(())
             }
+            EvalViolation::MismatchingChainId { expected, actual } => {
+                ProtoEvalViolationKind::ChainIdMismatch(proto_eval_violation::ChainIdMismatch {
+                    expected,
+                    actual,
+                })
+            }
         };
 
         ProtoEvalViolation { kind: Some(kind) }
@@ -108,7 +114,7 @@ impl Convert for VetError {
                         violations: violations.into_iter().map(Convert::convert).collect(),
                     })
                 }
-                PolicyError::Database(_)| PolicyError::Integrity(_) => {
+                PolicyError::Database(_) | PolicyError::Integrity(_) => {
                     return EvmSignTransactionResult::Error(ProtoEvmError::Internal.into());
                 }
             },

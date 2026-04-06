@@ -103,7 +103,6 @@ async fn verify_integrity(
     })?;
 
     Ok(())
-
 }
 
 async fn create_nonce(

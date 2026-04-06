@@ -1,5 +1,7 @@
 use crate::{
-    actors::{GlobalActors, client::ClientProfile}, crypto::integrity::Integrable, db::{self, models::KeyType}
+    actors::{GlobalActors, client::ClientProfile},
+    crypto::integrity::Integrable,
+    db::{self, models::KeyType},
 };
 
 fn serialize_ecdsa<S>(key: &k256::ecdsa::VerifyingKey, serializer: S) -> Result<S::Ok, S::Error>
@@ -44,7 +46,10 @@ where
 pub enum AuthPublicKey {
     Ed25519(ed25519_dalek::VerifyingKey),
     /// Compressed SEC1 public key; signature bytes are raw 64-byte (r||s).
-    #[serde(serialize_with = "serialize_ecdsa", deserialize_with = "deserialize_ecdsa")]
+    #[serde(
+        serialize_with = "serialize_ecdsa",
+        deserialize_with = "deserialize_ecdsa"
+    )]
     EcdsaSecp256k1(k256::ecdsa::VerifyingKey),
     /// RSA-2048+ public key (Windows Hello / KeyCredentialManager); signature bytes are PSS+SHA-256.
     Rsa(rsa::RsaPublicKey),
@@ -53,7 +58,7 @@ pub enum AuthPublicKey {
 #[derive(Debug, Serialize)]
 pub struct UserAgentCredentials {
     pub pubkey: AuthPublicKey,
-    pub nonce: i32
+    pub nonce: i32,
 }
 
 impl Integrable for UserAgentCredentials {

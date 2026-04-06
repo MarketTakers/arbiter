@@ -36,6 +36,10 @@ message GasLimitExceededViolation {
 }
 
 message EvalViolation {
+  message ChainIdMismatch {
+    uint64 expected = 1;
+    uint64 actual = 2;
+  }
   oneof kind {
     bytes invalid_target = 1; // 20-byte Ethereum address
     GasLimitExceededViolation gas_limit_exceeded = 2;
@@ -43,6 +47,8 @@ message EvalViolation {
     google.protobuf.Empty volumetric_limit_exceeded = 4;
     google.protobuf.Empty invalid_time = 5;
     google.protobuf.Empty invalid_transaction_type = 6;
+
+    ChainIdMismatch chain_id_mismatch = 7;
   }
 }
 

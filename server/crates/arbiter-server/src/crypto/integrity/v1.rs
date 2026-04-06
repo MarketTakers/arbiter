@@ -1,4 +1,4 @@
-use crate::{actors::keyholder, crypto::KeyCell,safe_cell::SafeCellHandle as _};
+use crate::{actors::keyholder, crypto::KeyCell, safe_cell::SafeCellHandle as _};
 use chacha20poly1305::Key;
 use hmac::{Hmac, Mac as _};
 use serde::Serialize;
@@ -128,7 +128,7 @@ pub async fn sign_entity<E: Integrable>(
         .values(NewIntegrityEnvelope {
             entity_kind: E::KIND.to_owned(),
             entity_id: entity_id,
-            payload_version: E::VERSION ,
+            payload_version: E::VERSION,
             key_version,
             mac: mac.to_vec(),
         })
@@ -162,7 +162,9 @@ pub async fn verify_entity<E: Integrable>(
         .first(conn)
         .await
         .map_err(|err| match err {
-            diesel::result::Error::NotFound => Error::MissingEnvelope { entity_kind: E::KIND },
+            diesel::result::Error::NotFound => Error::MissingEnvelope {
+                entity_kind: E::KIND,
+            },
             other => Error::Database(db::DatabaseError::from(other)),
         })?;
 
@@ -176,12 +178,7 @@ pub async fn verify_entity<E: Integrable>(
 
     let payload = postcard::to_stdvec(entity)?;
     let payload_hash = payload_hash(&payload);
-    let mac_input = build_mac_input(
-        E::KIND,
-        &entity_id,
-        envelope.payload_version,
-        &payload_hash,
-    );
+    let mac_input = build_mac_input(E::KIND, &entity_id, envelope.payload_version, &payload_hash);
 
     let result = keyholder
         .ask(VerifyIntegrity {
@@ -189,13 +186,16 @@ pub async fn verify_entity<E: Integrable>(
             expected_mac: envelope.mac,
             key_version: envelope.key_version,
         })
-        .await
-        ;
+        .await;
 
     match result {
         Ok(true) => Ok(AttestationStatus::Attested),
-        Ok(false) => Err(Error::MacMismatch { entity_kind: E::KIND }),
-        Err(SendError::HandlerError(keyholder::Error::NotBootstrapped)) => Ok(AttestationStatus::Unavailable),
+        Ok(false) => Err(Error::MacMismatch {
+            entity_kind: E::KIND,
+        }),
+        Err(SendError::HandlerError(keyholder::Error::NotBootstrapped)) => {
+            Ok(AttestationStatus::Unavailable)
+        }
         Err(_) => Err(Error::KeyholderSend),
     }
 }
@@ -248,7 +248,9 @@ mod tests {
             payload: b"payload-v1".to_vec(),
         };
 
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID).await.unwrap();
+        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
+            .await
+            .unwrap();
 
         let count: i64 = schema::integrity_envelope::table
             .filter(schema::integrity_envelope::entity_kind.eq("dummy_entity"))
@@ -259,7 +261,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(count, 1, "envelope row must be created exactly once");
-        verify_entity(&mut conn, &keyholder, &entity, ENTITY_ID).await.unwrap();
+        verify_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -275,7 +279,9 @@ mod tests {
             payload: b"payload-v1".to_vec(),
         };
 
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID).await.unwrap();
+        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
+            .await
+            .unwrap();
 
         diesel::update(schema::integrity_envelope::table)
             .filter(schema::integrity_envelope::entity_kind.eq("dummy_entity"))
@@ -304,7 +310,9 @@ mod tests {
             payload: b"payload-v1".to_vec(),
         };
 
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID).await.unwrap();
+        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
+            .await
+            .unwrap();
 
         let tampered = DummyEntity {
             payload: b"payload-v1-but-tampered".to_vec(),

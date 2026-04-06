@@ -15,10 +15,11 @@ use crate::{
         schema,
     },
     evm::{
-        self, ListError, RunKind, policies::{
+        self, ListError, RunKind,
+        policies::{
             CombinedSettings, Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning,
             ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
-        }
+        },
     },
     safe_cell::{SafeCell, SafeCellHandle as _},
 };

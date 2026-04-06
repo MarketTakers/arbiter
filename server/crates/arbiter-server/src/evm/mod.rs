@@ -21,8 +21,8 @@ use crate::{
         schema::{self, evm_transaction_log},
     },
     evm::policies::{
-        DatabaseID, EvalContext, EvalViolation, Grant, Policy, CombinedSettings, SharedGrantSettings,
-        SpecificGrant, SpecificMeaning, ether_transfer::EtherTransfer,
+        CombinedSettings, DatabaseID, EvalContext, EvalViolation, Grant, Policy,
+        SharedGrantSettings, SpecificGrant, SpecificMeaning, ether_transfer::EtherTransfer,
         token_transfers::TokenTransfer,
     },
 };
@@ -89,6 +89,14 @@ async fn check_shared_constraints(
 ) -> QueryResult<Vec<EvalViolation>> {
     let mut violations = Vec::new();
     let now = Utc::now();
+
+    if shared.chain != context.chain {
+        violations.push(EvalViolation::MismatchingChainId {
+            expected: shared.chain,
+            actual: context.chain,
+        });
+        return Ok(violations);
+    }
 
     // Validity window
     if shared.valid_from.is_some_and(|t| now < t) || shared.valid_until.is_some_and(|t| now > t) {
@@ -250,14 +258,9 @@ impl Engine {
 
                     P::create_grant(&basic_grant, &full_grant.specific, conn).await?;
 
-                    integrity::sign_entity(
-                        conn,
-                        &keyholder,
-                        &full_grant,
-                    basic_grant.id,
-                    )
-                    .await
-                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                    integrity::sign_entity(conn, &keyholder, &full_grant, basic_grant.id)
+                        .await
+                        .map_err(|_| diesel::result::Error::RollbackTransaction)?;
 
                     QueryResult::Ok(basic_grant.id)
                 })
@@ -340,5 +343,257 @@ impl Engine {
         }
 
         Err(VetError::UnsupportedTransactionType)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy::primitives::{Address, Bytes, U256, address};
+    use chrono::{Duration, Utc};
+    use diesel::{SelectableHelper, insert_into};
+    use diesel_async::RunQueryDsl;
+    use rstest::rstest;
+
+    use crate::db::{
+        self, DatabaseConnection,
+        models::{
+            EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp,
+        },
+        schema::{evm_basic_grant, evm_transaction_log},
+    };
+    use crate::evm::policies::{
+        EvalContext, EvalViolation, SharedGrantSettings, TransactionRateLimit,
+    };
+
+    use super::check_shared_constraints;
+
+    const WALLET_ACCESS_ID: i32 = 1;
+    const CHAIN_ID: u64 = 1;
+    const RECIPIENT: Address = address!("1111111111111111111111111111111111111111");
+
+    fn context() -> EvalContext {
+        EvalContext {
+            target: EvmWalletAccess {
+                id: WALLET_ACCESS_ID,
+                wallet_id: 10,
+                client_id: 20,
+                created_at: SqliteTimestamp(Utc::now()),
+            },
+            chain: CHAIN_ID,
+            to: RECIPIENT,
+            value: U256::ZERO,
+            calldata: Bytes::new(),
+            max_fee_per_gas: 100,
+            max_priority_fee_per_gas: 10,
+        }
+    }
+
+    fn shared_settings() -> SharedGrantSettings {
+        SharedGrantSettings {
+            wallet_access_id: WALLET_ACCESS_ID,
+            chain: CHAIN_ID,
+            valid_from: None,
+            valid_until: None,
+            max_gas_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
+            rate_limit: None,
+        }
+    }
+
+    async fn insert_basic_grant(
+        conn: &mut DatabaseConnection,
+        shared: &SharedGrantSettings,
+    ) -> EvmBasicGrant {
+        insert_into(evm_basic_grant::table)
+            .values(NewEvmBasicGrant {
+                wallet_access_id: shared.wallet_access_id,
+                chain_id: shared.chain as i32,
+                valid_from: shared.valid_from.map(SqliteTimestamp),
+                valid_until: shared.valid_until.map(SqliteTimestamp),
+                max_gas_fee_per_gas: shared
+                    .max_gas_fee_per_gas
+                    .map(|fee| super::utils::u256_to_bytes(fee).to_vec()),
+                max_priority_fee_per_gas: shared
+                    .max_priority_fee_per_gas
+                    .map(|fee| super::utils::u256_to_bytes(fee).to_vec()),
+                rate_limit_count: shared.rate_limit.as_ref().map(|limit| limit.count as i32),
+                rate_limit_window_secs: shared
+                    .rate_limit
+                    .as_ref()
+                    .map(|limit| limit.window.num_seconds() as i32),
+                revoked_at: None,
+            })
+            .returning(EvmBasicGrant::as_select())
+            .get_result(conn)
+            .await
+            .unwrap()
+    }
+
+    #[rstest]
+    #[case::matching_chain(CHAIN_ID, false)]
+    #[case::mismatching_chain(CHAIN_ID + 1, true)]
+    #[tokio::test]
+    async fn check_shared_constraints_enforces_chain_id(
+        #[case] context_chain: u64,
+        #[case] expect_mismatch: bool,
+    ) {
+        let db = db::create_test_pool().await;
+        let mut conn = db.get().await.unwrap();
+
+        let context = EvalContext {
+            chain: context_chain,
+            ..context()
+        };
+
+        let violations = check_shared_constraints(&context, &shared_settings(), 999, &mut *conn)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            violations
+                .iter()
+                .any(|violation| matches!(violation, EvalViolation::MismatchingChainId { .. })),
+            expect_mismatch
+        );
+
+        if expect_mismatch {
+            assert_eq!(violations.len(), 1);
+        } else {
+            assert!(violations.is_empty());
+        }
+    }
+
+    #[rstest]
+    #[case::valid_from_in_bounds(Some(Utc::now() - Duration::hours(1)), None, false)]
+    #[case::valid_from_out_of_bounds(Some(Utc::now() + Duration::hours(1)), None, true)]
+    #[case::valid_until_in_bounds(None, Some(Utc::now() + Duration::hours(1)), false)]
+    #[case::valid_until_out_of_bounds(None, Some(Utc::now() - Duration::hours(1)), true)]
+    #[tokio::test]
+    async fn check_shared_constraints_enforces_validity_window(
+        #[case] valid_from: Option<chrono::DateTime<Utc>>,
+        #[case] valid_until: Option<chrono::DateTime<Utc>>,
+        #[case] expect_invalid_time: bool,
+    ) {
+        let db = db::create_test_pool().await;
+        let mut conn = db.get().await.unwrap();
+
+        let shared = SharedGrantSettings {
+            valid_from,
+            valid_until,
+            ..shared_settings()
+        };
+
+        let violations = check_shared_constraints(&context(), &shared, 999, &mut *conn)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            violations
+                .iter()
+                .any(|violation| matches!(violation, EvalViolation::InvalidTime)),
+            expect_invalid_time
+        );
+
+        if expect_invalid_time {
+            assert_eq!(violations.len(), 1);
+        } else {
+            assert!(violations.is_empty());
+        }
+    }
+
+    #[rstest]
+    #[case::max_fee_within_limit(Some(U256::from(100u64)), None, 100, 10, false)]
+    #[case::max_fee_exceeded(Some(U256::from(99u64)), None, 100, 10, true)]
+    #[case::priority_fee_within_limit(None, Some(U256::from(10u64)), 100, 10, false)]
+    #[case::priority_fee_exceeded(None, Some(U256::from(9u64)), 100, 10, true)]
+    #[tokio::test]
+    async fn check_shared_constraints_enforces_gas_fee_caps(
+        #[case] max_gas_fee_per_gas: Option<U256>,
+        #[case] max_priority_fee_per_gas: Option<U256>,
+        #[case] actual_max_fee_per_gas: u128,
+        #[case] actual_max_priority_fee_per_gas: u128,
+        #[case] expect_gas_limit_violation: bool,
+    ) {
+        let db = db::create_test_pool().await;
+        let mut conn = db.get().await.unwrap();
+
+        let context = EvalContext {
+            max_fee_per_gas: actual_max_fee_per_gas,
+            max_priority_fee_per_gas: actual_max_priority_fee_per_gas,
+            ..context()
+        };
+
+        let shared = SharedGrantSettings {
+            max_gas_fee_per_gas,
+            max_priority_fee_per_gas,
+            ..shared_settings()
+        };
+        let violations = check_shared_constraints(&context, &shared, 999, &mut *conn)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            violations
+                .iter()
+                .any(|violation| matches!(violation, EvalViolation::GasLimitExceeded { .. })),
+            expect_gas_limit_violation
+        );
+
+        if expect_gas_limit_violation {
+            assert_eq!(violations.len(), 1);
+        } else {
+            assert!(violations.is_empty());
+        }
+    }
+
+    #[rstest]
+    #[case::under_rate_limit(2, false)]
+    #[case::at_rate_limit(1, true)]
+    #[tokio::test]
+    async fn check_shared_constraints_enforces_rate_limit(
+        #[case] rate_limit_count: u32,
+        #[case] expect_rate_limit_violation: bool,
+    ) {
+        let db = db::create_test_pool().await;
+        let mut conn = db.get().await.unwrap();
+
+        let shared = SharedGrantSettings {
+            rate_limit: Some(TransactionRateLimit {
+                count: rate_limit_count,
+                window: Duration::hours(1),
+            }),
+            ..shared_settings()
+        };
+
+        let basic_grant = insert_basic_grant(&mut conn, &shared).await;
+
+        insert_into(evm_transaction_log::table)
+            .values(NewEvmTransactionLog {
+                grant_id: basic_grant.id,
+                wallet_access_id: WALLET_ACCESS_ID,
+                chain_id: CHAIN_ID as i32,
+                eth_value: super::utils::u256_to_bytes(U256::ZERO).to_vec(),
+                signed_at: SqliteTimestamp(Utc::now()),
+            })
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+
+        let violations = check_shared_constraints(&context(), &shared, basic_grant.id, &mut *conn)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            violations
+                .iter()
+                .any(|violation| matches!(violation, EvalViolation::RateLimitExceeded)),
+            expect_rate_limit_violation
+        );
+
+        if expect_rate_limit_violation {
+            assert_eq!(violations.len(), 1);
+        } else {
+            assert!(violations.is_empty());
+        }
     }
 }
