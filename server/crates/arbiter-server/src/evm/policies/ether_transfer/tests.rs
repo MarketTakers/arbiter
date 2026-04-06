@@ -84,8 +84,6 @@ fn shared() -> SharedGrantSettings {
     }
 }
 
-// ── analyze ─────────────────────────────────────────────────────────────
-
 #[test]
 fn analyze_matches_empty_calldata() {
     let m = EtherTransfer::analyze(&ctx(ALLOWED, U256::from(1_000u64))).unwrap();
@@ -101,8 +99,6 @@ fn analyze_rejects_nonempty_calldata() {
     };
     assert!(EtherTransfer::analyze(&context).is_none());
 }
-
-// ── evaluate ────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn evaluate_passes_for_allowed_target() {
@@ -276,8 +272,6 @@ async fn evaluate_passes_at_exactly_volume_limit() {
     );
 }
 
-// ── try_find_grant ───────────────────────────────────────────────────────
-
 #[tokio::test]
 async fn try_find_grant_roundtrip() {
     let db = db::create_test_pool().await;
@@ -336,7 +330,36 @@ async fn try_find_grant_wrong_target_returns_none() {
     assert!(found.is_none());
 }
 
-// ── find_all_grants ──────────────────────────────────────────────────────
+proptest::proptest! {
+    #[test]
+    fn target_order_does_not_affect_hash(
+        raw_addrs in proptest::collection::vec(proptest::prelude::any::<[u8; 20]>(), 0..8),
+        seed in proptest::prelude::any::<u64>(),
+        max_volume in proptest::prelude::any::<u64>(),
+        window_secs in 1i64..=86400,
+    ) {
+        use rand::{SeedableRng, seq::SliceRandom};
+        use sha2::Digest;
+        use crate::crypto::integrity::hashing::Hashable;
+
+        let addrs: Vec<Address> = raw_addrs.iter().map(|b| Address::from(*b)).collect();
+        let mut shuffled = addrs.clone();
+        shuffled.shuffle(&mut rand::rngs::StdRng::seed_from_u64(seed));
+
+        let limit = VolumeRateLimit {
+            max_volume: U256::from(max_volume),
+            window: Duration::seconds(window_secs),
+        };
+
+        let mut h1 = sha2::Sha256::new();
+        Settings { target: addrs, limit: limit.clone() }.hash(&mut h1);
+
+        let mut h2 = sha2::Sha256::new();
+        Settings { target: shuffled, limit }.hash(&mut h2);
+
+        proptest::prop_assert_eq!(h1.finalize(), h2.finalize());
+    }
+}
 
 #[tokio::test]
 async fn find_all_grants_empty_db() {

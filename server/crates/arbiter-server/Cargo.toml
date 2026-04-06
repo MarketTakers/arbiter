@@ -58,12 +58,11 @@ prost-types.workspace = true
 prost.workspace = true
 arbiter-tokens-registry.path = "../arbiter-tokens-registry"
 anyhow = "1.0.102"
-postcard = { version = "1.1.3", features = ["use-std"] }
-serde = { version = "1.0.228", features = ["derive"] }
 serde_with = "3.18.0"
 mutants.workspace = true
 
 [dev-dependencies]
 insta = "1.46.3"
+proptest = "1.11.0"
 rstest.workspace = true
 test-log = { version = "0.2", default-features = false, features = ["trace"] }

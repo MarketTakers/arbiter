@@ -4,58 +4,17 @@ use crate::{
     db::{self, models::KeyType},
 };
 
-fn serialize_ecdsa<S>(key: &k256::ecdsa::VerifyingKey, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    // Serialize as hex string for easier debugging (33 bytes compressed SEC1 format)
-    let key = key.to_encoded_point(true);
-    let bytes = key.as_bytes();
-    serializer.serialize_bytes(bytes)
-}
-
-fn deserialize_ecdsa<'de, D>(deserializer: D) -> Result<k256::ecdsa::VerifyingKey, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    struct EcdsaVisitor;
-
-    impl<'de> serde::de::Visitor<'de> for EcdsaVisitor {
-        type Value = k256::ecdsa::VerifyingKey;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            formatter.write_str("a compressed SEC1-encoded ECDSA public key")
-        }
-
-        fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            let point = k256::EncodedPoint::from_bytes(v)
-                .map_err(|_| E::custom("invalid compressed SEC1 format"))?;
-            k256::ecdsa::VerifyingKey::from_encoded_point(&point)
-                .map_err(|_| E::custom("invalid ECDSA public key"))
-        }
-    }
-
-    deserializer.deserialize_bytes(EcdsaVisitor)
-}
-
 /// Abstraction over Ed25519 / ECDSA-secp256k1 / RSA public keys used during the auth handshake.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub enum AuthPublicKey {
     Ed25519(ed25519_dalek::VerifyingKey),
     /// Compressed SEC1 public key; signature bytes are raw 64-byte (r||s).
-    #[serde(
-        serialize_with = "serialize_ecdsa",
-        deserialize_with = "deserialize_ecdsa"
-    )]
     EcdsaSecp256k1(k256::ecdsa::VerifyingKey),
     /// RSA-2048+ public key (Windows Hello / KeyCredentialManager); signature bytes are PSS+SHA-256.
     Rsa(rsa::RsaPublicKey),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct UserAgentCredentials {
     pub pubkey: AuthPublicKey,
     pub nonce: i32,
@@ -143,5 +102,19 @@ pub mod auth;
 pub mod session;
 
 pub use auth::authenticate;
-use serde::Serialize;
 pub use session::UserAgentSession;
+
+use crate::crypto::integrity::hashing::Hashable;
+
+impl Hashable for AuthPublicKey {
+    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
+        hasher.update(&self.to_stored_bytes());
+    }
+}
+
+impl Hashable for UserAgentCredentials {
+    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
+        self.pubkey.hash(hasher);
+        self.nonce.hash(hasher);
+    }
+}
