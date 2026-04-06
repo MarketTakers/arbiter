@@ -1,15 +1,5 @@
 use std::collections::HashMap;
 
-use alloy::{
-    primitives::{Address, U256},
-    sol_types::SolCall,
-};
-use arbiter_tokens_registry::evm::nonfungible::{self, TokenInfo};
-use chrono::{DateTime, Duration, Utc};
-use diesel::dsl::{auto_type, insert_into};
-use diesel::sqlite::Sqlite;
-use diesel::{ExpressionMethods, prelude::*};
-use diesel_async::{AsyncConnection, RunQueryDsl};
 use crate::db::schema::{
     evm_basic_grant, evm_token_transfer_grant, evm_token_transfer_log,
     evm_token_transfer_volume_limit,
@@ -30,6 +20,16 @@ use crate::{
     },
     evm::policies::CombinedSettings,
 };
+use alloy::{
+    primitives::{Address, U256},
+    sol_types::SolCall,
+};
+use arbiter_tokens_registry::evm::nonfungible::{self, TokenInfo};
+use chrono::{DateTime, Duration, Utc};
+use diesel::dsl::{auto_type, insert_into};
+use diesel::sqlite::Sqlite;
+use diesel::{ExpressionMethods, prelude::*};
+use diesel_async::{AsyncConnection, RunQueryDsl};
 
 use super::{DatabaseID, EvalContext, EvalViolation};
 

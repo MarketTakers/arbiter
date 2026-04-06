@@ -63,5 +63,6 @@ mutants.workspace = true
 
 [dev-dependencies]
 insta = "1.46.3"
+proptest = "1.11.0"
 rstest.workspace = true
 test-log = { version = "0.2", default-features = false, features = ["trace"] }
