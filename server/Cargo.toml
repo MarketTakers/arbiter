@@ -47,3 +47,4 @@ miette = { version = "7.6.0", features = ["fancy", "serde"] }
 mutants = "0.0.4"
 ml-dsa = { version = "0.1.0-rc.8", features = ["zeroize"] }
 base64 = "0.22.1"
+hmac = "0.12.1"

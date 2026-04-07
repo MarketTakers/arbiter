@@ -696,10 +696,23 @@ dependencies = [
 name = "arbiter-crypto"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "base64",
+ "chrono",
+ "hmac",
  "memsafe",
  "ml-dsa",
  "rand 0.10.0",
+]
+
+[[package]]
+name = "arbiter-macros"
+version = "0.1.0"
+dependencies = [
+ "arbiter-crypto",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -736,6 +749,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "arbiter-crypto",
+ "arbiter-macros",
  "arbiter-proto",
  "arbiter-tokens-registry",
  "argon2",

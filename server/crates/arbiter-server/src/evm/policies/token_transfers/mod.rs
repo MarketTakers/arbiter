@@ -62,7 +62,7 @@ impl From<Meaning> for SpecificMeaning {
 }
 
 // A grant for token transfers, which can be scoped to specific target addresses and volume limits
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, arbiter_macros::Hashable)]
 pub struct Settings {
     pub token_contract: Address,
     pub target: Option<Address>,
@@ -70,16 +70,6 @@ pub struct Settings {
 }
 impl Integrable for Settings {
     const KIND: &'static str = "TokenTransfer";
-}
-
-use crate::crypto::integrity::hashing::Hashable;
-
-impl Hashable for Settings {
-    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        self.token_contract.hash(hasher);
-        self.target.hash(hasher);
-        self.volume_limits.hash(hasher);
-    }
 }
 
 impl From<Settings> for SpecificGrant {
