@@ -67,18 +67,14 @@ The `program_client.nonce` column stores the **next usable nonce** — i.e. it i
 ## Cryptography
 
 ### Authentication
-- **Client protocol:** ed25519
+- **Client protocol:** ML-DSA
 
 ### User-Agent Authentication
 
 User-agent authentication supports multiple signature schemes because platform-provided "hardware-bound" keys do not expose a uniform algorithm across operating systems and hardware.
 
-- **Supported schemes:** RSA, Ed25519, ECDSA (secp256k1)
-- **Why:** the user agent authenticates with keys backed by platform facilities, and those facilities differ by platform
-- **Apple Silicon Secure Enclave / Secure Element:** ECDSA-only in practice
-- **Windows Hello / TPM 2.0:** currently RSA-backed in our integration
-
-This is why the user-agent auth protocol carries an explicit `KeyType`, while the SDK client protocol remains fixed to ed25519.
+- **Supported schemes:** ML-DSA
+- **Why:** Secure Enclave (MacOS) support them natively, on other platforms we could emulate while they roll-out
 
 ### Encryption at Rest
 - **Scheme:** Symmetric AEAD — currently **XChaCha20-Poly1305**
