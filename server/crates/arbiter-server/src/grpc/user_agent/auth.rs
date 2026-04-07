@@ -5,8 +5,7 @@ use arbiter_proto::{
             self as proto_auth, AuthChallenge as ProtoAuthChallenge,
             AuthChallengeRequest as ProtoAuthChallengeRequest,
             AuthChallengeSolution as ProtoAuthChallengeSolution, AuthResult as ProtoAuthResult,
-            KeyType as ProtoKeyType, request::Payload as AuthRequestPayload,
-            response::Payload as AuthResponsePayload,
+            request::Payload as AuthRequestPayload, response::Payload as AuthResponsePayload,
         },
         user_agent_request::Payload as UserAgentRequestPayload,
         user_agent_response::Payload as UserAgentResponsePayload,
@@ -18,8 +17,8 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::{
-    actors::user_agent::{AuthPublicKey, UserAgentConnection, auth},
-    db::models::KeyType,
+    actors::user_agent::{UserAgentConnection, auth},
+    crypto::authn,
     grpc::request_tracker::RequestTracker,
 };
 
@@ -141,28 +140,9 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
             AuthRequestPayload::ChallengeRequest(ProtoAuthChallengeRequest {
                 pubkey,
                 bootstrap_token,
-                key_type,
+                key_type: _,
             }) => {
-                let Ok(key_type) = ProtoKeyType::try_from(key_type) else {
-                    warn!(
-                        event = "received request with invalid key type",
-                        "grpc.useragent.auth_adapter"
-                    );
-                    return None;
-                };
-                let key_type = match key_type {
-                    ProtoKeyType::Ed25519 => KeyType::Ed25519,
-                    ProtoKeyType::EcdsaSecp256k1 => KeyType::EcdsaSecp256k1,
-                    ProtoKeyType::Rsa => KeyType::Rsa,
-                    ProtoKeyType::Unspecified => {
-                        warn!(
-                            event = "received request with unspecified key type",
-                            "grpc.useragent.auth_adapter"
-                        );
-                        return None;
-                    }
-                };
-                let Ok(pubkey) = AuthPublicKey::try_from((key_type, pubkey)) else {
+                let Ok(pubkey) = authn::PublicKey::try_from(pubkey.as_slice()) else {
                     warn!(
                         event = "received request with invalid public key",
                         "grpc.useragent.auth_adapter"
@@ -188,7 +168,7 @@ pub async fn start(
     conn: &mut UserAgentConnection,
     bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
     request_tracker: &mut RequestTracker,
-) -> Result<AuthPublicKey, auth::Error> {
+) -> Result<authn::PublicKey, auth::Error> {
     let transport = AuthTransportAdapter::new(bi, request_tracker);
     auth::authenticate(conn, transport).await
 }

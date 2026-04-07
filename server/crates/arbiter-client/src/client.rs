@@ -1,6 +1,7 @@
 use arbiter_proto::{
     ClientMetadata, proto::arbiter_service_client::ArbiterServiceClient, url::ArbiterUrl,
 };
+use ml_dsa::{MlDsa87, SigningKey};
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
@@ -60,7 +61,7 @@ impl ArbiterClient {
     pub async fn connect_with_key(
         url: ArbiterUrl,
         metadata: ClientMetadata,
-        key: ed25519_dalek::SigningKey,
+        key: SigningKey<MlDsa87>,
     ) -> Result<Self, Error> {
         let anchor = webpki::anchor_from_trusted_cert(&url.ca_cert)?.to_owned();
         let tls = ClientTlsConfig::new().trust_anchor(anchor);

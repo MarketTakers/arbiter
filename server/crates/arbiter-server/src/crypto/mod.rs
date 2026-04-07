@@ -12,6 +12,7 @@ use rand::{
 
 use crate::safe_cell::{SafeCell, SafeCellHandle as _};
 
+pub mod authn;
 pub mod encryption;
 pub mod integrity;
 

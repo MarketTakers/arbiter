@@ -2,7 +2,6 @@ use std::{borrow::Cow, collections::HashMap};
 
 use arbiter_proto::transport::Sender;
 use async_trait::async_trait;
-use ed25519_dalek::VerifyingKey;
 use kameo::{Actor, actor::ActorRef, messages};
 use thiserror::Error;
 use tracing::error;
@@ -12,6 +11,7 @@ use crate::actors::{
     flow_coordinator::{RegisterUserAgent, client_connect_approval::ClientApprovalController},
     user_agent::{OutOfBand, UserAgentConnection},
 };
+use crate::crypto::authn;
 
 mod state;
 use state::{DummyContext, UserAgentEvents, UserAgentStateMachine};
@@ -47,6 +47,7 @@ impl Error {
 }
 
 pub struct PendingClientApproval {
+    pubkey: authn::PublicKey,
     controller: ActorRef<ClientApprovalController>,
 }
 
@@ -55,7 +56,7 @@ pub struct UserAgentSession {
     state: UserAgentStateMachine<DummyContext>,
     sender: Box<dyn Sender<OutOfBand>>,
 
-    pending_client_approvals: HashMap<VerifyingKey, PendingClientApproval>,
+    pending_client_approvals: HashMap<Vec<u8>, PendingClientApproval>,
 }
 
 pub mod connection;
@@ -119,7 +120,13 @@ impl UserAgentSession {
         }
 
         self.pending_client_approvals
-            .insert(client.pubkey, PendingClientApproval { controller });
+            .insert(
+                client.pubkey.to_bytes(),
+                PendingClientApproval {
+                    pubkey: client.pubkey,
+                    controller,
+                },
+            );
     }
 }
 
@@ -158,14 +165,18 @@ impl Actor for UserAgentSession {
         let cancelled_pubkey = self
             .pending_client_approvals
             .iter()
-            .find_map(|(k, v)| (v.controller.id() == id).then_some(*k));
+            .find_map(|(k, v)| (v.controller.id() == id).then_some(k.clone()));
 
-        if let Some(pubkey) = cancelled_pubkey {
-            self.pending_client_approvals.remove(&pubkey);
+        if let Some(pubkey_bytes) = cancelled_pubkey {
+            let Some(approval) = self.pending_client_approvals.remove(&pubkey_bytes) else {
+                return Ok(std::ops::ControlFlow::Continue(()));
+            };
 
             if let Err(e) = self
                 .sender
-                .send(OutOfBand::ClientConnectionCancel { pubkey })
+                .send(OutOfBand::ClientConnectionCancel {
+                    pubkey: approval.pubkey,
+                })
                 .await
             {
                 error!(

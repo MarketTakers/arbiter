@@ -1,22 +1,13 @@
 use crate::{
     actors::{GlobalActors, client::ClientProfile},
+    crypto::authn,
     crypto::integrity::Integrable,
-    db::{self, models::KeyType},
+    db,
 };
-
-/// Abstraction over Ed25519 / ECDSA-secp256k1 / RSA public keys used during the auth handshake.
-#[derive(Clone, Debug)]
-pub enum AuthPublicKey {
-    Ed25519(ed25519_dalek::VerifyingKey),
-    /// Compressed SEC1 public key; signature bytes are raw 64-byte (r||s).
-    EcdsaSecp256k1(k256::ecdsa::VerifyingKey),
-    /// RSA-2048+ public key (Windows Hello / KeyCredentialManager); signature bytes are PSS+SHA-256.
-    Rsa(rsa::RsaPublicKey),
-}
 
 #[derive(Debug)]
 pub struct UserAgentCredentials {
-    pub pubkey: AuthPublicKey,
+    pub pubkey: authn::PublicKey,
     pub nonce: i32,
 }
 
@@ -24,67 +15,11 @@ impl Integrable for UserAgentCredentials {
     const KIND: &'static str = "useragent_credentials";
 }
 
-impl AuthPublicKey {
-    /// Canonical bytes stored in DB and echoed back in the challenge.
-    /// Ed25519: raw 32 bytes. ECDSA: SEC1 compressed 33 bytes. RSA: DER-encoded SPKI.
-    pub fn to_stored_bytes(&self) -> Vec<u8> {
-        match self {
-            AuthPublicKey::Ed25519(k) => k.to_bytes().to_vec(),
-            // SEC1 compressed (33 bytes) is the natural compact format for secp256k1
-            AuthPublicKey::EcdsaSecp256k1(k) => k.to_encoded_point(true).as_bytes().to_vec(),
-            AuthPublicKey::Rsa(k) => {
-                use rsa::pkcs8::EncodePublicKey as _;
-                #[allow(clippy::expect_used)]
-                k.to_public_key_der()
-                    .expect("rsa SPKI encoding is infallible")
-                    .to_vec()
-            }
-        }
-    }
-
-    pub fn key_type(&self) -> KeyType {
-        match self {
-            AuthPublicKey::Ed25519(_) => KeyType::Ed25519,
-            AuthPublicKey::EcdsaSecp256k1(_) => KeyType::EcdsaSecp256k1,
-            AuthPublicKey::Rsa(_) => KeyType::Rsa,
-        }
-    }
-}
-
-impl TryFrom<(KeyType, Vec<u8>)> for AuthPublicKey {
-    type Error = &'static str;
-
-    fn try_from(value: (KeyType, Vec<u8>)) -> Result<Self, Self::Error> {
-        let (key_type, bytes) = value;
-        match key_type {
-            KeyType::Ed25519 => {
-                let bytes: [u8; 32] = bytes.try_into().map_err(|_| "invalid Ed25519 key length")?;
-                let key = ed25519_dalek::VerifyingKey::from_bytes(&bytes)
-                    .map_err(|_e| "invalid Ed25519 key")?;
-                Ok(AuthPublicKey::Ed25519(key))
-            }
-            KeyType::EcdsaSecp256k1 => {
-                let point =
-                    k256::EncodedPoint::from_bytes(&bytes).map_err(|_e| "invalid ECDSA key")?;
-                let key = k256::ecdsa::VerifyingKey::from_encoded_point(&point)
-                    .map_err(|_e| "invalid ECDSA key")?;
-                Ok(AuthPublicKey::EcdsaSecp256k1(key))
-            }
-            KeyType::Rsa => {
-                use rsa::pkcs8::DecodePublicKey as _;
-                let key = rsa::RsaPublicKey::from_public_key_der(&bytes)
-                    .map_err(|_e| "invalid RSA key")?;
-                Ok(AuthPublicKey::Rsa(key))
-            }
-        }
-    }
-}
-
 // Messages, sent by user agent to connection client without having a request
 #[derive(Debug)]
 pub enum OutOfBand {
     ClientConnectionRequest { profile: ClientProfile },
-    ClientConnectionCancel { pubkey: ed25519_dalek::VerifyingKey },
+    ClientConnectionCancel { pubkey: authn::PublicKey },
 }
 
 pub struct UserAgentConnection {
@@ -106,9 +41,9 @@ pub use session::UserAgentSession;
 
 use crate::crypto::integrity::hashing::Hashable;
 
-impl Hashable for AuthPublicKey {
+impl Hashable for authn::PublicKey {
     fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        hasher.update(&self.to_stored_bytes());
+        hasher.update(self.to_bytes());
     }
 }
 

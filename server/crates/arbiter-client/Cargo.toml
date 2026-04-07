@@ -18,7 +18,7 @@ tonic.workspace = true
 tonic.features = ["tls-aws-lc"]
 tokio.workspace = true
 tokio-stream.workspace = true
-ed25519-dalek.workspace = true
+ml-dsa.workspace = true
 thiserror.workspace = true
 http = "1.4.0"
 rustls-webpki = { version = "0.103.10", features = ["aws-lc-rs"] }
