@@ -1,3 +1,4 @@
+use arbiter_crypto::authn::{CLIENT_CONTEXT, SigningKey, format_challenge};
 use arbiter_proto::{
     ClientMetadata,
     proto::{
@@ -14,7 +15,6 @@ use arbiter_proto::{
         shared::ClientInfo as ProtoClientInfo,
     },
 };
-use arbiter_crypto::authn::{CLIENT_CONTEXT, PublicKey, Signature, SigningKey, format_challenge};
 
 use crate::{
     storage::StorageError,

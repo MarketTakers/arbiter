@@ -59,9 +59,7 @@ mod tests {
     use std::ops::Deref as _;
 
     use super::*;
-    use crate::{
-        crypto::derive_key
-    };
+    use crate::crypto::derive_key;
     use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
     #[test]

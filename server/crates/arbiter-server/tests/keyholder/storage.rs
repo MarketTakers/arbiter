@@ -1,12 +1,11 @@
 use std::collections::HashSet;
 
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
     actors::keyholder::Error,
     crypto::encryption::v1::Nonce,
     db::{self, models, schema},
-    
 };
-use arbiter_crypto::{authn::{self, format_challenge, CLIENT_CONTEXT}, safecell::{SafeCell, SafeCellHandle as _}};
 
 use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper, dsl::update};
 use diesel_async::RunQueryDsl;

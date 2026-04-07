@@ -1,5 +1,5 @@
 use arbiter_crypto::authn::{self, USERAGENT_CONTEXT};
-use arbiter_proto::{transport::Bi};
+use arbiter_proto::transport::Bi;
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, update};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::actor::ActorRef;
@@ -183,7 +183,7 @@ async fn register_key(
                 nonce: NONCE_START,
             };
 
-            integrity::sign_entity(conn, &keyholder, &entity, id)
+            integrity::sign_entity(conn, keyholder, &entity, id)
                 .await
                 .map_err(|e| {
                     error!(error = ?e, "Failed to sign integrity tag for new user-agent key");
