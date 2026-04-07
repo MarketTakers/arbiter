@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use crate::safe_cell::{SafeCell, SafeCellHandle as _};
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use alloy::{
     consensus::SignableTransaction,
     network::{TxSigner, TxSignerSync},

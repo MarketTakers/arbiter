@@ -17,6 +17,7 @@ diesel-async = { version = "0.8.0", features = [
     "tokio",
 ] }
 arbiter-proto.path = "../arbiter-proto"
+arbiter-crypto.path = "../arbiter-crypto"
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tonic.workspace = true
@@ -35,7 +36,6 @@ dashmap = "6.1.0"
 rand.workspace = true
 rcgen.workspace = true
 chrono.workspace = true
-memsafe = "0.4.0"
 zeroize = { version = "1.8.2", features = ["std", "simd"] }
 kameo.workspace = true
 chacha20poly1305 = { version = "0.10.1", features = ["std"] }

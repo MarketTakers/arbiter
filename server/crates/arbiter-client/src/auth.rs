@@ -1,5 +1,5 @@
 use arbiter_proto::{
-    CLIENT_CONTEXT, ClientMetadata, format_challenge,
+    ClientMetadata,
     proto::{
         client::{
             ClientRequest,
@@ -14,7 +14,7 @@ use arbiter_proto::{
         shared::ClientInfo as ProtoClientInfo,
     },
 };
-use ml_dsa::{MlDsa87, SigningKey, signature::Keypair as _};
+use arbiter_crypto::authn::{CLIENT_CONTEXT, PublicKey, Signature, SigningKey, format_challenge};
 
 use crate::{
     storage::StorageError,
@@ -54,14 +54,14 @@ fn map_auth_result(code: i32) -> AuthError {
 async fn send_auth_challenge_request(
     transport: &mut ClientTransport,
     metadata: ClientMetadata,
-    key: &SigningKey<MlDsa87>,
+    key: &SigningKey,
 ) -> std::result::Result<(), AuthError> {
     transport
         .send(ClientRequest {
             request_id: next_request_id(),
             payload: Some(ClientRequestPayload::Auth(proto_auth::Request {
                 payload: Some(AuthRequestPayload::ChallengeRequest(AuthChallengeRequest {
-                    pubkey: key.verifying_key().encode().to_vec(),
+                    pubkey: key.public_key().to_bytes(),
                     client_info: Some(ProtoClientInfo {
                         name: metadata.name,
                         description: metadata.description,
@@ -95,16 +95,14 @@ async fn receive_auth_challenge(
 
 async fn send_auth_challenge_solution(
     transport: &mut ClientTransport,
-    key: &SigningKey<MlDsa87>,
+    key: &SigningKey,
     challenge: AuthChallenge,
 ) -> std::result::Result<(), AuthError> {
     let challenge_payload = format_challenge(challenge.nonce, &challenge.pubkey);
     let signature = key
-        .signing_key()
-        .sign_deterministic(&challenge_payload, CLIENT_CONTEXT)
+        .sign_message(&challenge_payload, CLIENT_CONTEXT)
         .map_err(|_| AuthError::UnexpectedAuthResponse)?
-        .encode()
-        .to_vec();
+        .to_bytes();
 
     transport
         .send(ClientRequest {
@@ -145,7 +143,7 @@ async fn receive_auth_confirmation(
 pub(crate) async fn authenticate(
     transport: &mut ClientTransport,
     metadata: ClientMetadata,
-    key: &SigningKey<MlDsa87>,
+    key: &SigningKey,
 ) -> std::result::Result<(), AuthError> {
     send_auth_challenge_request(transport, metadata, key).await?;
     let challenge = receive_auth_challenge(transport).await?;

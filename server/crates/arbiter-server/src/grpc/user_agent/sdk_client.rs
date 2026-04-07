@@ -1,3 +1,4 @@
+use arbiter_crypto::authn;
 use arbiter_proto::proto::{
     shared::ClientInfo as ProtoClientMetadata,
     user_agent::{
@@ -27,7 +28,6 @@ use crate::{
             HandleRevokeEvmWalletAccess, HandleSdkClientList,
         },
     },
-    crypto::authn,
     db::models::NewEvmWalletAccess,
     grpc::Convert,
 };

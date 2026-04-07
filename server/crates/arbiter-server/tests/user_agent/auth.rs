@@ -1,3 +1,5 @@
+use arbiter_crypto::{authn::{self, format_challenge, USERAGENT_CONTEXT}, safecell::{SafeCell, SafeCellHandle as _}};
+
 use arbiter_proto::transport::{Receiver, Sender};
 use arbiter_server::{
     actors::{
@@ -6,10 +8,8 @@ use arbiter_server::{
         keyholder::Bootstrap,
         user_agent::{UserAgentConnection, UserAgentCredentials, auth},
     },
-    crypto::authn,
     crypto::integrity,
     db::{self, schema},
-    safe_cell::{SafeCell, SafeCellHandle as _},
 };
 use diesel::{ExpressionMethods as _, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
@@ -22,9 +22,9 @@ fn sign_useragent_challenge(
     nonce: i32,
     pubkey_bytes: &[u8],
 ) -> authn::Signature {
-    let challenge = arbiter_proto::format_challenge(nonce, pubkey_bytes);
+    let challenge = format_challenge(nonce, pubkey_bytes);
     key.signing_key()
-        .sign_deterministic(&challenge, arbiter_proto::USERAGENT_CONTEXT)
+        .sign_deterministic(&challenge, USERAGENT_CONTEXT)
         .unwrap()
         .into()
 }

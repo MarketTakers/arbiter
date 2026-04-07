@@ -1,5 +1,6 @@
+use arbiter_crypto::authn::{self, CLIENT_CONTEXT};
 use arbiter_proto::{
-    CLIENT_CONTEXT, ClientMetadata,
+    ClientMetadata,
     transport::{Bi, expect_message},
 };
 use chrono::Utc;
@@ -17,7 +18,6 @@ use crate::{
         flow_coordinator::{self, RequestClientApproval},
         keyholder::KeyHolder,
     },
-    crypto::authn,
     crypto::integrity::{self, AttestationStatus},
     db::{
         self,
@@ -25,8 +25,6 @@ use crate::{
         schema::program_client,
     },
 };
-
-
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -355,7 +353,10 @@ where
     T: Bi<Inbound, Result<Outbound, Error>> + ?Sized,
 {
     transport
-        .send(Ok(Outbound::AuthChallenge { pubkey: pubkey.clone(), nonce }))
+        .send(Ok(Outbound::AuthChallenge {
+            pubkey: pubkey.clone(),
+            nonce,
+        }))
         .await
         .map_err(|e| {
             error!(error = ?e, "Failed to send auth challenge");

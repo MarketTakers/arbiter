@@ -1,3 +1,4 @@
+use arbiter_crypto::authn;
 use arbiter_proto::{
     ClientMetadata,
     proto::{
@@ -22,7 +23,6 @@ use tracing::warn;
 
 use crate::{
     actors::client::{self, ClientConnection, auth},
-    crypto::authn,
     grpc::request_tracker::RequestTracker,
 };
 

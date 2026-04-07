@@ -1,10 +1,10 @@
+use arbiter_crypto::authn;
 use arbiter_proto::{ClientMetadata, transport::Bi};
 use kameo::actor::Spawn;
 use tracing::{error, info};
 
 use crate::{
     actors::{GlobalActors, client::session::ClientSession},
-    crypto::authn,
     crypto::integrity::{Integrable, hashing::Hashable},
     db,
 };
@@ -50,10 +50,7 @@ where
     T: Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> + Send + ?Sized,
 {
     let fut = auth::authenticate(&mut props, transport);
-    println!(
-        "authenticate future size: {}",
-        std::mem::size_of_val(&fut)
-    );
+    println!("authenticate future size: {}", std::mem::size_of_val(&fut));
     match fut.await {
         Ok(client_id) => {
             ClientSession::spawn(ClientSession::new(props, client_id));
