@@ -16,8 +16,6 @@ diesel-async = { version = "0.8.0", features = [
     "sqlite",
     "tokio",
 ] }
-ed25519-dalek.workspace = true
-ed25519-dalek.features = ["serde"]
 arbiter-proto.path = "../arbiter-proto"
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -40,16 +38,11 @@ chrono.workspace = true
 memsafe = "0.4.0"
 zeroize = { version = "1.8.2", features = ["std", "simd"] }
 kameo.workspace = true
-x25519-dalek.workspace = true
 chacha20poly1305 = { version = "0.10.1", features = ["std"] }
 argon2 = { version = "0.5.3", features = ["zeroize"] }
 restructed = "0.2.2"
 strum = { version = "0.28.0", features = ["derive"] }
 pem = "3.0.6"
-k256.workspace = true
-k256.features = ["serde"]
-rsa.workspace = true
-rsa.features = ["serde"]
 sha2.workspace = true
 hmac = "0.12"
 spki.workspace = true
@@ -61,6 +54,10 @@ anyhow = "1.0.102"
 serde_with = "3.18.0"
 mutants.workspace = true
 subtle = "2.6.1"
+ml-dsa.workspace = true
+ed25519-dalek.workspace = true
+x25519-dalek.workspace = true
+k256.workspace = true
 
 [dev-dependencies]
 insta = "1.46.3"

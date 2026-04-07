@@ -13,6 +13,7 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
 use crate::actors::keyholder::KeyHolderState;
 use crate::actors::user_agent::session::Error;
+use crate::crypto::authn;
 use crate::db::models::{
     EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
 };
@@ -473,10 +474,13 @@ impl UserAgentSession {
     pub(crate) async fn handle_new_client_approve(
         &mut self,
         approved: bool,
-        pubkey: ed25519_dalek::VerifyingKey,
+        pubkey: authn::PublicKey,
         ctx: &mut Context<Self, Result<(), Error>>,
     ) -> Result<(), Error> {
-        let pending_approval = match self.pending_client_approvals.remove(&pubkey) {
+        let pending_approval = match self
+            .pending_client_approvals
+            .remove(&pubkey.to_bytes())
+        {
             Some(approval) => approval,
             None => {
                 error!("Received client connection response for unknown client");

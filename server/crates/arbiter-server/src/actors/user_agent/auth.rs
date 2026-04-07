@@ -2,9 +2,10 @@ use arbiter_proto::transport::Bi;
 use tracing::error;
 
 use crate::actors::user_agent::{
-    AuthPublicKey, UserAgentConnection,
+    UserAgentConnection,
     auth::state::{AuthContext, AuthStateMachine},
 };
+use crate::crypto::authn;
 
 mod state;
 use state::*;
@@ -12,7 +13,7 @@ use state::*;
 #[derive(Debug, Clone)]
 pub enum Inbound {
     AuthChallengeRequest {
-        pubkey: AuthPublicKey,
+        pubkey: authn::PublicKey,
         bootstrap_token: Option<String>,
     },
     AuthChallengeSolution {
@@ -71,7 +72,7 @@ fn parse_auth_event(payload: Inbound) -> AuthEvents {
 pub async fn authenticate<T>(
     props: &mut UserAgentConnection,
     transport: T,
-) -> Result<AuthPublicKey, Error>
+) -> Result<authn::PublicKey, Error>
 where
     T: Bi<Inbound, Result<Outbound, Error>> + Send,
 {

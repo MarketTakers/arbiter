@@ -63,6 +63,9 @@ pub mod proto {
     }
 }
 
+pub static CLIENT_CONTEXT: &[u8] = b"arbiter_client";
+pub static USERAGENT_CONTEXT: &[u8] = b"arbiter_user_agent";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientMetadata {
     pub name: String,
