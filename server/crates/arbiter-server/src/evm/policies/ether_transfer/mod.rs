@@ -110,7 +110,8 @@ async fn check_rate_limits(
     let mut violations = Vec::new();
     let window = grant.settings.specific.limit.window;
 
-    let past_transaction = query_relevant_past_transaction(grant.id, window, db).await?;
+    let past_transaction =
+        query_relevant_past_transaction(grant.common_settings_id, window, db).await?;
 
     let window_start = chrono::Utc::now() - grant.settings.specific.limit.window;
     let prospective_cumulative_volume: U256 = past_transaction
@@ -249,21 +250,20 @@ impl Policy for EtherTransfer {
             })
             .collect();
 
-        let settings = Settings {
-            target: targets,
-            limit: VolumeRateLimit {
-                max_volume: utils::try_bytes_to_u256(&limit.max_volume)
-                    .map_err(|err| diesel::result::Error::DeserializationError(Box::new(err)))?,
-                window: chrono::Duration::seconds(limit.window_secs as i64),
-            },
-        };
-
         Ok(Some(Grant {
             id: grant.id,
             common_settings_id: grant.basic_grant_id,
             settings: CombinedSettings {
                 shared: SharedGrantSettings::try_from_model(basic_grant)?,
-                specific: settings,
+                specific: Settings {
+                    target: targets,
+                    limit: VolumeRateLimit {
+                        max_volume: utils::try_bytes_to_u256(&limit.max_volume).map_err(|err| {
+                            diesel::result::Error::DeserializationError(Box::new(err))
+                        })?,
+                        window: chrono::Duration::seconds(limit.window_secs as i64),
+                    },
+                },
             },
         }))
     }

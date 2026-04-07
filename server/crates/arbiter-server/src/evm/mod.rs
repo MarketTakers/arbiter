@@ -12,7 +12,7 @@ use kameo::actor::ActorRef;
 
 use crate::{
     actors::keyholder::KeyHolder,
-    crypto::integrity,
+    crypto::integrity::{self, Verified},
     db::{
         self, DatabaseError,
         models::{
@@ -153,12 +153,36 @@ impl Engine {
     {
         let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
 
-        let grant = P::try_find_grant(&context, &mut conn)
+        let verified_settings =
+            match integrity::lookup_verified_from_query(&mut conn, &self.keyholder, |conn| {
+                let context = context.clone();
+                Box::pin(async move {
+                    let grant = P::try_find_grant(&context, conn)
+                        .await
+                        .map_err(DatabaseError::from)?
+                        .ok_or_else(|| DatabaseError::from(diesel::result::Error::NotFound))?;
+
+                    Ok::<_, DatabaseError>((grant.common_settings_id, grant.settings))
+                })
+            })
+            .await
+            {
+                Ok(verified) => verified,
+                Err(integrity::Error::Database(DatabaseError::Connection(
+                    diesel::result::Error::NotFound,
+                ))) => return Err(PolicyError::NoMatchingGrant),
+                Err(err) => return Err(PolicyError::Integrity(err)),
+            };
+
+        let mut grant = P::try_find_grant(&context, &mut conn)
             .await
             .map_err(DatabaseError::from)?
             .ok_or(PolicyError::NoMatchingGrant)?;
 
-        integrity::verify_entity(&mut conn, &self.keyholder, &grant.settings, grant.id).await?;
+        // IMPORTANT: policy evaluation uses extra non-integrity fields from Grant
+        // (e.g., per-policy ids), so we currently reload Grant after the query-native
+        // integrity check over canonicalized settings.
+        grant.settings = verified_settings.into_inner();
 
         let mut violations = check_shared_constraints(
             &context,
@@ -214,7 +238,7 @@ impl Engine {
     pub async fn create_grant<P: Policy>(
         &self,
         full_grant: CombinedSettings<P::Settings>,
-    ) -> Result<i32, DatabaseError>
+    ) -> Result<Verified<i32>, DatabaseError>
     where
         P::Settings: Clone,
     {
@@ -258,11 +282,12 @@ impl Engine {
 
                     P::create_grant(&basic_grant, &full_grant.specific, conn).await?;
 
-                    integrity::sign_entity(conn, &keyholder, &full_grant, basic_grant.id)
-                        .await
-                        .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                    let verified_entity_id =
+                        integrity::sign_entity(conn, &keyholder, &full_grant, basic_grant.id)
+                            .await
+                            .map_err(|_| diesel::result::Error::RollbackTransaction)?;
 
-                    QueryResult::Ok(basic_grant.id)
+                    QueryResult::Ok(verified_entity_id)
                 })
             })
             .await?;
@@ -273,7 +298,7 @@ impl Engine {
     async fn list_one_kind<Kind: Policy, Y>(
         &self,
         conn: &mut impl AsyncConnection<Backend = Sqlite>,
-    ) -> Result<impl Iterator<Item = Grant<Y>>, ListError>
+    ) -> Result<Vec<Grant<Y>>, ListError>
     where
         Y: From<Kind::Settings>,
     {
@@ -281,16 +306,26 @@ impl Engine {
             .await
             .map_err(DatabaseError::from)?;
 
-        // Verify integrity of all grants before returning any results
-        for grant in &all_grants {
-            integrity::verify_entity(conn, &self.keyholder, &grant.settings, grant.id).await?;
+        let mut verified_grants = Vec::with_capacity(all_grants.len());
+
+        // Verify integrity of all grants before returning any results.
+        for grant in all_grants {
+            integrity::verify_entity(
+                conn,
+                &self.keyholder,
+                &grant.settings,
+                grant.common_settings_id,
+            )
+            .await?;
+
+            verified_grants.push(Grant {
+                id: grant.id,
+                common_settings_id: grant.common_settings_id,
+                settings: grant.settings.generalize(),
+            });
         }
 
-        Ok(all_grants.into_iter().map(|g| Grant {
-            id: g.id,
-            common_settings_id: g.common_settings_id,
-            settings: g.settings.generalize(),
-        }))
+        Ok(verified_grants)
     }
 
     pub async fn list_all_grants(&self) -> Result<Vec<Grant<SpecificGrant>>, ListError> {

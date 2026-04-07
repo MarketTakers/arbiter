@@ -30,17 +30,26 @@ pub enum Error {
 }
 
 impl Error {
-    fn internal(details: impl Into<String>) -> Self {
-        Self::Internal {
-            details: details.into(),
-        }
+    #[track_caller]
+    pub(super) fn internal(details: impl Into<String>, err: &impl std::fmt::Debug) -> Self {
+        let details = details.into();
+        let caller = std::panic::Location::caller();
+        error!(
+            caller_file = %caller.file(),
+            caller_line = caller.line(),
+            caller_column = caller.column(),
+            details = %details,
+            error = ?err,
+            "Internal error"
+        );
+
+        Self::Internal { details }
     }
 }
 
 impl From<diesel::result::Error> for Error {
     fn from(e: diesel::result::Error) -> Self {
-        error!(?e, "Database error");
-        Self::internal("Database error")
+        Self::internal("Database error", &e)
     }
 }
 

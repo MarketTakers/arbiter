@@ -286,18 +286,16 @@ impl Policy for TokenTransfer {
             }
         };
 
-        let settings = Settings {
-            token_contract: Address::from(token_contract),
-            target,
-            volume_limits,
-        };
-
         Ok(Some(Grant {
             id: token_grant.id,
             common_settings_id: token_grant.basic_grant_id,
             settings: CombinedSettings {
                 shared: SharedGrantSettings::try_from_model(basic_grant)?,
-                specific: settings,
+                specific: Settings {
+                    token_contract: Address::from(token_contract),
+                    target,
+                    volume_limits,
+                },
             },
         }))
     }

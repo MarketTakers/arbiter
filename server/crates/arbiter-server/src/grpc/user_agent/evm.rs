@@ -121,6 +121,9 @@ async fn handle_grant_list(
                 })
                 .collect(),
         }),
+        Err(kameo::error::SendError::HandlerError(GrantMutationError::VaultSealed)) => {
+            EvmGrantListResult::Error(ProtoEvmError::VaultSealed.into())
+        }
         Err(err) => {
             warn!(error = ?err, "Failed to list EVM grants");
             EvmGrantListResult::Error(ProtoEvmError::Internal.into())
@@ -147,7 +150,7 @@ async fn handle_grant_create(
         .try_convert()?;
 
     let result = match actor.ask(HandleGrantCreate { basic, grant }).await {
-        Ok(grant_id) => EvmGrantCreateResult::GrantId(grant_id),
+        Ok(grant_id) => EvmGrantCreateResult::GrantId(grant_id.into_inner()),
         Err(kameo::error::SendError::HandlerError(GrantMutationError::VaultSealed)) => {
             EvmGrantCreateResult::Error(ProtoEvmError::VaultSealed.into())
         }

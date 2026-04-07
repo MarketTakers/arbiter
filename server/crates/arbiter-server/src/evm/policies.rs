@@ -200,7 +200,7 @@ pub enum SpecificGrant {
     TokenTransfer(token_transfers::Settings),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CombinedSettings<PolicyGrant> {
     pub shared: SharedGrantSettings,
     pub specific: PolicyGrant,

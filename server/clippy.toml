@@ -6,4 +6,6 @@ disallowed-methods = [
     { path = "rsa::RsaPrivateKey::decrypt_blinded", reason = "RSA decryption is forbidden (RUSTSEC-2023-0071 Marvin Attack). Only PSS signing/verification is permitted." },
     { path = "rsa::traits::Decryptor::decrypt", reason = "RSA decryption is forbidden (RUSTSEC-2023-0071 Marvin Attack). This blocks decrypt() on rsa::{pkcs1v15,oaep}::DecryptingKey." },
     { path = "rsa::traits::RandomizedDecryptor::decrypt_with_rng", reason = "RSA decryption is forbidden (RUSTSEC-2023-0071 Marvin Attack). This blocks decrypt_with_rng() on rsa::{pkcs1v15,oaep}::DecryptingKey." },
+   
+    { path = "arbiter_server::crypto::integrity::v1::lookup_verified_allow_unavailable", reason = "This function allows integrity checks to be bypassed when vault key material is unavailable, which can lead to silent security failures if used incorrectly. It should only be used in specific contexts where this behavior is acceptable, and its use should be carefully audited." },
 ]

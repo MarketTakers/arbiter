@@ -1,7 +1,7 @@
 use arbiter_proto::transport::Bi;
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, update};
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use kameo::{actor::ActorRef, error::SendError};
+use kameo::actor::ActorRef;
 use tracing::error;
 
 use super::Error;
@@ -11,7 +11,7 @@ use crate::{
         keyholder::KeyHolder,
         user_agent::{AuthPublicKey, UserAgentConnection, UserAgentCredentials, auth::Outbound},
     },
-    crypto::integrity::{self, AttestationStatus},
+    crypto::integrity,
     db::{DatabasePool, schema::useragent_client},
 };
 
@@ -48,10 +48,10 @@ async fn get_current_nonce_and_id(
     db: &DatabasePool,
     key: &AuthPublicKey,
 ) -> Result<(i32, i32), Error> {
-    let mut db_conn = db.get().await.map_err(|e| {
-        error!(error = ?e, "Database pool error");
-        Error::internal("Database unavailable")
-    })?;
+    let mut db_conn = db
+        .get()
+        .await
+        .map_err(|e| Error::internal("Database unavailable", &e))?;
     db_conn
         .exclusive_transaction(|conn| {
             Box::pin(async move {
@@ -65,10 +65,7 @@ async fn get_current_nonce_and_id(
         })
         .await
         .optional()
-        .map_err(|e| {
-            error!(error = ?e, "Database error");
-            Error::internal("Database operation failed")
-        })?
+        .map_err(|e| Error::internal("Database operation failed", &e))?
         .ok_or_else(|| {
             error!(?key, "Public key not found in database");
             Error::UnregisteredPublicKey
@@ -80,14 +77,14 @@ async fn verify_integrity(
     keyholder: &ActorRef<KeyHolder>,
     pubkey: &AuthPublicKey,
 ) -> Result<(), Error> {
-    let mut db_conn = db.get().await.map_err(|e| {
-        error!(error = ?e, "Database pool error");
-        Error::internal("Database unavailable")
-    })?;
+    let mut db_conn = db
+        .get()
+        .await
+        .map_err(|e| Error::internal("Database unavailable", &e))?;
 
     let (id, nonce) = get_current_nonce_and_id(db, pubkey).await?;
 
-    let result = integrity::verify_entity(
+    let attestation_status = integrity::check_entity_attestation(
         &mut db_conn,
         keyholder,
         &UserAgentCredentials {
@@ -97,12 +94,17 @@ async fn verify_integrity(
         id,
     )
     .await
-    .map_err(|e| {
-        error!(?e, "Integrity verification failed");
-        Error::internal("Integrity verification failed")
-    })?;
+    .map_err(|e| Error::internal("Integrity verification failed", &e))?;
 
-    Ok(())
+    use integrity::AttestationStatus as AS;
+    // SAFETY (policy): challenge auth must work in both vault states.
+    // While sealed, integrity checks can only report `Unavailable` because key material is not
+    // accessible. While unsealed, the same check can report `Attested`.
+    // This path intentionally accepts both outcomes to keep challenge auth available across state
+    // transitions; stricter verification is enforced in sensitive post-auth flows.
+    match attestation_status {
+        AS::Attested | AS::Unavailable => Ok(()),
+    }
 }
 
 async fn create_nonce(
@@ -110,10 +112,10 @@ async fn create_nonce(
     keyholder: &ActorRef<KeyHolder>,
     pubkey: &AuthPublicKey,
 ) -> Result<i32, Error> {
-    let mut db_conn = db.get().await.map_err(|e| {
-        error!(error = ?e, "Database pool error");
-        Error::internal("Database unavailable")
-    })?;
+    let mut db_conn = db
+        .get()
+        .await
+        .map_err(|e| Error::internal("Database unavailable", &e))?;
     let new_nonce = db_conn
         .exclusive_transaction(|conn| {
             Box::pin(async move {
@@ -124,10 +126,7 @@ async fn create_nonce(
                     .returning((useragent_client::id, useragent_client::nonce))
                     .get_result(conn)
                     .await
-                    .map_err(|e| {
-                        error!(error = ?e, "Database error");
-                        Error::internal("Database operation failed")
-                    })?;
+                    .map_err(|e| Error::internal("Database operation failed", &e))?;
 
                 integrity::sign_entity(
                     conn,
@@ -139,10 +138,7 @@ async fn create_nonce(
                     id,
                 )
                 .await
-                .map_err(|e| {
-                    error!(?e, "Integrity signature update failed");
-                    Error::internal("Database error")
-                })?;
+                .map_err(|e| Error::internal("Database error", &e))?;
 
                 Result::<_, Error>::Ok(new_nonce)
             })
@@ -158,10 +154,10 @@ async fn register_key(
 ) -> Result<(), Error> {
     let pubkey_bytes = pubkey.to_stored_bytes();
     let key_type = pubkey.key_type();
-    let mut conn = db.get().await.map_err(|e| {
-        error!(error = ?e, "Database pool error");
-        Error::internal("Database unavailable")
-    })?;
+    let mut conn = db
+        .get()
+        .await
+        .map_err(|e| Error::internal("Database unavailable", &e))?;
 
     conn.transaction(|conn| {
         Box::pin(async move {
@@ -176,22 +172,32 @@ async fn register_key(
                 .returning(useragent_client::id)
                 .get_result(conn)
                 .await
-                .map_err(|e| {
-                    error!(error = ?e, "Database error");
-                    Error::internal("Database operation failed")
-                })?;
+                .map_err(|e| Error::internal("Database operation failed", &e))?;
 
-            let entity = UserAgentCredentials {
-                pubkey: pubkey.clone(),
-                nonce: NONCE_START,
-            };
-
-            integrity::sign_entity(conn, &keyholder, &entity, id)
-                .await
-                .map_err(|e| {
-                    error!(error = ?e, "Failed to sign integrity tag for new user-agent key");
-                    Error::internal("Failed to register public key")
-                })?;
+            if let Err(e) = integrity::sign_entity(
+                conn,
+                keyholder,
+                &UserAgentCredentials {
+                    pubkey: pubkey.clone(),
+                    nonce: NONCE_START,
+                },
+                id,
+            )
+            .await
+            {
+                match e {
+                    integrity::Error::Keyholder(
+                        crate::actors::keyholder::Error::NotBootstrapped,
+                    ) => {
+                        // IMPORTANT: bootstrap-token auth must work before the vault has a root key.
+                        // We intentionally allow creating the DB row first and backfill envelopes
+                        // after bootstrap/unseal to keep the bootstrap flow possible.
+                    }
+                    other => {
+                        return Err(Error::internal("Failed to register public key", &other));
+                    }
+                }
+            }
 
             Result::<_, Error>::Ok(())
         })
@@ -254,10 +260,7 @@ where
                 token: token.clone(),
             })
             .await
-            .map_err(|e| {
-                error!(?e, "Failed to consume bootstrap token");
-                Error::internal("Failed to consume bootstrap token")
-            })?;
+            .map_err(|e| Error::internal("Failed to consume bootstrap token", &e))?;
 
         if !token_ok {
             error!("Invalid bootstrap token provided");

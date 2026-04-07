@@ -108,7 +108,7 @@ use crate::crypto::integrity::hashing::Hashable;
 
 impl Hashable for AuthPublicKey {
     fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        hasher.update(&self.to_stored_bytes());
+        hasher.update(self.to_stored_bytes());
     }
 }
 

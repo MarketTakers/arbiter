@@ -18,7 +18,7 @@ use crate::{
         flow_coordinator::{self, RequestClientApproval},
         keyholder::KeyHolder,
     },
-    crypto::integrity::{self, AttestationStatus},
+    crypto::integrity::{self},
     db::{
         self,
         models::{ProgramClientMetadata, SqliteTimestamp},
@@ -109,18 +109,16 @@ async fn verify_integrity(
         Error::DatabasePoolUnavailable
     })?;
 
-    let (id, nonce) = get_current_nonce_and_id(db, pubkey)
-        .await?
-        .ok_or_else(|| {
-            error!("Client not found during integrity verification");
-            Error::DatabaseOperationFailed
-        })?;
+    let (id, nonce) = get_current_nonce_and_id(db, pubkey).await?.ok_or_else(|| {
+        error!("Client not found during integrity verification");
+        Error::DatabaseOperationFailed
+    })?;
 
-    let attestation = integrity::verify_entity(
+    integrity::verify_entity(
         &mut db_conn,
         keyholder,
         &ClientCredentials {
-            pubkey: pubkey.clone(),
+            pubkey: *pubkey,
             nonce,
         },
         id,
@@ -130,11 +128,6 @@ async fn verify_integrity(
         error!(?e, "Integrity verification failed");
         Error::IntegrityCheckFailed
     })?;
-
-    if attestation != AttestationStatus::Attested {
-        error!("Integrity attestation unavailable for client {id}");
-        return Err(Error::IntegrityCheckFailed);
-    }
 
     Ok(())
 }
@@ -147,7 +140,6 @@ async fn create_nonce(
     pubkey: &VerifyingKey,
 ) -> Result<i32, Error> {
     let pubkey_bytes = pubkey.as_bytes().to_vec();
-    let pubkey = pubkey.clone();
 
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
@@ -156,7 +148,6 @@ async fn create_nonce(
 
     conn.exclusive_transaction(|conn| {
         let keyholder = keyholder.clone();
-        let pubkey = pubkey.clone();
         Box::pin(async move {
             let (id, new_nonce): (i32, i32) = update(program_client::table)
                 .filter(program_client::public_key.eq(&pubkey_bytes))
@@ -169,7 +160,7 @@ async fn create_nonce(
                 conn,
                 &keyholder,
                 &ClientCredentials {
-                    pubkey: pubkey.clone(),
+                    pubkey: *pubkey,
                     nonce: new_nonce,
                 },
                 id,
@@ -216,7 +207,6 @@ async fn insert_client(
     metadata: &ClientMetadata,
 ) -> Result<i32, Error> {
     use crate::db::schema::{client_metadata, program_client};
-    let pubkey = pubkey.clone();
     let metadata = metadata.clone();
 
     let mut conn = db.get().await.map_err(|e| {
@@ -226,7 +216,6 @@ async fn insert_client(
 
     conn.exclusive_transaction(|conn| {
         let keyholder = keyholder.clone();
-        let pubkey = pubkey.clone();
         Box::pin(async move {
             const NONCE_START: i32 = 1;
 
@@ -255,7 +244,7 @@ async fn insert_client(
                 conn,
                 &keyholder,
                 &ClientCredentials {
-                    pubkey: pubkey.clone(),
+                    pubkey: *pubkey,
                     nonce: NONCE_START,
                 },
                 client_id,

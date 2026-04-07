@@ -10,7 +10,6 @@ use kameo::prelude::Context;
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
 use crate::actors::keyholder::KeyHolderState;
 use crate::actors::user_agent::session::Error;
 use crate::db::models::{
@@ -18,6 +17,10 @@ use crate::db::models::{
 };
 use crate::evm::policies::{Grant, SpecificGrant};
 use crate::safe_cell::SafeCell;
+use crate::{
+    actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer,
+    crypto::integrity::{self, Verified},
+};
 use crate::{
     actors::{
         evm::{
@@ -29,11 +32,66 @@ use crate::{
             UserAgentSession,
             state::{UnsealContext, UserAgentEvents, UserAgentStates},
         },
+        user_agent::{AuthPublicKey, UserAgentCredentials},
     },
+    db::schema::useragent_client,
     safe_cell::SafeCellHandle as _,
 };
 
+fn is_vault_sealed_from_evm<M>(err: &SendError<M, crate::actors::evm::Error>) -> bool {
+    matches!(
+        err,
+        SendError::HandlerError(crate::actors::evm::Error::Keyholder(
+            keyholder::Error::NotBootstrapped
+        )) | SendError::HandlerError(crate::actors::evm::Error::Integrity(
+            crate::crypto::integrity::Error::Keyholder(keyholder::Error::NotBootstrapped)
+        ))
+    )
+}
+
 impl UserAgentSession {
+    async fn backfill_useragent_integrity(&self) -> Result<(), Error> {
+        let mut conn = self.props.db.get().await?;
+        let keyholder = self.props.actors.key_holder.clone();
+
+        conn.transaction(|conn| {
+            Box::pin(async move {
+                let rows: Vec<(i32, i32, Vec<u8>, crate::db::models::KeyType)> =
+                    useragent_client::table
+                        .select((
+                            useragent_client::id,
+                            useragent_client::nonce,
+                            useragent_client::public_key,
+                            useragent_client::key_type,
+                        ))
+                        .load(conn)
+                        .await?;
+
+                for (id, nonce, public_key, key_type) in rows {
+                    let pubkey = AuthPublicKey::try_from((key_type, public_key)).map_err(|e| {
+                        Error::internal(format!("Invalid user-agent key in db: {e}"))
+                    })?;
+
+                    integrity::sign_entity(
+                        conn,
+                        &keyholder,
+                        &UserAgentCredentials { pubkey, nonce },
+                        id,
+                    )
+                    .await
+                    .map_err(|e| {
+                        Error::internal(format!("Failed to backfill user-agent integrity: {e}"))
+                    })?;
+                }
+
+                Result::<_, Error>::Ok(())
+            })
+        })
+        .await?;
+
+        Ok(())
+    }
+
     fn take_unseal_secret(&mut self) -> Result<(EphemeralSecret, PublicKey), Error> {
         let UserAgentStates::WaitingForUnsealKey(unseal_context) = self.state.state() else {
             error!("Received encrypted key in invalid state");
@@ -191,6 +249,7 @@ impl UserAgentSession {
             .await
         {
             Ok(_) => {
+                self.backfill_useragent_integrity().await?;
                 info!("Successfully unsealed key with client-provided key");
                 self.transition(UserAgentEvents::ReceivedValidKey)?;
                 Ok(())
@@ -252,6 +311,7 @@ impl UserAgentSession {
             .await
         {
             Ok(_) => {
+                self.backfill_useragent_integrity().await?;
                 info!("Successfully bootstrapped vault with client-provided key");
                 self.transition(UserAgentEvents::ReceivedValidKey)?;
                 Ok(())
@@ -325,12 +385,15 @@ impl UserAgentSession {
 #[messages]
 impl UserAgentSession {
     #[message]
-    pub(crate) async fn handle_grant_list(&mut self) -> Result<Vec<Grant<SpecificGrant>>, Error> {
+    pub(crate) async fn handle_grant_list(
+        &mut self,
+    ) -> Result<Vec<Grant<SpecificGrant>>, GrantMutationError> {
         match self.props.actors.evm.ask(UseragentListGrants {}).await {
             Ok(grants) => Ok(grants),
+            Err(err) if is_vault_sealed_from_evm(&err) => Err(GrantMutationError::VaultSealed),
             Err(err) => {
                 error!(?err, "EVM grant list failed");
-                Err(Error::internal("Failed to list EVM grants"))
+                Err(GrantMutationError::Internal)
             }
         }
     }
@@ -340,7 +403,7 @@ impl UserAgentSession {
         &mut self,
         basic: crate::evm::policies::SharedGrantSettings,
         grant: crate::evm::policies::SpecificGrant,
-    ) -> Result<i32, GrantMutationError> {
+    ) -> Result<Verified<i32>, GrantMutationError> {
         match self
             .props
             .actors
@@ -349,6 +412,7 @@ impl UserAgentSession {
             .await
         {
             Ok(grant_id) => Ok(grant_id),
+            Err(err) if is_vault_sealed_from_evm(&err) => Err(GrantMutationError::VaultSealed),
             Err(err) => {
                 error!(?err, "EVM grant create failed");
                 Err(GrantMutationError::Internal)
@@ -365,10 +429,13 @@ impl UserAgentSession {
             .props
             .actors
             .evm
-            .ask(UseragentDeleteGrant { grant_id })
+            .ask(UseragentDeleteGrant {
+                _grant_id: grant_id,
+            })
             .await
         {
             Ok(()) => Ok(()),
+            Err(err) if is_vault_sealed_from_evm(&err) => Err(GrantMutationError::VaultSealed),
             Err(err) => {
                 error!(?err, "EVM grant delete failed");
                 Err(GrantMutationError::Internal)

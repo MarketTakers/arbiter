@@ -59,6 +59,10 @@ pub struct ArbiterEvmWallet {
 }
 
 impl ArbiterEvmWallet {
+    #[expect(
+        dead_code,
+        reason = "constructor may be used in future extensions, e.g. to support wallet listing"
+    )]
     pub(crate) fn new(transport: Arc<Mutex<ClientTransport>>, address: Address) -> Self {
         Self {
             transport,
