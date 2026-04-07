@@ -25,10 +25,10 @@ const _etherHandler = EtherTransferGrantHandler();
 const _tokenHandler = TokenTransferGrantHandler();
 
 GrantFormHandler _handlerFor(SpecificGrant_Grant type) => switch (type) {
-      SpecificGrant_Grant.etherTransfer => _etherHandler,
-      SpecificGrant_Grant.tokenTransfer => _tokenHandler,
-      _ => throw ArgumentError('Unsupported grant type: $type'),
-    };
+  SpecificGrant_Grant.etherTransfer => _etherHandler,
+  SpecificGrant_Grant.tokenTransfer => _tokenHandler,
+  _ => throw ArgumentError('Unsupported grant type: $type'),
+};
 
 @RoutePage()
 class CreateEvmGrantScreen extends HookConsumerWidget {
@@ -62,12 +62,14 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
         );
         final validFrom = formValues['validFrom'] as DateTime?;
         final validUntil = formValues['validUntil'] as DateTime?;
-        if (validFrom != null) sharedSettings.validFrom = toTimestamp(validFrom);
+        if (validFrom != null)
+          sharedSettings.validFrom = toTimestamp(validFrom);
         if (validUntil != null) {
           sharedSettings.validUntil = toTimestamp(validUntil);
         }
-        final gasBytes =
-            optionalBigIntBytes(formValues['maxGasFeePerGas'] as String? ?? '');
+        final gasBytes = optionalBigIntBytes(
+          formValues['maxGasFeePerGas'] as String? ?? '',
+        );
         if (gasBytes != null) sharedSettings.maxGasFeePerGas = gasBytes;
         final priorityBytes = optionalBigIntBytes(
           formValues['maxPriorityFeePerGas'] as String? ?? '',
@@ -106,7 +108,8 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
               SizedBox(height: 1.8.h),
               const _Section(
                 title: 'Authorization',
-                tooltip: 'Select which SDK client receives this grant and '
+                tooltip:
+                    'Select which SDK client receives this grant and '
                     'which of its wallet accesses it applies to.',
                 child: AuthorizationFields(),
               ),
@@ -118,7 +121,8 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
                     const Expanded(
                       child: _Section(
                         title: 'Chain',
-                        tooltip: 'Restrict this grant to a specific EVM chain ID. '
+                        tooltip:
+                            'Restrict this grant to a specific EVM chain ID. '
                             'Leave empty to allow any chain.',
                         optional: true,
                         child: ChainIdField(),
@@ -128,7 +132,8 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
                     const Expanded(
                       child: _Section(
                         title: 'Timing',
-                        tooltip: 'Set an optional validity window. '
+                        tooltip:
+                            'Set an optional validity window. '
                             'Signing requests outside this period will be rejected.',
                         optional: true,
                         child: ValidityWindowField(),
@@ -145,7 +150,8 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
                     const Expanded(
                       child: _Section(
                         title: 'Gas limits',
-                        tooltip: 'Cap the gas fees this grant may authorize. '
+                        tooltip:
+                            'Cap the gas fees this grant may authorize. '
                             'Transactions exceeding these values will be rejected.',
                         optional: true,
                         child: GasFeeOptionsField(),
@@ -155,7 +161,8 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
                     const Expanded(
                       child: _Section(
                         title: 'Transaction limits',
-                        tooltip: 'Limit how many transactions can be signed '
+                        tooltip:
+                            'Limit how many transactions can be signed '
                             'within a rolling time window.',
                         optional: true,
                         child: TransactionRateLimitField(),
@@ -172,7 +179,8 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
               SizedBox(height: 1.8.h),
               _Section(
                 title: 'Grant-specific options',
-                tooltip: 'Rules specific to the selected transfer type. '
+                tooltip:
+                    'Rules specific to the selected transfer type. '
                     'Switch between Ether and token above to change these fields.',
                 child: handler.buildForm(context, ref),
               ),
@@ -180,8 +188,7 @@ class CreateEvmGrantScreen extends HookConsumerWidget {
               Align(
                 alignment: Alignment.centerRight,
                 child: FilledButton.icon(
-                  onPressed:
-                      createMutation is MutationPending ? null : submit,
+                  onPressed: createMutation is MutationPending ? null : submit,
                   icon: createMutation is MutationPending
                       ? SizedBox(
                           width: 1.8.h,
@@ -266,9 +273,9 @@ class _Section extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
               ),
               SizedBox(width: 0.4.w),
               Tooltip(
@@ -283,9 +290,9 @@ class _Section extends StatelessWidget {
                 SizedBox(width: 0.6.w),
                 Text(
                   '(optional)',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: subtleColor,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: subtleColor),
                 ),
               ],
             ],

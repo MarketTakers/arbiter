@@ -13,6 +13,7 @@ python = "3.14.3"
 ast-grep = "0.42.0"
 "cargo:cargo-edit" = "0.13.9"
 "cargo:cargo-mutants" = "27.0.0"
+"cargo:flutter_rust_bridge_codegen" = "2.12.0"
 
 [tasks.codegen]
 sources = ['protobufs/*.proto', 'protobufs/**/*.proto']
