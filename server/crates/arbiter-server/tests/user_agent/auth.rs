@@ -1,4 +1,7 @@
-use arbiter_crypto::{authn::{self, format_challenge, USERAGENT_CONTEXT}, safecell::{SafeCell, SafeCellHandle as _}};
+use arbiter_crypto::{
+    authn::{self, USERAGENT_CONTEXT, format_challenge},
+    safecell::{SafeCell, SafeCellHandle as _},
+};
 
 use arbiter_proto::transport::{Receiver, Sender};
 use arbiter_server::{

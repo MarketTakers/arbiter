@@ -1,7 +1,10 @@
 use std::sync::Mutex;
 
 use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
-use arbiter_crypto::{authn, safecell::{SafeCell, SafeCellHandle as _}};
+use arbiter_crypto::{
+    authn,
+    safecell::{SafeCell, SafeCellHandle as _},
+};
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use diesel::{ExpressionMethods as _, QueryDsl as _, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
@@ -14,23 +17,21 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
 use crate::actors::keyholder::KeyHolderState;
 use crate::actors::user_agent::session::Error;
+use crate::actors::{
+    evm::{
+        ClientSignTransaction, Generate, ListWallets, SignTransactionError as EvmSignError,
+        UseragentCreateGrant, UseragentListGrants,
+    },
+    keyholder::{self, Bootstrap, TryUnseal},
+    user_agent::session::{
+        UserAgentSession,
+        state::{UnsealContext, UserAgentEvents, UserAgentStates},
+    },
+};
 use crate::db::models::{
     EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
 };
 use crate::evm::policies::{Grant, SpecificGrant};
-use crate::{
-    actors::{
-        evm::{
-            ClientSignTransaction, Generate, ListWallets, SignTransactionError as EvmSignError,
-            UseragentCreateGrant, UseragentDeleteGrant, UseragentListGrants,
-        },
-        keyholder::{self, Bootstrap, TryUnseal},
-        user_agent::session::{
-            UserAgentSession,
-            state::{UnsealContext, UserAgentEvents, UserAgentStates},
-        },
-    },
-};
 
 impl UserAgentSession {
     fn take_unseal_secret(&mut self) -> Result<(EphemeralSecret, PublicKey), Error> {
@@ -360,19 +361,21 @@ impl UserAgentSession {
         &mut self,
         grant_id: i32,
     ) -> Result<(), GrantMutationError> {
-        match self
-            .props
-            .actors
-            .evm
-            .ask(UseragentDeleteGrant { grant_id })
-            .await
-        {
-            Ok(()) => Ok(()),
-            Err(err) => {
-                error!(?err, "EVM grant delete failed");
-                Err(GrantMutationError::Internal)
-            }
-        }
+        // match self
+        //     .props
+        //     .actors
+        //     .evm
+        //     .ask(UseragentDeleteGrant { grant_id })
+        //     .await
+        // {
+        //     Ok(()) => Ok(()),
+        //     Err(err) => {
+        //         error!(?err, "EVM grant delete failed");
+        //         Err(GrantMutationError::Internal)
+        //     }
+        // }
+       let _ = grant_id;
+        todo!()
     }
 
     #[message]

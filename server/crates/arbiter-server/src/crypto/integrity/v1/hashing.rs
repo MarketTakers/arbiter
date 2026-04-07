@@ -62,10 +62,10 @@ impl<T: Hashable> Hashable for Option<T> {
     fn hash<H: Digest>(&self, hasher: &mut H) {
         match self {
             Some(value) => {
-                hasher.update(&[1]);
+                hasher.update([1]);
                 value.hash(hasher);
             }
-            None => hasher.update(&[0]),
+            None => hasher.update([0]),
         }
     }
 }
@@ -96,12 +96,12 @@ impl Hashable for alloy::primitives::U256 {
 
 impl Hashable for chrono::Duration {
     fn hash<H: Digest>(&self, hasher: &mut H) {
-        hasher.update(&self.num_seconds().to_be_bytes());
+        hasher.update(self.num_seconds().to_be_bytes());
     }
 }
 
 impl Hashable for chrono::DateTime<chrono::Utc> {
     fn hash<H: Digest>(&self, hasher: &mut H) {
-        hasher.update(&self.timestamp_millis().to_be_bytes());
+        hasher.update(self.timestamp_millis().to_be_bytes());
     }
 }

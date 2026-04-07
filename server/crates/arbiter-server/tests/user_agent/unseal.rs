@@ -1,3 +1,4 @@
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
     actors::{
         GlobalActors,
@@ -8,13 +9,9 @@ use arbiter_server::{
         },
     },
     db,
-   
 };
-use arbiter_crypto::{authn::{self, format_challenge, CLIENT_CONTEXT}, safecell::{SafeCell, SafeCellHandle as _}};
 
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
-use diesel::{ExpressionMethods as _, QueryDsl as _, insert_into};
-use diesel_async::RunQueryDsl;
 use kameo::actor::Spawn as _;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 

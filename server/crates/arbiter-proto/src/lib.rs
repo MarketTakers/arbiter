@@ -1,8 +1,6 @@
 pub mod transport;
 pub mod url;
 
-use base64::{Engine, prelude::BASE64_STANDARD};
-
 pub mod proto {
     tonic::include_proto!("arbiter");
 

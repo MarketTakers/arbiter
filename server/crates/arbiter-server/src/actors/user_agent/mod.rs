@@ -5,7 +5,6 @@ use crate::{
 };
 use arbiter_crypto::authn;
 
-
 #[derive(Debug)]
 pub struct UserAgentCredentials {
     pub pubkey: authn::PublicKey,
