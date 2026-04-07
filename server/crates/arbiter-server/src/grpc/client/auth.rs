@@ -1,3 +1,4 @@
+use arbiter_crypto::authn;
 use arbiter_proto::{
     ClientMetadata,
     proto::{
@@ -45,7 +46,7 @@ impl<'a> AuthTransportAdapter<'a> {
         match response {
             auth::Outbound::AuthChallenge { pubkey, nonce } => {
                 AuthResponsePayload::Challenge(ProtoAuthChallenge {
-                    pubkey: pubkey.to_bytes().to_vec(),
+                    pubkey: pubkey.to_bytes(),
                     nonce,
                 })
             }
@@ -160,11 +161,7 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
                         .await;
                     return None;
                 };
-                let Ok(pubkey) = <[u8; 32]>::try_from(pubkey) else {
-                    let _ = self.send_auth_result(ProtoAuthResult::InvalidKey).await;
-                    return None;
-                };
-                let Ok(pubkey) = ed25519_dalek::VerifyingKey::from_bytes(&pubkey) else {
+                let Ok(pubkey) = authn::PublicKey::try_from(pubkey.as_slice()) else {
                     let _ = self.send_auth_result(ProtoAuthResult::InvalidKey).await;
                     return None;
                 };
@@ -174,7 +171,7 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
                 })
             }
             AuthRequestPayload::ChallengeSolution(ProtoAuthChallengeSolution { signature }) => {
-                let Ok(signature) = ed25519_dalek::Signature::try_from(signature.as_slice()) else {
+                let Ok(signature) = authn::Signature::try_from(signature.as_slice()) else {
                     let _ = self
                         .send_auth_result(ProtoAuthResult::InvalidSignature)
                         .await;

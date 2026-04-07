@@ -72,40 +72,6 @@ pub mod types {
             Ok(SqliteTimestamp(datetime))
         }
     }
-
-    /// Key algorithm stored in the `useragent_client.key_type` column.
-    /// Values must stay stable — they are persisted in the database.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, FromSqlRow, AsExpression, strum::FromRepr)]
-    #[diesel(sql_type = Integer)]
-    #[repr(i32)]
-    pub enum KeyType {
-        Ed25519 = 1,
-        EcdsaSecp256k1 = 2,
-        Rsa = 3,
-    }
-
-    impl ToSql<Integer, Sqlite> for KeyType {
-        fn to_sql<'b>(
-            &'b self,
-            out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
-        ) -> diesel::serialize::Result {
-            out.set_value(*self as i32);
-            Ok(IsNull::No)
-        }
-    }
-
-    impl FromSql<Integer, Sqlite> for KeyType {
-        fn from_sql(
-            mut bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
-        ) -> diesel::deserialize::Result<Self> {
-            let Some(SqliteType::Long) = bytes.value_type() else {
-                return Err("Expected Integer for KeyType".into());
-            };
-            let discriminant = bytes.read_long();
-            KeyType::from_repr(discriminant as i32)
-                .ok_or_else(|| format!("Unknown KeyType discriminant: {discriminant}").into())
-        }
-    }
 }
 pub use types::*;
 
@@ -244,7 +210,6 @@ pub struct UseragentClient {
     pub public_key: Vec<u8>,
     pub created_at: SqliteTimestamp,
     pub updated_at: SqliteTimestamp,
-    pub key_type: KeyType,
 }
 
 #[derive(Models, Queryable, Debug, Insertable, Selectable)]

@@ -1,9 +1,10 @@
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_proto::transport::{Bi, Error, Receiver, Sender};
 use arbiter_server::{
     actors::keyholder::KeyHolder,
     db::{self, schema},
-    safe_cell::{SafeCell, SafeCellHandle as _},
 };
+
 use async_trait::async_trait;
 use diesel::QueryDsl;
 use diesel_async::RunQueryDsl;

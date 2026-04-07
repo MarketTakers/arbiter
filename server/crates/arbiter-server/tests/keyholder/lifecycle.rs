@@ -1,9 +1,10 @@
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
     actors::keyholder::{Error, KeyHolder},
     crypto::encryption::v1::{Nonce, ROOT_KEY_TAG},
     db::{self, models, schema},
-    safe_cell::{SafeCell, SafeCellHandle as _},
 };
+
 use diesel::{QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
 

@@ -1,3 +1,4 @@
+use arbiter_crypto::authn::SigningKey;
 use arbiter_proto::{
     ClientMetadata, proto::arbiter_service_client::ArbiterServiceClient, url::ArbiterUrl,
 };
@@ -60,7 +61,7 @@ impl ArbiterClient {
     pub async fn connect_with_key(
         url: ArbiterUrl,
         metadata: ClientMetadata,
-        key: ed25519_dalek::SigningKey,
+        key: SigningKey,
     ) -> Result<Self, Error> {
         let anchor = webpki::anchor_from_trusted_cert(&url.ca_cert)?.to_owned();
         let tls = ClientTlsConfig::new().trust_anchor(anchor);

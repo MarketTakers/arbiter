@@ -1,7 +1,8 @@
+use arbiter_crypto::authn::{self, USERAGENT_CONTEXT};
 use arbiter_proto::transport::Bi;
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, update};
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use kameo::{actor::ActorRef, error::SendError};
+use kameo::actor::ActorRef;
 use tracing::error;
 
 use super::Error;
@@ -9,24 +10,24 @@ use crate::{
     actors::{
         bootstrap::ConsumeToken,
         keyholder::KeyHolder,
-        user_agent::{AuthPublicKey, UserAgentConnection, UserAgentCredentials, auth::Outbound},
+        user_agent::{UserAgentConnection, UserAgentCredentials, auth::Outbound},
     },
-    crypto::integrity::{self, AttestationStatus},
+    crypto::integrity,
     db::{DatabasePool, schema::useragent_client},
 };
 
 pub struct ChallengeRequest {
-    pub pubkey: AuthPublicKey,
+    pub pubkey: authn::PublicKey,
 }
 
 pub struct BootstrapAuthRequest {
-    pub pubkey: AuthPublicKey,
+    pub pubkey: authn::PublicKey,
     pub token: String,
 }
 
 pub struct ChallengeContext {
     pub challenge_nonce: i32,
-    pub key: AuthPublicKey,
+    pub key: authn::PublicKey,
 }
 
 pub struct ChallengeSolution {
@@ -38,15 +39,15 @@ smlang::statemachine!(
     custom_error: true,
     transitions: {
         *Init + AuthRequest(ChallengeRequest) / async prepare_challenge = SentChallenge(ChallengeContext),
-        Init + BootstrapAuthRequest(BootstrapAuthRequest) / async verify_bootstrap_token = AuthOk(AuthPublicKey),
-        SentChallenge(ChallengeContext) + ReceivedSolution(ChallengeSolution) / async verify_solution = AuthOk(AuthPublicKey),
+        Init + BootstrapAuthRequest(BootstrapAuthRequest) / async verify_bootstrap_token = AuthOk(authn::PublicKey),
+        SentChallenge(ChallengeContext) + ReceivedSolution(ChallengeSolution) / async verify_solution = AuthOk(authn::PublicKey),
     }
 );
 
 /// Returns the current nonce, ready to use for the challenge nonce.
 async fn get_current_nonce_and_id(
     db: &DatabasePool,
-    key: &AuthPublicKey,
+    key: &authn::PublicKey,
 ) -> Result<(i32, i32), Error> {
     let mut db_conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
@@ -56,8 +57,7 @@ async fn get_current_nonce_and_id(
         .exclusive_transaction(|conn| {
             Box::pin(async move {
                 useragent_client::table
-                    .filter(useragent_client::public_key.eq(key.to_stored_bytes()))
-                    .filter(useragent_client::key_type.eq(key.key_type()))
+                    .filter(useragent_client::public_key.eq(key.to_bytes()))
                     .select((useragent_client::id, useragent_client::nonce))
                     .first::<(i32, i32)>(conn)
                     .await
@@ -78,7 +78,7 @@ async fn get_current_nonce_and_id(
 async fn verify_integrity(
     db: &DatabasePool,
     keyholder: &ActorRef<KeyHolder>,
-    pubkey: &AuthPublicKey,
+    pubkey: &authn::PublicKey,
 ) -> Result<(), Error> {
     let mut db_conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
@@ -87,7 +87,7 @@ async fn verify_integrity(
 
     let (id, nonce) = get_current_nonce_and_id(db, pubkey).await?;
 
-    let result = integrity::verify_entity(
+    let _result = integrity::verify_entity(
         &mut db_conn,
         keyholder,
         &UserAgentCredentials {
@@ -108,7 +108,7 @@ async fn verify_integrity(
 async fn create_nonce(
     db: &DatabasePool,
     keyholder: &ActorRef<KeyHolder>,
-    pubkey: &AuthPublicKey,
+    pubkey: &authn::PublicKey,
 ) -> Result<i32, Error> {
     let mut db_conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
@@ -118,8 +118,7 @@ async fn create_nonce(
         .exclusive_transaction(|conn| {
             Box::pin(async move {
                 let (id, new_nonce): (i32, i32) = update(useragent_client::table)
-                    .filter(useragent_client::public_key.eq(pubkey.to_stored_bytes()))
-                    .filter(useragent_client::key_type.eq(pubkey.key_type()))
+                    .filter(useragent_client::public_key.eq(pubkey.to_bytes()))
                     .set(useragent_client::nonce.eq(useragent_client::nonce + 1))
                     .returning((useragent_client::id, useragent_client::nonce))
                     .get_result(conn)
@@ -154,10 +153,9 @@ async fn create_nonce(
 async fn register_key(
     db: &DatabasePool,
     keyholder: &ActorRef<KeyHolder>,
-    pubkey: &AuthPublicKey,
+    pubkey: &authn::PublicKey,
 ) -> Result<(), Error> {
-    let pubkey_bytes = pubkey.to_stored_bytes();
-    let key_type = pubkey.key_type();
+    let pubkey_bytes = pubkey.to_bytes();
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
         Error::internal("Database unavailable")
@@ -171,7 +169,6 @@ async fn register_key(
                 .values((
                     useragent_client::public_key.eq(pubkey_bytes),
                     useragent_client::nonce.eq(NONCE_START),
-                    useragent_client::key_type.eq(key_type),
                 ))
                 .returning(useragent_client::id)
                 .get_result(conn)
@@ -186,7 +183,7 @@ async fn register_key(
                 nonce: NONCE_START,
             };
 
-            integrity::sign_entity(conn, &keyholder, &entity, id)
+            integrity::sign_entity(conn, keyholder, &entity, id)
                 .await
                 .map_err(|e| {
                     error!(error = ?e, "Failed to sign integrity tag for new user-agent key");
@@ -245,7 +242,7 @@ where
     async fn verify_bootstrap_token(
         &mut self,
         BootstrapAuthRequest { pubkey, token }: BootstrapAuthRequest,
-    ) -> Result<AuthPublicKey, Self::Error> {
+    ) -> Result<authn::PublicKey, Self::Error> {
         let token_ok: bool = self
             .conn
             .actors
@@ -293,35 +290,13 @@ where
             key,
         }: &ChallengeContext,
         ChallengeSolution { solution }: ChallengeSolution,
-    ) -> Result<AuthPublicKey, Self::Error> {
-        let formatted = arbiter_proto::format_challenge(*challenge_nonce, &key.to_stored_bytes());
+    ) -> Result<authn::PublicKey, Self::Error> {
+        let signature = authn::Signature::try_from(solution.as_slice()).map_err(|_| {
+            error!("Failed to decode signature in challenge solution");
+            Error::InvalidChallengeSolution
+        })?;
 
-        let valid = match key {
-            AuthPublicKey::Ed25519(vk) => {
-                let sig = solution.as_slice().try_into().map_err(|_| {
-                    error!(?solution, "Invalid Ed25519 signature length");
-                    Error::InvalidChallengeSolution
-                })?;
-                vk.verify_strict(&formatted, &sig).is_ok()
-            }
-            AuthPublicKey::EcdsaSecp256k1(vk) => {
-                use k256::ecdsa::signature::Verifier as _;
-                let sig = k256::ecdsa::Signature::try_from(solution.as_slice()).map_err(|_| {
-                    error!(?solution, "Invalid ECDSA signature bytes");
-                    Error::InvalidChallengeSolution
-                })?;
-                vk.verify(&formatted, &sig).is_ok()
-            }
-            AuthPublicKey::Rsa(pk) => {
-                use rsa::signature::Verifier as _;
-                let verifying_key = rsa::pss::VerifyingKey::<sha2::Sha256>::new(pk.clone());
-                let sig = rsa::pss::Signature::try_from(solution.as_slice()).map_err(|_| {
-                    error!(?solution, "Invalid RSA signature bytes");
-                    Error::InvalidChallengeSolution
-                })?;
-                verifying_key.verify(&formatted, &sig).is_ok()
-            }
-        };
+        let valid = key.verify(*challenge_nonce, USERAGENT_CONTEXT, &signature);
 
         match valid {
             true => {

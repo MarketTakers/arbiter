@@ -1,8 +1,6 @@
 pub mod transport;
 pub mod url;
 
-use base64::{Engine, prelude::BASE64_STANDARD};
-
 pub mod proto {
     tonic::include_proto!("arbiter");
 
@@ -83,9 +81,4 @@ pub fn home_path() -> Result<std::path::PathBuf, std::io::Error> {
     std::fs::create_dir_all(&arbiter_home)?;
 
     Ok(arbiter_home)
-}
-
-pub fn format_challenge(nonce: i32, pubkey: &[u8]) -> Vec<u8> {
-    let concat_form = format!("{}:{}", nonce, BASE64_STANDARD.encode(pubkey));
-    concat_form.into_bytes()
 }

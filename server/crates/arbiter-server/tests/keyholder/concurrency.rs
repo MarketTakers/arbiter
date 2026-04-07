@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
     actors::keyholder::{CreateNew, Error, KeyHolder},
     db::{self, models, schema},
-    safe_cell::{SafeCell, SafeCellHandle as _},
 };
+
 use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper, dsl::sql_query};
 use diesel_async::RunQueryDsl;
 use kameo::actor::{ActorRef, Spawn as _};

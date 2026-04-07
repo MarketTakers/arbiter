@@ -9,22 +9,17 @@ use kameo::{Actor, Reply, messages};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
 
-use crate::{
-    crypto::{
-        KeyCell, derive_key,
-        encryption::v1::{self, Nonce},
-        integrity::v1::HmacSha256,
-    },
-    safe_cell::SafeCell,
+use crate::crypto::{
+    KeyCell, derive_key,
+    encryption::v1::{self, Nonce},
+    integrity::v1::HmacSha256,
 };
-use crate::{
-    db::{
-        self,
-        models::{self, RootKeyHistory},
-        schema::{self},
-    },
-    safe_cell::SafeCellHandle as _,
+use crate::db::{
+    self,
+    models::{self, RootKeyHistory},
+    schema::{self},
 };
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
 #[derive(Default, EnumDiscriminants)]
 #[strum_discriminants(derive(Reply), vis(pub), name(KeyHolderState))]
@@ -400,10 +395,8 @@ mod tests {
 
     use diesel_async::RunQueryDsl;
 
-    use crate::{
-        db::{self},
-        safe_cell::SafeCell,
-    };
+    use crate::db::{self};
+    use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
     use super::*;
 

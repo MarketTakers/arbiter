@@ -1,5 +1,6 @@
+use arbiter_crypto::authn::{CLIENT_CONTEXT, SigningKey, format_challenge};
 use arbiter_proto::{
-    ClientMetadata, format_challenge,
+    ClientMetadata,
     proto::{
         client::{
             ClientRequest,
@@ -14,7 +15,6 @@ use arbiter_proto::{
         shared::ClientInfo as ProtoClientInfo,
     },
 };
-use ed25519_dalek::Signer as _;
 
 use crate::{
     storage::StorageError,
@@ -54,14 +54,14 @@ fn map_auth_result(code: i32) -> AuthError {
 async fn send_auth_challenge_request(
     transport: &mut ClientTransport,
     metadata: ClientMetadata,
-    key: &ed25519_dalek::SigningKey,
+    key: &SigningKey,
 ) -> std::result::Result<(), AuthError> {
     transport
         .send(ClientRequest {
             request_id: next_request_id(),
             payload: Some(ClientRequestPayload::Auth(proto_auth::Request {
                 payload: Some(AuthRequestPayload::ChallengeRequest(AuthChallengeRequest {
-                    pubkey: key.verifying_key().to_bytes().to_vec(),
+                    pubkey: key.public_key().to_bytes(),
                     client_info: Some(ProtoClientInfo {
                         name: metadata.name,
                         description: metadata.description,
@@ -95,11 +95,14 @@ async fn receive_auth_challenge(
 
 async fn send_auth_challenge_solution(
     transport: &mut ClientTransport,
-    key: &ed25519_dalek::SigningKey,
+    key: &SigningKey,
     challenge: AuthChallenge,
 ) -> std::result::Result<(), AuthError> {
     let challenge_payload = format_challenge(challenge.nonce, &challenge.pubkey);
-    let signature = key.sign(&challenge_payload).to_bytes().to_vec();
+    let signature = key
+        .sign_message(&challenge_payload, CLIENT_CONTEXT)
+        .map_err(|_| AuthError::UnexpectedAuthResponse)?
+        .to_bytes();
 
     transport
         .send(ClientRequest {
@@ -140,7 +143,7 @@ async fn receive_auth_confirmation(
 pub(crate) async fn authenticate(
     transport: &mut ClientTransport,
     metadata: ClientMetadata,
-    key: &ed25519_dalek::SigningKey,
+    key: &SigningKey,
 ) -> std::result::Result<(), AuthError> {
     send_auth_challenge_request(transport, metadata, key).await?;
     let challenge = receive_auth_challenge(transport).await?;

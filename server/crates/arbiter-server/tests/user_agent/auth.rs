@@ -1,20 +1,36 @@
+use arbiter_crypto::{
+    authn::{self, USERAGENT_CONTEXT, format_challenge},
+    safecell::{SafeCell, SafeCellHandle as _},
+};
+
 use arbiter_proto::transport::{Receiver, Sender};
 use arbiter_server::{
     actors::{
         GlobalActors,
         bootstrap::GetToken,
         keyholder::Bootstrap,
-        user_agent::{AuthPublicKey, UserAgentConnection, UserAgentCredentials, auth},
+        user_agent::{UserAgentConnection, UserAgentCredentials, auth},
     },
     crypto::integrity,
     db::{self, schema},
-    safe_cell::{SafeCell, SafeCellHandle as _},
 };
 use diesel::{ExpressionMethods as _, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
-use ed25519_dalek::Signer as _;
+use ml_dsa::{KeyGen, MlDsa87, SigningKey, signature::Keypair as _};
 
 use super::common::ChannelTransport;
+
+fn sign_useragent_challenge(
+    key: &SigningKey<MlDsa87>,
+    nonce: i32,
+    pubkey_bytes: &[u8],
+) -> authn::Signature {
+    let challenge = format_challenge(nonce, pubkey_bytes);
+    key.signing_key()
+        .sign_deterministic(&challenge, USERAGENT_CONTEXT)
+        .unwrap()
+        .into()
+}
 
 #[tokio::test]
 #[test_log::test]
@@ -37,10 +53,10 @@ pub async fn test_bootstrap_token_auth() {
         auth::authenticate(&mut props, server_transport).await
     });
 
-    let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+            pubkey: new_key.verifying_key().into(),
             bootstrap_token: Some(token),
         })
         .await
@@ -63,7 +79,7 @@ pub async fn test_bootstrap_token_auth() {
         .first::<Vec<u8>>(&mut conn)
         .await
         .unwrap();
-    assert_eq!(stored_pubkey, new_key.verifying_key().to_bytes().to_vec());
+    assert_eq!(stored_pubkey, new_key.verifying_key().encode().to_vec());
 }
 
 #[tokio::test]
@@ -79,10 +95,10 @@ pub async fn test_bootstrap_invalid_token_auth() {
         auth::authenticate(&mut props, server_transport).await
     });
 
-    let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+            pubkey: new_key.verifying_key().into(),
             bootstrap_token: Some("invalid_token".to_string()),
         })
         .await
@@ -115,8 +131,8 @@ pub async fn test_challenge_auth() {
         .await
         .unwrap();
 
-    let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
-    let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let pubkey_bytes = new_key.verifying_key().encode().to_vec();
 
     {
         let mut conn = db.get().await.unwrap();
@@ -133,7 +149,7 @@ pub async fn test_challenge_auth() {
             &mut conn,
             &actors.key_holder,
             &UserAgentCredentials {
-                pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+                pubkey: new_key.verifying_key().into(),
                 nonce: 1,
             },
             id,
@@ -151,7 +167,7 @@ pub async fn test_challenge_auth() {
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+            pubkey: new_key.verifying_key().into(),
             bootstrap_token: None,
         })
         .await
@@ -169,12 +185,11 @@ pub async fn test_challenge_auth() {
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };
 
-    let formatted_challenge = arbiter_proto::format_challenge(challenge, &pubkey_bytes);
-    let signature = new_key.sign(&formatted_challenge);
+    let signature = sign_useragent_challenge(&new_key, challenge, &pubkey_bytes);
 
     test_transport
         .send(auth::Inbound::AuthChallengeSolution {
-            signature: signature.to_bytes().to_vec(),
+            signature: signature.to_bytes(),
         })
         .await
         .unwrap();
@@ -205,8 +220,8 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() 
         .await
         .unwrap();
 
-    let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
-    let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let pubkey_bytes = new_key.verifying_key().encode().to_vec();
 
     {
         let mut conn = db.get().await.unwrap();
@@ -229,7 +244,7 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() 
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+            pubkey: new_key.verifying_key().into(),
             bootstrap_token: None,
         })
         .await
@@ -254,8 +269,8 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
         .await
         .unwrap();
 
-    let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
-    let pubkey_bytes = new_key.verifying_key().to_bytes().to_vec();
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let pubkey_bytes = new_key.verifying_key().encode().to_vec();
 
     {
         let mut conn = db.get().await.unwrap();
@@ -272,7 +287,7 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
             &mut conn,
             &actors.key_holder,
             &UserAgentCredentials {
-                pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+                pubkey: new_key.verifying_key().into(),
                 nonce: 1,
             },
             id,
@@ -290,7 +305,7 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: AuthPublicKey::Ed25519(new_key.verifying_key()),
+            pubkey: new_key.verifying_key().into(),
             bootstrap_token: None,
         })
         .await
@@ -308,12 +323,11 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };
 
-    let wrong_challenge = arbiter_proto::format_challenge(challenge + 1, &pubkey_bytes);
-    let signature = new_key.sign(&wrong_challenge);
+    let signature = sign_useragent_challenge(&new_key, challenge + 1, &pubkey_bytes);
 
     test_transport
         .send(auth::Inbound::AuthChallengeSolution {
-            signature: signature.to_bytes().to_vec(),
+            signature: signature.to_bytes(),
         })
         .await
         .unwrap();

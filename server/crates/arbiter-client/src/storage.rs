@@ -1,3 +1,4 @@
+use arbiter_crypto::authn::SigningKey;
 use arbiter_proto::home_path;
 use std::path::{Path, PathBuf};
 
@@ -11,7 +12,7 @@ pub enum StorageError {
 }
 
 pub trait SigningKeyStorage {
-    fn load_or_create(&self) -> std::result::Result<ed25519_dalek::SigningKey, StorageError>;
+    fn load_or_create(&self) -> std::result::Result<SigningKey, StorageError>;
 }
 
 #[derive(Debug, Clone)]
@@ -20,7 +21,7 @@ pub struct FileSigningKeyStorage {
 }
 
 impl FileSigningKeyStorage {
-    pub const DEFAULT_FILE_NAME: &str = "sdk_client_ed25519.key";
+    pub const DEFAULT_FILE_NAME: &str = "sdk_client_ml_dsa.key";
 
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
@@ -30,7 +31,7 @@ impl FileSigningKeyStorage {
         Ok(Self::new(home_path()?.join(Self::DEFAULT_FILE_NAME)))
     }
 
-    fn read_key(path: &Path) -> std::result::Result<ed25519_dalek::SigningKey, StorageError> {
+    fn read_key(path: &Path) -> std::result::Result<SigningKey, StorageError> {
         let bytes = std::fs::read(path)?;
         let raw: [u8; 32] =
             bytes
@@ -39,12 +40,12 @@ impl FileSigningKeyStorage {
                     expected: 32,
                     actual: v.len(),
                 })?;
-        Ok(ed25519_dalek::SigningKey::from_bytes(&raw))
+        Ok(SigningKey::from_seed(raw))
     }
 }
 
 impl SigningKeyStorage for FileSigningKeyStorage {
-    fn load_or_create(&self) -> std::result::Result<ed25519_dalek::SigningKey, StorageError> {
+    fn load_or_create(&self) -> std::result::Result<SigningKey, StorageError> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -53,8 +54,8 @@ impl SigningKeyStorage for FileSigningKeyStorage {
             return Self::read_key(&self.path);
         }
 
-        let key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
-        let raw_key = key.to_bytes();
+        let key = SigningKey::generate();
+        let raw_key = key.to_seed();
 
         // Use create_new to prevent accidental overwrite if another process creates the key first.
         match std::fs::OpenOptions::new()
@@ -103,7 +104,7 @@ mod tests {
             .load_or_create()
             .expect("second load_or_create should read same key");
 
-        assert_eq!(key_a.to_bytes(), key_b.to_bytes());
+        assert_eq!(key_a.to_seed(), key_b.to_seed());
         assert!(path.exists());
 
         std::fs::remove_file(path).expect("temp key file should be removable");
