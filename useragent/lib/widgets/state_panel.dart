@@ -28,42 +28,42 @@ class StatePanel extends StatelessWidget {
     return CreamFrame(
       padding: EdgeInsets.all(2.8.h),
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (busy)
-              SizedBox(
-                width: 2.8.h,
-                height: 2.8.h,
-                child: const CircularProgressIndicator(strokeWidth: 2.5),
-              )
-            else
-              Icon(icon, size: 34, color: Palette.coral),
-            SizedBox(height: 1.8.h),
-            Text(
-              title,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                color: Palette.ink,
-                fontWeight: FontWeight.w800,
-              ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (busy)
+            SizedBox(
+              width: 2.8.h,
+              height: 2.8.h,
+              child: const CircularProgressIndicator(strokeWidth: 2.5),
+            )
+          else
+            Icon(icon, size: 34, color: Palette.coral),
+          SizedBox(height: 1.8.h),
+          Text(
+            title,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: Palette.ink,
+              fontWeight: FontWeight.w800,
             ),
-            SizedBox(height: 1.h),
-            Text(
-              body,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: Palette.ink.withValues(alpha: 0.72),
-                height: 1.5,
-              ),
+          ),
+          SizedBox(height: 1.h),
+          Text(
+            body,
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: Palette.ink.withValues(alpha: 0.72),
+              height: 1.5,
             ),
-            if (actionLabel != null && onAction != null) ...[
-              SizedBox(height: 2.h),
-              OutlinedButton.icon(
-                onPressed: () => onAction!(),
-                icon: const Icon(Icons.refresh),
-                label: Text(actionLabel!),
-              ),
-            ],
+          ),
+          if (actionLabel != null && onAction != null) ...[
+            SizedBox(height: 2.h),
+            OutlinedButton.icon(
+              onPressed: () => onAction!(),
+              icon: const Icon(Icons.refresh),
+              label: Text(actionLabel!),
+            ),
           ],
-        ),
+        ],
+      ),
     );
   }
 }

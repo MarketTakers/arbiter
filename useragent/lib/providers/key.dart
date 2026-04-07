@@ -1,13 +1,13 @@
 import 'package:mtcore/markettakers.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:arbiter/features/identity/pk_manager.dart';
-import 'package:arbiter/features/identity/simple_ed25519.dart';
+import 'package:arbiter/features/identity/hazmat_mldsa.dart';
 
 part 'key.g.dart';
 
 @riverpod
 KeyManager keyManager(Ref ref) {
-  return SimpleEd25519Manager();
+  return HazmatMLDSAManager();
 }
 
 @Riverpod(keepAlive: true)

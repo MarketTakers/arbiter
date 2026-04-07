@@ -5,7 +5,6 @@ import 'package:hooks_riverpod/experimental/mutation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:sizer/sizer.dart';
 
-
 class CreateWalletButton extends ConsumerWidget {
   const CreateWalletButton({super.key});
 
@@ -87,7 +86,6 @@ class RefreshWalletButton extends ConsumerWidget {
     );
   }
 }
-
 
 String _formatError(Object error) {
   final message = error.toString();

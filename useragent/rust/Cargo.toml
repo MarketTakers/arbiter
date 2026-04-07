@@ -1,0 +1,17 @@
+[package]
+name = "rust_lib_arbiter"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+eframe = "0.34.1"
+egui = "0.34.1"
+flutter_rust_bridge = "=2.12.0"
+arbiter-crypto = {path = "../../server/crates/arbiter-crypto"}
+anyhow = "1.0.102"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

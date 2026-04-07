@@ -93,9 +93,9 @@ class _EtherTransferForm extends ConsumerWidget {
         SizedBox(height: 1.6.h),
         Text(
           'Ether volume limit',
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
         ),
         SizedBox(height: 0.8.h),
         Row(
@@ -157,9 +157,9 @@ class _EtherTargetsField extends StatelessWidget {
             Expanded(
               child: Text(
                 'Ether targets',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
             ),
             TextButton.icon(

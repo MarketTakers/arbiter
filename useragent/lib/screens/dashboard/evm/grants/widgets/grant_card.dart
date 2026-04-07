@@ -46,9 +46,7 @@ class GrantCard extends ConsumerWidget {
     final accessById = <int, ua_sdk.WalletAccessEntry>{
       for (final a in walletAccesses) a.id: a,
     };
-    final walletById = <int, WalletEntry>{
-      for (final w in wallets) w.id: w,
-    };
+    final walletById = <int, WalletEntry>{for (final w in wallets) w.id: w};
     final clientNameById = <int, String>{
       for (final c in clients) c.id: c.info.name,
     };
@@ -192,8 +190,9 @@ class GrantCard extends ConsumerWidget {
                           padding: EdgeInsets.symmetric(horizontal: 0.8.w),
                           child: Text(
                             '·',
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: muted),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: muted,
+                            ),
                           ),
                         ),
                         Expanded(
@@ -201,8 +200,9 @@ class GrantCard extends ConsumerWidget {
                             clientLabel,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: muted),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: muted,
+                            ),
                           ),
                         ),
                       ],

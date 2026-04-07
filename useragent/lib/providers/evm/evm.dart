@@ -2,7 +2,6 @@ import 'package:arbiter/features/connection/evm.dart' as evm;
 import 'package:arbiter/proto/evm.pb.dart';
 import 'package:arbiter/providers/connection/connection_manager.dart';
 import 'package:hooks_riverpod/experimental/mutation.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'evm.g.dart';
@@ -35,7 +34,7 @@ final createEvmWallet = Mutation();
 
 Future<void> executeCreateEvmWallet(MutationTarget target) async {
   return await createEvmWallet.run(target, (tsx) async {
-       final connection = await tsx.get(connectionManagerProvider.future);
+    final connection = await tsx.get(connectionManagerProvider.future);
     if (connection == null) {
       throw Exception('Not connected to the server.');
     }

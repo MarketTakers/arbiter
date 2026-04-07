@@ -101,7 +101,9 @@ Future<Connection> connectAndAuthorize(
     final solutionResponse = await connection.ask(
       UserAgentRequest(
         auth: ua_auth.Request(
-          challengeSolution: ua_auth.AuthChallengeSolution(signature: signature),
+          challengeSolution: ua_auth.AuthChallengeSolution(
+            signature: signature,
+          ),
         ),
       ),
     );
