@@ -1,6 +1,5 @@
-use crate::{
-    actors::keyholder, crypto::integrity::hashing::Hashable, safe_cell::SafeCellHandle as _,
-};
+use crate::{actors::keyholder, crypto::integrity::hashing::Hashable};
+use arbiter_crypto::safecell::SafeCellHandle as _;
 use hmac::{Hmac, Mac as _};
 use sha2::Sha256;
 
@@ -127,7 +126,7 @@ pub async fn sign_entity<E: Integrable>(
     insert_into(integrity_envelope::table)
         .values(NewIntegrityEnvelope {
             entity_kind: E::KIND.to_owned(),
-            entity_id: entity_id,
+            entity_id,
             payload_version: E::VERSION,
             key_version,
             mac: mac.to_vec(),
@@ -204,19 +203,19 @@ mod tests {
     use diesel::{ExpressionMethods as _, QueryDsl};
     use diesel_async::RunQueryDsl;
     use kameo::{actor::ActorRef, prelude::Spawn};
-    use rand::seq::SliceRandom;
+    
     use sha2::Digest;
 
-    use proptest::prelude::*;
+    
 
     use crate::{
         actors::keyholder::{Bootstrap, KeyHolder},
         db::{self, schema},
-        safe_cell::{SafeCell, SafeCellHandle as _},
     };
+    use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
     use super::{Error, Integrable, sign_entity, verify_entity};
-    use super::{hashing::Hashable, payload_hash};
+    use super::hashing::Hashable;
 
     #[derive(Clone)]
     struct DummyEntity {

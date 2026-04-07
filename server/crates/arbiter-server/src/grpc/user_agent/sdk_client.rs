@@ -1,3 +1,4 @@
+use arbiter_crypto::authn;
 use arbiter_proto::proto::{
     shared::ClientInfo as ProtoClientMetadata,
     user_agent::{
@@ -41,7 +42,7 @@ pub(super) fn out_of_band_payload(oob: OutOfBand) -> UserAgentResponsePayload {
     match oob {
         OutOfBand::ClientConnectionRequest { profile } => wrap_sdk_client_response(
             SdkClientResponsePayload::ConnectionRequest(ProtoSdkClientConnectionRequest {
-                pubkey: profile.pubkey.to_bytes().to_vec(),
+                pubkey: profile.pubkey.to_bytes(),
                 info: Some(ProtoClientMetadata {
                     name: profile.metadata.name,
                     description: profile.metadata.description,
@@ -51,7 +52,7 @@ pub(super) fn out_of_band_payload(oob: OutOfBand) -> UserAgentResponsePayload {
         ),
         OutOfBand::ClientConnectionCancel { pubkey } => wrap_sdk_client_response(
             SdkClientResponsePayload::ConnectionCancel(ProtoSdkClientConnectionCancel {
-                pubkey: pubkey.to_bytes().to_vec(),
+                pubkey: pubkey.to_bytes(),
             }),
         ),
     }
@@ -89,10 +90,8 @@ async fn handle_connection_response(
     actor: &ActorRef<UserAgentSession>,
     resp: ProtoSdkClientConnectionResponse,
 ) -> Result<Option<UserAgentResponsePayload>, Status> {
-    let pubkey_bytes = <[u8; 32]>::try_from(resp.pubkey)
-        .map_err(|_| Status::invalid_argument("Invalid Ed25519 public key length"))?;
-    let pubkey = ed25519_dalek::VerifyingKey::from_bytes(&pubkey_bytes)
-        .map_err(|_| Status::invalid_argument("Invalid Ed25519 public key"))?;
+    let pubkey = authn::PublicKey::try_from(resp.pubkey.as_slice())
+        .map_err(|_| Status::invalid_argument("Invalid ML-DSA public key"))?;
 
     actor
         .ask(HandleNewClientApprove {
@@ -117,7 +116,7 @@ async fn handle_list(
                 .into_iter()
                 .map(|(client, metadata)| ProtoSdkClientEntry {
                     id: client.id,
-                    pubkey: client.public_key,
+                    pubkey: client.public_key.to_vec(),
                     info: Some(ProtoClientMetadata {
                         name: metadata.name,
                         description: metadata.description,

@@ -1,3 +1,4 @@
+use arbiter_crypto::authn;
 use arbiter_proto::{ClientMetadata, transport::Bi};
 use kameo::actor::Spawn;
 use tracing::{error, info};
@@ -10,12 +11,12 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct ClientProfile {
-    pub pubkey: ed25519_dalek::VerifyingKey,
+    pub pubkey: authn::PublicKey,
     pub metadata: ClientMetadata,
 }
 
 pub struct ClientCredentials {
-    pub pubkey: ed25519_dalek::VerifyingKey,
+    pub pubkey: authn::PublicKey,
     pub nonce: i32,
 }
 
@@ -25,7 +26,7 @@ impl Integrable for ClientCredentials {
 
 impl Hashable for ClientCredentials {
     fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        hasher.update(self.pubkey.as_bytes());
+        hasher.update(self.pubkey.to_bytes());
         self.nonce.hash(hasher);
     }
 }
@@ -48,7 +49,9 @@ pub async fn connect_client<T>(mut props: ClientConnection, transport: &mut T)
 where
     T: Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> + Send + ?Sized,
 {
-    match auth::authenticate(&mut props, transport).await {
+    let fut = auth::authenticate(&mut props, transport);
+    println!("authenticate future size: {}", std::mem::size_of_val(&fut));
+    match fut.await {
         Ok(client_id) => {
             ClientSession::spawn(ClientSession::new(props, client_id));
             info!("Client authenticated, session started");

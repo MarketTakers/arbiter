@@ -20,7 +20,7 @@ tokio = { version = "1.50.0", features = ["full"] }
 ed25519-dalek = { version = "3.0.0-pre.6", features = ["rand_core"] }
 chrono = { version = "0.4.44", features = ["serde"] }
 rand = "0.10.0"
-rustls = { version = "0.23.37", features = ["aws-lc-rs"] }
+rustls = { version = "0.23.37", features = ["aws-lc-rs", "logging", "prefer-post-quantum", "std"], default-features = false }
 smlang = "0.8.0"
 thiserror = "2.0.18"
 async-trait = "0.1.89"
@@ -45,3 +45,5 @@ spki = "0.7"
 prost = "0.14.3"
 miette = { version = "7.6.0", features = ["fancy", "serde"] }
 mutants = "0.0.4"
+ml-dsa = { version = "0.1.0-rc.8", features = ["zeroize"] }
+base64 = "0.22.1"

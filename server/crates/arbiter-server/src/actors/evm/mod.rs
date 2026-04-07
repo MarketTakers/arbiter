@@ -7,11 +7,11 @@ use kameo::{Actor, actor::ActorRef, messages};
 use rand::{SeedableRng, rng, rngs::StdRng};
 
 use crate::{
-    actors::keyholder::{CreateNew, Decrypt, GetState, KeyHolder, KeyHolderState},
+    actors::keyholder::{CreateNew, Decrypt, KeyHolder},
     crypto::integrity,
     db::{
         DatabaseError, DatabasePool,
-        models::{self, SqliteTimestamp},
+        models::{self},
         schema,
     },
     evm::{
@@ -21,8 +21,8 @@ use crate::{
             ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
         },
     },
-    safe_cell::{SafeCell, SafeCellHandle as _},
 };
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
 pub use crate::evm::safe_signer;
 
@@ -158,7 +158,7 @@ impl EvmActor {
     }
 
     #[message]
-    pub async fn useragent_delete_grant(&mut self, grant_id: i32) -> Result<(), Error> {
+    pub async fn useragent_delete_grant(&mut self, _grant_id: i32) -> Result<(), Error> {
         // let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
         // let keyholder = self.keyholder.clone();
 

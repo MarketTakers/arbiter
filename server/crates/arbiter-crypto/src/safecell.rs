@@ -105,6 +105,11 @@ impl<T> SafeCellHandle<T> for MemSafeCell<T> {
 
 fn abort_memory_breach(action: &str, err: &memsafe::error::MemoryError) -> ! {
     eprintln!("fatal {action}: {err}");
+    // SAFETY: Intentionally cause a segmentation fault to prevent further execution in a compromised state.
+    unsafe {
+        let unsafe_pointer = std::ptr::null_mut::<u8>();
+        std::ptr::write_volatile(unsafe_pointer, 0);
+    }
     std::process::abort();
 }
 

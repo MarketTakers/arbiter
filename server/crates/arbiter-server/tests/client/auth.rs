@@ -1,3 +1,7 @@
+use arbiter_crypto::{
+    authn::{self, CLIENT_CONTEXT, format_challenge},
+    safecell::{SafeCell, SafeCellHandle as _},
+};
 use arbiter_proto::ClientMetadata;
 use arbiter_proto::transport::{Receiver, Sender};
 use arbiter_server::{
@@ -8,11 +12,10 @@ use arbiter_server::{
     },
     crypto::integrity,
     db::{self, schema},
-    safe_cell::{SafeCell, SafeCellHandle as _},
 };
 use diesel::{ExpressionMethods as _, NullableExpressionMethods as _, QueryDsl as _, insert_into};
 use diesel_async::RunQueryDsl;
-use ed25519_dalek::Signer as _;
+use ml_dsa::{KeyGen, MlDsa87, SigningKey, VerifyingKey, signature::Keypair as _};
 
 use super::common::ChannelTransport;
 
@@ -27,7 +30,7 @@ fn metadata(name: &str, description: Option<&str>, version: Option<&str>) -> Cli
 async fn insert_registered_client(
     db: &db::DatabasePool,
     actors: &GlobalActors,
-    pubkey: ed25519_dalek::VerifyingKey,
+    pubkey: VerifyingKey<MlDsa87>,
     metadata: &ClientMetadata,
 ) {
     use arbiter_server::db::schema::{client_metadata, program_client};
@@ -45,7 +48,7 @@ async fn insert_registered_client(
         .unwrap();
     let client_id: i32 = insert_into(program_client::table)
         .values((
-            program_client::public_key.eq(pubkey.to_bytes().to_vec()),
+            program_client::public_key.eq(pubkey.encode().to_vec()),
             program_client::metadata_id.eq(metadata_id),
         ))
         .returning(program_client::id)
@@ -56,18 +59,33 @@ async fn insert_registered_client(
     integrity::sign_entity(
         &mut conn,
         &actors.key_holder,
-        &ClientCredentials { pubkey, nonce: 1 },
+        &ClientCredentials {
+            pubkey: pubkey.into(),
+            nonce: 1,
+        },
         client_id,
     )
     .await
     .unwrap();
 }
 
+fn sign_client_challenge(
+    key: &SigningKey<MlDsa87>,
+    nonce: i32,
+    pubkey: &authn::PublicKey,
+) -> authn::Signature {
+    let challenge = format_challenge(nonce, &pubkey.to_bytes());
+    key.signing_key()
+        .sign_deterministic(&challenge, CLIENT_CONTEXT)
+        .unwrap()
+        .into()
+}
+
 async fn insert_bootstrap_sentinel_useragent(db: &db::DatabasePool) {
     let mut conn = db.get().await.unwrap();
-    let sentinel_key = ed25519_dalek::SigningKey::generate(&mut rand::rng())
+    let sentinel_key = MlDsa87::key_gen(&mut rand::rng())
         .verifying_key()
-        .to_bytes()
+        .encode()
         .to_vec();
 
     insert_into(schema::useragent_client::table)
@@ -107,11 +125,11 @@ pub async fn test_unregistered_pubkey_rejected() {
         connect_client(props, &mut server_transport).await;
     });
 
-    let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key(),
+            pubkey: new_key.verifying_key().into(),
             metadata: metadata("client", Some("desc"), Some("1.0.0")),
         })
         .await
@@ -127,7 +145,7 @@ pub async fn test_challenge_auth() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
 
-    let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
 
     insert_registered_client(
         &db,
@@ -147,7 +165,7 @@ pub async fn test_challenge_auth() {
     // Send challenge request
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key(),
+            pubkey: new_key.verifying_key().into(),
             metadata: metadata("client", Some("desc"), Some("1.0.0")),
         })
         .await
@@ -167,8 +185,7 @@ pub async fn test_challenge_auth() {
     };
 
     // Sign the challenge and send solution
-    let formatted_challenge = arbiter_proto::format_challenge(challenge.1, challenge.0.as_bytes());
-    let signature = new_key.sign(&formatted_challenge);
+    let signature = sign_client_challenge(&new_key, challenge.1, &challenge.0);
 
     test_transport
         .send(auth::Inbound::AuthChallengeSolution { signature })
@@ -194,7 +211,7 @@ pub async fn test_challenge_auth() {
 pub async fn test_metadata_unchanged_does_not_append_history() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
-    let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
     let requested = metadata("client", Some("desc"), Some("1.0.0"));
 
     insert_registered_client(&db, &actors, new_key.verifying_key(), &requested).await;
@@ -209,7 +226,7 @@ pub async fn test_metadata_unchanged_does_not_append_history() {
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key(),
+            pubkey: new_key.verifying_key().into(),
             metadata: requested,
         })
         .await
@@ -220,7 +237,7 @@ pub async fn test_metadata_unchanged_does_not_append_history() {
         auth::Outbound::AuthChallenge { pubkey, nonce } => (pubkey, nonce),
         other => panic!("Expected AuthChallenge, got {other:?}"),
     };
-    let signature = new_key.sign(&arbiter_proto::format_challenge(nonce, pubkey.as_bytes()));
+    let signature = sign_client_challenge(&new_key, nonce, &pubkey);
     test_transport
         .send(auth::Inbound::AuthChallengeSolution { signature })
         .await
@@ -251,7 +268,7 @@ pub async fn test_metadata_unchanged_does_not_append_history() {
 pub async fn test_metadata_change_appends_history_and_repoints_binding() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
-    let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
 
     insert_registered_client(
         &db,
@@ -271,7 +288,7 @@ pub async fn test_metadata_change_appends_history_and_repoints_binding() {
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key(),
+            pubkey: new_key.verifying_key().into(),
             metadata: metadata("client", Some("new"), Some("2.0.0")),
         })
         .await
@@ -282,7 +299,7 @@ pub async fn test_metadata_change_appends_history_and_repoints_binding() {
         auth::Outbound::AuthChallenge { pubkey, nonce } => (pubkey, nonce),
         other => panic!("Expected AuthChallenge, got {other:?}"),
     };
-    let signature = new_key.sign(&arbiter_proto::format_challenge(nonce, pubkey.as_bytes()));
+    let signature = sign_client_challenge(&new_key, nonce, &pubkey);
     test_transport
         .send(auth::Inbound::AuthChallengeSolution { signature })
         .await
@@ -339,7 +356,7 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
 
-    let new_key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
     let requested = metadata("client", Some("desc"), Some("1.0.0"));
 
     {
@@ -357,7 +374,7 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch() {
             .unwrap();
         insert_into(program_client::table)
             .values((
-                program_client::public_key.eq(new_key.verifying_key().to_bytes().to_vec()),
+                program_client::public_key.eq(new_key.verifying_key().encode().to_vec()),
                 program_client::metadata_id.eq(metadata_id),
             ))
             .execute(&mut conn)
@@ -374,7 +391,7 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch() {
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key(),
+            pubkey: new_key.verifying_key().into(),
             metadata: requested,
         })
         .await

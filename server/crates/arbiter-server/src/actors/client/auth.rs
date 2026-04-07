@@ -1,5 +1,6 @@
+use arbiter_crypto::authn::{self, CLIENT_CONTEXT};
 use arbiter_proto::{
-    ClientMetadata, format_challenge,
+    ClientMetadata,
     transport::{Bi, expect_message},
 };
 use chrono::Utc;
@@ -8,7 +9,6 @@ use diesel::{
     dsl::insert_into, update,
 };
 use diesel_async::RunQueryDsl as _;
-use ed25519_dalek::{Signature, VerifyingKey};
 use kameo::{actor::ActorRef, error::SendError};
 use tracing::error;
 
@@ -62,17 +62,20 @@ pub enum ApproveError {
 #[derive(Debug, Clone)]
 pub enum Inbound {
     AuthChallengeRequest {
-        pubkey: VerifyingKey,
+        pubkey: authn::PublicKey,
         metadata: ClientMetadata,
     },
     AuthChallengeSolution {
-        signature: Signature,
+        signature: authn::Signature,
     },
 }
 
 #[derive(Debug, Clone)]
 pub enum Outbound {
-    AuthChallenge { pubkey: VerifyingKey, nonce: i32 },
+    AuthChallenge {
+        pubkey: authn::PublicKey,
+        nonce: i32,
+    },
     AuthSuccess,
 }
 
@@ -80,9 +83,9 @@ pub enum Outbound {
 /// Returns `None` if the pubkey is not registered.
 async fn get_current_nonce_and_id(
     db: &db::DatabasePool,
-    pubkey: &VerifyingKey,
+    pubkey: &authn::PublicKey,
 ) -> Result<Option<(i32, i32)>, Error> {
-    let pubkey_bytes = pubkey.as_bytes().to_vec();
+    let pubkey_bytes = pubkey.to_bytes();
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
         Error::DatabasePoolUnavailable
@@ -102,19 +105,17 @@ async fn get_current_nonce_and_id(
 async fn verify_integrity(
     db: &db::DatabasePool,
     keyholder: &ActorRef<KeyHolder>,
-    pubkey: &VerifyingKey,
+    pubkey: &authn::PublicKey,
 ) -> Result<(), Error> {
     let mut db_conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
         Error::DatabasePoolUnavailable
     })?;
 
-    let (id, nonce) = get_current_nonce_and_id(db, pubkey)
-        .await?
-        .ok_or_else(|| {
-            error!("Client not found during integrity verification");
-            Error::DatabaseOperationFailed
-        })?;
+    let (id, nonce) = get_current_nonce_and_id(db, pubkey).await?.ok_or_else(|| {
+        error!("Client not found during integrity verification");
+        Error::DatabaseOperationFailed
+    })?;
 
     let attestation = integrity::verify_entity(
         &mut db_conn,
@@ -144,9 +145,9 @@ async fn verify_integrity(
 async fn create_nonce(
     db: &db::DatabasePool,
     keyholder: &ActorRef<KeyHolder>,
-    pubkey: &VerifyingKey,
+    pubkey: &authn::PublicKey,
 ) -> Result<i32, Error> {
-    let pubkey_bytes = pubkey.as_bytes().to_vec();
+    let pubkey_bytes = pubkey.to_bytes();
     let pubkey = pubkey.clone();
 
     let mut conn = db.get().await.map_err(|e| {
@@ -212,7 +213,7 @@ async fn approve_new_client(
 async fn insert_client(
     db: &db::DatabasePool,
     keyholder: &ActorRef<KeyHolder>,
-    pubkey: &VerifyingKey,
+    pubkey: &authn::PublicKey,
     metadata: &ClientMetadata,
 ) -> Result<i32, Error> {
     use crate::db::schema::{client_metadata, program_client};
@@ -242,7 +243,7 @@ async fn insert_client(
 
             let client_id = insert_into(program_client::table)
                 .values((
-                    program_client::public_key.eq(pubkey.as_bytes().to_vec()),
+                    program_client::public_key.eq(pubkey.to_bytes()),
                     program_client::metadata_id.eq(metadata_id),
                     program_client::nonce.eq(NONCE_START),
                 ))
@@ -345,14 +346,17 @@ async fn sync_client_metadata(
 
 async fn challenge_client<T>(
     transport: &mut T,
-    pubkey: VerifyingKey,
+    pubkey: authn::PublicKey,
     nonce: i32,
 ) -> Result<(), Error>
 where
     T: Bi<Inbound, Result<Outbound, Error>> + ?Sized,
 {
     transport
-        .send(Ok(Outbound::AuthChallenge { pubkey, nonce }))
+        .send(Ok(Outbound::AuthChallenge {
+            pubkey: pubkey.clone(),
+            nonce,
+        }))
         .await
         .map_err(|e| {
             error!(error = ?e, "Failed to send auth challenge");
@@ -369,12 +373,10 @@ where
         Error::Transport
     })?;
 
-    let formatted = format_challenge(nonce, pubkey.as_bytes());
-
-    pubkey.verify_strict(&formatted, &signature).map_err(|_| {
+    if !pubkey.verify(nonce, CLIENT_CONTEXT, &signature) {
         error!("Challenge solution verification failed");
-        Error::InvalidChallengeSolution
-    })?;
+        return Err(Error::InvalidChallengeSolution);
+    }
 
     Ok(())
 }
@@ -396,7 +398,7 @@ where
             approve_new_client(
                 &props.actors,
                 ClientProfile {
-                    pubkey,
+                    pubkey: pubkey.clone(),
                     metadata: metadata.clone(),
                 },
             )
