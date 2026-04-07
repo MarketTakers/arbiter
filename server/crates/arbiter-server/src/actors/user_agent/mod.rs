@@ -5,7 +5,7 @@ use crate::{
 };
 use arbiter_crypto::authn;
 
-#[derive(Debug)]
+#[derive(Debug, arbiter_macros::Hashable)]
 pub struct UserAgentCredentials {
     pub pubkey: authn::PublicKey,
     pub nonce: i32,
@@ -38,18 +38,3 @@ pub mod session;
 
 pub use auth::authenticate;
 pub use session::UserAgentSession;
-
-use crate::crypto::integrity::hashing::Hashable;
-
-impl Hashable for authn::PublicKey {
-    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        hasher.update(self.to_bytes());
-    }
-}
-
-impl Hashable for UserAgentCredentials {
-    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        self.pubkey.hash(hasher);
-        self.nonce.hash(hasher);
-    }
-}

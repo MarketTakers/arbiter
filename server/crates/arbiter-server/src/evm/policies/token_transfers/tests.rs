@@ -419,7 +419,7 @@ proptest::proptest! {
     ) {
         use rand::{SeedableRng, seq::SliceRandom};
         use sha2::Digest;
-        use crate::crypto::integrity::hashing::Hashable;
+        use arbiter_crypto::hashing::Hashable;
 
         let limits: Vec<VolumeRateLimit> = raw_limits
             .iter()

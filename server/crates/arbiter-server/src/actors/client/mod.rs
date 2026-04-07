@@ -5,7 +5,7 @@ use tracing::{error, info};
 
 use crate::{
     actors::{GlobalActors, client::session::ClientSession},
-    crypto::integrity::{Integrable, hashing::Hashable},
+    crypto::integrity::Integrable,
     db,
 };
 
@@ -15,6 +15,7 @@ pub struct ClientProfile {
     pub metadata: ClientMetadata,
 }
 
+#[derive(arbiter_macros::Hashable)]
 pub struct ClientCredentials {
     pub pubkey: authn::PublicKey,
     pub nonce: i32,
@@ -22,13 +23,6 @@ pub struct ClientCredentials {
 
 impl Integrable for ClientCredentials {
     const KIND: &'static str = "client_credentials";
-}
-
-impl Hashable for ClientCredentials {
-    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        hasher.update(self.pubkey.to_bytes());
-        self.nonce.hash(hasher);
-    }
 }
 
 pub struct ClientConnection {
