@@ -2,12 +2,13 @@ use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
     actors::{
         GlobalActors,
-        keyholder::{Bootstrap, Seal},
-        user_agent::{
+        vault::{Bootstrap, Seal},
+       
+    },
+    peers::user_agent::{
             UserAgentSession,
             session::connection::{HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError},
         },
-    },
     db,
 };
 
@@ -22,13 +23,13 @@ async fn setup_sealed_user_agent(
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
     actors
-        .key_holder
+        .vault
         .ask(Bootstrap {
             seal_key_raw: SafeCell::new(seal_key.to_vec()),
         })
         .await
         .unwrap();
-    actors.key_holder.ask(Seal).await.unwrap();
+    actors.vault.ask(Seal).await.unwrap();
 
     let session = UserAgentSession::spawn(UserAgentSession::new_test(db.clone(), actors));
 

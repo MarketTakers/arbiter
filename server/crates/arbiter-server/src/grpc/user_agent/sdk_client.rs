@@ -21,7 +21,7 @@ use tonic::Status;
 use tracing::{info, warn};
 
 use crate::{
-    actors::user_agent::{
+    peers::user_agent::{
         OutOfBand, UserAgentSession,
         session::connection::{
             HandleGrantEvmWalletAccess, HandleListWalletAccess, HandleNewClientApprove,

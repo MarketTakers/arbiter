@@ -14,28 +14,27 @@ use kameo::prelude::Context;
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
-use crate::actors::keyholder::KeyHolderState;
-use crate::actors::user_agent::session::Error;
+use crate::{actors::vault::VaultState, peers::user_agent::session::state::{UnsealContext, UserAgentEvents}};
 use crate::actors::{
     evm::{
         ClientSignTransaction, Generate, ListWallets, SignTransactionError as EvmSignError,
         UseragentCreateGrant, UseragentListGrants,
     },
-    keyholder::{self, Bootstrap, TryUnseal},
-    user_agent::session::{
-        UserAgentSession,
-        state::{UnsealContext, UserAgentEvents, UserAgentStates},
-    },
+    vault::{self, Bootstrap, TryUnseal},
 };
 use crate::db::models::{
     EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
 };
 use crate::evm::policies::{Grant, SpecificGrant};
+use crate::{
+    actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer,
+};
+
+use super::{UserAgentSession, state, Error};
 
 impl UserAgentSession {
     fn take_unseal_secret(&mut self) -> Result<(EphemeralSecret, PublicKey), Error> {
-        let UserAgentStates::WaitingForUnsealKey(unseal_context) = self.state.state() else {
+        let state::UserAgentStates::WaitingForUnsealKey(unseal_context) = self.state.state() else {
             error!("Received encrypted key in invalid state");
             return Err(Error::internal("Invalid state for unseal encrypted key"));
         };
@@ -184,7 +183,7 @@ impl UserAgentSession {
         match self
             .props
             .actors
-            .key_holder
+            .vault
             .ask(TryUnseal {
                 seal_key_raw: seal_key_buffer,
             })
@@ -195,17 +194,17 @@ impl UserAgentSession {
                 self.transition(UserAgentEvents::ReceivedValidKey)?;
                 Ok(())
             }
-            Err(SendError::HandlerError(keyholder::Error::InvalidKey)) => {
+            Err(SendError::HandlerError(vault::Error::InvalidKey)) => {
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
                 Err(UnsealError::InvalidKey)
             }
             Err(SendError::HandlerError(err)) => {
-                error!(?err, "Keyholder failed to unseal key");
+                error!(?err, "Vault failed to unseal key");
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
                 Err(UnsealError::InvalidKey)
             }
             Err(err) => {
-                error!(?err, "Failed to send unseal request to keyholder");
+                error!(?err, "Failed to send unseal request to vault");
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
                 Err(Error::internal("Vault actor error").into())
             }
@@ -245,7 +244,7 @@ impl UserAgentSession {
         match self
             .props
             .actors
-            .key_holder
+            .vault
             .ask(Bootstrap {
                 seal_key_raw: seal_key_buffer,
             })
@@ -256,17 +255,17 @@ impl UserAgentSession {
                 self.transition(UserAgentEvents::ReceivedValidKey)?;
                 Ok(())
             }
-            Err(SendError::HandlerError(keyholder::Error::AlreadyBootstrapped)) => {
+            Err(SendError::HandlerError(vault::Error::AlreadyBootstrapped)) => {
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
                 Err(BootstrapError::AlreadyBootstrapped)
             }
             Err(SendError::HandlerError(err)) => {
-                error!(?err, "Keyholder failed to bootstrap vault");
+                error!(?err, "Vault failed to bootstrap vault");
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
                 Err(BootstrapError::InvalidKey)
             }
             Err(err) => {
-                error!(?err, "Failed to send bootstrap request to keyholder");
+                error!(?err, "Failed to send bootstrap request to vault");
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
                 Err(BootstrapError::General(Error::internal(
                     "Vault actor error",
@@ -279,13 +278,13 @@ impl UserAgentSession {
 #[messages]
 impl UserAgentSession {
     #[message]
-    pub(crate) async fn handle_query_vault_state(&mut self) -> Result<KeyHolderState, Error> {
-        use crate::actors::keyholder::GetState;
+    pub(crate) async fn handle_query_vault_state(&mut self) -> Result<VaultState, Error> {
+        use crate::actors::vault::GetState;
 
-        let vault_state = match self.props.actors.key_holder.ask(GetState {}).await {
+        let vault_state = match self.props.actors.vault.ask(GetState {}).await {
             Ok(state) => state,
             Err(err) => {
-                error!(?err, actor = "useragent", "keyholder.query.failed");
+                error!(?err, actor = "useragent", "vault.query.failed");
                 return Err(Error::internal("Vault is in broken state"));
             }
         };
@@ -374,7 +373,7 @@ impl UserAgentSession {
         //         Err(GrantMutationError::Internal)
         //     }
         // }
-       let _ = grant_id;
+        let _ = grant_id;
         todo!()
     }
 

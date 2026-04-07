@@ -8,9 +8,10 @@ use arbiter_server::{
     actors::{
         GlobalActors,
         bootstrap::GetToken,
-        keyholder::Bootstrap,
-        user_agent::{UserAgentConnection, UserAgentCredentials, auth},
+        vault::Bootstrap,
+       
     },
+    peers::user_agent::{UserAgentConnection, UserAgentCredentials, auth},
     crypto::integrity,
     db::{self, schema},
 };
@@ -38,7 +39,7 @@ pub async fn test_bootstrap_token_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
-        .key_holder
+        .vault
         .ask(Bootstrap {
             seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
         })
@@ -124,7 +125,7 @@ pub async fn test_challenge_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
-        .key_holder
+        .vault
         .ask(Bootstrap {
             seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
         })
@@ -147,7 +148,7 @@ pub async fn test_challenge_auth() {
             .unwrap();
         integrity::sign_entity(
             &mut conn,
-            &actors.key_holder,
+            &actors.vault,
             &UserAgentCredentials {
                 pubkey: new_key.verifying_key().into(),
                 nonce: 1,
@@ -213,7 +214,7 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
     actors
-        .key_holder
+        .vault
         .ask(Bootstrap {
             seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
         })
@@ -262,7 +263,7 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
-        .key_holder
+        .vault
         .ask(Bootstrap {
             seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
         })
@@ -285,7 +286,7 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
             .unwrap();
         integrity::sign_entity(
             &mut conn,
-            &actors.key_holder,
+            &actors.vault,
             &UserAgentCredentials {
                 pubkey: new_key.verifying_key().into(),
                 nonce: 1,

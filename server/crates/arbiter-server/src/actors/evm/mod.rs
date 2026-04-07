@@ -7,7 +7,7 @@ use kameo::{Actor, actor::ActorRef, messages};
 use rand::{SeedableRng, rng, rngs::StdRng};
 
 use crate::{
-    actors::keyholder::{CreateNew, Decrypt, KeyHolder},
+    actors::vault::{CreateNew, Decrypt, Vault},
     crypto::integrity,
     db::{
         DatabaseError, DatabasePool,
@@ -34,11 +34,11 @@ pub enum SignTransactionError {
     #[error("Database error: {0}")]
     Database(#[from] DatabaseError),
 
-    #[error("Keyholder error: {0}")]
-    Keyholder(#[from] crate::actors::keyholder::Error),
+    #[error("Vault error: {0}")]
+    Vault(#[from] crate::actors::vault::Error),
 
-    #[error("Keyholder mailbox error")]
-    KeyholderSend,
+    #[error("Vault mailbox error")]
+    VaultSend,
 
     #[error("Signing error: {0}")]
     Signing(#[from] alloy::signers::Error),
@@ -49,11 +49,11 @@ pub enum SignTransactionError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Keyholder error: {0}")]
-    Keyholder(#[from] crate::actors::keyholder::Error),
+    #[error("Vault error: {0}")]
+    Vault(#[from] crate::actors::vault::Error),
 
-    #[error("Keyholder mailbox error")]
-    KeyholderSend,
+    #[error("Vault mailbox error")]
+    VaultSend,
 
     #[error("Database error: {0}")]
     Database(#[from] DatabaseError),
@@ -64,20 +64,20 @@ pub enum Error {
 
 #[derive(Actor)]
 pub struct EvmActor {
-    pub keyholder: ActorRef<KeyHolder>,
+    pub vault: ActorRef<Vault>,
     pub db: DatabasePool,
     pub rng: StdRng,
     pub engine: evm::Engine,
 }
 
 impl EvmActor {
-    pub fn new(keyholder: ActorRef<KeyHolder>, db: DatabasePool) -> Self {
+    pub fn new(vault: ActorRef<Vault>, db: DatabasePool) -> Self {
         // is it safe to seed rng from system once?
         // todo: audit
         let rng = StdRng::from_rng(&mut rng());
-        let engine = evm::Engine::new(db.clone(), keyholder.clone());
+        let engine = evm::Engine::new(db.clone(), vault.clone());
         Self {
-            keyholder,
+            vault,
             db,
             rng,
             engine,
@@ -94,10 +94,10 @@ impl EvmActor {
         let plaintext = key_cell.read_inline(|reader| SafeCell::new(reader.to_vec()));
 
         let aead_id: i32 = self
-            .keyholder
+            .vault
             .ask(CreateNew { plaintext })
             .await
-            .map_err(|_| Error::KeyholderSend)?;
+            .map_err(|_| Error::VaultSend)?;
 
         let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
         let wallet_id = insert_into(schema::evm_wallet::table)
@@ -160,7 +160,7 @@ impl EvmActor {
     #[message]
     pub async fn useragent_delete_grant(&mut self, _grant_id: i32) -> Result<(), Error> {
         // let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
-        // let keyholder = self.keyholder.clone();
+        // let vault = self.vault.clone();
 
         // diesel_async::AsyncConnection::transaction(&mut conn, |conn| {
         //     Box::pin(async move {
@@ -254,12 +254,12 @@ impl EvmActor {
         drop(conn);
 
         let raw_key: SafeCell<Vec<u8>> = self
-            .keyholder
+            .vault
             .ask(Decrypt {
                 aead_id: wallet.aead_encrypted_id,
             })
             .await
-            .map_err(|_| SignTransactionError::KeyholderSend)?;
+            .map_err(|_| SignTransactionError::VaultSend)?;
 
         let signer = safe_signer::SafeSigner::from_cell(raw_key)?;
 

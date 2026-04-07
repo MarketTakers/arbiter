@@ -10,7 +10,7 @@ use tonic::{Request, Response, Status, async_trait};
 use tracing::info;
 
 use crate::{
-    actors::{client::ClientConnection, user_agent::UserAgentConnection},
+    peers::{client::ClientConnection, user_agent::UserAgentConnection},
     grpc::user_agent::start,
 };
 

@@ -26,7 +26,7 @@ thiserror = "2.0.18"
 async-trait = "0.1.89"
 futures = "0.3.32"
 tokio-stream = { version = "0.1.18", features = ["full"] }
-kameo = "0.19.2"
+kameo = "0.20"
 prost-types = { version = "0.14.3", features = ["chrono"] }
 x25519-dalek = { version = "2.0.1", features = ["getrandom"] }
 rstest = "0.26.1"

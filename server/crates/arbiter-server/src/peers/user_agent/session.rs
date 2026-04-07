@@ -8,13 +8,11 @@ use kameo::{Actor, actor::ActorRef, messages};
 use thiserror::Error;
 use tracing::error;
 
-use crate::actors::{
-    client::ClientProfile,
-    flow_coordinator::{RegisterUserAgent, client_connect_approval::ClientApprovalController},
-    user_agent::{OutOfBand, UserAgentConnection},
-};
+use crate::{actors::flow_coordinator::{RegisterUserAgent, client_connect_approval::ClientApprovalController}, peers::client::ClientProfile};
 mod state;
 use state::{DummyContext, UserAgentEvents, UserAgentStateMachine};
+
+use super::{OutOfBand, UserAgentConnection};
 
 #[derive(Debug, Error)]
 pub enum Error {

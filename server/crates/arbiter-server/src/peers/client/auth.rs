@@ -14,9 +14,7 @@ use tracing::error;
 
 use crate::{
     actors::{
-        client::{ClientConnection, ClientCredentials, ClientProfile},
-        flow_coordinator::{self, RequestClientApproval},
-        keyholder::KeyHolder,
+        GlobalActors, flow_coordinator::{self, RequestClientApproval}, vault::Vault
     },
     crypto::integrity::{self, AttestationStatus},
     db::{
@@ -25,6 +23,8 @@ use crate::{
         schema::program_client,
     },
 };
+
+use super::{ClientConnection, ClientCredentials, ClientProfile};
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -104,7 +104,7 @@ async fn get_current_nonce_and_id(
 
 async fn verify_integrity(
     db: &db::DatabasePool,
-    keyholder: &ActorRef<KeyHolder>,
+    vault: &ActorRef<Vault>,
     pubkey: &authn::PublicKey,
 ) -> Result<(), Error> {
     let mut db_conn = db.get().await.map_err(|e| {
@@ -119,7 +119,7 @@ async fn verify_integrity(
 
     let attestation = integrity::verify_entity(
         &mut db_conn,
-        keyholder,
+        vault,
         &ClientCredentials {
             pubkey: pubkey.clone(),
             nonce,
@@ -144,7 +144,7 @@ async fn verify_integrity(
 /// Returns the new nonce, which is used as the challenge nonce.
 async fn create_nonce(
     db: &db::DatabasePool,
-    keyholder: &ActorRef<KeyHolder>,
+    vault: &ActorRef<Vault>,
     pubkey: &authn::PublicKey,
 ) -> Result<i32, Error> {
     let pubkey_bytes = pubkey.to_bytes();
@@ -156,7 +156,7 @@ async fn create_nonce(
     })?;
 
     conn.exclusive_transaction(|conn| {
-        let keyholder = keyholder.clone();
+        let vault = vault.clone();
         let pubkey = pubkey.clone();
         Box::pin(async move {
             let (id, new_nonce): (i32, i32) = update(program_client::table)
@@ -168,7 +168,7 @@ async fn create_nonce(
 
             integrity::sign_entity(
                 conn,
-                &keyholder,
+                &vault,
                 &ClientCredentials {
                     pubkey: pubkey.clone(),
                     nonce: new_nonce,
@@ -188,7 +188,7 @@ async fn create_nonce(
 }
 
 async fn approve_new_client(
-    actors: &crate::actors::GlobalActors,
+    actors: &GlobalActors,
     profile: ClientProfile,
 ) -> Result<(), Error> {
     let result = actors
@@ -212,7 +212,7 @@ async fn approve_new_client(
 
 async fn insert_client(
     db: &db::DatabasePool,
-    keyholder: &ActorRef<KeyHolder>,
+    vault: &ActorRef<Vault>,
     pubkey: &authn::PublicKey,
     metadata: &ClientMetadata,
 ) -> Result<i32, Error> {
@@ -226,7 +226,7 @@ async fn insert_client(
     })?;
 
     conn.exclusive_transaction(|conn| {
-        let keyholder = keyholder.clone();
+        let vault = vault.clone();
         let pubkey = pubkey.clone();
         Box::pin(async move {
             const NONCE_START: i32 = 1;
@@ -254,7 +254,7 @@ async fn insert_client(
 
             integrity::sign_entity(
                 conn,
-                &keyholder,
+                &vault,
                 &ClientCredentials {
                     pubkey: pubkey.clone(),
                     nonce: NONCE_START,
@@ -391,7 +391,7 @@ where
 
     let client_id = match get_current_nonce_and_id(&props.db, &pubkey).await? {
         Some((id, _)) => {
-            verify_integrity(&props.db, &props.actors.key_holder, &pubkey).await?;
+            verify_integrity(&props.db, &props.actors.vault, &pubkey).await?;
             id
         }
         None => {
@@ -403,12 +403,12 @@ where
                 },
             )
             .await?;
-            insert_client(&props.db, &props.actors.key_holder, &pubkey, &metadata).await?
+            insert_client(&props.db, &props.actors.vault, &pubkey, &metadata).await?
         }
     };
 
     sync_client_metadata(&props.db, client_id, &metadata).await?;
-    let challenge_nonce = create_nonce(&props.db, &props.actors.key_holder, &pubkey).await?;
+    let challenge_nonce = create_nonce(&props.db, &props.actors.vault, &pubkey).await?;
     challenge_client(transport, pubkey, challenge_nonce).await?;
 
     transport

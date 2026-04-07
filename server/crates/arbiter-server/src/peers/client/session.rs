@@ -6,14 +6,15 @@ use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
 use crate::{
     actors::{
         GlobalActors,
-        client::ClientConnection,
         evm::{ClientSignTransaction, SignTransactionError},
         flow_coordinator::RegisterClient,
-        keyholder::KeyHolderState,
+        vault::VaultState,
     },
     db,
     evm::VetError,
 };
+
+use super::ClientConnection;
 
 pub struct ClientSession {
     props: ClientConnection,
@@ -29,13 +30,13 @@ impl ClientSession {
 #[messages]
 impl ClientSession {
     #[message]
-    pub(crate) async fn handle_query_vault_state(&mut self) -> Result<KeyHolderState, Error> {
-        use crate::actors::keyholder::GetState;
+    pub(crate) async fn handle_query_vault_state(&mut self) -> Result<VaultState, Error> {
+        use crate::actors::vault::GetState;
 
-        let vault_state = match self.props.actors.key_holder.ask(GetState {}).await {
+        let vault_state = match self.props.actors.vault.ask(GetState {}).await {
             Ok(state) => state,
             Err(err) => {
-                error!(?err, actor = "client", "keyholder.query.failed");
+                error!(?err, actor = "client", "vault.query.failed");
                 return Err(Error::Internal);
             }
         };

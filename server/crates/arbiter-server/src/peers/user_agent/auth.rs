@@ -2,12 +2,10 @@ use arbiter_crypto::authn;
 use arbiter_proto::transport::Bi;
 use tracing::error;
 
-use crate::actors::user_agent::{
-    UserAgentConnection,
-    auth::state::{AuthContext, AuthStateMachine},
-};
 mod state;
 use state::*;
+
+use super::UserAgentConnection;
 
 #[derive(Debug, Clone)]
 pub enum Inbound {

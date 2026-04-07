@@ -6,10 +6,9 @@ use kameo::{
     reply::ReplySender,
 };
 
-use crate::actors::{
-    client::ClientProfile,
-    flow_coordinator::ApprovalError,
-    user_agent::{UserAgentSession, session::BeginNewClientApproval},
+use crate::{
+    actors::flow_coordinator::ApprovalError,
+    peers::{client::ClientProfile, user_agent::{UserAgentSession, session::BeginNewClientApproval}},
 };
 
 pub struct Args {
