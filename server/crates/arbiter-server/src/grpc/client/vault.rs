@@ -12,9 +12,9 @@ use kameo::{actor::ActorRef, error::SendError};
 use tonic::Status;
 use tracing::warn;
 
-use crate::actors::{
-    client::session::{ClientSession, Error, HandleQueryVaultState},
-    keyholder::KeyHolderState,
+use crate::{
+    peers::client::session::{ClientSession, Error, HandleQueryVaultState},
+    actors::vault::VaultState,
 };
 
 pub(super) async fn dispatch(
@@ -30,9 +30,9 @@ pub(super) async fn dispatch(
     match payload {
         VaultRequestPayload::QueryState(_) => {
             let state = match actor.ask(HandleQueryVaultState {}).await {
-                Ok(KeyHolderState::Unbootstrapped) => ProtoVaultState::Unbootstrapped,
-                Ok(KeyHolderState::Sealed) => ProtoVaultState::Sealed,
-                Ok(KeyHolderState::Unsealed) => ProtoVaultState::Unsealed,
+                Ok(VaultState::Unbootstrapped) => ProtoVaultState::Unbootstrapped,
+                Ok(VaultState::Sealed) => ProtoVaultState::Sealed,
+                Ok(VaultState::Unsealed) => ProtoVaultState::Unsealed,
                 Err(SendError::HandlerError(Error::Internal)) => ProtoVaultState::Error,
                 Err(err) => {
                     warn!(error = ?err, "Failed to query vault state");

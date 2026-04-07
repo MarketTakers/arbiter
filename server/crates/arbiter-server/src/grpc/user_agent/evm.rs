@@ -23,7 +23,7 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::{
-    actors::user_agent::{
+    peers::user_agent::{
         UserAgentSession,
         session::connection::{
             GrantMutationError, HandleEvmWalletCreate, HandleEvmWalletList, HandleGrantCreate,

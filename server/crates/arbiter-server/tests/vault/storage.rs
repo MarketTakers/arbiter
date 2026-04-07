@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
-    actors::keyholder::Error,
+    actors::vault::Error,
     crypto::encryption::v1::Nonce,
     db::{self, models, schema},
 };
@@ -16,7 +16,7 @@ use crate::common;
 #[test_log::test]
 async fn test_create_decrypt_roundtrip() {
     let db = db::create_test_pool().await;
-    let mut actor = common::bootstrapped_keyholder(&db).await;
+    let mut actor = common::bootstrapped_vault(&db).await;
 
     let plaintext = b"hello arbiter";
     let aead_id = actor
@@ -32,7 +32,7 @@ async fn test_create_decrypt_roundtrip() {
 #[test_log::test]
 async fn test_decrypt_nonexistent_returns_not_found() {
     let db = db::create_test_pool().await;
-    let mut actor = common::bootstrapped_keyholder(&db).await;
+    let mut actor = common::bootstrapped_vault(&db).await;
 
     let err = actor.decrypt(9999).await.unwrap_err();
     assert!(matches!(err, Error::NotFound));
@@ -42,7 +42,7 @@ async fn test_decrypt_nonexistent_returns_not_found() {
 #[test_log::test]
 async fn test_ciphertext_differs_across_entries() {
     let db = db::create_test_pool().await;
-    let mut actor = common::bootstrapped_keyholder(&db).await;
+    let mut actor = common::bootstrapped_vault(&db).await;
 
     let plaintext = b"same content";
     let id1 = actor
@@ -80,7 +80,7 @@ async fn test_ciphertext_differs_across_entries() {
 #[test_log::test]
 async fn test_nonce_never_reused() {
     let db = db::create_test_pool().await;
-    let mut actor = common::bootstrapped_keyholder(&db).await;
+    let mut actor = common::bootstrapped_vault(&db).await;
 
     let n = 5;
     for i in 0..n {
@@ -124,7 +124,7 @@ async fn test_nonce_never_reused() {
 #[test_log::test]
 async fn broken_db_nonce_format_fails_closed() {
     let db = db::create_test_pool().await;
-    let mut actor = common::bootstrapped_keyholder(&db).await;
+    let mut actor = common::bootstrapped_vault(&db).await;
     let root_key_history_id = common::root_key_history_id(&db).await;
 
     let mut conn = db.get().await.unwrap();
@@ -145,7 +145,7 @@ async fn broken_db_nonce_format_fails_closed() {
     assert!(matches!(err, Error::BrokenDatabase));
 
     let db = db::create_test_pool().await;
-    let mut actor = common::bootstrapped_keyholder(&db).await;
+    let mut actor = common::bootstrapped_vault(&db).await;
     let id = actor
         .create_new(SafeCell::new(b"decrypt target".to_vec()))
         .await

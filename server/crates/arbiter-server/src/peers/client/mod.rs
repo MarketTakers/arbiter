@@ -4,9 +4,9 @@ use kameo::actor::Spawn;
 use tracing::{error, info};
 
 use crate::{
-    actors::{GlobalActors, client::session::ClientSession},
+    actors::GlobalActors,
     crypto::integrity::{Integrable, hashing::Hashable},
-    db,
+    db, peers::client::session::ClientSession,
 };
 
 #[derive(Debug, Clone)]

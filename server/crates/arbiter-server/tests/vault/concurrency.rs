@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
-    actors::keyholder::{CreateNew, Error, KeyHolder},
+    actors::{GlobalActors, vault::{CreateNew, Error, Vault}},
     db::{self, models, schema},
 };
 
@@ -14,7 +14,7 @@ use tokio::task::JoinSet;
 use crate::common;
 
 async fn write_concurrently(
-    actor: ActorRef<KeyHolder>,
+    actor: ActorRef<Vault>,
     prefix: &'static str,
     count: usize,
 ) -> Vec<(i32, Vec<u8>)> {
@@ -44,7 +44,7 @@ async fn write_concurrently(
 #[test_log::test]
 async fn concurrent_create_new_no_duplicate_nonces_() {
     let db = db::create_test_pool().await;
-    let actor = KeyHolder::spawn(common::bootstrapped_keyholder(&db).await);
+    let actor = Vault::spawn(common::bootstrapped_vault(&db).await);
 
     let writes = write_concurrently(actor, "nonce-unique", 32).await;
     assert_eq!(writes.len(), 32);
@@ -66,7 +66,7 @@ async fn concurrent_create_new_no_duplicate_nonces_() {
 #[test_log::test]
 async fn concurrent_create_new_root_nonce_never_moves_backward() {
     let db = db::create_test_pool().await;
-    let actor = KeyHolder::spawn(common::bootstrapped_keyholder(&db).await);
+    let actor = Vault::spawn(common::bootstrapped_vault(&db).await);
 
     write_concurrently(actor, "root-max", 24).await;
 
@@ -94,7 +94,7 @@ async fn concurrent_create_new_root_nonce_never_moves_backward() {
 #[test_log::test]
 async fn insert_failure_does_not_create_partial_row() {
     let db = db::create_test_pool().await;
-    let mut actor = common::bootstrapped_keyholder(&db).await;
+    let mut actor = common::bootstrapped_vault(&db).await;
     let root_key_history_id = common::root_key_history_id(&db).await;
 
     let mut conn = db.get().await.unwrap();
@@ -156,12 +156,12 @@ async fn insert_failure_does_not_create_partial_row() {
 #[test_log::test]
 async fn decrypt_roundtrip_after_high_concurrency() {
     let db = db::create_test_pool().await;
-    let actor = KeyHolder::spawn(common::bootstrapped_keyholder(&db).await);
+    let actor = Vault::spawn(common::bootstrapped_vault(&db).await);
 
     let writes = write_concurrently(actor, "roundtrip", 40).await;
     let expected: HashMap<i32, Vec<u8>> = writes.into_iter().collect();
 
-    let mut decryptor = KeyHolder::new(db.clone()).await.unwrap();
+    let mut decryptor = Vault::new(db.clone(), GlobalActors::spawn_message_bus()).await.unwrap();
     decryptor
         .try_unseal(SafeCell::new(b"test-seal-key".to_vec()))
         .await

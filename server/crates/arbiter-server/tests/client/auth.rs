@@ -7,9 +7,10 @@ use arbiter_proto::transport::{Receiver, Sender};
 use arbiter_server::{
     actors::{
         GlobalActors,
-        client::{ClientConnection, ClientCredentials, auth, connect_client},
-        keyholder::Bootstrap,
+        
+        vault::Bootstrap,
     },
+    peers::client::{ClientConnection, ClientCredentials, auth, connect_client},
     crypto::integrity,
     db::{self, schema},
 };
@@ -58,7 +59,7 @@ async fn insert_registered_client(
 
     integrity::sign_entity(
         &mut conn,
-        &actors.key_holder,
+        &actors.vault,
         &ClientCredentials {
             pubkey: pubkey.into(),
             nonce: 1,
@@ -103,7 +104,7 @@ async fn spawn_test_actors(db: &db::DatabasePool) -> GlobalActors {
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
-        .key_holder
+        .vault
         .ask(Bootstrap {
             seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
         })

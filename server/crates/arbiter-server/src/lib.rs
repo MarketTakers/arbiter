@@ -2,6 +2,7 @@
 use crate::context::ServerContext;
 
 pub mod actors;
+pub mod peers;
 pub mod context;
 pub mod crypto;
 pub mod db;

@@ -4,13 +4,14 @@ use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, update};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::actor::ActorRef;
 use tracing::error;
+use super::super::{UserAgentCredentials, UserAgentConnection};
 
 use super::Error;
+use crate::peers::user_agent::auth::Outbound;
 use crate::{
     actors::{
         bootstrap::ConsumeToken,
-        keyholder::KeyHolder,
-        user_agent::{UserAgentConnection, UserAgentCredentials, auth::Outbound},
+        vault::Vault,
     },
     crypto::integrity,
     db::{DatabasePool, schema::useragent_client},
@@ -77,7 +78,7 @@ async fn get_current_nonce_and_id(
 
 async fn verify_integrity(
     db: &DatabasePool,
-    keyholder: &ActorRef<KeyHolder>,
+    vault: &ActorRef<Vault>,
     pubkey: &authn::PublicKey,
 ) -> Result<(), Error> {
     let mut db_conn = db.get().await.map_err(|e| {
@@ -89,7 +90,7 @@ async fn verify_integrity(
 
     let _result = integrity::verify_entity(
         &mut db_conn,
-        keyholder,
+        vault,
         &UserAgentCredentials {
             pubkey: pubkey.clone(),
             nonce,
@@ -107,7 +108,7 @@ async fn verify_integrity(
 
 async fn create_nonce(
     db: &DatabasePool,
-    keyholder: &ActorRef<KeyHolder>,
+    vault: &ActorRef<Vault>,
     pubkey: &authn::PublicKey,
 ) -> Result<i32, Error> {
     let mut db_conn = db.get().await.map_err(|e| {
@@ -130,7 +131,7 @@ async fn create_nonce(
 
                 integrity::sign_entity(
                     conn,
-                    keyholder,
+                    vault,
                     &UserAgentCredentials {
                         pubkey: pubkey.clone(),
                         nonce: new_nonce,
@@ -152,7 +153,7 @@ async fn create_nonce(
 
 async fn register_key(
     db: &DatabasePool,
-    keyholder: &ActorRef<KeyHolder>,
+    vault: &ActorRef<Vault>,
     pubkey: &authn::PublicKey,
 ) -> Result<(), Error> {
     let pubkey_bytes = pubkey.to_bytes();
@@ -183,7 +184,7 @@ async fn register_key(
                 nonce: NONCE_START,
             };
 
-            integrity::sign_entity(conn, keyholder, &entity, id)
+            integrity::sign_entity(conn, vault, &entity, id)
                 .await
                 .map_err(|e| {
                     error!(error = ?e, "Failed to sign integrity tag for new user-agent key");
@@ -219,9 +220,9 @@ where
         &mut self,
         ChallengeRequest { pubkey }: ChallengeRequest,
     ) -> Result<ChallengeContext, Self::Error> {
-        verify_integrity(&self.conn.db, &self.conn.actors.key_holder, &pubkey).await?;
+        verify_integrity(&self.conn.db, &self.conn.actors.vault, &pubkey).await?;
 
-        let nonce = create_nonce(&self.conn.db, &self.conn.actors.key_holder, &pubkey).await?;
+        let nonce = create_nonce(&self.conn.db, &self.conn.actors.vault, &pubkey).await?;
 
         self.transport
             .send(Ok(Outbound::AuthChallenge { nonce }))
@@ -263,7 +264,7 @@ where
 
         match token_ok {
             true => {
-                register_key(&self.conn.db, &self.conn.actors.key_holder, &pubkey).await?;
+                register_key(&self.conn.db, &self.conn.actors.vault, &pubkey).await?;
                 self.transport
                     .send(Ok(Outbound::AuthSuccess))
                     .await

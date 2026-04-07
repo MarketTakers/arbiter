@@ -22,7 +22,7 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::{
-    actors::client::{self, ClientConnection, auth},
+    peers::client::{self, ClientConnection, auth},
     grpc::request_tracker::RequestTracker,
 };
 

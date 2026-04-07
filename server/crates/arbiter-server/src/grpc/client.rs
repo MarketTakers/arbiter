@@ -10,7 +10,7 @@ use tonic::Status;
 use tracing::{info, warn};
 
 use crate::{
-    actors::client::{ClientConnection, session::ClientSession},
+    peers::client::{ClientConnection, session::ClientSession},
     grpc::request_tracker::RequestTracker,
 };
 

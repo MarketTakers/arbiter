@@ -14,7 +14,7 @@ use tonic::Status;
 use tracing::{error, info, warn};
 
 use crate::{
-    actors::user_agent::{OutOfBand, UserAgentConnection, UserAgentSession},
+    peers::user_agent::{OutOfBand, UserAgentConnection, UserAgentSession},
     grpc::request_tracker::RequestTracker,
 };
 

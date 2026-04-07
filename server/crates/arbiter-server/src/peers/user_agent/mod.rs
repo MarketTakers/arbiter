@@ -1,7 +1,7 @@
 use crate::{
-    actors::{GlobalActors, client::ClientProfile},
+    actors::GlobalActors,
     crypto::integrity::Integrable,
-    db,
+    db, peers::client::ClientProfile,
 };
 use arbiter_crypto::authn;
 

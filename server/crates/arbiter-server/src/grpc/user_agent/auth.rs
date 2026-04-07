@@ -18,7 +18,7 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::{
-    actors::user_agent::{UserAgentConnection, auth},
+    peers::user_agent::{UserAgentConnection, auth},
     grpc::request_tracker::RequestTracker,
 };
 

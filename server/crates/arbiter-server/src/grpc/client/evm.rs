@@ -16,7 +16,7 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::{
-    actors::client::session::{ClientSession, HandleSignTransaction, SignTransactionRpcError},
+    peers::client::session::{ClientSession, HandleSignTransaction, SignTransactionRpcError},
     grpc::{
         Convert, TryConvert,
         common::inbound::{RawEvmAddress, RawEvmTransaction},

@@ -5,7 +5,8 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use hmac::Mac as _;
-use kameo::{Actor, Reply, messages};
+use kameo::{Actor, Reply, actor::ActorRef, messages};
+use kameo_actors::message_bus::{MessageBus, Publish};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
 
@@ -21,26 +22,26 @@ use crate::db::{
 };
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
-#[derive(Default, EnumDiscriminants)]
-#[strum_discriminants(derive(Reply), vis(pub), name(KeyHolderState))]
-enum State {
-    #[default]
-    Unbootstrapped,
-    Sealed {
-        root_key_history_id: i32,
-    },
-    Unsealed {
-        root_key_history_id: i32,
-        root_key: KeyCell,
-    },
+pub mod events {
+
+    #[derive(Clone, Copy)]
+    pub struct VaultBootstrapped;
+
+    #[derive(Clone, Copy)]
+    pub struct VaultUnsealed;
+
+    #[derive(Clone, Copy)]
+    pub struct VaultResealed;
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Keyholder is already bootstrapped")]
+    #[error("Vault is already bootstrapped")]
     AlreadyBootstrapped,
-    #[error("Keyholder is not bootstrapped")]
+    #[error("Vault is not bootstrapped")]
     NotBootstrapped,
+    #[error("Vault is sealed")]
+    Sealed,
     #[error("Invalid key provided")]
     InvalidKey,
 
@@ -60,18 +61,35 @@ pub enum Error {
     BrokenDatabase,
 }
 
+struct Unsealed {
+    root_key_history_id: i32,
+    root_key: KeyCell,
+}
+
+#[derive(Default, EnumDiscriminants)]
+#[strum_discriminants(derive(Reply), vis(pub), name(VaultState))]
+enum State {
+    #[default]
+    Unbootstrapped,
+    Sealed {
+        root_key_history_id: i32,
+    },
+    Unsealed(Unsealed),
+}
+
 /// Manages vault root key and tracks current state of the vault (bootstrapped/unbootstrapped, sealed/unsealed).
 /// Provides API for encrypting and decrypting data using the vault root key.
 /// Abstraction over database to make sure nonces are never reused and encryption keys are never exposed in plaintext outside of this actor.
 #[derive(Actor)]
-pub struct KeyHolder {
+pub struct Vault {
     db: db::DatabasePool,
     state: State,
+    events: ActorRef<MessageBus>,
 }
 
 #[messages]
-impl KeyHolder {
-    pub async fn new(db: db::DatabasePool) -> Result<Self, Error> {
+impl Vault {
+    pub async fn new(db: db::DatabasePool, events: ActorRef<MessageBus>) -> Result<Self, Error> {
         let state = {
             let mut conn = db.get().await?;
 
@@ -89,10 +107,10 @@ impl KeyHolder {
             }
         };
 
-        Ok(Self { db, state })
+        Ok(Self { db, state, events })
     }
 
-    // Exclusive transaction to avoid race condtions if multiple keyholders write
+    // Exclusive transaction to avoid race condtions if multiple vaults write
     // additional layer of protection against nonce-reuse
     async fn get_new_nonce(pool: &db::DatabasePool, root_key_id: i32) -> Result<Nonce, Error> {
         let mut conn = pool.get().await?;
@@ -127,6 +145,14 @@ impl KeyHolder {
             .await?;
 
         Ok(nonce)
+    }
+
+    fn expect_unsealed<'a>(state: &'a mut State) -> Result<&'a mut Unsealed, Error> {
+        match state {
+            State::Unsealed(unsealed) => Ok(unsealed),
+            State::Unbootstrapped => Err(Error::NotBootstrapped),
+            State::Sealed { .. } => Err(Error::Sealed),
+        }
     }
 
     #[message]
@@ -181,12 +207,13 @@ impl KeyHolder {
             })
             .await?;
 
-        self.state = State::Unsealed {
+        self.state = State::Unsealed(Unsealed {
             root_key,
             root_key_history_id,
-        };
+        });
 
-        info!("Keyholder bootstrapped successfully");
+        info!("Vault bootstrapped successfully");
+        self.events.tell(Publish(events::VaultBootstrapped)).await;
 
         Ok(())
     }
@@ -233,24 +260,23 @@ impl KeyHolder {
                 Error::InvalidKey
             })?;
 
-        self.state = State::Unsealed {
+        self.state = State::Unsealed(Unsealed {
             root_key_history_id: current_key.id,
             root_key: KeyCell::try_from(root_key).map_err(|err| {
                 error!(?err, "Broken database: invalid encryption key size");
                 Error::BrokenDatabase
             })?,
-        };
+        });
 
-        info!("Keyholder unsealed successfully");
+        info!("Vault unsealed successfully");
+        self.events.tell(Publish(events::VaultUnsealed)).await;
 
         Ok(())
     }
 
     #[message]
     pub async fn decrypt(&mut self, aead_id: i32) -> Result<SafeCell<Vec<u8>>, Error> {
-        let State::Unsealed { root_key, .. } = &mut self.state else {
-            return Err(Error::NotBootstrapped);
-        };
+        let Unsealed { root_key, .. } = Self::expect_unsealed(&mut self.state)?;
 
         let row: models::AeadEncrypted = {
             let mut conn = self.db.get().await?;
@@ -278,14 +304,10 @@ impl KeyHolder {
     // Creates new `aead_encrypted` entry in the database and returns it's ID
     #[message]
     pub async fn create_new(&mut self, mut plaintext: SafeCell<Vec<u8>>) -> Result<i32, Error> {
-        let State::Unsealed {
+        let Unsealed {
             root_key,
             root_key_history_id,
-            ..
-        } = &mut self.state
-        else {
-            return Err(Error::NotBootstrapped);
-        };
+        } = Self::expect_unsealed(&mut self.state)?;
 
         // Order matters here - `get_new_nonce` acquires connection, so we need to call it before next acquire
         // Borrow checker note: &mut borrow a few lines above is disjoint from this field
@@ -315,19 +337,16 @@ impl KeyHolder {
     }
 
     #[message]
-    pub fn get_state(&self) -> KeyHolderState {
+    pub fn get_state(&self) -> VaultState {
         self.state.discriminant()
     }
 
     #[message]
     pub fn sign_integrity(&mut self, mac_input: Vec<u8>) -> Result<(i32, Vec<u8>), Error> {
-        let State::Unsealed {
+        let Unsealed {
             root_key,
             root_key_history_id,
-        } = &mut self.state
-        else {
-            return Err(Error::NotBootstrapped);
-        };
+        } = Self::expect_unsealed(&mut self.state)?;
 
         let mut hmac = root_key
             .0
@@ -349,13 +368,10 @@ impl KeyHolder {
         expected_mac: Vec<u8>,
         key_version: i32,
     ) -> Result<bool, Error> {
-        let State::Unsealed {
+        let Unsealed {
             root_key,
             root_key_history_id,
-        } = &mut self.state
-        else {
-            return Err(Error::NotBootstrapped);
-        };
+        } = Self::expect_unsealed(&mut self.state)?;
 
         if *root_key_history_id != key_version {
             return Ok(false);
@@ -374,17 +390,16 @@ impl KeyHolder {
     }
 
     #[message]
-    pub fn seal(&mut self) -> Result<(), Error> {
-        let State::Unsealed {
+    pub async fn seal(&mut self) -> Result<(), Error> {
+        let Unsealed {
             root_key_history_id,
             ..
-        } = &self.state
-        else {
-            return Err(Error::NotBootstrapped);
-        };
+        } = Self::expect_unsealed(&mut self.state)?;
+
         self.state = State::Sealed {
             root_key_history_id: *root_key_history_id,
         };
+        self.events.tell(Publish(events::VaultResealed)).await;
         Ok(())
     }
 }
@@ -395,13 +410,18 @@ mod tests {
 
     use diesel_async::RunQueryDsl;
 
-    use crate::db::{self};
+    use crate::{
+        actors::GlobalActors,
+        db::{self},
+    };
     use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
     use super::*;
 
-    async fn bootstrapped_actor(db: &db::DatabasePool) -> KeyHolder {
-        let mut actor = KeyHolder::new(db.clone()).await.unwrap();
+    async fn bootstrapped_actor(db: &db::DatabasePool) -> Vault {
+        let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+            .await
+            .unwrap();
         let seal_key = SafeCell::new(b"test-seal-key".to_vec());
         actor.bootstrap(seal_key).await.unwrap();
         actor
@@ -413,17 +433,17 @@ mod tests {
         let db = db::create_test_pool().await;
         let mut actor = bootstrapped_actor(&db).await;
         let root_key_history_id = match actor.state {
-            State::Unsealed {
+            State::Unsealed(Unsealed {
                 root_key_history_id,
                 ..
-            } => root_key_history_id,
+            }) => root_key_history_id,
             _ => panic!("expected unsealed state"),
         };
 
-        let n1 = KeyHolder::get_new_nonce(&db, root_key_history_id)
+        let n1 = Vault::get_new_nonce(&db, root_key_history_id)
             .await
             .unwrap();
-        let n2 = KeyHolder::get_new_nonce(&db, root_key_history_id)
+        let n2 = Vault::get_new_nonce(&db, root_key_history_id)
             .await
             .unwrap();
         assert!(n2.to_vec() > n1.to_vec(), "nonce must increase");
