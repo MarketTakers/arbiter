@@ -21,8 +21,9 @@ use crate::{
             ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
         },
     },
-    safe_cell::{SafeCell, SafeCellHandle as _},
+   
 };
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
 pub use crate::evm::safe_signer;
 

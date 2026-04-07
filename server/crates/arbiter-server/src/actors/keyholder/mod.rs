@@ -15,7 +15,6 @@ use crate::{
         encryption::v1::{self, Nonce},
         integrity::v1::HmacSha256,
     },
-    safe_cell::SafeCell,
 };
 use crate::{
     db::{
@@ -23,8 +22,8 @@ use crate::{
         models::{self, RootKeyHistory},
         schema::{self},
     },
-    safe_cell::SafeCellHandle as _,
 };
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
 #[derive(Default, EnumDiscriminants)]
 #[strum_discriminants(derive(Reply), vis(pub), name(KeyHolderState))]
@@ -402,8 +401,8 @@ mod tests {
 
     use crate::{
         db::{self},
-        safe_cell::SafeCell,
     };
+    use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
     use super::*;
 

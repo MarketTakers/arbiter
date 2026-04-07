@@ -680,16 +680,26 @@ name = "arbiter-client"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "arbiter-crypto",
  "arbiter-proto",
  "async-trait",
  "http",
- "ml-dsa",
  "rand 0.10.0",
  "rustls-webpki",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
  "tonic",
+]
+
+[[package]]
+name = "arbiter-crypto"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "memsafe",
+ "ml-dsa",
+ "rand 0.10.0",
 ]
 
 [[package]]
@@ -725,6 +735,7 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
+ "arbiter-crypto",
  "arbiter-proto",
  "arbiter-tokens-registry",
  "argon2",
@@ -742,7 +753,6 @@ dependencies = [
  "insta",
  "k256",
  "kameo",
- "memsafe",
  "ml-dsa",
  "mutants",
  "pem",

@@ -1,3 +1,4 @@
+use arbiter_crypto::authn;
 use arbiter_proto::{
     proto::user_agent::{
         UserAgentRequest, UserAgentResponse,
@@ -18,7 +19,6 @@ use tracing::warn;
 
 use crate::{
     actors::user_agent::{UserAgentConnection, auth},
-    crypto::authn,
     grpc::request_tracker::RequestTracker,
 };
 

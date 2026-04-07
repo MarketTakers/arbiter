@@ -1,9 +1,10 @@
 use crate::{
     actors::{GlobalActors, client::ClientProfile},
-    crypto::authn,
     crypto::integrity::Integrable,
     db,
 };
+use arbiter_crypto::authn;
+
 
 #[derive(Debug)]
 pub struct UserAgentCredentials {

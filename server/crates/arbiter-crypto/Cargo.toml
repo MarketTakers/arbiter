@@ -1,0 +1,18 @@
+[package]
+name = "arbiter-crypto"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ml-dsa = {workspace = true, optional = true }
+rand = {workspace = true, optional = true}
+base64 = {workspace = true, optional = true }
+memsafe = {version = "0.4.0", optional = true}
+
+[lints]
+workspace = true
+
+[features]
+default = ["authn", "safecell"]
+authn = ["dep:ml-dsa", "dep:rand", "dep:base64"]
+safecell = ["dep:memsafe"]

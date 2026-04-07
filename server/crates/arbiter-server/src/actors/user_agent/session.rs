@@ -1,3 +1,5 @@
+use arbiter_crypto::authn;
+
 use std::{borrow::Cow, collections::HashMap};
 
 use arbiter_proto::transport::Sender;
@@ -11,8 +13,6 @@ use crate::actors::{
     flow_coordinator::{RegisterUserAgent, client_connect_approval::ClientApprovalController},
     user_agent::{OutOfBand, UserAgentConnection},
 };
-use crate::crypto::authn;
-
 mod state;
 use state::{DummyContext, UserAgentEvents, UserAgentStateMachine};
 
@@ -119,14 +119,13 @@ impl UserAgentSession {
             return;
         }
 
-        self.pending_client_approvals
-            .insert(
-                client.pubkey.to_bytes(),
-                PendingClientApproval {
-                    pubkey: client.pubkey,
-                    controller,
-                },
-            );
+        self.pending_client_approvals.insert(
+            client.pubkey.to_bytes(),
+            PendingClientApproval {
+                pubkey: client.pubkey,
+                controller,
+            },
+        );
     }
 }
 

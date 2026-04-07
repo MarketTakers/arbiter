@@ -1,4 +1,5 @@
-use arbiter_proto::{USERAGENT_CONTEXT, transport::Bi};
+use arbiter_crypto::authn::{self, USERAGENT_CONTEXT};
+use arbiter_proto::{transport::Bi};
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, update};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::actor::ActorRef;
@@ -11,7 +12,6 @@ use crate::{
         keyholder::KeyHolder,
         user_agent::{UserAgentConnection, UserAgentCredentials, auth::Outbound},
     },
-    crypto::authn,
     crypto::integrity,
     db::{DatabasePool, schema::useragent_client},
 };

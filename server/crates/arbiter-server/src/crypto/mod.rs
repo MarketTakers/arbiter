@@ -10,9 +10,8 @@ use rand::{
     rngs::{StdRng, SysRng},
 };
 
-use crate::safe_cell::{SafeCell, SafeCellHandle as _};
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
-pub mod authn;
 pub mod encryption;
 pub mod integrity;
 
@@ -142,7 +141,7 @@ mod tests {
         derive_key,
         encryption::v1::{Nonce, generate_salt},
     };
-    use crate::safe_cell::{SafeCell, SafeCellHandle as _};
+    use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
     #[test]
     pub fn encrypt_decrypt() {

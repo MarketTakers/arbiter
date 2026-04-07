@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 
 use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
+use arbiter_crypto::{authn, safecell::{SafeCell, SafeCellHandle as _}};
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use diesel::{ExpressionMethods as _, QueryDsl as _, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
@@ -13,12 +14,10 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
 use crate::actors::keyholder::KeyHolderState;
 use crate::actors::user_agent::session::Error;
-use crate::crypto::authn;
 use crate::db::models::{
     EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
 };
 use crate::evm::policies::{Grant, SpecificGrant};
-use crate::safe_cell::SafeCell;
 use crate::{
     actors::{
         evm::{
@@ -31,7 +30,6 @@ use crate::{
             state::{UnsealContext, UserAgentEvents, UserAgentStates},
         },
     },
-    safe_cell::SafeCellHandle as _,
 };
 
 impl UserAgentSession {
@@ -477,10 +475,7 @@ impl UserAgentSession {
         pubkey: authn::PublicKey,
         ctx: &mut Context<Self, Result<(), Error>>,
     ) -> Result<(), Error> {
-        let pending_approval = match self
-            .pending_client_approvals
-            .remove(&pubkey.to_bytes())
-        {
+        let pending_approval = match self.pending_client_approvals.remove(&pubkey.to_bytes()) {
             Some(approval) => approval,
             None => {
                 error!("Received client connection response for unknown client");

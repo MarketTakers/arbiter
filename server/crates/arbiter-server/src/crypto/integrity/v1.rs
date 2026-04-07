@@ -1,6 +1,7 @@
 use crate::{
-    actors::keyholder, crypto::integrity::hashing::Hashable, safe_cell::SafeCellHandle as _,
+    actors::keyholder, crypto::integrity::hashing::Hashable
 };
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use hmac::{Hmac, Mac as _};
 use sha2::Sha256;
 
@@ -212,8 +213,9 @@ mod tests {
     use crate::{
         actors::keyholder::{Bootstrap, KeyHolder},
         db::{self, schema},
-        safe_cell::{SafeCell, SafeCellHandle as _},
+       
     };
+    use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
     use super::{Error, Integrable, sign_entity, verify_entity};
     use super::{hashing::Hashable, payload_hash};

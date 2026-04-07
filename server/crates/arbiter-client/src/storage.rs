@@ -1,5 +1,5 @@
+use arbiter_crypto::authn::SigningKey;
 use arbiter_proto::home_path;
-use ml_dsa::{KeyGen, MlDsa87, Seed, SigningKey};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
@@ -12,7 +12,7 @@ pub enum StorageError {
 }
 
 pub trait SigningKeyStorage {
-    fn load_or_create(&self) -> std::result::Result<SigningKey<MlDsa87>, StorageError>;
+    fn load_or_create(&self) -> std::result::Result<SigningKey, StorageError>;
 }
 
 #[derive(Debug, Clone)]
@@ -31,20 +31,21 @@ impl FileSigningKeyStorage {
         Ok(Self::new(home_path()?.join(Self::DEFAULT_FILE_NAME)))
     }
 
-    fn read_key(path: &Path) -> std::result::Result<SigningKey<MlDsa87>, StorageError> {
+    fn read_key(path: &Path) -> std::result::Result<SigningKey, StorageError> {
         let bytes = std::fs::read(path)?;
-        let raw: [u8; 32] = bytes
-            .try_into()
-            .map_err(|v: Vec<u8>| StorageError::InvalidKeyLength {
-                expected: 32,
-                actual: v.len(),
-            })?;
-        Ok(MlDsa87::from_seed(&Seed::from(raw)))
+        let raw: [u8; 32] =
+            bytes
+                .try_into()
+                .map_err(|v: Vec<u8>| StorageError::InvalidKeyLength {
+                    expected: 32,
+                    actual: v.len(),
+                })?;
+        Ok(SigningKey::from_seed(raw))
     }
 }
 
 impl SigningKeyStorage for FileSigningKeyStorage {
-    fn load_or_create(&self) -> std::result::Result<SigningKey<MlDsa87>, StorageError> {
+    fn load_or_create(&self) -> std::result::Result<SigningKey, StorageError> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -53,7 +54,7 @@ impl SigningKeyStorage for FileSigningKeyStorage {
             return Self::read_key(&self.path);
         }
 
-        let key = MlDsa87::key_gen(&mut rand::rng());
+        let key = SigningKey::generate();
         let raw_key = key.to_seed();
 
         // Use create_new to prevent accidental overwrite if another process creates the key first.

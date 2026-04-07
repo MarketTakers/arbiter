@@ -63,9 +63,6 @@ pub mod proto {
     }
 }
 
-pub static CLIENT_CONTEXT: &[u8] = b"arbiter_client";
-pub static USERAGENT_CONTEXT: &[u8] = b"arbiter_user_agent";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientMetadata {
     pub name: String,
@@ -86,9 +83,4 @@ pub fn home_path() -> Result<std::path::PathBuf, std::io::Error> {
     std::fs::create_dir_all(&arbiter_home)?;
 
     Ok(arbiter_home)
-}
-
-pub fn format_challenge(nonce: i32, pubkey: &[u8]) -> Vec<u8> {
-    let concat_form = format!("{}:{}", nonce, BASE64_STANDARD.encode(pubkey));
-    concat_form.into_bytes()
 }

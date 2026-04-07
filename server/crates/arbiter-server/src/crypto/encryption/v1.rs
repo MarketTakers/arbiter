@@ -60,9 +60,9 @@ mod tests {
 
     use super::*;
     use crate::{
-        crypto::derive_key,
-        safe_cell::{SafeCell, SafeCellHandle as _},
+        crypto::derive_key
     };
+    use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
     #[test]
     pub fn derive_seal_key_deterministic() {

@@ -1,3 +1,7 @@
+use arbiter_crypto::{
+    authn::{self, CLIENT_CONTEXT, format_challenge},
+    safecell::{SafeCell, SafeCellHandle as _},
+};
 use arbiter_proto::ClientMetadata;
 use arbiter_proto::transport::{Receiver, Sender};
 use arbiter_server::{
@@ -6,10 +10,8 @@ use arbiter_server::{
         client::{ClientConnection, ClientCredentials, auth, connect_client},
         keyholder::Bootstrap,
     },
-    crypto::authn,
     crypto::integrity,
     db::{self, schema},
-    safe_cell::{SafeCell, SafeCellHandle as _},
 };
 use diesel::{ExpressionMethods as _, NullableExpressionMethods as _, QueryDsl as _, insert_into};
 use diesel_async::RunQueryDsl;
@@ -72,9 +74,9 @@ fn sign_client_challenge(
     nonce: i32,
     pubkey: &authn::PublicKey,
 ) -> authn::Signature {
-    let challenge = arbiter_proto::format_challenge(nonce, &pubkey.to_bytes());
+    let challenge = format_challenge(nonce, &pubkey.to_bytes());
     key.signing_key()
-        .sign_deterministic(&challenge, arbiter_proto::CLIENT_CONTEXT)
+        .sign_deterministic(&challenge, CLIENT_CONTEXT)
         .unwrap()
         .into()
 }
