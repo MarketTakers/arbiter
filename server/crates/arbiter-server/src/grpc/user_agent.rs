@@ -14,8 +14,8 @@ use tonic::Status;
 use tracing::{error, info, warn};
 
 use crate::{
-    peers::user_agent::{OutOfBand, UserAgentConnection, UserAgentSession},
     grpc::request_tracker::RequestTracker,
+    peers::user_agent::{OutOfBand, UserAgentConnection, UserAgentSession},
 };
 
 mod auth;
@@ -124,7 +124,7 @@ pub async fn start(
 ) {
     let mut request_tracker = RequestTracker::default();
 
-    let pubkey = match auth::start(&mut conn, &mut bi, &mut request_tracker).await {
+    let (id, pubkey) = match auth::start(&mut conn, &mut bi, &mut request_tracker).await {
         Ok(pubkey) => pubkey,
         Err(e) => {
             warn!(error = ?e, "Authentication failed");
@@ -132,13 +132,19 @@ pub async fn start(
         }
     };
 
+    info!(?pubkey, "User authenticated successfully");
+
     let (oob_sender, oob_receiver) = mpsc::channel(16);
     let oob_adapter = OutOfBandAdapter(oob_sender);
 
-    let actor = UserAgentSession::spawn(UserAgentSession::new(conn, Box::new(oob_adapter)));
+    let actor = UserAgentSession::spawn(UserAgentSession::new(
+        conn,
+        id,
+        pubkey,
+        Box::new(oob_adapter),
+    ));
     let actor_for_cleanup = actor.clone();
 
-    info!(?pubkey, "User authenticated successfully");
     dispatch_loop(bi, actor, oob_receiver, request_tracker).await;
     actor_for_cleanup.kill();
 }

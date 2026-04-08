@@ -18,8 +18,8 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::{
-    peers::user_agent::{UserAgentConnection, auth},
     grpc::request_tracker::RequestTracker,
+    peers::user_agent::{UserAgentConnection, auth},
 };
 
 pub struct AuthTransportAdapter<'a> {
@@ -140,7 +140,6 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
             AuthRequestPayload::ChallengeRequest(ProtoAuthChallengeRequest {
                 pubkey,
                 bootstrap_token,
-                key_type: _,
             }) => {
                 let Ok(pubkey) = authn::PublicKey::try_from(pubkey.as_slice()) else {
                     warn!(
@@ -168,7 +167,7 @@ pub async fn start(
     conn: &mut UserAgentConnection,
     bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
     request_tracker: &mut RequestTracker,
-) -> Result<authn::PublicKey, auth::Error> {
+) -> Result<(i32, authn::PublicKey), auth::Error> {
     let transport = AuthTransportAdapter::new(bi, request_tracker);
     auth::authenticate(conn, transport).await
 }

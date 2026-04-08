@@ -22,8 +22,8 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::{
-    peers::client::{self, ClientConnection, auth},
     grpc::request_tracker::RequestTracker,
+    peers::client::{self, ClientConnection, auth},
 };
 
 pub struct AuthTransportAdapter<'a> {

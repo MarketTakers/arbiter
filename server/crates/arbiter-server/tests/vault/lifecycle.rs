@@ -1,12 +1,11 @@
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
-    actors::{GlobalActors, vault::{Error, Vault}},
+    actors::{
+        GlobalActors,
+        vault::{Error, Vault},
+    },
     crypto::encryption::v1::{Nonce, ROOT_KEY_TAG},
     db::{self, models, schema},
-    peers::user_agent::{
-        UserAgentSession,
-        session::connection::{HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError},
-    },
 };
 
 use diesel::{QueryDsl, SelectableHelper};
@@ -18,7 +17,9 @@ use crate::common;
 #[test_log::test]
 async fn test_bootstrap() {
     let db = db::create_test_pool().await;
-    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus()).await.unwrap();
+    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+        .await
+        .unwrap();
 
     let seal_key = SafeCell::new(b"test-seal-key".to_vec());
     actor.bootstrap(seal_key).await.unwrap();
@@ -52,7 +53,9 @@ async fn test_bootstrap_rejects_double() {
 #[test_log::test]
 async fn test_create_new_before_bootstrap_fails() {
     let db = db::create_test_pool().await;
-    let mut actor = Vault::new(db, GlobalActors::spawn_message_bus()).await.unwrap();
+    let mut actor = Vault::new(db, GlobalActors::spawn_message_bus())
+        .await
+        .unwrap();
 
     let err = actor
         .create_new(SafeCell::new(b"data".to_vec()))
@@ -65,7 +68,9 @@ async fn test_create_new_before_bootstrap_fails() {
 #[test_log::test]
 async fn test_decrypt_before_bootstrap_fails() {
     let db = db::create_test_pool().await;
-    let mut actor = Vault::new(db, GlobalActors::spawn_message_bus()).await.unwrap();
+    let mut actor = Vault::new(db, GlobalActors::spawn_message_bus())
+        .await
+        .unwrap();
 
     let err = actor.decrypt(1).await.unwrap_err();
     assert!(matches!(err, Error::NotBootstrapped));
@@ -78,7 +83,9 @@ async fn test_new_restores_sealed_state() {
     let actor = common::bootstrapped_vault(&db).await;
     drop(actor);
 
-    let mut actor2 = Vault::new(db, GlobalActors::spawn_message_bus()).await.unwrap();
+    let mut actor2 = Vault::new(db, GlobalActors::spawn_message_bus())
+        .await
+        .unwrap();
     let err = actor2.decrypt(1).await.unwrap_err();
     assert!(matches!(err, Error::NotBootstrapped));
 }
@@ -96,7 +103,9 @@ async fn test_unseal_correct_password() {
         .unwrap();
     drop(actor);
 
-    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus()).await.unwrap();
+    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+        .await
+        .unwrap();
     let seal_key = SafeCell::new(b"test-seal-key".to_vec());
     actor.try_unseal(seal_key).await.unwrap();
 
@@ -117,7 +126,9 @@ async fn test_unseal_wrong_then_correct_password() {
         .unwrap();
     drop(actor);
 
-    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus()).await.unwrap();
+    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+        .await
+        .unwrap();
 
     let bad_key = SafeCell::new(b"wrong-password".to_vec());
     let err = actor.try_unseal(bad_key).await.unwrap_err();

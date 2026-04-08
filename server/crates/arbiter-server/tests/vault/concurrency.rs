@@ -2,7 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
-    actors::{GlobalActors, vault::{CreateNew, Error, Vault}},
+    actors::{
+        GlobalActors,
+        vault::{CreateNew, Error, Vault},
+    },
     db::{self, models, schema},
 };
 
@@ -161,7 +164,9 @@ async fn decrypt_roundtrip_after_high_concurrency() {
     let writes = write_concurrently(actor, "roundtrip", 40).await;
     let expected: HashMap<i32, Vec<u8>> = writes.into_iter().collect();
 
-    let mut decryptor = Vault::new(db.clone(), GlobalActors::spawn_message_bus()).await.unwrap();
+    let mut decryptor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+        .await
+        .unwrap();
     decryptor
         .try_unseal(SafeCell::new(b"test-seal-key".to_vec()))
         .await

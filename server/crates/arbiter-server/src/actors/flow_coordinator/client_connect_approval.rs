@@ -8,7 +8,10 @@ use kameo::{
 
 use crate::{
     actors::flow_coordinator::ApprovalError,
-    peers::{client::ClientProfile, user_agent::{UserAgentSession, session::BeginNewClientApproval}},
+    peers::{
+        client::ClientProfile,
+        user_agent::{UserAgentSession, session::BeginNewClientApproval},
+    },
 };
 
 pub struct Args {

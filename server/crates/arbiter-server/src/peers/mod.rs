@@ -1,2 +1,2 @@
-pub mod user_agent;
 pub mod client;
+pub mod user_agent;

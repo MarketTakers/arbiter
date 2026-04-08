@@ -61,11 +61,6 @@ Future<Connection> connectAndAuthorize(
     final req = ua_auth.AuthChallengeRequest(
       pubkey: pubkey,
       bootstrapToken: bootstrapToken,
-      keyType: switch (key.alg) {
-        KeyAlgorithm.rsa => ua_auth.KeyType.KEY_TYPE_RSA,
-        KeyAlgorithm.ecdsa => ua_auth.KeyType.KEY_TYPE_ECDSA_SECP256K1,
-        KeyAlgorithm.ed25519 => ua_auth.KeyType.KEY_TYPE_ED25519,
-      },
     );
     final response = await connection.ask(
       UserAgentRequest(auth: ua_auth.Request(challengeRequest: req)),

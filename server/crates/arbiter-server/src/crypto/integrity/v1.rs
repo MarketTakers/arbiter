@@ -1,6 +1,8 @@
-use crate::{actors::vault, crypto::integrity::hashing::Hashable};
-use arbiter_crypto::safecell::SafeCellHandle as _;
-use hmac::{Hmac, Mac as _};
+use crate::{
+    actors::vault::{self, GetState},
+    crypto::integrity::hashing::Hashable,
+};
+use hmac::Hmac;
 use sha2::Sha256;
 
 use diesel::{ExpressionMethods as _, QueryDsl, dsl::insert_into, sqlite::Sqlite};
@@ -199,6 +201,11 @@ pub async fn verify_entity<E: Integrable>(
     }
 }
 
+pub async fn is_signing_available(vault: &ActorRef<Vault>) -> Result<bool, Error> {
+    let state = vault.ask(GetState).await.map_err(|_| Error::VaultSend)?;
+    Ok(matches!(state, vault::VaultState::Unsealed))
+}
+
 #[cfg(test)]
 mod tests {
     use diesel::{ExpressionMethods as _, QueryDsl};
@@ -208,7 +215,10 @@ mod tests {
     use sha2::Digest;
 
     use crate::{
-        actors::{GlobalActors, vault::{Bootstrap, Vault}},
+        actors::{
+            GlobalActors,
+            vault::{Bootstrap, Vault},
+        },
         db::{self, schema},
     };
     use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
