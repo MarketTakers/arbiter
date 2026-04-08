@@ -1,12 +1,11 @@
 use arbiter_crypto::authn;
 use diesel::{ExpressionMethods, QueryDsl};
-use diesel_async::{AsyncConnection, RunQueryDsl};
+use diesel_async::{RunQueryDsl};
 use kameo_actors::message_bus::Register;
 
 use std::{borrow::Cow, collections::HashMap};
 
 use arbiter_proto::transport::Sender;
-use async_trait::async_trait;
 use kameo::{Actor, actor::ActorRef, messages, prelude::Message};
 use thiserror::Error;
 use tracing::error;
@@ -15,10 +14,8 @@ use crate::{
     actors::{
         flow_coordinator::{RegisterUserAgent, client_connect_approval::ClientApprovalController},
         vault::events,
-    }, crypto::integrity, db::schema::useragent_client, peers::{client::ClientProfile, user_agent::UserAgentCredentials}
+    }, crypto::integrity, db::schema::useragent_client, peers::{client::ClientProfile, user_agent::{AuthCredentials, Credentials}}
 };
-mod state;
-use state::{DummyContext, UserAgentEvents, UserAgentStateMachine};
 
 use super::{OutOfBand, UserAgentConnection};
 
@@ -58,40 +55,27 @@ pub struct PendingClientApproval {
 }
 
 pub struct UserAgentSession {
-    id: i32,
-    pubkey: authn::PublicKey,
+    creds: Credentials,
     props: UserAgentConnection,
-    state: UserAgentStateMachine<DummyContext>,
     sender: Box<dyn Sender<OutOfBand>>,
 
     pending_client_approvals: HashMap<Vec<u8>, PendingClientApproval>,
 }
 
-pub mod connection;
+pub mod handlers;
 
 impl UserAgentSession {
     pub(crate) fn new(
         props: UserAgentConnection,
-        id: i32,
-        pubkey: authn::PublicKey,
+        creds: Credentials,
         sender: Box<dyn Sender<OutOfBand>>,
     ) -> Self {
         Self {
-            id,
+            creds,
             props,
-            pubkey,
-            state: UserAgentStateMachine::new(DummyContext),
             sender,
             pending_client_approvals: Default::default(),
         }
-    }
-
-    fn transition(&mut self, event: UserAgentEvents) -> Result<(), Error> {
-        self.state.process_event(event).map_err(|e| {
-            error!(?e, "State transition failed");
-            Error::State
-        })?;
-        Ok(())
     }
 }
 
@@ -128,61 +112,6 @@ impl UserAgentSession {
     }
 }
 
-impl Message<events::VaultBootstrapped> for UserAgentSession {
-    type Reply = Result<(), Error>;
-
-    async fn handle(
-        &mut self,
-        _: events::VaultBootstrapped,
-        ctx: &mut kameo::prelude::Context<Self, Self::Reply>,
-    ) -> Self::Reply {
-        let Ok(mut conn) = self.props.db.get().await else {
-            error!("Failed to get database connection for vault bootstrapped event");
-            ctx.stop();
-            return Err(Error::internal("Failed to get database connection"));
-        };
-
-
-        let result = conn.exclusive_transaction(|conn| {
-            Box::pin(async {
-                let nonce: i32 = useragent_client::table
-                    .filter(useragent_client::id.eq(self.id))
-                    .select(useragent_client::nonce)
-                    .first::<i32>(conn)
-                    .await
-                    .map_err(|e| {
-                        error!(?e, "Failed to get nonce for useragent bootstrapping");
-                        Error::internal("Failed to sign user agent credentials")
-                    })?;
-
-                let entity = UserAgentCredentials {
-                    pubkey: self.pubkey.clone(),
-                    nonce,
-                };
-
-                integrity::sign_entity(conn, &self.props.actors.vault, &entity, self.id)
-                    .await
-                    .map_err(|e| {
-                        error!(?e, "Failed to sign user agent credentials during vault bootstrapping");
-                        Error::internal("Failed to sign user agent credentials")
-                    })?;
-
-                Result::<_, Error>::Ok(())
-            })
-        }).await;
-
-        match result {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                error!(?err, "Error during vault bootstrapping");
-                ctx.stop();
-                Err(err)
-            },
-        }
-
-    }
-}
-
 impl Actor for UserAgentSession {
     type Args = Self;
 
@@ -192,21 +121,6 @@ impl Actor for UserAgentSession {
         args: Self::Args,
         this: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        args.props
-            .actors
-            .events
-            .tell(Register(
-                this.clone().recipient::<events::VaultBootstrapped>(),
-            ))
-            .await
-            .map_err(|err| {
-                error!(
-                    ?err,
-                    "Failed to register user agent connection with event bus"
-                );
-                Error::internal("Failed to register user agent connection with event bus")
-            })?;
-
         args.props
             .actors
             .flow_coordinator

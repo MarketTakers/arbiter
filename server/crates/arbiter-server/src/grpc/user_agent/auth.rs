@@ -19,7 +19,7 @@ use tracing::warn;
 
 use crate::{
     grpc::request_tracker::RequestTracker,
-    peers::user_agent::{UserAgentConnection, auth},
+    peers::user_agent::{AuthCredentials, UserAgentConnection, auth},
 };
 
 pub struct AuthTransportAdapter<'a> {
@@ -167,7 +167,7 @@ pub async fn start(
     conn: &mut UserAgentConnection,
     bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
     request_tracker: &mut RequestTracker,
-) -> Result<(i32, authn::PublicKey), auth::Error> {
+) -> Result<AuthCredentials, auth::Error> {
     let transport = AuthTransportAdapter::new(bi, request_tracker);
     auth::authenticate(conn, transport).await
 }

@@ -25,10 +25,10 @@ use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 pub mod events {
 
     #[derive(Clone, Copy)]
-    pub struct VaultBootstrapped;
+    pub struct Bootstrapped;
 
     #[derive(Clone, Copy)]
-    pub struct VaultUnsealed;
+    pub struct Unsealed;
 
     #[derive(Clone, Copy)]
     pub struct VaultResealed;
@@ -213,7 +213,7 @@ impl Vault {
         });
 
         info!("Vault bootstrapped successfully");
-        self.events.tell(Publish(events::VaultBootstrapped)).await;
+        self.events.tell(Publish(events::Bootstrapped)).await;
 
         Ok(())
     }
@@ -269,7 +269,7 @@ impl Vault {
         });
 
         info!("Vault unsealed successfully");
-        self.events.tell(Publish(events::VaultUnsealed)).await;
+        self.events.tell(Publish(events::Unsealed)).await;
 
         Ok(())
     }

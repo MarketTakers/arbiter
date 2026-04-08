@@ -13,6 +13,7 @@ pub mod bootstrap;
 pub mod evm;
 pub mod flow_coordinator;
 pub mod vault;
+pub mod useragent_registry;
 
 #[derive(Error, Debug)]
 pub enum SpawnError {
