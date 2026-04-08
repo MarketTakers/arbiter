@@ -394,6 +394,7 @@ mod tests {
             chain: CHAIN_ID,
             valid_from: None,
             valid_until: None,
+            revoked_at: None,
             max_gas_fee_per_gas: None,
             max_priority_fee_per_gas: None,
             rate_limit: None,
@@ -595,5 +596,25 @@ mod tests {
         } else {
             assert!(violations.is_empty());
         }
+    }
+
+    #[test]
+    fn shared_settings_hash_changes_when_revoked_at_changes() {
+        use arbiter_crypto::hashing::Hashable;
+        use sha2::Digest;
+
+        let active = shared_settings();
+        let revoked = SharedGrantSettings {
+            revoked_at: Some(Utc::now()),
+            ..shared_settings()
+        };
+
+        let mut active_hash = sha2::Sha256::new();
+        active.hash(&mut active_hash);
+
+        let mut revoked_hash = sha2::Sha256::new();
+        revoked.hash(&mut revoked_hash);
+
+        assert_ne!(active_hash.finalize(), revoked_hash.finalize());
     }
 }
