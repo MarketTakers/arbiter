@@ -52,22 +52,13 @@ impl From<Meaning> for SpecificMeaning {
 }
 
 // A grant for ether transfers, which can be scoped to specific target addresses and volume limits
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, arbiter_macros::Hashable)]
 pub struct Settings {
     pub target: Vec<Address>,
     pub limit: VolumeRateLimit,
 }
 impl Integrable for Settings {
     const KIND: &'static str = "EtherTransfer";
-}
-
-use crate::crypto::integrity::hashing::Hashable;
-
-impl Hashable for Settings {
-    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        self.target.hash(hasher);
-        self.limit.hash(hasher);
-    }
 }
 
 impl From<Settings> for SpecificGrant {

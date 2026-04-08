@@ -340,7 +340,7 @@ proptest::proptest! {
     ) {
         use rand::{SeedableRng, seq::SliceRandom};
         use sha2::Digest;
-        use crate::crypto::integrity::hashing::Hashable;
+        use arbiter_crypto::hashing::Hashable;
 
         let addrs: Vec<Address> = raw_addrs.iter().map(|b| Address::from(*b)).collect();
         let mut shuffled = addrs.clone();
