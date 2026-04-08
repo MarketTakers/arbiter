@@ -25,7 +25,7 @@ use crate::{
     grpc::Convert,
     peers::user_agent::{
         OutOfBand, UserAgentSession,
-        session::connection::{
+        session::handlers::{
             HandleGrantEvmWalletAccess, HandleListWalletAccess, HandleNewClientApprove,
             HandleRevokeEvmWalletAccess, HandleSdkClientList,
         },

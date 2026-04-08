@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use base64::{Engine as _, prelude::BASE64_STANDARD};
 use ml_dsa::{
     EncodedVerifyingKey, Error, KeyGen, MlDsa87, Seed, Signature as MlDsaSignature,
@@ -16,6 +18,12 @@ pub type KeyParams = MlDsa87;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PublicKey(Box<MlDsaVerifyingKey<KeyParams>>);
+
+impl Hash for PublicKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.to_bytes().hash(state);
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Signature(Box<MlDsaSignature<KeyParams>>);

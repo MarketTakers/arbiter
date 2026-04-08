@@ -1,7 +1,7 @@
-use super::super::{UserAgentConnection, UserAgentCredentials};
+use super::super::{AuthCredentials, Credentials, UserAgentConnection};
 use arbiter_crypto::authn::{self, USERAGENT_CONTEXT};
 use arbiter_proto::transport::Bi;
-use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, update};
+use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, sqlite::Sqlite, update};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::actor::ActorRef;
 use tracing::error;
@@ -33,20 +33,17 @@ pub struct ChallengeSolution {
     pub solution: Vec<u8>,
 }
 
-pub struct AuthOk {
-    pub id: i32,
-    pub pubkey: authn::PublicKey,
-}
-
 smlang::statemachine!(
     name: Auth,
     custom_error: true,
     transitions: {
         *Init + AuthRequest(ChallengeRequest) / async prepare_challenge = SentChallenge(ChallengeContext),
-        Init + BootstrapAuthRequest(BootstrapAuthRequest) / async verify_bootstrap_token = AuthOk(AuthOk),
-        SentChallenge(ChallengeContext) + ReceivedSolution(ChallengeSolution) / async verify_solution = AuthOk(AuthOk),
+        Init + BootstrapAuthRequest(BootstrapAuthRequest) / async verify_bootstrap_token = AuthOk(AuthCredentials),
+        SentChallenge(ChallengeContext) + ReceivedSolution(ChallengeSolution) / async verify_solution = AuthOk(AuthCredentials),
     }
 );
+
+const NONCE_START: i32 = 1;
 
 /// Returns the current nonce, ready to use for the challenge nonce.
 async fn get_current_nonce_and_id(
@@ -94,9 +91,12 @@ async fn verify_integrity(
     let _result = integrity::verify_entity(
         &mut db_conn,
         vault,
-        &UserAgentCredentials {
-            pubkey: pubkey.clone(),
-            nonce,
+        &AuthCredentials {
+            creds: Credentials {
+                id,
+                pubkey: pubkey.clone(),
+            },
+            new_nonce: nonce,
         },
         id,
     )
@@ -109,49 +109,46 @@ async fn verify_integrity(
     Ok(())
 }
 
-async fn create_nonce(
-    db: &DatabasePool,
-    vault: &ActorRef<Vault>,
+async fn compute_current_nonce(
+    conn: &mut impl AsyncConnection<Backend = Sqlite>,
     pubkey: &authn::PublicKey,
 ) -> Result<(i32, i32), Error> {
-    let mut db_conn = db.get().await.map_err(|e| {
-        error!(error = ?e, "Database pool error");
-        Error::internal("Database unavailable")
-    })?;
-    let (id, new_nonce) = db_conn
-        .exclusive_transaction(|conn| {
-            Box::pin(async move {
-                let (id, new_nonce): (i32, i32) = update(useragent_client::table)
-                    .filter(useragent_client::public_key.eq(pubkey.to_bytes()))
-                    .set(useragent_client::nonce.eq(useragent_client::nonce + 1))
-                    .returning((useragent_client::id, useragent_client::nonce))
-                    .get_result(conn)
-                    .await
-                    .map_err(|e| {
-                        error!(error = ?e, "Database error");
-                        Error::internal("Database operation failed")
-                    })?;
-
-                integrity::sign_entity(
-                    conn,
-                    vault,
-                    &UserAgentCredentials {
-                        pubkey: pubkey.clone(),
-                        nonce: new_nonce,
-                    },
-                    id,
-                )
-                .await
-                .map_err(|e| {
-                    error!(?e, "Integrity signature update failed");
-                    Error::internal("Database error")
-                })?;
-
-                Result::<_, Error>::Ok((id, new_nonce))
-            })
+    update(useragent_client::table)
+        .filter(useragent_client::public_key.eq(pubkey.to_bytes()))
+        .set(useragent_client::nonce.eq(useragent_client::nonce + 1))
+        .returning((useragent_client::id, useragent_client::nonce))
+        .get_result(conn)
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "Database error incrementing nonce");
+            Error::internal("Database operation failed")
         })
-        .await?;
-    Ok((id, new_nonce))
+}
+
+async fn resign_credentials(
+    conn: &mut impl AsyncConnection<Backend = Sqlite>,
+    vault: &ActorRef<Vault>,
+    id: i32,
+    pubkey: &authn::PublicKey,
+    new_nonce: i32,
+) -> Result<(), Error> {
+    integrity::sign_entity(
+        conn,
+        vault,
+        &AuthCredentials {
+            creds: Credentials {
+                id,
+                pubkey: pubkey.clone(),
+            },
+            new_nonce,
+        },
+        id,
+    )
+    .await
+    .map_err(|e| {
+        error!(?e, "Integrity signature update failed");
+        Error::internal("Database error")
+    })
 }
 
 async fn register_key(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<i32, Error> {
@@ -160,8 +157,6 @@ async fn register_key(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<i3
         error!(error = ?e, "Database pool error");
         Error::internal("Database unavailable")
     })?;
-
-    const NONCE_START: i32 = 1;
 
     let id: i32 = diesel::insert_into(useragent_client::table)
         .values((
@@ -200,9 +195,33 @@ where
         &mut self,
         ChallengeRequest { pubkey }: ChallengeRequest,
     ) -> Result<ChallengeContext, Self::Error> {
-        verify_integrity(&self.conn.db, &self.conn.actors.vault, &pubkey).await?;
+        let is_signing = integrity::is_signing_available(&self.conn.actors.vault)
+            .await
+            .unwrap_or(false);
 
-        let (id, nonce) = create_nonce(&self.conn.db, &self.conn.actors.vault, &pubkey).await?;
+        if is_signing {
+            verify_integrity(&self.conn.db, &self.conn.actors.vault, &pubkey).await?;
+        }
+
+        let vault = self.conn.actors.vault.clone();
+        let mut conn = self.conn.db.get().await.map_err(|e| {
+            error!(error = ?e, "Database pool error");
+            Error::internal("Database unavailable")
+        })?;
+
+        let (id, nonce) = conn
+            .exclusive_transaction(|conn| {
+                let pubkey = pubkey.clone();
+                let vault = vault.clone();
+                Box::pin(async move {
+                    let (id, new_nonce) = compute_current_nonce(conn, &pubkey).await?;
+                    if is_signing {
+                        resign_credentials(conn, &vault, id, &pubkey, new_nonce).await?;
+                    }
+                    Result::<_, Error>::Ok((id, new_nonce))
+                })
+            })
+            .await?;
 
         self.transport
             .send(Ok(Outbound::AuthChallenge { nonce }))
@@ -224,7 +243,7 @@ where
     async fn verify_bootstrap_token(
         &mut self,
         BootstrapAuthRequest { pubkey, token }: BootstrapAuthRequest,
-    ) -> Result<AuthOk, Self::Error> {
+    ) -> Result<AuthCredentials, Self::Error> {
         let token_ok: bool = self
             .conn
             .actors
@@ -245,12 +264,15 @@ where
 
         match token_ok {
             true => {
-                let id = register_key(&self.conn.db,  &pubkey).await?;
+                let id = register_key(&self.conn.db, &pubkey).await?;
                 self.transport
                     .send(Ok(Outbound::AuthSuccess))
                     .await
                     .map_err(|_| Error::Transport)?;
-                Ok(AuthOk { id, pubkey })
+                Ok(AuthCredentials {
+                    creds: Credentials { id, pubkey },
+                    new_nonce: NONCE_START,
+                })
             }
             false => {
                 error!("Invalid bootstrap token provided");
@@ -273,7 +295,7 @@ where
             key,
         }: &ChallengeContext,
         ChallengeSolution { solution }: ChallengeSolution,
-    ) -> Result<AuthOk, Self::Error> {
+    ) -> Result<AuthCredentials, Self::Error> {
         let signature = authn::Signature::try_from(solution.as_slice()).map_err(|_| {
             error!("Failed to decode signature in challenge solution");
             Error::InvalidChallengeSolution
@@ -287,7 +309,13 @@ where
                     .send(Ok(Outbound::AuthSuccess))
                     .await
                     .map_err(|_| Error::Transport)?;
-                Ok(AuthOk { id: *id, pubkey: key.clone() })
+                Ok(AuthCredentials {
+                    creds: Credentials {
+                        id: *id,
+                        pubkey: key.clone(),
+                    },
+                    new_nonce: *challenge_nonce,
+                })
             }
             false => {
                 self.transport

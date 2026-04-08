@@ -29,7 +29,7 @@ use crate::{
     },
     peers::user_agent::{
         UserAgentSession,
-        session::connection::{
+        session::handlers::{
             GrantMutationError, HandleEvmWalletCreate, HandleEvmWalletList, HandleGrantCreate,
             HandleGrantDelete, HandleGrantList, HandleSignTransaction,
             SignTransactionError as SessionSignTransactionError,

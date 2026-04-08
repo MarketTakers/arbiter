@@ -3,13 +3,45 @@ use crate::{
 };
 use arbiter_crypto::authn;
 
-#[derive(Debug)]
-pub struct UserAgentCredentials {
+pub mod auth;
+pub mod session;
+pub mod vault_gate;
+
+
+#[derive(Debug, Clone, Hash)]
+pub struct Credentials {
+    pub id: i32,
     pub pubkey: authn::PublicKey,
-    pub nonce: i32,
+}
+impl Hashable for Credentials {
+    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
+        self.id.hash(hasher);
+        self.pubkey.hash(hasher);
+    }
 }
 
-impl Integrable for UserAgentCredentials {
+#[derive(Debug, Clone)]
+pub struct AuthCredentials {
+    pub creds: Credentials,
+    // denotes new nonce, not current
+    pub new_nonce: i32,
+}
+
+impl Hashable for authn::PublicKey {
+    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
+        hasher.update(self.to_bytes());
+    }
+}
+
+impl Hashable for AuthCredentials {
+    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
+        self.creds.hash(hasher);
+        self.new_nonce.hash(hasher);
+    }
+}
+
+
+impl Integrable for AuthCredentials {
     const KIND: &'static str = "useragent_credentials";
 }
 
@@ -31,23 +63,9 @@ impl UserAgentConnection {
     }
 }
 
-pub mod auth;
-pub mod session;
+
 
 pub use auth::authenticate;
 pub use session::UserAgentSession;
 
 use crate::crypto::integrity::hashing::Hashable;
-
-impl Hashable for authn::PublicKey {
-    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        hasher.update(self.to_bytes());
-    }
-}
-
-impl Hashable for UserAgentCredentials {
-    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        self.pubkey.hash(hasher);
-        self.nonce.hash(hasher);
-    }
-}

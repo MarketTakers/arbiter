@@ -5,7 +5,7 @@ use tracing::error;
 mod state;
 use state::*;
 
-use super::UserAgentConnection;
+use super::{AuthCredentials, UserAgentConnection};
 
 #[derive(Debug, Clone)]
 pub enum Inbound {
@@ -69,7 +69,7 @@ fn parse_auth_event(payload: Inbound) -> AuthEvents {
 pub async fn authenticate<T>(
     props: &mut UserAgentConnection,
     transport: T,
-) -> Result<(i32, authn::PublicKey), Error>
+) -> Result<AuthCredentials, Error>
 where
     T: Bi<Inbound, Result<Outbound, Error>> + Send,
 {
@@ -82,7 +82,7 @@ where
         };
 
         match state.process_event(parse_auth_event(payload)).await {
-            Ok(AuthStates::AuthOk(result)) => return Ok((result.id, result.pubkey.clone())),
+            Ok(AuthStates::AuthOk(result)) => return Ok(result.clone()),
             Err(AuthError::ActionFailed(err)) => {
                 error!(?err, "State machine action failed");
                 return Err(err);
