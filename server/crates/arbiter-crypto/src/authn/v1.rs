@@ -1,4 +1,5 @@
 use base64::{Engine as _, prelude::BASE64_STANDARD};
+use hmac::digest::Digest;
 use ml_dsa::{
     EncodedVerifyingKey, Error, KeyGen, MlDsa87, Seed, Signature as MlDsaSignature,
     SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey, signature::Keypair as _,
@@ -17,6 +18,12 @@ pub type KeyParams = MlDsa87;
 #[derive(Clone, Debug, PartialEq)]
 pub struct PublicKey(Box<MlDsaVerifyingKey<KeyParams>>);
 
+impl crate::hashing::Hashable for PublicKey {
+    fn hash<H: Digest>(&self, hasher: &mut H) {
+        hasher.update(self.to_bytes());
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Signature(Box<MlDsaSignature<KeyParams>>);
 
@@ -25,7 +32,7 @@ pub struct SigningKey(Box<MlDsaSigningKey<KeyParams>>);
 
 impl PublicKey {
     pub fn to_bytes(&self) -> Vec<u8> {
-        self.0.encode().to_vec()
+        self.0.encode().0.to_vec()
     }
 
     pub fn verify(&self, nonce: i32, context: &[u8], signature: &Signature) -> bool {
@@ -39,7 +46,7 @@ impl PublicKey {
 
 impl Signature {
     pub fn to_bytes(&self) -> Vec<u8> {
-        self.0.encode().to_vec()
+        self.0.encode().0.to_vec()
     }
 }
 

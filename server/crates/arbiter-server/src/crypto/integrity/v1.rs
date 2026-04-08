@@ -1,14 +1,12 @@
-use crate::{actors::keyholder, crypto::integrity::hashing::Hashable};
-use arbiter_crypto::safecell::SafeCellHandle as _;
-use hmac::{Hmac, Mac as _};
+use crate::actors::keyholder;
+use arbiter_crypto::hashing::Hashable;
+use hmac::Hmac;
 use sha2::Sha256;
 
 use diesel::{ExpressionMethods as _, QueryDsl, dsl::insert_into, sqlite::Sqlite};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::{actor::ActorRef, error::SendError};
 use sha2::Digest as _;
-
-pub mod hashing;
 
 use crate::{
     actors::keyholder::{KeyHolder, SignIntegrity, VerifyIntegrity},
@@ -203,10 +201,6 @@ mod tests {
     use diesel::{ExpressionMethods as _, QueryDsl};
     use diesel_async::RunQueryDsl;
     use kameo::{actor::ActorRef, prelude::Spawn};
-    
-    use sha2::Digest;
-
-    
 
     use crate::{
         actors::keyholder::{Bootstrap, KeyHolder},
@@ -215,19 +209,10 @@ mod tests {
     use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
     use super::{Error, Integrable, sign_entity, verify_entity};
-    use super::hashing::Hashable;
-
-    #[derive(Clone)]
+    #[derive(Clone, arbiter_macros::Hashable)]
     struct DummyEntity {
         payload_version: i32,
         payload: Vec<u8>,
-    }
-
-    impl Hashable for DummyEntity {
-        fn hash<H: Digest>(&self, hasher: &mut H) {
-            self.payload_version.hash(hasher);
-            self.payload.hash(hasher);
-        }
     }
     impl Integrable for DummyEntity {
         const KIND: &'static str = "dummy_entity";

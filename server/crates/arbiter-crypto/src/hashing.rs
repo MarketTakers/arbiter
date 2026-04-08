@@ -1,21 +1,25 @@
-use hmac::digest::Digest;
+pub use hmac::digest::Digest;
 use std::collections::HashSet;
 
 /// Deterministically hash a value by feeding its fields into the hasher in a consistent order.
+#[diagnostic::on_unimplemented(
+    note = "for local types consider adding `#[derive(arbiter_macros::Hashable)]` to your `{Self}` type",
+    note = "for types from other crates check whether the crate offers a `Hashable` implementation"
+)]
 pub trait Hashable {
     fn hash<H: Digest>(&self, hasher: &mut H);
 }
 
 macro_rules! impl_numeric {
-($($t:ty),*) => {
-    $(
-        impl Hashable for $t {
-            fn hash<H: Digest>(&self, hasher: &mut H) {
-                hasher.update(&self.to_be_bytes());
+    ($($t:ty),*) => {
+        $(
+            impl Hashable for $t {
+                fn hash<H: Digest>(&self, hasher: &mut H) {
+                    hasher.update(&self.to_be_bytes());
+                }
             }
-        }
-    )*
-};
+        )*
+    };
 }
 
 impl_numeric!(u8, u16, u32, u64, i8, i16, i32, i64);

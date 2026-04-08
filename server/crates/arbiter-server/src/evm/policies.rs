@@ -127,19 +127,19 @@ pub enum SpecificMeaning {
     TokenTransfer(token_transfers::Meaning),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, arbiter_macros::Hashable)]
 pub struct TransactionRateLimit {
     pub count: u32,
     pub window: Duration,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, arbiter_macros::Hashable)]
 pub struct VolumeRateLimit {
     pub max_volume: U256,
     pub window: Duration,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, arbiter_macros::Hashable)]
 pub struct SharedGrantSettings {
     pub wallet_access_id: i32,
     pub chain: ChainId,
@@ -200,7 +200,7 @@ pub enum SpecificGrant {
     TokenTransfer(token_transfers::Settings),
 }
 
-#[derive(Debug)]
+#[derive(Debug, arbiter_macros::Hashable)]
 pub struct CombinedSettings<PolicyGrant> {
     pub shared: SharedGrantSettings,
     pub specific: PolicyGrant,
@@ -218,39 +218,4 @@ impl<P> CombinedSettings<P> {
 impl<P: Integrable> Integrable for CombinedSettings<P> {
     const KIND: &'static str = P::KIND;
     const VERSION: i32 = P::VERSION;
-}
-
-use crate::crypto::integrity::hashing::Hashable;
-
-impl Hashable for TransactionRateLimit {
-    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        self.count.hash(hasher);
-        self.window.hash(hasher);
-    }
-}
-
-impl Hashable for VolumeRateLimit {
-    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        self.max_volume.hash(hasher);
-        self.window.hash(hasher);
-    }
-}
-
-impl Hashable for SharedGrantSettings {
-    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        self.wallet_access_id.hash(hasher);
-        self.chain.hash(hasher);
-        self.valid_from.hash(hasher);
-        self.valid_until.hash(hasher);
-        self.max_gas_fee_per_gas.hash(hasher);
-        self.max_priority_fee_per_gas.hash(hasher);
-        self.rate_limit.hash(hasher);
-    }
-}
-
-impl<P: Hashable> Hashable for CombinedSettings<P> {
-    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        self.shared.hash(hasher);
-        self.specific.hash(hasher);
-    }
 }
