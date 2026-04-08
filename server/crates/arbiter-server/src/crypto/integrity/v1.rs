@@ -194,7 +194,7 @@ pub async fn verify_entity<E: Integrable>(
         Ok(false) => Err(Error::MacMismatch {
             entity_kind: E::KIND,
         }),
-        Err(SendError::HandlerError(vault::Error::NotBootstrapped)) => {
+        Err(SendError::HandlerError(vault::Error::Sealed)) => {
             Ok(AttestationStatus::Unavailable)
         }
         Err(_) => Err(Error::VaultSend),
