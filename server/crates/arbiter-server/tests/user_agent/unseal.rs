@@ -3,13 +3,12 @@ use arbiter_server::{
     actors::{
         GlobalActors,
         vault::{Bootstrap, Seal},
-       
     },
-    peers::user_agent::{
-            UserAgentSession,
-            session::connection::{HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError},
-        },
     db,
+    peers::user_agent::{
+        UserAgentSession,
+        session::connection::{HandleUnsealEncryptedKey, HandleUnsealRequest, UnsealError},
+    },
 };
 
 use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};

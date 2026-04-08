@@ -14,7 +14,9 @@ use tracing::error;
 
 use crate::{
     actors::{
-        GlobalActors, flow_coordinator::{self, RequestClientApproval}, vault::Vault
+        GlobalActors,
+        flow_coordinator::{self, RequestClientApproval},
+        vault::Vault,
     },
     crypto::integrity::{self, AttestationStatus},
     db::{
@@ -187,10 +189,7 @@ async fn create_nonce(
     .await
 }
 
-async fn approve_new_client(
-    actors: &GlobalActors,
-    profile: ClientProfile,
-) -> Result<(), Error> {
+async fn approve_new_client(actors: &GlobalActors, profile: ClientProfile) -> Result<(), Error> {
     let result = actors
         .flow_coordinator
         .ask(RequestClientApproval { client: profile })

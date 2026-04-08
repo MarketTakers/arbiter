@@ -5,14 +5,10 @@ use arbiter_crypto::{
 use arbiter_proto::ClientMetadata;
 use arbiter_proto::transport::{Receiver, Sender};
 use arbiter_server::{
-    actors::{
-        GlobalActors,
-        
-        vault::Bootstrap,
-    },
-    peers::client::{ClientConnection, ClientCredentials, auth, connect_client},
+    actors::{GlobalActors, vault::Bootstrap},
     crypto::integrity,
     db::{self, schema},
+    peers::client::{ClientConnection, ClientCredentials, auth, connect_client},
 };
 use diesel::{ExpressionMethods as _, NullableExpressionMethods as _, QueryDsl as _, insert_into};
 use diesel_async::RunQueryDsl;

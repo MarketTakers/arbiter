@@ -10,8 +10,8 @@ use tonic::Status;
 use tracing::{info, warn};
 
 use crate::{
-    peers::client::{ClientConnection, session::ClientSession},
     grpc::request_tracker::RequestTracker,
+    peers::client::{ClientConnection, session::ClientSession},
 };
 
 mod auth;

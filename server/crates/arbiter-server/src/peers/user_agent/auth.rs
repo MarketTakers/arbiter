@@ -69,7 +69,7 @@ fn parse_auth_event(payload: Inbound) -> AuthEvents {
 pub async fn authenticate<T>(
     props: &mut UserAgentConnection,
     transport: T,
-) -> Result<authn::PublicKey, Error>
+) -> Result<(i32, authn::PublicKey), Error>
 where
     T: Bi<Inbound, Result<Outbound, Error>> + Send,
 {
@@ -82,7 +82,7 @@ where
         };
 
         match state.process_event(parse_auth_event(payload)).await {
-            Ok(AuthStates::AuthOk(key)) => return Ok(key.clone()),
+            Ok(AuthStates::AuthOk(result)) => return Ok((result.id, result.pubkey.clone())),
             Err(AuthError::ActionFailed(err)) => {
                 error!(?err, "State machine action failed");
                 return Err(err);

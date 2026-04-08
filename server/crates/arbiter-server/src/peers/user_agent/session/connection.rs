@@ -14,7 +14,7 @@ use kameo::prelude::Context;
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-use crate::{actors::vault::VaultState, peers::user_agent::session::state::{UnsealContext, UserAgentEvents}};
+use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
 use crate::actors::{
     evm::{
         ClientSignTransaction, Generate, ListWallets, SignTransactionError as EvmSignError,
@@ -27,10 +27,11 @@ use crate::db::models::{
 };
 use crate::evm::policies::{Grant, SpecificGrant};
 use crate::{
-    actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer,
+    actors::vault::VaultState,
+    peers::user_agent::session::state::{UnsealContext, UserAgentEvents},
 };
 
-use super::{UserAgentSession, state, Error};
+use super::{Error, UserAgentSession, state};
 
 impl UserAgentSession {
     fn take_unseal_secret(&mut self) -> Result<(EphemeralSecret, PublicKey), Error> {

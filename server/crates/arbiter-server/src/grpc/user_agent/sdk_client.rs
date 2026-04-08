@@ -21,6 +21,8 @@ use tonic::Status;
 use tracing::{info, warn};
 
 use crate::{
+    db::models::NewEvmWalletAccess,
+    grpc::Convert,
     peers::user_agent::{
         OutOfBand, UserAgentSession,
         session::connection::{
@@ -28,8 +30,6 @@ use crate::{
             HandleRevokeEvmWalletAccess, HandleSdkClientList,
         },
     },
-    db::models::NewEvmWalletAccess,
-    grpc::Convert,
 };
 
 fn wrap_sdk_client_response(payload: SdkClientResponsePayload) -> UserAgentResponsePayload {

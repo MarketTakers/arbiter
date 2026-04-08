@@ -147,7 +147,7 @@ impl Vault {
         Ok(nonce)
     }
 
-    fn expect_unsealed<'a>(state: &'a mut State) -> Result<&'a mut Unsealed, Error> {
+    fn expect_unsealed(state: &mut State) -> Result<&mut Unsealed, Error> {
         match state {
             State::Unsealed(unsealed) => Ok(unsealed),
             State::Unbootstrapped => Err(Error::NotBootstrapped),

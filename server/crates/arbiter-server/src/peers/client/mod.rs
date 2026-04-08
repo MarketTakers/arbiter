@@ -6,7 +6,8 @@ use tracing::{error, info};
 use crate::{
     actors::GlobalActors,
     crypto::integrity::{Integrable, hashing::Hashable},
-    db, peers::client::session::ClientSession,
+    db,
+    peers::client::session::ClientSession,
 };
 
 #[derive(Debug, Clone)]

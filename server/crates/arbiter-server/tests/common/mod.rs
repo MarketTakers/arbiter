@@ -12,7 +12,9 @@ use tokio::sync::mpsc;
 
 #[allow(dead_code)]
 pub async fn bootstrapped_vault(db: &db::DatabasePool) -> Vault {
-    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus()).await.unwrap();
+    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+        .await
+        .unwrap();
     actor
         .bootstrap(SafeCell::new(b"test-seal-key".to_vec()))
         .await

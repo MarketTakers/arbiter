@@ -13,8 +13,8 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::{
-    peers::client::session::{ClientSession, Error, HandleQueryVaultState},
     actors::vault::VaultState,
+    peers::client::session::{ClientSession, Error, HandleQueryVaultState},
 };
 
 pub(super) async fn dispatch(

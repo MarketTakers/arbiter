@@ -9,7 +9,13 @@ use kameo::{
 };
 use tracing::info;
 
-use crate::{actors::flow_coordinator::client_connect_approval::ClientApprovalController, peers::{client::{ClientProfile, session::ClientSession}, user_agent::UserAgentSession}};
+use crate::{
+    actors::flow_coordinator::client_connect_approval::ClientApprovalController,
+    peers::{
+        client::{ClientProfile, session::ClientSession},
+        user_agent::UserAgentSession,
+    },
+};
 
 pub mod client_connect_approval;
 

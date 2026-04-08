@@ -10,8 +10,8 @@ use tonic::{Request, Response, Status, async_trait};
 use tracing::info;
 
 use crate::{
-    peers::{client::ClientConnection, user_agent::UserAgentConnection},
     grpc::user_agent::start,
+    peers::{client::ClientConnection, user_agent::UserAgentConnection},
 };
 
 mod request_tracker;

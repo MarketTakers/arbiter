@@ -4,8 +4,7 @@ use thiserror::Error;
 
 use crate::{
     actors::{
-        bootstrap::Bootstrapper, evm::EvmActor, flow_coordinator::FlowCoordinator,
-        vault::Vault,
+        bootstrap::Bootstrapper, evm::EvmActor, flow_coordinator::FlowCoordinator, vault::Vault,
     },
     db,
 };
