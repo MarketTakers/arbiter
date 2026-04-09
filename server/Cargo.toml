@@ -44,10 +44,7 @@ unstable_features = "deny"
 
 deprecated_safe_2024 = "warn"
 ffi_unwind_calls = "warn"
-fuzzy_provenance_casts = "warn"
 linker_messages = "warn"
-lossy_provenance_casts = "warn"
-must_not_suspend = "warn"
 
 elided_lifetimes_in_paths = "warn"
 explicit_outlives_requirements = "warn"
@@ -59,7 +56,6 @@ unused_lifetimes = "warn"
 
 macro_use_extern_crate = "warn"
 redundant_imports = "warn"
-unqualified_local_imports = "warn"
 unused_import_braces = "warn"
 unused_macro_rules = "warn"
 unused_qualifications = "warn"
@@ -128,8 +124,6 @@ mutex_integer = "warn"
 needless_raw_strings = "warn"
 non_ascii_literal = "warn"
 non_zero_suggestions = "warn"
-panic = "warn"
-panic_in_result_fn = "warn"
 pathbuf_init_then_push = "warn"
 pointer_format = "warn"
 precedence_bits = "warn"
@@ -157,13 +151,22 @@ unnecessary_self_imports = "warn"
 unneeded_field_pattern = "warn"
 unused_result_ok = "warn"
 verbose_file_reads = "warn"
+
+# cargo lints
+negative_feature_names = "warn"
+redundant_feature_names = "warn"
 wildcard_dependencies = "warn"
-# prod panicking macro. ENABLE BY THE FIRST MAJOR VERSION!!
+
+# ENABLE BY THE FIRST MAJOR VERSION!!
 # todo = "warn"
 # unimplemented = "warn"
+# panic = "warn"
+# panic_in_result_fn = "warn"
+# 
+# cargo_common_metadata = "warn"
+# multiple_crate_versions = "warn" # a controversial option since it's really difficult to maintain
 
 disallowed_methods = "deny"
 
-cargo = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
