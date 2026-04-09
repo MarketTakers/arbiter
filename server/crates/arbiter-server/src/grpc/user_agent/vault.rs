@@ -31,13 +31,13 @@ use crate::actors::{
     },
 };
 
-fn wrap_vault_response(payload: VaultResponsePayload) -> UserAgentResponsePayload {
+const fn wrap_vault_response(payload: VaultResponsePayload) -> UserAgentResponsePayload {
     UserAgentResponsePayload::Vault(proto_vault::Response {
         payload: Some(payload),
     })
 }
 
-fn wrap_unseal_response(payload: UnsealResponsePayload) -> UserAgentResponsePayload {
+const fn wrap_unseal_response(payload: UnsealResponsePayload) -> UserAgentResponsePayload {
     wrap_vault_response(VaultResponsePayload::Unseal(proto_unseal::Response {
         payload: Some(payload),
     }))
@@ -58,7 +58,7 @@ pub(super) async fn dispatch(
     };
 
     match payload {
-        VaultRequestPayload::QueryState(_) => handle_query_vault_state(actor).await,
+        VaultRequestPayload::QueryState(()) => handle_query_vault_state(actor).await,
         VaultRequestPayload::Unseal(req) => dispatch_unseal_request(actor, req).await,
         VaultRequestPayload::Bootstrap(req) => handle_bootstrap_request(actor, req).await,
     }

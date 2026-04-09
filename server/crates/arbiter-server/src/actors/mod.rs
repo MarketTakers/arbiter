@@ -11,18 +11,18 @@ use crate::{
 
 pub mod bootstrap;
 pub mod client;
-mod evm;
+pub mod evm;
 pub mod flow_coordinator;
 pub mod keyholder;
 pub mod user_agent;
 
 #[derive(Error, Debug)]
-pub enum SpawnError {
+pub enum GlobalActorsSpawnError {
     #[error("Failed to spawn Bootstrapper actor")]
-    Bootstrapper(#[from] bootstrap::Error),
+    Bootstrapper(#[from] bootstrap::BootstrappError),
 
     #[error("Failed to spawn KeyHolder actor")]
-    KeyHolder(#[from] keyholder::Error),
+    KeyHolder(#[from] keyholder::KeyHolderError),
 }
 
 /// Long-lived actors that are shared across all connections and handle global state and operations
@@ -35,7 +35,7 @@ pub struct GlobalActors {
 }
 
 impl GlobalActors {
-    pub async fn spawn(db: db::DatabasePool) -> Result<Self, SpawnError> {
+    pub async fn spawn(db: db::DatabasePool) -> Result<Self, GlobalActorsSpawnError> {
         let key_holder = KeyHolder::spawn(KeyHolder::new(db.clone()).await?);
         Ok(Self {
             bootstrapper: Bootstrapper::spawn(Bootstrapper::new(&db).await?),

@@ -18,12 +18,12 @@ use crate::{
 };
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum IntegrityError {
     #[error("Database error: {0}")]
     Database(#[from] db::DatabaseError),
 
     #[error("KeyHolder error: {0}")]
-    Keyholder(#[from] keyholder::Error),
+    Keyholder(#[from] keyholder::KeyHolderError),
 
     #[error("KeyHolder mailbox error")]
     KeyholderSend,
@@ -67,6 +67,11 @@ fn payload_hash(payload: &impl Hashable) -> [u8; 32] {
 }
 
 fn push_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::as_conversions,
+        reason = "fixme! #85"
+    )]
     out.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
     out.extend_from_slice(bytes);
 }
@@ -106,7 +111,7 @@ pub async fn sign_entity<E: Integrable>(
     keyholder: &ActorRef<KeyHolder>,
     entity: &E,
     entity_id: impl IntoId,
-) -> Result<(), Error> {
+) -> Result<(), IntegrityError> {
     let payload_hash = payload_hash(&entity);
 
     let entity_id = entity_id.into_id();
@@ -117,8 +122,8 @@ pub async fn sign_entity<E: Integrable>(
         .ask(SignIntegrity { mac_input })
         .await
         .map_err(|err| match err {
-            kameo::error::SendError::HandlerError(inner) => Error::Keyholder(inner),
-            _ => Error::KeyholderSend,
+            SendError::HandlerError(inner) => IntegrityError::Keyholder(inner),
+            _ => IntegrityError::KeyholderSend,
         })?;
 
     insert_into(integrity_envelope::table)
@@ -127,7 +132,7 @@ pub async fn sign_entity<E: Integrable>(
             entity_id,
             payload_version: E::VERSION,
             key_version,
-            mac: mac.to_vec(),
+            mac: mac.clone(),
         })
         .on_conflict((
             integrity_envelope::entity_id,
@@ -151,7 +156,7 @@ pub async fn verify_entity<E: Integrable>(
     keyholder: &ActorRef<KeyHolder>,
     entity: &E,
     entity_id: impl IntoId,
-) -> Result<AttestationStatus, Error> {
+) -> Result<AttestationStatus, IntegrityError> {
     let entity_id = entity_id.into_id();
     let envelope: IntegrityEnvelope = integrity_envelope::table
         .filter(integrity_envelope::entity_kind.eq(E::KIND))
@@ -159,14 +164,14 @@ pub async fn verify_entity<E: Integrable>(
         .first(conn)
         .await
         .map_err(|err| match err {
-            diesel::result::Error::NotFound => Error::MissingEnvelope {
+            diesel::result::Error::NotFound => IntegrityError::MissingEnvelope {
                 entity_kind: E::KIND,
             },
-            other => Error::Database(db::DatabaseError::from(other)),
+            other => IntegrityError::Database(db::DatabaseError::from(other)),
         })?;
 
     if envelope.payload_version != E::VERSION {
-        return Err(Error::PayloadVersionMismatch {
+        return Err(IntegrityError::PayloadVersionMismatch {
             entity_kind: E::KIND,
             expected: E::VERSION,
             found: envelope.payload_version,
@@ -186,13 +191,13 @@ pub async fn verify_entity<E: Integrable>(
 
     match result {
         Ok(true) => Ok(AttestationStatus::Attested),
-        Ok(false) => Err(Error::MacMismatch {
+        Ok(false) => Err(IntegrityError::MacMismatch {
             entity_kind: E::KIND,
         }),
-        Err(SendError::HandlerError(keyholder::Error::NotBootstrapped)) => {
+        Err(SendError::HandlerError(keyholder::KeyHolderError::NotBootstrapped)) => {
             Ok(AttestationStatus::Unavailable)
         }
-        Err(_) => Err(Error::KeyholderSend),
+        Err(_) => Err(IntegrityError::KeyholderSend),
     }
 }
 
@@ -208,7 +213,7 @@ mod tests {
     };
     use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
-    use super::{Error, Integrable, sign_entity, verify_entity};
+    use super::{Integrable, IntegrityError, sign_entity, verify_entity};
     #[derive(Clone, arbiter_macros::Hashable)]
     struct DummyEntity {
         payload_version: i32,
@@ -231,11 +236,11 @@ mod tests {
 
     #[tokio::test]
     async fn sign_writes_envelope_and_verify_passes() {
+        const ENTITY_ID: &[u8] = b"entity-id-7";
+
         let db = db::create_test_pool().await;
         let keyholder = bootstrapped_keyholder(&db).await;
         let mut conn = db.get().await.unwrap();
-
-        const ENTITY_ID: &[u8] = b"entity-id-7";
 
         let entity = DummyEntity {
             payload_version: 1,
@@ -262,11 +267,11 @@ mod tests {
 
     #[tokio::test]
     async fn tampered_mac_fails_verification() {
+        const ENTITY_ID: &[u8] = b"entity-id-11";
+
         let db = db::create_test_pool().await;
         let keyholder = bootstrapped_keyholder(&db).await;
         let mut conn = db.get().await.unwrap();
-
-        const ENTITY_ID: &[u8] = b"entity-id-11";
 
         let entity = DummyEntity {
             payload_version: 1,
@@ -288,16 +293,16 @@ mod tests {
         let err = verify_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
             .await
             .unwrap_err();
-        assert!(matches!(err, Error::MacMismatch { .. }));
+        assert!(matches!(err, IntegrityError::MacMismatch { .. }));
     }
 
     #[tokio::test]
     async fn changed_payload_fails_verification() {
+        const ENTITY_ID: &[u8] = b"entity-id-21";
+
         let db = db::create_test_pool().await;
         let keyholder = bootstrapped_keyholder(&db).await;
         let mut conn = db.get().await.unwrap();
-
-        const ENTITY_ID: &[u8] = b"entity-id-21";
 
         let entity = DummyEntity {
             payload_version: 1,
@@ -316,6 +321,6 @@ mod tests {
         let err = verify_entity(&mut conn, &keyholder, &tampered, ENTITY_ID)
             .await
             .unwrap_err();
-        assert!(matches!(err, Error::MacMismatch { .. }));
+        assert!(matches!(err, IntegrityError::MacMismatch { .. }));
     }
 }

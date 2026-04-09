@@ -16,9 +16,13 @@ use arbiter_server::{
 };
 use diesel::{ExpressionMethods as _, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
-use ml_dsa::{KeyGen, MlDsa87, SigningKey, signature::Keypair as _};
+use ml_dsa::{KeyGen, MlDsa87, SigningKey, VerifyingKey, signature::Keypair};
 
 use super::common::ChannelTransport;
+
+fn verifying_key(key: &SigningKey<MlDsa87>) -> VerifyingKey<MlDsa87> {
+    <SigningKey<MlDsa87> as Keypair>::verifying_key(key)
+}
 
 fn sign_useragent_challenge(
     key: &SigningKey<MlDsa87>,
@@ -34,7 +38,7 @@ fn sign_useragent_challenge(
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_bootstrap_token_auth() {
+pub async fn bootstrap_token_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
@@ -56,7 +60,7 @@ pub async fn test_bootstrap_token_auth() {
     let new_key = MlDsa87::key_gen(&mut rand::rng());
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key().into(),
+            pubkey: verifying_key(&new_key).into(),
             bootstrap_token: Some(token),
         })
         .await
@@ -79,12 +83,12 @@ pub async fn test_bootstrap_token_auth() {
         .first::<Vec<u8>>(&mut conn)
         .await
         .unwrap();
-    assert_eq!(stored_pubkey, new_key.verifying_key().encode().to_vec());
+    assert_eq!(stored_pubkey, verifying_key(&new_key).encode().0.to_vec());
 }
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_bootstrap_invalid_token_auth() {
+pub async fn bootstrap_invalid_token_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
@@ -98,8 +102,8 @@ pub async fn test_bootstrap_invalid_token_auth() {
     let new_key = MlDsa87::key_gen(&mut rand::rng());
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key().into(),
-            bootstrap_token: Some("invalid_token".to_string()),
+            pubkey: verifying_key(&new_key).into(),
+            bootstrap_token: Some("invalid_token".to_owned()),
         })
         .await
         .unwrap();
@@ -120,7 +124,7 @@ pub async fn test_bootstrap_invalid_token_auth() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_challenge_auth() {
+pub async fn challenge_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
@@ -132,7 +136,7 @@ pub async fn test_challenge_auth() {
         .unwrap();
 
     let new_key = MlDsa87::key_gen(&mut rand::rng());
-    let pubkey_bytes = new_key.verifying_key().encode().to_vec();
+    let pubkey_bytes = authn::PublicKey::from(verifying_key(&new_key)).to_bytes();
 
     {
         let mut conn = db.get().await.unwrap();
@@ -149,7 +153,7 @@ pub async fn test_challenge_auth() {
             &mut conn,
             &actors.key_holder,
             &UserAgentCredentials {
-                pubkey: new_key.verifying_key().into(),
+                pubkey: verifying_key(&new_key).into(),
                 nonce: 1,
             },
             id,
@@ -167,7 +171,7 @@ pub async fn test_challenge_auth() {
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key().into(),
+            pubkey: verifying_key(&new_key).into(),
             bootstrap_token: None,
         })
         .await
@@ -180,7 +184,7 @@ pub async fn test_challenge_auth() {
     let challenge = match response {
         Ok(resp) => match resp {
             auth::Outbound::AuthChallenge { nonce } => nonce,
-            other => panic!("Expected AuthChallenge, got {other:?}"),
+            auth::Outbound::AuthSuccess => panic!("Expected AuthChallenge, got AuthSuccess"),
         },
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };
@@ -208,7 +212,7 @@ pub async fn test_challenge_auth() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() {
+pub async fn challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
@@ -221,7 +225,7 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() 
         .unwrap();
 
     let new_key = MlDsa87::key_gen(&mut rand::rng());
-    let pubkey_bytes = new_key.verifying_key().encode().to_vec();
+    let pubkey_bytes = authn::PublicKey::from(verifying_key(&new_key)).to_bytes();
 
     {
         let mut conn = db.get().await.unwrap();
@@ -244,7 +248,7 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() 
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key().into(),
+            pubkey: verifying_key(&new_key).into(),
             bootstrap_token: None,
         })
         .await
@@ -258,7 +262,7 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() 
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_challenge_auth_rejects_invalid_signature() {
+pub async fn challenge_auth_rejects_invalid_signature() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
@@ -270,7 +274,7 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
         .unwrap();
 
     let new_key = MlDsa87::key_gen(&mut rand::rng());
-    let pubkey_bytes = new_key.verifying_key().encode().to_vec();
+    let pubkey_bytes = authn::PublicKey::from(verifying_key(&new_key)).to_bytes();
 
     {
         let mut conn = db.get().await.unwrap();
@@ -287,7 +291,7 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
             &mut conn,
             &actors.key_holder,
             &UserAgentCredentials {
-                pubkey: new_key.verifying_key().into(),
+                pubkey: verifying_key(&new_key).into(),
                 nonce: 1,
             },
             id,
@@ -305,7 +309,7 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key().into(),
+            pubkey: verifying_key(&new_key).into(),
             bootstrap_token: None,
         })
         .await
@@ -318,7 +322,7 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
     let challenge = match response {
         Ok(resp) => match resp {
             auth::Outbound::AuthChallenge { nonce } => nonce,
-            other => panic!("Expected AuthChallenge, got {other:?}"),
+            auth::Outbound::AuthSuccess => panic!("Expected AuthChallenge, got AuthSuccess"),
         },
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };

@@ -29,7 +29,7 @@ pub trait SafeCellHandle<T> {
         let mut cell = Self::new(T::default());
         {
             let mut handle = cell.write();
-            f(handle.deref_mut());
+            f(&mut *handle);
         }
         cell
     }

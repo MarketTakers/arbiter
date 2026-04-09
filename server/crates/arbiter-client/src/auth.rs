@@ -23,20 +23,20 @@ use crate::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {
-    #[error("Auth challenge was not returned by server")]
-    MissingAuthChallenge,
-
     #[error("Client approval denied by User Agent")]
     ApprovalDenied,
+
+    #[error("Auth challenge was not returned by server")]
+    MissingAuthChallenge,
 
     #[error("No User Agents online to approve client")]
     NoUserAgentsOnline,
 
-    #[error("Unexpected auth response payload")]
-    UnexpectedAuthResponse,
-
     #[error("Signing key storage error")]
     Storage(#[from] StorageError),
+
+    #[error("Unexpected auth response payload")]
+    UnexpectedAuthResponse,
 }
 
 fn map_auth_result(code: i32) -> AuthError {
@@ -55,7 +55,7 @@ async fn send_auth_challenge_request(
     transport: &mut ClientTransport,
     metadata: ClientMetadata,
     key: &SigningKey,
-) -> std::result::Result<(), AuthError> {
+) -> Result<(), AuthError> {
     transport
         .send(ClientRequest {
             request_id: next_request_id(),
@@ -76,7 +76,7 @@ async fn send_auth_challenge_request(
 
 async fn receive_auth_challenge(
     transport: &mut ClientTransport,
-) -> std::result::Result<AuthChallenge, AuthError> {
+) -> Result<AuthChallenge, AuthError> {
     let response = transport
         .recv()
         .await
@@ -97,7 +97,7 @@ async fn send_auth_challenge_solution(
     transport: &mut ClientTransport,
     key: &SigningKey,
     challenge: AuthChallenge,
-) -> std::result::Result<(), AuthError> {
+) -> Result<(), AuthError> {
     let challenge_payload = format_challenge(challenge.nonce, &challenge.pubkey);
     let signature = key
         .sign_message(&challenge_payload, CLIENT_CONTEXT)
@@ -117,9 +117,7 @@ async fn send_auth_challenge_solution(
         .map_err(|_| AuthError::UnexpectedAuthResponse)
 }
 
-async fn receive_auth_confirmation(
-    transport: &mut ClientTransport,
-) -> std::result::Result<(), AuthError> {
+async fn receive_auth_confirmation(transport: &mut ClientTransport) -> Result<(), AuthError> {
     let response = transport
         .recv()
         .await
@@ -140,11 +138,11 @@ async fn receive_auth_confirmation(
     }
 }
 
-pub(crate) async fn authenticate(
+pub async fn authenticate(
     transport: &mut ClientTransport,
     metadata: ClientMetadata,
     key: &SigningKey,
-) -> std::result::Result<(), AuthError> {
+) -> Result<(), AuthError> {
     send_auth_challenge_request(transport, metadata, key).await?;
     let challenge = receive_auth_challenge(transport).await?;
     send_auth_challenge_solution(transport, key, challenge).await?;

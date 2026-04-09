@@ -32,7 +32,7 @@ use crate::{
     grpc::Convert,
 };
 
-fn wrap_sdk_client_response(payload: SdkClientResponsePayload) -> UserAgentResponsePayload {
+const fn wrap_sdk_client_response(payload: SdkClientResponsePayload) -> UserAgentResponsePayload {
     UserAgentResponsePayload::SdkClient(proto_sdk_client::Response {
         payload: Some(payload),
     })
@@ -75,14 +75,14 @@ pub(super) async fn dispatch(
         SdkClientRequestPayload::Revoke(_) => Err(Status::unimplemented(
             "SdkClientRevoke is not yet implemented",
         )),
-        SdkClientRequestPayload::List(_) => handle_list(actor).await,
+        SdkClientRequestPayload::List(()) => handle_list(actor).await,
         SdkClientRequestPayload::GrantWalletAccess(req) => {
             handle_grant_wallet_access(actor, req).await
         }
         SdkClientRequestPayload::RevokeWalletAccess(req) => {
             handle_revoke_wallet_access(actor, req).await
         }
-        SdkClientRequestPayload::ListWalletAccess(_) => handle_list_wallet_access(actor).await,
+        SdkClientRequestPayload::ListWalletAccess(()) => handle_list_wallet_access(actor).await,
     }
 }
 
@@ -91,7 +91,7 @@ async fn handle_connection_response(
     resp: ProtoSdkClientConnectionResponse,
 ) -> Result<Option<UserAgentResponsePayload>, Status> {
     let pubkey = authn::PublicKey::try_from(resp.pubkey.as_slice())
-        .map_err(|_| Status::invalid_argument("Invalid ML-DSA public key"))?;
+        .map_err(|()| Status::invalid_argument("Invalid ML-DSA public key"))?;
 
     actor
         .ask(HandleNewClientApprove {
@@ -116,12 +116,17 @@ async fn handle_list(
                 .into_iter()
                 .map(|(client, metadata)| ProtoSdkClientEntry {
                     id: client.id,
-                    pubkey: client.public_key.to_vec(),
+                    pubkey: client.public_key.clone(),
                     info: Some(ProtoClientMetadata {
                         name: metadata.name,
                         description: metadata.description,
                         version: metadata.version,
                     }),
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        clippy::as_conversions,
+                        reason = "fixme! #84"
+                    )]
                     created_at: client.created_at.0.timestamp() as i32,
                 })
                 .collect(),
@@ -142,7 +147,7 @@ async fn handle_grant_wallet_access(
     actor: &ActorRef<UserAgentSession>,
     req: ProtoSdkClientGrantWalletAccess,
 ) -> Result<Option<UserAgentResponsePayload>, Status> {
-    let entries: Vec<NewEvmWalletAccess> = req.accesses.into_iter().map(|a| a.convert()).collect();
+    let entries: Vec<NewEvmWalletAccess> = req.accesses.into_iter().map(Convert::convert).collect();
     match actor.ask(HandleGrantEvmWalletAccess { entries }).await {
         Ok(()) => {
             info!("Successfully granted wallet access");
@@ -182,7 +187,7 @@ async fn handle_list_wallet_access(
     match actor.ask(HandleListWalletAccess {}).await {
         Ok(accesses) => Ok(Some(wrap_sdk_client_response(
             SdkClientResponsePayload::ListWalletAccess(ListWalletAccessResponse {
-                accesses: accesses.into_iter().map(|a| a.convert()).collect(),
+                accesses: accesses.into_iter().map(Convert::convert).collect(),
             }),
         ))),
         Err(err) => {

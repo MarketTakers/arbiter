@@ -69,7 +69,7 @@ async fn client_dh_encrypt(
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_unseal_success() {
+pub async fn unseal_success() {
     let seal_key = b"test-seal-key";
     let (_db, user_agent) = setup_sealed_user_agent(seal_key).await;
 
@@ -81,7 +81,7 @@ pub async fn test_unseal_success() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_unseal_wrong_seal_key() {
+pub async fn unseal_wrong_seal_key() {
     let (_db, user_agent) = setup_sealed_user_agent(b"correct-key").await;
 
     let encrypted_key = client_dh_encrypt(&user_agent, b"wrong-key").await;
@@ -97,7 +97,7 @@ pub async fn test_unseal_wrong_seal_key() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_unseal_corrupted_ciphertext() {
+pub async fn unseal_corrupted_ciphertext() {
     let (_db, user_agent) = setup_sealed_user_agent(b"test-key").await;
 
     let client_secret = EphemeralSecret::random();
@@ -128,7 +128,7 @@ pub async fn test_unseal_corrupted_ciphertext() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_unseal_retry_after_invalid_key() {
+pub async fn unseal_retry_after_invalid_key() {
     let seal_key = b"real-seal-key";
     let (_db, user_agent) = setup_sealed_user_agent(seal_key).await;
 

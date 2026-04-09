@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
-    actors::keyholder::{CreateNew, Error, KeyHolder},
+    actors::keyholder::{CreateNew, KeyHolder, KeyHolderError},
     db::{self, models, schema},
 };
 
@@ -122,7 +122,7 @@ async fn insert_failure_does_not_create_partial_row() {
         .create_new(SafeCell::new(b"should fail".to_vec()))
         .await
         .unwrap_err();
-    assert!(matches!(err, Error::DatabaseTransaction(_)));
+    assert!(matches!(err, KeyHolderError::DatabaseTransaction(_)));
 
     let mut conn = db.get().await.unwrap();
     sql_query("DROP TRIGGER fail_aead_insert;")

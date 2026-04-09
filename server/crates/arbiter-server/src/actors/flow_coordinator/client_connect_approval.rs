@@ -41,7 +41,7 @@ impl Actor for ClientApprovalController {
     async fn on_start(
         Args {
             client,
-            mut user_agents,
+            user_agents,
             reply,
         }: Self::Args,
         actor_ref: ActorRef<Self>,
@@ -52,8 +52,9 @@ impl Actor for ClientApprovalController {
             reply: Some(reply),
         };
 
-        for user_agent in user_agents.drain(..) {
+        for user_agent in user_agents {
             actor_ref.link(&user_agent).await;
+
             let _ = user_agent
                 .tell(BeginNewClientApproval {
                     client: client.clone(),
@@ -85,7 +86,7 @@ impl Actor for ClientApprovalController {
 #[messages]
 impl ClientApprovalController {
     #[message(ctx)]
-    pub async fn client_approval_answer(&mut self, approved: bool, ctx: &mut Context<Self, ()>) {
+    pub fn client_approval_answer(&mut self, approved: bool, ctx: &mut Context<Self, ()>) {
         if !approved {
             // Denial wins immediately regardless of other pending responses.
             self.send_reply(Ok(false));

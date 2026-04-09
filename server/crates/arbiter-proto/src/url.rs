@@ -105,7 +105,7 @@ mod tests {
 
     #[rstest]
 
-    fn test_parsing_correctness(
+    fn parsing_correctness(
         #[values("127.0.0.1", "localhost", "192.168.1.1", "some.domain.com")] host: &str,
 
         #[values(None, Some("token123".to_string()))] bootstrap_token: Option<String>,

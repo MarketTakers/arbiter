@@ -21,7 +21,7 @@ pub struct ClientSession {
 }
 
 impl ClientSession {
-    pub(crate) fn new(props: ClientConnection, client_id: i32) -> Self {
+    pub(crate) const fn new(props: ClientConnection, client_id: i32) -> Self {
         Self { props, client_id }
     }
 }
@@ -29,14 +29,16 @@ impl ClientSession {
 #[messages]
 impl ClientSession {
     #[message]
-    pub(crate) async fn handle_query_vault_state(&mut self) -> Result<KeyHolderState, Error> {
+    pub(crate) async fn handle_query_vault_state(
+        &mut self,
+    ) -> Result<KeyHolderState, ClientSessionError> {
         use crate::actors::keyholder::GetState;
 
         let vault_state = match self.props.actors.key_holder.ask(GetState {}).await {
             Ok(state) => state,
             Err(err) => {
                 error!(?err, actor = "client", "keyholder.query.failed");
-                return Err(Error::Internal);
+                return Err(ClientSessionError::Internal);
             }
         };
 
@@ -75,7 +77,7 @@ impl ClientSession {
 impl Actor for ClientSession {
     type Args = Self;
 
-    type Error = Error;
+    type Error = ClientSessionError;
 
     async fn on_start(
         args: Self::Args,
@@ -86,13 +88,13 @@ impl Actor for ClientSession {
             .flow_coordinator
             .ask(RegisterClient { actor: this })
             .await
-            .map_err(|_| Error::ConnectionRegistrationFailed)?;
+            .map_err(|_| ClientSessionError::ConnectionRegistrationFailed)?;
         Ok(args)
     }
 }
 
 impl ClientSession {
-    pub fn new_test(db: db::DatabasePool, actors: GlobalActors) -> Self {
+    pub const fn new_test(db: db::DatabasePool, actors: GlobalActors) -> Self {
         let props = ClientConnection::new(db, actors);
         Self {
             props,
@@ -102,7 +104,7 @@ impl ClientSession {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum ClientSessionError {
     #[error("Connection registration failed")]
     ConnectionRegistrationFailed,
     #[error("Internal error")]
@@ -111,9 +113,9 @@ pub enum Error {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SignTransactionRpcError {
-    #[error("Policy evaluation failed")]
-    Vet(#[from] VetError),
-
     #[error("Internal error")]
     Internal,
+
+    #[error("Policy evaluation failed")]
+    Vet(#[from] VetError),
 }

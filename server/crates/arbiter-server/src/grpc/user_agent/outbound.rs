@@ -22,7 +22,7 @@ impl Convert for DateTime<Utc> {
     fn convert(self) -> ProtoTimestamp {
         ProtoTimestamp {
             seconds: self.timestamp(),
-            nanos: self.timestamp_subsec_nanos() as i32,
+            nanos: self.timestamp_subsec_nanos().try_into().unwrap_or(i32::MAX),
         }
     }
 }
@@ -74,13 +74,13 @@ impl Convert for SpecificGrant {
 
     fn convert(self) -> ProtoSpecificGrant {
         let grant = match self {
-            SpecificGrant::EtherTransfer(s) => {
+            Self::EtherTransfer(s) => {
                 ProtoSpecificGrantType::EtherTransfer(ProtoEtherTransferSettings {
                     targets: s.target.into_iter().map(|a| a.to_vec()).collect(),
                     limit: Some(s.limit.convert()),
                 })
             }
-            SpecificGrant::TokenTransfer(s) => {
+            Self::TokenTransfer(s) => {
                 ProtoSpecificGrantType::TokenTransfer(ProtoTokenTransferSettings {
                     token_contract: s.token_contract.to_vec(),
                     target: s.target.map(|a| a.to_vec()),

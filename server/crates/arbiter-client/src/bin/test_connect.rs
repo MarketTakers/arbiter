@@ -29,16 +29,16 @@ async fn main() {
         }
     };
 
-    println!("{:#?}", url);
+    println!("{url:#?}");
 
     let metadata = ClientMetadata {
-        name: "arbiter-client test_connect".to_string(),
-        description: Some("Manual connection smoke test".to_string()),
-        version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        name: "arbiter-client test_connect".to_owned(),
+        description: Some("Manual connection smoke test".to_owned()),
+        version: Some(env!("CARGO_PKG_VERSION").to_owned()),
     };
 
     match ArbiterClient::connect(url, metadata).await {
         Ok(_) => println!("Connected and authenticated successfully."),
-        Err(err) => eprintln!("Failed to connect: {:#?}", err),
+        Err(err) => eprintln!("Failed to connect: {err:#?}"),
     }
 }

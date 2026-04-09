@@ -20,7 +20,7 @@ pub(crate) fn derive(input: &DeriveInput) -> TokenStream {
     }
 }
 
-fn hashable_struct(input: &DeriveInput, struct_data: &syn::DataStruct) -> TokenStream {
+fn hashable_struct(input: &DeriveInput, struct_data: &DataStruct) -> TokenStream {
     let ident = &input.ident;
     let hashable_trait = HASHABLE_TRAIT_PATH.to_path();
     let hmac_digest = HMAC_DIGEST_PATH.to_path();

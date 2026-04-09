@@ -17,28 +17,28 @@ mod state;
 use state::{DummyContext, UserAgentEvents, UserAgentStateMachine};
 
 #[derive(Debug, Error)]
-pub enum Error {
-    #[error("State transition failed")]
-    State,
-
+pub enum UserAgentSessionError {
     #[error("Internal error: {message}")]
     Internal { message: Cow<'static, str> },
+
+    #[error("State transition failed")]
+    State,
 }
 
-impl From<crate::db::PoolError> for Error {
+impl From<crate::db::PoolError> for UserAgentSessionError {
     fn from(err: crate::db::PoolError) -> Self {
         error!(?err, "Database pool error");
         Self::internal("Database pool error")
     }
 }
-impl From<diesel::result::Error> for Error {
+impl From<diesel::result::Error> for UserAgentSessionError {
     fn from(err: diesel::result::Error) -> Self {
         error!(?err, "Database error");
         Self::internal("Database error")
     }
 }
 
-impl Error {
+impl UserAgentSessionError {
     pub fn internal(message: impl Into<Cow<'static, str>>) -> Self {
         Self::Internal {
             message: message.into(),
@@ -67,7 +67,7 @@ impl UserAgentSession {
             props,
             state: UserAgentStateMachine::new(DummyContext),
             sender,
-            pending_client_approvals: Default::default(),
+            pending_client_approvals: HashMap::default(),
         }
     }
 
@@ -87,10 +87,10 @@ impl UserAgentSession {
         Self::new(UserAgentConnection::new(db, actors), Box::new(DummySender))
     }
 
-    fn transition(&mut self, event: UserAgentEvents) -> Result<(), Error> {
+    fn transition(&mut self, event: UserAgentEvents) -> Result<(), UserAgentSessionError> {
         self.state.process_event(event).map_err(|e| {
             error!(?e, "State transition failed");
-            Error::State
+            UserAgentSessionError::State
         })?;
         Ok(())
     }
@@ -132,11 +132,11 @@ impl UserAgentSession {
 impl Actor for UserAgentSession {
     type Args = Self;
 
-    type Error = Error;
+    type Error = UserAgentSessionError;
 
     async fn on_start(
         args: Self::Args,
-        this: kameo::prelude::ActorRef<Self>,
+        this: ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
         args.props
             .actors
@@ -150,7 +150,9 @@ impl Actor for UserAgentSession {
                     ?err,
                     "Failed to register user agent connection with flow coordinator"
                 );
-                Error::internal("Failed to register user agent connection with flow coordinator")
+                UserAgentSessionError::internal(
+                    "Failed to register user agent connection with flow coordinator",
+                )
             })?;
         Ok(args)
     }

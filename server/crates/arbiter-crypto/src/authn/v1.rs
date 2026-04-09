@@ -35,6 +35,7 @@ impl PublicKey {
         self.0.encode().0.to_vec()
     }
 
+    #[must_use]
     pub fn verify(&self, nonce: i32, context: &[u8], signature: &Signature) -> bool {
         self.0.verify_with_context(
             &format_challenge(nonce, &self.to_bytes()),

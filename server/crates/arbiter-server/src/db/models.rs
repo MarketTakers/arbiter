@@ -1,5 +1,7 @@
-#![allow(unused)]
-#![allow(clippy::all)]
+#![allow(
+    clippy::duplicated_attributes,
+    reason = "restructed's #[view] causes false positives"
+)]
 
 use crate::db::schema::{
     self, aead_encrypted, arbiter_settings, evm_basic_grant, evm_ether_transfer_grant,
@@ -7,7 +9,6 @@ use crate::db::schema::{
     evm_token_transfer_log, evm_token_transfer_volume_limit, evm_transaction_log, evm_wallet,
     integrity_envelope, root_key_history, tls_history,
 };
-use chrono::{DateTime, Utc};
 use diesel::{prelude::*, sqlite::Sqlite};
 use restructed::Models;
 
@@ -27,16 +28,16 @@ pub mod types {
     pub struct SqliteTimestamp(pub DateTime<Utc>);
     impl SqliteTimestamp {
         pub fn now() -> Self {
-            SqliteTimestamp(Utc::now())
+            Self(Utc::now())
         }
     }
 
-    impl From<chrono::DateTime<Utc>> for SqliteTimestamp {
-        fn from(dt: chrono::DateTime<Utc>) -> Self {
-            SqliteTimestamp(dt)
+    impl From<DateTime<Utc>> for SqliteTimestamp {
+        fn from(dt: DateTime<Utc>) -> Self {
+            Self(dt)
         }
     }
-    impl From<SqliteTimestamp> for chrono::DateTime<Utc> {
+    impl From<SqliteTimestamp> for DateTime<Utc> {
         fn from(ts: SqliteTimestamp) -> Self {
             ts.0
         }
@@ -47,6 +48,11 @@ pub mod types {
             &'b self,
             out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
         ) -> diesel::serialize::Result {
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::as_conversions,
+                reason = "fixme! #84; this will break up in 2038 :3"
+            )]
             let unix_timestamp = self.0.timestamp() as i32;
             out.set_value(unix_timestamp);
             Ok(IsNull::No)
@@ -69,7 +75,47 @@ pub mod types {
             let datetime =
                 DateTime::from_timestamp(unix_timestamp, 0).ok_or("Timestamp is out of bounds")?;
 
-            Ok(SqliteTimestamp(datetime))
+            Ok(Self(datetime))
+        }
+    }
+
+    #[derive(Debug, FromSqlRow, AsExpression, Clone)]
+    #[diesel(sql_type = Integer)]
+    #[repr(transparent)] // hint compiler to optimize the wrapper struct away
+    pub struct ChainId(pub i32);
+
+    #[expect(
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation,
+        clippy::as_conversions,
+        reason = "safe because chain_id is stored as i32 but is guaranteed to be a valid ChainId by the API when creating grants"
+    )]
+    const _: () = {
+        impl From<ChainId> for alloy::primitives::ChainId {
+            fn from(chain_id: ChainId) -> Self {
+                chain_id.0 as Self
+            }
+        }
+        impl From<alloy::primitives::ChainId> for ChainId {
+            fn from(chain_id: alloy::primitives::ChainId) -> Self {
+                Self(chain_id as _)
+            }
+        }
+    };
+
+    impl FromSql<Integer, Sqlite> for ChainId {
+        fn from_sql(
+            bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
+        ) -> diesel::deserialize::Result<Self> {
+            FromSql::<Integer, Sqlite>::from_sql(bytes).map(Self)
+        }
+    }
+    impl ToSql<Integer, Sqlite> for ChainId {
+        fn to_sql<'b>(
+            &'b self,
+            out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
+        ) -> diesel::serialize::Result {
+            ToSql::<Integer, Sqlite>::to_sql(&self.0, out)
         }
     }
 }
@@ -237,7 +283,7 @@ pub struct EvmEtherTransferLimit {
 pub struct EvmBasicGrant {
     pub id: i32,
     pub wallet_access_id: i32, // references evm_wallet_access.id
-    pub chain_id: i32,
+    pub chain_id: ChainId,
     pub valid_from: Option<SqliteTimestamp>,
     pub valid_until: Option<SqliteTimestamp>,
     pub max_gas_fee_per_gas: Option<Vec<u8>>,
@@ -260,7 +306,7 @@ pub struct EvmTransactionLog {
     pub id: i32,
     pub grant_id: i32,
     pub wallet_access_id: i32,
-    pub chain_id: i32,
+    pub chain_id: ChainId,
     pub eth_value: Vec<u8>,
     pub signed_at: SqliteTimestamp,
 }
@@ -335,7 +381,7 @@ pub struct EvmTokenTransferLog {
     pub id: i32,
     pub grant_id: i32,
     pub log_id: i32,
-    pub chain_id: i32,
+    pub chain_id: ChainId,
     pub token_contract: Vec<u8>,
     pub recipient_address: Vec<u8>,
     pub value: Vec<u8>,

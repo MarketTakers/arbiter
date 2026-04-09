@@ -7,3 +7,22 @@ disallowed-methods = [
     { path = "rsa::traits::Decryptor::decrypt", reason = "RSA decryption is forbidden (RUSTSEC-2023-0071 Marvin Attack). This blocks decrypt() on rsa::{pkcs1v15,oaep}::DecryptingKey." },
     { path = "rsa::traits::RandomizedDecryptor::decrypt_with_rng", reason = "RSA decryption is forbidden (RUSTSEC-2023-0071 Marvin Attack). This blocks decrypt_with_rng() on rsa::{pkcs1v15,oaep}::DecryptingKey." },
 ]
+
+allow-indexing-slicing-in-tests = true
+allow-panic-in-tests = true
+check-inconsistent-struct-field-initializers = true
+suppress-restriction-lint-in-const = true
+allow-renamed-params-for = [
+    "core::convert::From",
+    "core::convert::TryFrom",
+    "core::str::FromStr",
+    "kameo::actor::Actor",
+]
+
+module-items-ordered-within-groupings = ["UPPER_SNAKE_CASE"]
+source-item-ordering = ["enum"]
+trait-assoc-item-kinds-order = [
+    "const",
+    "type",
+    "fn",
+] # community tested standard

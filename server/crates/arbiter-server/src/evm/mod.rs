@@ -34,14 +34,14 @@ mod utils;
 #[derive(Debug, thiserror::Error)]
 pub enum PolicyError {
     #[error("Database error")]
-    Database(#[from] crate::db::DatabaseError),
+    Database(#[from] DatabaseError),
     #[error("Transaction violates policy: {0:?}")]
     Violations(Vec<EvalViolation>),
     #[error("No matching grant found")]
     NoMatchingGrant,
 
     #[error("Integrity error: {0}")]
-    Integrity(#[from] integrity::Error),
+    Integrity(#[from] integrity::IntegrityError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -66,10 +66,10 @@ pub enum AnalyzeError {
 #[derive(Debug, thiserror::Error)]
 pub enum ListError {
     #[error("Database error")]
-    Database(#[from] crate::db::DatabaseError),
+    Database(#[from] DatabaseError),
 
     #[error("Integrity verification failed for grant")]
-    Integrity(#[from] integrity::Error),
+    Integrity(#[from] integrity::IntegrityError),
 }
 
 /// Controls whether a transaction should be executed or only validated
@@ -127,7 +127,7 @@ async fn check_shared_constraints(
             .get_result(conn)
             .await?;
 
-        if count >= rate_limit.count as i64 {
+        if count >= rate_limit.count.into() {
             violations.push(EvalViolation::RateLimitExceeded);
         }
     }
@@ -185,7 +185,7 @@ impl Engine {
                         .values(&NewEvmTransactionLog {
                             grant_id: grant.common_settings_id,
                             wallet_access_id: context.target.id,
-                            chain_id: context.chain as i32,
+                            chain_id: context.chain.into(),
                             eth_value: utils::u256_to_bytes(context.value).to_vec(),
                             signed_at: Utc::now().into(),
                         })
@@ -207,7 +207,7 @@ impl Engine {
 }
 
 impl Engine {
-    pub fn new(db: db::DatabasePool, keyholder: ActorRef<KeyHolder>) -> Self {
+    pub const fn new(db: db::DatabasePool, keyholder: ActorRef<KeyHolder>) -> Self {
         Self { db, keyholder }
     }
 
@@ -226,9 +226,15 @@ impl Engine {
                 Box::pin(async move {
                     use schema::evm_basic_grant;
 
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        clippy::cast_possible_wrap,
+                        clippy::as_conversions,
+                        reason = "fixme! #86"
+                    )]
                     let basic_grant: EvmBasicGrant = insert_into(evm_basic_grant::table)
                         .values(&NewEvmBasicGrant {
-                            chain_id: full_grant.shared.chain as i32,
+                            chain_id: full_grant.shared.chain.into(),
                             wallet_access_id: full_grant.shared.wallet_access_id,
                             valid_from: full_grant.shared.valid_from.map(SqliteTimestamp),
                             valid_until: full_grant.shared.valid_until.map(SqliteTimestamp),
@@ -313,7 +319,7 @@ impl Engine {
         let TxKind::Call(to) = transaction.to else {
             return Err(VetError::ContractCreationNotSupported);
         };
-        let context = policies::EvalContext {
+        let context = EvalContext {
             target,
             chain: transaction.chain_id,
             to,
@@ -404,10 +410,16 @@ mod tests {
         conn: &mut DatabaseConnection,
         shared: &SharedGrantSettings,
     ) -> EvmBasicGrant {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_possible_wrap,
+            clippy::as_conversions,
+            reason = "fixme! #86"
+        )]
         insert_into(evm_basic_grant::table)
             .values(NewEvmBasicGrant {
                 wallet_access_id: shared.wallet_access_id,
-                chain_id: shared.chain as i32,
+                chain_id: shared.chain.into(),
                 valid_from: shared.valid_from.map(SqliteTimestamp),
                 valid_until: shared.valid_until.map(SqliteTimestamp),
                 max_gas_fee_per_gas: shared
@@ -571,7 +583,7 @@ mod tests {
             .values(NewEvmTransactionLog {
                 grant_id: basic_grant.id,
                 wallet_access_id: WALLET_ACCESS_ID,
-                chain_id: CHAIN_ID as i32,
+                chain_id: CHAIN_ID.into(),
                 eth_value: super::utils::u256_to_bytes(U256::ZERO).to_vec(),
                 signed_at: SqliteTimestamp(Utc::now()),
             })

@@ -4,15 +4,15 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
-    #[error("I/O error")]
-    Io(#[from] std::io::Error),
-
     #[error("Invalid signing key length in storage: expected {expected} bytes, got {actual} bytes")]
     InvalidKeyLength { expected: usize, actual: usize },
+
+    #[error("I/O error")]
+    Io(#[from] std::io::Error),
 }
 
 pub trait SigningKeyStorage {
-    fn load_or_create(&self) -> std::result::Result<SigningKey, StorageError>;
+    fn load_or_create(&self) -> Result<SigningKey, StorageError>;
 }
 
 #[derive(Debug, Clone)]
@@ -27,11 +27,11 @@ impl FileSigningKeyStorage {
         Self { path: path.into() }
     }
 
-    pub fn from_default_location() -> std::result::Result<Self, StorageError> {
+    pub fn from_default_location() -> Result<Self, StorageError> {
         Ok(Self::new(home_path()?.join(Self::DEFAULT_FILE_NAME)))
     }
 
-    fn read_key(path: &Path) -> std::result::Result<SigningKey, StorageError> {
+    fn read_key(path: &Path) -> Result<SigningKey, StorageError> {
         let bytes = std::fs::read(path)?;
         let raw: [u8; 32] =
             bytes
@@ -45,7 +45,7 @@ impl FileSigningKeyStorage {
 }
 
 impl SigningKeyStorage for FileSigningKeyStorage {
-    fn load_or_create(&self) -> std::result::Result<SigningKey, StorageError> {
+    fn load_or_create(&self) -> Result<SigningKey, StorageError> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -125,7 +125,7 @@ mod tests {
                 assert_eq!(expected, 32);
                 assert_eq!(actual, 31);
             }
-            other => panic!("unexpected error: {other:?}"),
+            other @ StorageError::Io(_) => panic!("unexpected error: {other:?}"),
         }
 
         std::fs::remove_file(path).expect("temp key file should be removable");

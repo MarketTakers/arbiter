@@ -28,7 +28,7 @@ pub struct UserAgentConnection {
 }
 
 impl UserAgentConnection {
-    pub fn new(db: db::DatabasePool, actors: GlobalActors) -> Self {
+    pub const fn new(db: db::DatabasePool, actors: GlobalActors) -> Self {
         Self { db, actors }
     }
 }

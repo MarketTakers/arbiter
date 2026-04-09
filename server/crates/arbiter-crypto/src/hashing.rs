@@ -49,7 +49,7 @@ impl<T: Hashable + PartialOrd> Hashable for Vec<T> {
     }
 }
 
-impl<T: Hashable + PartialOrd> Hashable for HashSet<T> {
+impl<T: Hashable + PartialOrd, S: std::hash::BuildHasher> Hashable for HashSet<T, S> {
     fn hash<H: Digest>(&self, hasher: &mut H) {
         let ref_sorted = {
             let mut sorted = self.iter().collect::<Vec<_>>();

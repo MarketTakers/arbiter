@@ -13,7 +13,7 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::actors::{
-    client::session::{ClientSession, Error, HandleQueryVaultState},
+    client::session::{ClientSession, ClientSessionError, HandleQueryVaultState},
     keyholder::KeyHolderState,
 };
 
@@ -28,12 +28,14 @@ pub(super) async fn dispatch(
     };
 
     match payload {
-        VaultRequestPayload::QueryState(_) => {
+        VaultRequestPayload::QueryState(()) => {
             let state = match actor.ask(HandleQueryVaultState {}).await {
                 Ok(KeyHolderState::Unbootstrapped) => ProtoVaultState::Unbootstrapped,
                 Ok(KeyHolderState::Sealed) => ProtoVaultState::Sealed,
                 Ok(KeyHolderState::Unsealed) => ProtoVaultState::Unsealed,
-                Err(SendError::HandlerError(Error::Internal)) => ProtoVaultState::Error,
+                Err(SendError::HandlerError(ClientSessionError::Internal)) => {
+                    ProtoVaultState::Error
+                }
                 Err(err) => {
                     warn!(error = ?err, "Failed to query vault state");
                     ProtoVaultState::Error

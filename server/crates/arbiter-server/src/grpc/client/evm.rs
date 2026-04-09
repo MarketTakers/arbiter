@@ -23,7 +23,7 @@ use crate::{
     },
 };
 
-fn wrap_response(payload: EvmResponsePayload) -> ClientResponsePayload {
+const fn wrap_response(payload: EvmResponsePayload) -> ClientResponsePayload {
     ClientResponsePayload::Evm(proto_evm::Response {
         payload: Some(payload),
     })

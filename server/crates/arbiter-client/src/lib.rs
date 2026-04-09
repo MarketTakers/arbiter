@@ -5,7 +5,7 @@ mod transport;
 pub mod wallets;
 
 pub use auth::AuthError;
-pub use client::{ArbiterClient, Error};
+pub use client::{ArbiterClient, ArbiterClientError};
 pub use storage::{FileSigningKeyStorage, SigningKeyStorage, StorageError};
 
 #[cfg(feature = "evm")]

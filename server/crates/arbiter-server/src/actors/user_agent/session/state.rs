@@ -19,8 +19,6 @@ smlang::statemachine!(
 
 pub struct DummyContext;
 impl UserAgentStateMachineContext for DummyContext {
-    #[allow(missing_docs)]
-    #[allow(clippy::unused_unit)]
     fn generate_temp_keypair(&mut self, event_data: UnsealContext) -> Result<UnsealContext, ()> {
         Ok(event_data)
     }
