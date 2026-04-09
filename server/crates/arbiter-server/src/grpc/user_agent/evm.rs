@@ -37,7 +37,7 @@ use crate::{
     },
 };
 
-fn wrap_evm_response(payload: EvmResponsePayload) -> UserAgentResponsePayload {
+const fn wrap_evm_response(payload: EvmResponsePayload) -> UserAgentResponsePayload {
     UserAgentResponsePayload::Evm(proto_evm::Response {
         payload: Some(payload),
     })
@@ -52,8 +52,8 @@ pub(super) async fn dispatch(
     };
 
     match payload {
-        EvmRequestPayload::WalletCreate(_) => handle_wallet_create(actor).await,
-        EvmRequestPayload::WalletList(_) => handle_wallet_list(actor).await,
+        EvmRequestPayload::WalletCreate(()) => handle_wallet_create(actor).await,
+        EvmRequestPayload::WalletList(()) => handle_wallet_list(actor).await,
         EvmRequestPayload::GrantCreate(req) => handle_grant_create(actor, req).await,
         EvmRequestPayload::GrantDelete(req) => handle_grant_delete(actor, req).await,
         EvmRequestPayload::GrantList(_) => handle_grant_list(actor).await,

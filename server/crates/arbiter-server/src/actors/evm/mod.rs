@@ -1,4 +1,6 @@
-use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
+use alloy::{
+    consensus::TxEip1559, network::TxSignerSync as _, primitives::Address, signers::Signature,
+};
 use diesel::{
     ExpressionMethods, OptionalExtension as _, QueryDsl, SelectableHelper as _, dsl::insert_into,
 };
@@ -35,7 +37,7 @@ pub enum SignTransactionError {
     Database(#[from] DatabaseError),
 
     #[error("Keyholder error: {0}")]
-    Keyholder(#[from] crate::actors::keyholder::Error),
+    Keyholder(#[from] crate::actors::keyholder::KeyHolderError),
 
     #[error("Keyholder mailbox error")]
     KeyholderSend,
@@ -48,9 +50,9 @@ pub enum SignTransactionError {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum EvmActorError {
     #[error("Keyholder error: {0}")]
-    Keyholder(#[from] crate::actors::keyholder::Error),
+    Keyholder(#[from] crate::actors::keyholder::KeyHolderError),
 
     #[error("Keyholder mailbox error")]
     KeyholderSend,
@@ -59,7 +61,7 @@ pub enum Error {
     Database(#[from] DatabaseError),
 
     #[error("Integrity violation: {0}")]
-    Integrity(#[from] integrity::Error),
+    Integrity(#[from] integrity::IntegrityError),
 }
 
 #[derive(Actor)]
@@ -88,7 +90,7 @@ impl EvmActor {
 #[messages]
 impl EvmActor {
     #[message]
-    pub async fn generate(&mut self) -> Result<(i32, Address), Error> {
+    pub async fn generate(&mut self) -> Result<(i32, Address), EvmActorError> {
         let (mut key_cell, address) = safe_signer::generate(&mut self.rng);
 
         let plaintext = key_cell.read_inline(|reader| SafeCell::new(reader.to_vec()));
@@ -97,7 +99,7 @@ impl EvmActor {
             .keyholder
             .ask(CreateNew { plaintext })
             .await
-            .map_err(|_| Error::KeyholderSend)?;
+            .map_err(|_| EvmActorError::KeyholderSend)?;
 
         let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
         let wallet_id = insert_into(schema::evm_wallet::table)
@@ -114,7 +116,7 @@ impl EvmActor {
     }
 
     #[message]
-    pub async fn list_wallets(&self) -> Result<Vec<(i32, Address)>, Error> {
+    pub async fn list_wallets(&self) -> Result<Vec<(i32, Address)>, EvmActorError> {
         let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
         let rows: Vec<models::EvmWallet> = schema::evm_wallet::table
             .select(models::EvmWallet::as_select())
@@ -136,7 +138,7 @@ impl EvmActor {
         &mut self,
         basic: SharedGrantSettings,
         grant: SpecificGrant,
-    ) -> Result<i32, Error> {
+    ) -> Result<i32, EvmActorError> {
         match grant {
             SpecificGrant::EtherTransfer(settings) => self
                 .engine
@@ -145,7 +147,7 @@ impl EvmActor {
                     specific: settings,
                 })
                 .await
-                .map_err(Error::from),
+                .map_err(EvmActorError::from),
             SpecificGrant::TokenTransfer(settings) => self
                 .engine
                 .create_grant::<TokenTransfer>(CombinedSettings {
@@ -153,12 +155,13 @@ impl EvmActor {
                     specific: settings,
                 })
                 .await
-                .map_err(Error::from),
+                .map_err(EvmActorError::from),
         }
     }
 
     #[message]
-    pub async fn useragent_delete_grant(&mut self, _grant_id: i32) -> Result<(), Error> {
+    #[expect(clippy::unused_async, reason = "reserved for impl")]
+    pub async fn useragent_delete_grant(&mut self, _grant_id: i32) -> Result<(), EvmActorError> {
         // let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
         // let keyholder = self.keyholder.clone();
 
@@ -183,11 +186,15 @@ impl EvmActor {
     }
 
     #[message]
-    pub async fn useragent_list_grants(&mut self) -> Result<Vec<Grant<SpecificGrant>>, Error> {
+    pub async fn useragent_list_grants(
+        &mut self,
+    ) -> Result<Vec<Grant<SpecificGrant>>, EvmActorError> {
         match self.engine.list_all_grants().await {
             Ok(grants) => Ok(grants),
-            Err(ListError::Database(db_err)) => Err(Error::Database(db_err)),
-            Err(ListError::Integrity(integrity_err)) => Err(Error::Integrity(integrity_err)),
+            Err(ListError::Database(db_err)) => Err(EvmActorError::Database(db_err)),
+            Err(ListError::Integrity(integrity_err)) => {
+                Err(EvmActorError::Integrity(integrity_err))
+            }
         }
     }
 
@@ -267,7 +274,6 @@ impl EvmActor {
             .evaluate_transaction(wallet_access, transaction.clone(), RunKind::Execution)
             .await?;
 
-        use alloy::network::TxSignerSync as _;
         Ok(signer.sign_transaction_sync(&mut transaction)?)
     }
 }

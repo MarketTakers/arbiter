@@ -11,7 +11,7 @@ use thiserror::Error;
 
 use crate::{
     crypto::integrity::v1::Integrable,
-    db::models::{self, EvmBasicGrant, EvmWalletAccess},
+    db::models::{EvmBasicGrant, EvmWalletAccess},
     evm::utils,
 };
 
@@ -87,10 +87,10 @@ pub trait Policy: Sized {
 
     // Create a new grant in the database based on the provided grant details, and return its ID
     fn create_grant(
-        basic: &models::EvmBasicGrant,
+        basic: &EvmBasicGrant,
         grant: &Self::Settings,
         conn: &mut impl AsyncConnection<Backend = Sqlite>,
-    ) -> impl std::future::Future<Output = QueryResult<DatabaseID>> + Send;
+    ) -> impl Future<Output = QueryResult<DatabaseID>> + Send;
 
     // Try to find an existing grant that matches the transaction context, and return its details if found
     // Additionally, return ID of basic grant for shared-logic checks like rate limits and validity periods
@@ -157,7 +157,7 @@ impl SharedGrantSettings {
     pub(crate) fn try_from_model(model: EvmBasicGrant) -> QueryResult<Self> {
         Ok(Self {
             wallet_access_id: model.wallet_access_id,
-            chain: model.chain_id as u64, // safe because chain_id is stored as i32 but is guaranteed to be a valid ChainId by the API when creating grants
+            chain: model.chain_id.into(),
             valid_from: model.valid_from.map(Into::into),
             valid_until: model.valid_until.map(Into::into),
             max_gas_fee_per_gas: model
@@ -168,10 +168,11 @@ impl SharedGrantSettings {
                 .max_priority_fee_per_gas
                 .map(|b| utils::try_bytes_to_u256(&b))
                 .transpose()?,
+            #[expect(clippy::cast_sign_loss, clippy::as_conversions, reason = "fixme! #86")]
             rate_limit: match (model.rate_limit_count, model.rate_limit_window_secs) {
                 (Some(count), Some(window_secs)) => Some(TransactionRateLimit {
                     count: count as u32,
-                    window: Duration::seconds(window_secs as i64),
+                    window: Duration::seconds(window_secs.into()),
                 }),
                 _ => None,
             },
@@ -181,7 +182,7 @@ impl SharedGrantSettings {
     pub async fn query_by_id(
         conn: &mut impl AsyncConnection<Backend = Sqlite>,
         id: i32,
-    ) -> diesel::result::QueryResult<Self> {
+    ) -> QueryResult<Self> {
         use crate::db::schema::evm_basic_grant;
 
         let basic_grant: EvmBasicGrant = evm_basic_grant::table

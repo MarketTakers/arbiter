@@ -1,6 +1,6 @@
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
-    actors::keyholder::{Error, KeyHolder},
+    actors::keyholder::{KeyHolder, KeyHolderError},
     crypto::encryption::v1::{Nonce, ROOT_KEY_TAG},
     db::{self, models, schema},
 };
@@ -12,7 +12,7 @@ use crate::common;
 
 #[tokio::test]
 #[test_log::test]
-async fn test_bootstrap() {
+async fn bootstrap() {
     let db = db::create_test_pool().await;
     let mut actor = KeyHolder::new(db.clone()).await.unwrap();
 
@@ -35,18 +35,18 @@ async fn test_bootstrap() {
 
 #[tokio::test]
 #[test_log::test]
-async fn test_bootstrap_rejects_double() {
+async fn bootstrap_rejects_double() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_keyholder(&db).await;
 
     let seal_key2 = SafeCell::new(b"test-seal-key".to_vec());
     let err = actor.bootstrap(seal_key2).await.unwrap_err();
-    assert!(matches!(err, Error::AlreadyBootstrapped));
+    assert!(matches!(err, KeyHolderError::AlreadyBootstrapped));
 }
 
 #[tokio::test]
 #[test_log::test]
-async fn test_create_new_before_bootstrap_fails() {
+async fn create_new_before_bootstrap_fails() {
     let db = db::create_test_pool().await;
     let mut actor = KeyHolder::new(db).await.unwrap();
 
@@ -54,34 +54,34 @@ async fn test_create_new_before_bootstrap_fails() {
         .create_new(SafeCell::new(b"data".to_vec()))
         .await
         .unwrap_err();
-    assert!(matches!(err, Error::NotBootstrapped));
+    assert!(matches!(err, KeyHolderError::NotBootstrapped));
 }
 
 #[tokio::test]
 #[test_log::test]
-async fn test_decrypt_before_bootstrap_fails() {
+async fn decrypt_before_bootstrap_fails() {
     let db = db::create_test_pool().await;
     let mut actor = KeyHolder::new(db).await.unwrap();
 
     let err = actor.decrypt(1).await.unwrap_err();
-    assert!(matches!(err, Error::NotBootstrapped));
+    assert!(matches!(err, KeyHolderError::NotBootstrapped));
 }
 
 #[tokio::test]
 #[test_log::test]
-async fn test_new_restores_sealed_state() {
+async fn new_restores_sealed_state() {
     let db = db::create_test_pool().await;
     let actor = common::bootstrapped_keyholder(&db).await;
     drop(actor);
 
     let mut actor2 = KeyHolder::new(db).await.unwrap();
     let err = actor2.decrypt(1).await.unwrap_err();
-    assert!(matches!(err, Error::NotBootstrapped));
+    assert!(matches!(err, KeyHolderError::NotBootstrapped));
 }
 
 #[tokio::test]
 #[test_log::test]
-async fn test_unseal_correct_password() {
+async fn unseal_correct_password() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_keyholder(&db).await;
 
@@ -102,7 +102,7 @@ async fn test_unseal_correct_password() {
 
 #[tokio::test]
 #[test_log::test]
-async fn test_unseal_wrong_then_correct_password() {
+async fn unseal_wrong_then_correct_password() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_keyholder(&db).await;
 
@@ -117,7 +117,7 @@ async fn test_unseal_wrong_then_correct_password() {
 
     let bad_key = SafeCell::new(b"wrong-password".to_vec());
     let err = actor.try_unseal(bad_key).await.unwrap_err();
-    assert!(matches!(err, Error::InvalidKey));
+    assert!(matches!(err, KeyHolderError::InvalidKey));
 
     let good_key = SafeCell::new(b"test-seal-key".to_vec());
     actor.try_unseal(good_key).await.unwrap();

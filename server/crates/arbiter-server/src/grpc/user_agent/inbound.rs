@@ -22,11 +22,11 @@ use crate::{
     grpc::TryConvert,
 };
 
-fn address_from_bytes(bytes: Vec<u8>) -> Result<Address, Status> {
+fn address_from_bytes(bytes: &[u8]) -> Result<Address, Status> {
     if bytes.len() != 20 {
         return Err(Status::invalid_argument("Invalid EVM address"));
     }
-    Ok(Address::from_slice(&bytes))
+    Ok(Address::from_slice(bytes))
 }
 
 fn u256_from_proto_bytes(bytes: &[u8]) -> Result<U256, Status> {
@@ -41,7 +41,7 @@ impl TryConvert for ProtoTimestamp {
     type Error = Status;
 
     fn try_convert(self) -> Result<DateTime<Utc>, Status> {
-        Utc.timestamp_opt(self.seconds, self.nanos as u32)
+        Utc.timestamp_opt(self.seconds, self.nanos.try_into().unwrap_or_default())
             .single()
             .ok_or_else(|| Status::invalid_argument("Invalid timestamp"))
     }
@@ -116,7 +116,8 @@ impl TryConvert for ProtoSpecificGrant {
                 limit,
             })) => Ok(SpecificGrant::EtherTransfer(ether_transfer::Settings {
                 target: targets
-                    .into_iter()
+                    .iter()
+                    .map(Vec::as_slice)
                     .map(address_from_bytes)
                     .collect::<Result<_, _>>()?,
                 limit: limit
@@ -130,8 +131,10 @@ impl TryConvert for ProtoSpecificGrant {
                 target,
                 volume_limits,
             })) => Ok(SpecificGrant::TokenTransfer(token_transfers::Settings {
-                token_contract: address_from_bytes(token_contract)?,
-                target: target.map(address_from_bytes).transpose()?,
+                token_contract: address_from_bytes(&token_contract)?,
+                target: target
+                    .map(|target| address_from_bytes(&target))
+                    .transpose()?,
                 volume_limits: volume_limits
                     .into_iter()
                     .map(ProtoVolumeRateLimit::try_convert)

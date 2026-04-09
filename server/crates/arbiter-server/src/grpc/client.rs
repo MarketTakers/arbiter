@@ -98,8 +98,7 @@ pub async fn start(mut conn: ClientConnection, mut bi: GrpcBi<ClientRequest, Cli
         Err(err) => {
             let _ = bi
                 .send(Err(Status::unauthenticated(format!(
-                    "Authentication failed: {}",
-                    err
+                    "Authentication failed: {err}",
                 ))))
                 .await;
             warn!(error = ?err, "Client authentication failed");

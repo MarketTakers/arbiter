@@ -1,3 +1,4 @@
+#![allow(dead_code, reason = "Common test utilities that may not be used in every test")]
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_proto::transport::{Bi, Error, Receiver, Sender};
 use arbiter_server::{
@@ -10,7 +11,6 @@ use diesel::QueryDsl;
 use diesel_async::RunQueryDsl;
 use tokio::sync::mpsc;
 
-#[allow(dead_code)]
 pub async fn bootstrapped_keyholder(db: &db::DatabasePool) -> KeyHolder {
     let mut actor = KeyHolder::new(db.clone()).await.unwrap();
     actor
@@ -20,7 +20,6 @@ pub async fn bootstrapped_keyholder(db: &db::DatabasePool) -> KeyHolder {
     actor
 }
 
-#[allow(dead_code)]
 pub async fn root_key_history_id(db: &db::DatabasePool) -> i32 {
     let mut conn = db.get().await.unwrap();
     let id = schema::arbiter_settings::table
@@ -31,14 +30,12 @@ pub async fn root_key_history_id(db: &db::DatabasePool) -> i32 {
     id.expect("root_key_id should be set after bootstrap")
 }
 
-#[allow(dead_code)]
 pub struct ChannelTransport<T, Y> {
     receiver: mpsc::Receiver<T>,
     sender: mpsc::Sender<Y>,
 }
 
 impl<T, Y> ChannelTransport<T, Y> {
-    #[allow(dead_code)]
     pub fn new() -> (Self, ChannelTransport<Y, T>) {
         let (tx1, rx1) = mpsc::channel(10);
         let (tx2, rx2) = mpsc::channel(10);

@@ -28,7 +28,7 @@ pub struct AuthTransportAdapter<'a> {
 }
 
 impl<'a> AuthTransportAdapter<'a> {
-    pub fn new(
+    pub const fn new(
         bi: &'a mut GrpcBi<UserAgentRequest, UserAgentResponse>,
         request_tracker: &'a mut RequestTracker,
     ) -> Self {
@@ -140,7 +140,7 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
             AuthRequestPayload::ChallengeRequest(ProtoAuthChallengeRequest {
                 pubkey,
                 bootstrap_token,
-                key_type: _,
+                ..
             }) => {
                 let Ok(pubkey) = authn::PublicKey::try_from(pubkey.as_slice()) else {
                     warn!(

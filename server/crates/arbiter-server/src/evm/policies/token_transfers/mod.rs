@@ -27,8 +27,8 @@ use alloy::{
 use arbiter_tokens_registry::evm::nonfungible::{self, TokenInfo};
 use chrono::{DateTime, Duration, Utc};
 use diesel::dsl::{auto_type, insert_into};
+use diesel::prelude::*;
 use diesel::sqlite::Sqlite;
-use diesel::{ExpressionMethods, prelude::*};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 
 use super::{DatabaseID, EvalContext, EvalViolation};
@@ -56,8 +56,8 @@ impl std::fmt::Display for Meaning {
     }
 }
 impl From<Meaning> for SpecificMeaning {
-    fn from(val: Meaning) -> SpecificMeaning {
-        SpecificMeaning::TokenTransfer(val)
+    fn from(val: Meaning) -> Self {
+        Self::TokenTransfer(val)
     }
 }
 
@@ -73,8 +73,8 @@ impl Integrable for Settings {
 }
 
 impl From<Settings> for SpecificGrant {
-    fn from(val: Settings) -> SpecificGrant {
-        SpecificGrant::TokenTransfer(val)
+    fn from(val: Settings) -> Self {
+        Self::TokenTransfer(val)
     }
 }
 
@@ -85,10 +85,7 @@ async fn query_relevant_past_transfers(
 ) -> QueryResult<Vec<(U256, DateTime<Utc>)>> {
     let past_logs: Vec<(Vec<u8>, SqliteTimestamp)> = evm_token_transfer_log::table
         .filter(evm_token_transfer_log::grant_id.eq(grant_id))
-        .filter(
-            evm_token_transfer_log::created_at
-                .ge(SqliteTimestamp(chrono::Utc::now() - longest_window)),
-        )
+        .filter(evm_token_transfer_log::created_at.ge(SqliteTimestamp(Utc::now() - longest_window)))
         .select((
             evm_token_transfer_log::value,
             evm_token_transfer_log::created_at,
@@ -128,7 +125,7 @@ async fn check_volume_rate_limits(
     let past_transfers = query_relevant_past_transfers(grant.id, longest_window, db).await?;
 
     for limit in &grant.settings.specific.volume_limits {
-        let window_start = chrono::Utc::now() - limit.window;
+        let window_start = Utc::now() - limit.window;
         let prospective_cumulative_volume: U256 = past_transfers
             .iter()
             .filter(|(_, timestamp)| timestamp >= &window_start)
@@ -204,6 +201,11 @@ impl Policy for TokenTransfer {
             .await?;
 
         for limit in &grant.volume_limits {
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::as_conversions,
+                reason = "fixme! #86"
+            )]
             insert_into(evm_token_transfer_volume_limit::table)
                 .values(NewEvmTokenTransferVolumeLimit {
                     grant_id,
@@ -253,7 +255,7 @@ impl Policy for TokenTransfer {
                     max_volume: utils::try_bytes_to_u256(&row.max_volume).map_err(|err| {
                         diesel::result::Error::DeserializationError(Box::new(err))
                     })?,
-                    window: Duration::seconds(row.window_secs as i64),
+                    window: Duration::seconds(row.window_secs.into()),
                 })
             })
             .collect::<QueryResult<Vec<_>>>()?;
@@ -303,7 +305,7 @@ impl Policy for TokenTransfer {
             .values(NewEvmTokenTransferLog {
                 grant_id: grant.id,
                 log_id,
-                chain_id: context.chain as i32,
+                chain_id: context.chain.into(),
                 token_contract: context.to.to_vec(),
                 recipient_address: meaning.to.to_vec(),
                 value: utils::u256_to_bytes(meaning.value).to_vec(),
@@ -352,7 +354,7 @@ impl Policy for TokenTransfer {
             .map(|(basic, specific)| {
                 let volume_limits: Vec<VolumeRateLimit> = limits_by_grant
                     .get(&specific.id)
-                    .map(|v| v.as_slice())
+                    .map(Vec::as_slice)
                     .unwrap_or_default()
                     .iter()
                     .map(|row| {
@@ -360,7 +362,7 @@ impl Policy for TokenTransfer {
                             max_volume: utils::try_bytes_to_u256(&row.max_volume).map_err(|e| {
                                 diesel::result::Error::DeserializationError(Box::new(e))
                             })?,
-                            window: Duration::seconds(row.window_secs as i64),
+                            window: Duration::seconds(row.window_secs.into()),
                         })
                     })
                     .collect::<QueryResult<Vec<_>>>()?;

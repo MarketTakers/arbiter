@@ -92,7 +92,7 @@ impl FlowCoordinator {
     }
 
     #[message(ctx)]
-    pub async fn request_client_approval(
+    pub fn request_client_approval(
         &mut self,
         client: ClientProfile,
         ctx: &mut Context<Self, DelegatedReply<Result<bool, ApprovalError>>>,

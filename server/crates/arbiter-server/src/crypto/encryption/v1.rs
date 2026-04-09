@@ -5,8 +5,8 @@ use rand::{
     rngs::{StdRng, SysRng},
 };
 
-pub const ROOT_KEY_TAG: &[u8] = "arbiter/seal/v1".as_bytes();
-pub const TAG: &[u8] = "arbiter/private-key/v1".as_bytes();
+pub const ROOT_KEY_TAG: &[u8] = b"arbiter/seal/v1";
+pub const TAG: &[u8] = b"arbiter/private-key/v1";
 
 pub const NONCE_LENGTH: usize = 24;
 
@@ -15,11 +15,13 @@ pub struct Nonce(pub [u8; NONCE_LENGTH]);
 impl Nonce {
     pub fn increment(&mut self) {
         for i in (0..self.0.len()).rev() {
-            if self.0[i] == 0xFF {
-                self.0[i] = 0;
-            } else {
-                self.0[i] += 1;
-                break;
+            if let Some(byte) = self.0.get_mut(i) {
+                if *byte == 0xFF {
+                    *byte = 0;
+                } else {
+                    *byte += 1;
+                    break;
+                }
             }
         }
     }
@@ -45,19 +47,14 @@ pub type Salt = [u8; ArgonSalt::RECOMMENDED_LENGTH];
 
 pub fn generate_salt() -> Salt {
     let mut salt = Salt::default();
-    #[allow(
-        clippy::unwrap_used,
-        reason = "Rng failure is unrecoverable and should panic"
-    )]
-    let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
+    let mut rng =
+        StdRng::try_from_rng(&mut SysRng).expect("Rng failure is unrecoverable and should panic");
     rng.fill_bytes(&mut salt);
     salt
 }
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Deref as _;
-
     use super::*;
     use crate::crypto::derive_key;
     use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
@@ -75,7 +72,7 @@ mod tests {
         let key1_reader = key1.0.read();
         let key2_reader = key2.0.read();
 
-        assert_eq!(key1_reader.deref(), key2_reader.deref());
+        assert_eq!(&*key1_reader, &*key2_reader);
     }
 
     #[test]
@@ -86,14 +83,13 @@ mod tests {
 
         let mut key = derive_key(password, &salt);
         let key_reader = key.0.read();
-        let key_ref = key_reader.deref();
 
-        assert_ne!(key_ref.as_slice(), &[0u8; 32][..]);
+        assert_ne!(key_reader.as_slice(), &[0u8; 32][..]);
     }
 
     #[test]
     // We should fuzz this
-    pub fn test_nonce_increment() {
+    pub fn nonce_increment() {
         let mut nonce = Nonce([0u8; NONCE_LENGTH]);
         nonce.increment();
 

@@ -31,16 +31,16 @@ impl Convert for SpecificMeaning {
 
     fn convert(self) -> Self::Output {
         let kind = match self {
-            SpecificMeaning::EtherTransfer(meaning) => ProtoSpecificMeaningKind::EtherTransfer(
+            Self::EtherTransfer(meaning) => ProtoSpecificMeaningKind::EtherTransfer(
                 arbiter_proto::proto::shared::evm::EtherTransferMeaning {
                     to: meaning.to.to_vec(),
                     value: u256_to_proto_bytes(meaning.value),
                 },
             ),
-            SpecificMeaning::TokenTransfer(meaning) => ProtoSpecificMeaningKind::TokenTransfer(
+            Self::TokenTransfer(meaning) => ProtoSpecificMeaningKind::TokenTransfer(
                 arbiter_proto::proto::shared::evm::TokenTransferMeaning {
                     token: Some(ProtoTokenInfo {
-                        symbol: meaning.token.symbol.to_string(),
+                        symbol: meaning.token.symbol.to_owned(),
                         address: meaning.token.contract.to_vec(),
                         chain_id: meaning.token.chain,
                     }),
@@ -61,25 +61,21 @@ impl Convert for EvalViolation {
 
     fn convert(self) -> Self::Output {
         let kind = match self {
-            EvalViolation::InvalidTarget { target } => {
+            Self::InvalidTarget { target } => {
                 ProtoEvalViolationKind::InvalidTarget(target.to_vec())
             }
-            EvalViolation::GasLimitExceeded {
+            Self::GasLimitExceeded {
                 max_gas_fee_per_gas,
                 max_priority_fee_per_gas,
             } => ProtoEvalViolationKind::GasLimitExceeded(GasLimitExceededViolation {
                 max_gas_fee_per_gas: max_gas_fee_per_gas.map(u256_to_proto_bytes),
                 max_priority_fee_per_gas: max_priority_fee_per_gas.map(u256_to_proto_bytes),
             }),
-            EvalViolation::RateLimitExceeded => ProtoEvalViolationKind::RateLimitExceeded(()),
-            EvalViolation::VolumetricLimitExceeded => {
-                ProtoEvalViolationKind::VolumetricLimitExceeded(())
-            }
-            EvalViolation::InvalidTime => ProtoEvalViolationKind::InvalidTime(()),
-            EvalViolation::InvalidTransactionType => {
-                ProtoEvalViolationKind::InvalidTransactionType(())
-            }
-            EvalViolation::MismatchingChainId { expected, actual } => {
+            Self::RateLimitExceeded => ProtoEvalViolationKind::RateLimitExceeded(()),
+            Self::VolumetricLimitExceeded => ProtoEvalViolationKind::VolumetricLimitExceeded(()),
+            Self::InvalidTime => ProtoEvalViolationKind::InvalidTime(()),
+            Self::InvalidTransactionType => ProtoEvalViolationKind::InvalidTransactionType(()),
+            Self::MismatchingChainId { expected, actual } => {
                 ProtoEvalViolationKind::ChainIdMismatch(proto_eval_violation::ChainIdMismatch {
                     expected,
                     actual,
@@ -96,13 +92,13 @@ impl Convert for VetError {
 
     fn convert(self) -> Self::Output {
         let kind = match self {
-            VetError::ContractCreationNotSupported => {
+            Self::ContractCreationNotSupported => {
                 ProtoTransactionEvalErrorKind::ContractCreationNotSupported(())
             }
-            VetError::UnsupportedTransactionType => {
+            Self::UnsupportedTransactionType => {
                 ProtoTransactionEvalErrorKind::UnsupportedTransactionType(())
             }
-            VetError::Evaluated(meaning, policy_error) => match policy_error {
+            Self::Evaluated(meaning, policy_error) => match policy_error {
                 PolicyError::NoMatchingGrant => {
                     ProtoTransactionEvalErrorKind::NoMatchingGrant(NoMatchingGrantError {
                         meaning: Some(meaning.convert()),

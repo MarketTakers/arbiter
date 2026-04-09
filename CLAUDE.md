@@ -100,6 +100,27 @@ diesel migration generate <name> --migration-dir crates/arbiter-server/migration
 diesel migration run --migration-dir crates/arbiter-server/migrations
 ```
 
+### Code Conventions
+
+**`#[must_use]` Attribute:**
+Apply the `#[must_use]` attribute to return types of functions where the return value is critical and should not be accidentally ignored. This is commonly used for:
+
+- Methods that return `bool` indicating success/failure or validation state
+- Any function where ignoring the return value indicates a logic error
+
+Do not apply `#[must_use]` redundantly to items (types or functions) that are already annotated with `#[must_use]`.
+
+Example:
+
+```rust
+#[must_use]
+pub fn verify(&self, nonce: i32, context: &[u8], signature: &Signature) -> bool {
+    // verification logic
+}
+```
+
+This forces callers to either use the return value or explicitly ignore it with `let _ = ...;`, preventing silent failures.
+
 ## User Agent (Flutter + Rinf at `useragent/`)
 
 The Flutter app uses [Rinf](https://rinf.cunarist.org) to call Rust code. The Rust logic lives in `useragent/native/hub/` as a separate crate that uses `arbiter-useragent` for the gRPC client.

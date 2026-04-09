@@ -204,14 +204,14 @@ pub struct AuthContext<'a, T> {
 }
 
 impl<'a, T> AuthContext<'a, T> {
-    pub fn new(conn: &'a mut UserAgentConnection, transport: T) -> Self {
+    pub const fn new(conn: &'a mut UserAgentConnection, transport: T) -> Self {
         Self { conn, transport }
     }
 }
 
 impl<T> AuthStateMachineContext for AuthContext<'_, T>
 where
-    T: Bi<super::Inbound, Result<super::Outbound, Error>> + Send,
+    T: Bi<super::Inbound, Result<Outbound, Error>> + Send,
 {
     type Error = Error;
 
@@ -237,8 +237,6 @@ where
         })
     }
 
-    #[allow(missing_docs)]
-    #[allow(clippy::result_unit_err)]
     async fn verify_bootstrap_token(
         &mut self,
         BootstrapAuthRequest { pubkey, token }: BootstrapAuthRequest,
@@ -261,28 +259,23 @@ where
             return Err(Error::InvalidBootstrapToken);
         }
 
-        match token_ok {
-            true => {
-                register_key(&self.conn.db, &self.conn.actors.key_holder, &pubkey).await?;
-                self.transport
-                    .send(Ok(Outbound::AuthSuccess))
-                    .await
-                    .map_err(|_| Error::Transport)?;
-                Ok(pubkey)
-            }
-            false => {
-                error!("Invalid bootstrap token provided");
-                self.transport
-                    .send(Err(Error::InvalidBootstrapToken))
-                    .await
-                    .map_err(|_| Error::Transport)?;
-                Err(Error::InvalidBootstrapToken)
-            }
+        if token_ok {
+            register_key(&self.conn.db, &self.conn.actors.key_holder, &pubkey).await?;
+            self.transport
+                .send(Ok(Outbound::AuthSuccess))
+                .await
+                .map_err(|_| Error::Transport)?;
+            Ok(pubkey)
+        } else {
+            error!("Invalid bootstrap token provided");
+            self.transport
+                .send(Err(Error::InvalidBootstrapToken))
+                .await
+                .map_err(|_| Error::Transport)?;
+            Err(Error::InvalidBootstrapToken)
         }
     }
 
-    #[allow(missing_docs)]
-    #[allow(clippy::unused_unit)]
     async fn verify_solution(
         &mut self,
         ChallengeContext {
@@ -291,28 +284,25 @@ where
         }: &ChallengeContext,
         ChallengeSolution { solution }: ChallengeSolution,
     ) -> Result<authn::PublicKey, Self::Error> {
-        let signature = authn::Signature::try_from(solution.as_slice()).map_err(|_| {
+        let signature = authn::Signature::try_from(solution.as_slice()).map_err(|()| {
             error!("Failed to decode signature in challenge solution");
             Error::InvalidChallengeSolution
         })?;
 
         let valid = key.verify(*challenge_nonce, USERAGENT_CONTEXT, &signature);
 
-        match valid {
-            true => {
-                self.transport
-                    .send(Ok(Outbound::AuthSuccess))
-                    .await
-                    .map_err(|_| Error::Transport)?;
-                Ok(key.clone())
-            }
-            false => {
-                self.transport
-                    .send(Err(Error::InvalidChallengeSolution))
-                    .await
-                    .map_err(|_| Error::Transport)?;
-                Err(Error::InvalidChallengeSolution)
-            }
+        if valid {
+            self.transport
+                .send(Ok(Outbound::AuthSuccess))
+                .await
+                .map_err(|_| Error::Transport)?;
+            Ok(key.clone())
+        } else {
+            self.transport
+                .send(Err(Error::InvalidChallengeSolution))
+                .await
+                .map_err(|_| Error::Transport)?;
+            Err(Error::InvalidChallengeSolution)
         }
     }
 }

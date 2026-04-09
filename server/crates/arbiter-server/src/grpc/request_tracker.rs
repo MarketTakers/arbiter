@@ -20,7 +20,7 @@ impl RequestTracker {
 
     // This is used to set the response id for auth responses, which need to match the request id of the auth challenge request.
     // -1 offset is needed because request() increments the next_request_id after returning the current request id.
-    pub fn current_request_id(&self) -> i32 {
+    pub const fn current_request_id(&self) -> i32 {
         self.next_request_id - 1
     }
 }

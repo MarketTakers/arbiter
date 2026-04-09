@@ -1,4 +1,3 @@
-#![forbid(unsafe_code)]
 use crate::context::ServerContext;
 
 pub mod actors;
@@ -14,7 +13,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(context: ServerContext) -> Self {
+    pub const fn new(context: ServerContext) -> Self {
         Self { context }
     }
 }

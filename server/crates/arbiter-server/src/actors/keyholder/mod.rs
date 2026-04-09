@@ -36,19 +36,12 @@ enum State {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum KeyHolderError {
     #[error("Keyholder is already bootstrapped")]
     AlreadyBootstrapped,
-    #[error("Keyholder is not bootstrapped")]
-    NotBootstrapped,
-    #[error("Invalid key provided")]
-    InvalidKey,
 
-    #[error("Requested aead entry not found")]
-    NotFound,
-
-    #[error("Encryption error: {0}")]
-    Encryption(#[from] chacha20poly1305::aead::Error),
+    #[error("Broken database")]
+    BrokenDatabase,
 
     #[error("Database error: {0}")]
     DatabaseConnection(#[from] db::PoolError),
@@ -56,11 +49,21 @@ pub enum Error {
     #[error("Database transaction error: {0}")]
     DatabaseTransaction(#[from] diesel::result::Error),
 
-    #[error("Broken database")]
-    BrokenDatabase,
+    #[error("Encryption error: {0}")]
+    Encryption(#[from] chacha20poly1305::aead::Error),
+
+    #[error("Invalid key provided")]
+    InvalidKey,
+
+    #[error("Keyholder is not bootstrapped")]
+    NotBootstrapped,
+
+    #[error("Requested aead entry not found")]
+    NotFound,
 }
 
 /// Manages vault root key and tracks current state of the vault (bootstrapped/unbootstrapped, sealed/unsealed).
+///
 /// Provides API for encrypting and decrypting data using the vault root key.
 /// Abstraction over database to make sure nonces are never reused and encryption keys are never exposed in plaintext outside of this actor.
 #[derive(Actor)]
@@ -71,7 +74,7 @@ pub struct KeyHolder {
 
 #[messages]
 impl KeyHolder {
-    pub async fn new(db: db::DatabasePool) -> Result<Self, Error> {
+    pub async fn new(db: db::DatabasePool) -> Result<Self, KeyHolderError> {
         let state = {
             let mut conn = db.get().await?;
 
@@ -94,7 +97,10 @@ impl KeyHolder {
 
     // Exclusive transaction to avoid race condtions if multiple keyholders write
     // additional layer of protection against nonce-reuse
-    async fn get_new_nonce(pool: &db::DatabasePool, root_key_id: i32) -> Result<Nonce, Error> {
+    async fn get_new_nonce(
+        pool: &db::DatabasePool,
+        root_key_id: i32,
+    ) -> Result<Nonce, KeyHolderError> {
         let mut conn = pool.get().await?;
 
         let nonce = conn
@@ -106,12 +112,12 @@ impl KeyHolder {
                         .first(conn)
                         .await?;
 
-                    let mut nonce = Nonce::try_from(current_nonce.as_slice()).map_err(|_| {
+                    let mut nonce = Nonce::try_from(current_nonce.as_slice()).map_err(|()| {
                         error!(
                             "Broken database: invalid nonce for root key history id={}",
                             root_key_id
                         );
-                        Error::BrokenDatabase
+                        KeyHolderError::BrokenDatabase
                     })?;
                     nonce.increment();
 
@@ -121,7 +127,7 @@ impl KeyHolder {
                         .execute(conn)
                         .await?;
 
-                    Result::<_, Error>::Ok(nonce)
+                    Result::<_, KeyHolderError>::Ok(nonce)
                 })
             })
             .await?;
@@ -130,9 +136,12 @@ impl KeyHolder {
     }
 
     #[message]
-    pub async fn bootstrap(&mut self, seal_key_raw: SafeCell<Vec<u8>>) -> Result<(), Error> {
+    pub async fn bootstrap(
+        &mut self,
+        seal_key_raw: SafeCell<Vec<u8>>,
+    ) -> Result<(), KeyHolderError> {
         if !matches!(self.state, State::Unbootstrapped) {
-            return Err(Error::AlreadyBootstrapped);
+            return Err(KeyHolderError::AlreadyBootstrapped);
         }
         let salt = v1::generate_salt();
         let mut seal_key = derive_key(seal_key_raw, &salt);
@@ -148,7 +157,7 @@ impl KeyHolder {
                 .encrypt(&root_key_nonce, v1::ROOT_KEY_TAG, root_key_reader)
                 .map_err(|err| {
                     error!(?err, "Fatal bootstrap error");
-                    Error::Encryption(err)
+                    KeyHolderError::Encryption(err)
                 })
         })?;
 
@@ -192,12 +201,15 @@ impl KeyHolder {
     }
 
     #[message]
-    pub async fn try_unseal(&mut self, seal_key_raw: SafeCell<Vec<u8>>) -> Result<(), Error> {
+    pub async fn try_unseal(
+        &mut self,
+        seal_key_raw: SafeCell<Vec<u8>>,
+    ) -> Result<(), KeyHolderError> {
         let State::Sealed {
             root_key_history_id,
         } = &self.state
         else {
-            return Err(Error::NotBootstrapped);
+            return Err(KeyHolderError::NotBootstrapped);
         };
 
         // We don't want to hold connection while doing expensive KDF work
@@ -213,16 +225,16 @@ impl KeyHolder {
         let salt = &current_key.salt;
         let salt = v1::Salt::try_from(salt.as_slice()).map_err(|_| {
             error!("Broken database: invalid salt for root key");
-            Error::BrokenDatabase
+            KeyHolderError::BrokenDatabase
         })?;
         let mut seal_key = derive_key(seal_key_raw, &salt);
 
         let mut root_key = SafeCell::new(current_key.ciphertext.clone());
 
-        let nonce = v1::Nonce::try_from(current_key.root_key_encryption_nonce.as_slice()).map_err(
-            |_| {
+        let nonce = Nonce::try_from(current_key.root_key_encryption_nonce.as_slice()).map_err(
+            |()| {
                 error!("Broken database: invalid nonce for root key");
-                Error::BrokenDatabase
+                KeyHolderError::BrokenDatabase
             },
         )?;
 
@@ -230,14 +242,14 @@ impl KeyHolder {
             .decrypt_in_place(&nonce, v1::ROOT_KEY_TAG, &mut root_key)
             .map_err(|err| {
                 error!(?err, "Failed to unseal root key: invalid seal key");
-                Error::InvalidKey
+                KeyHolderError::InvalidKey
             })?;
 
         self.state = State::Unsealed {
             root_key_history_id: current_key.id,
             root_key: KeyCell::try_from(root_key).map_err(|err| {
                 error!(?err, "Broken database: invalid encryption key size");
-                Error::BrokenDatabase
+                KeyHolderError::BrokenDatabase
             })?,
         };
 
@@ -247,9 +259,9 @@ impl KeyHolder {
     }
 
     #[message]
-    pub async fn decrypt(&mut self, aead_id: i32) -> Result<SafeCell<Vec<u8>>, Error> {
+    pub async fn decrypt(&mut self, aead_id: i32) -> Result<SafeCell<Vec<u8>>, KeyHolderError> {
         let State::Unsealed { root_key, .. } = &mut self.state else {
-            return Err(Error::NotBootstrapped);
+            return Err(KeyHolderError::NotBootstrapped);
         };
 
         let row: models::AeadEncrypted = {
@@ -260,15 +272,15 @@ impl KeyHolder {
                 .first(&mut conn)
                 .await
                 .optional()?
-                .ok_or(Error::NotFound)?
+                .ok_or(KeyHolderError::NotFound)?
         };
 
-        let nonce = v1::Nonce::try_from(row.current_nonce.as_slice()).map_err(|_| {
+        let nonce = Nonce::try_from(row.current_nonce.as_slice()).map_err(|()| {
             error!(
                 "Broken database: invalid nonce for aead_encrypted id={}",
                 aead_id
             );
-            Error::BrokenDatabase
+            KeyHolderError::BrokenDatabase
         })?;
         let mut output = SafeCell::new(row.ciphertext);
         root_key.decrypt_in_place(&nonce, v1::TAG, &mut output)?;
@@ -277,14 +289,17 @@ impl KeyHolder {
 
     // Creates new `aead_encrypted` entry in the database and returns it's ID
     #[message]
-    pub async fn create_new(&mut self, mut plaintext: SafeCell<Vec<u8>>) -> Result<i32, Error> {
+    pub async fn create_new(
+        &mut self,
+        mut plaintext: SafeCell<Vec<u8>>,
+    ) -> Result<i32, KeyHolderError> {
         let State::Unsealed {
             root_key,
             root_key_history_id,
             ..
         } = &mut self.state
         else {
-            return Err(Error::NotBootstrapped);
+            return Err(KeyHolderError::NotBootstrapped);
         };
 
         // Order matters here - `get_new_nonce` acquires connection, so we need to call it before next acquire
@@ -320,21 +335,19 @@ impl KeyHolder {
     }
 
     #[message]
-    pub fn sign_integrity(&mut self, mac_input: Vec<u8>) -> Result<(i32, Vec<u8>), Error> {
+    pub fn sign_integrity(&mut self, mac_input: Vec<u8>) -> Result<(i32, Vec<u8>), KeyHolderError> {
         let State::Unsealed {
             root_key,
             root_key_history_id,
         } = &mut self.state
         else {
-            return Err(Error::NotBootstrapped);
+            return Err(KeyHolderError::NotBootstrapped);
         };
 
-        let mut hmac = root_key
-            .0
-            .read_inline(|k| match HmacSha256::new_from_slice(k) {
-                Ok(v) => v,
-                Err(_) => unreachable!("HMAC accepts keys of any size"),
-            });
+        let mut hmac = root_key.0.read_inline(|k| {
+            HmacSha256::new_from_slice(k)
+                .unwrap_or_else(|_| unreachable!("HMAC accepts keys of any size"))
+        });
         hmac.update(&root_key_history_id.to_be_bytes());
         hmac.update(&mac_input);
 
@@ -348,25 +361,23 @@ impl KeyHolder {
         mac_input: Vec<u8>,
         expected_mac: Vec<u8>,
         key_version: i32,
-    ) -> Result<bool, Error> {
+    ) -> Result<bool, KeyHolderError> {
         let State::Unsealed {
             root_key,
             root_key_history_id,
         } = &mut self.state
         else {
-            return Err(Error::NotBootstrapped);
+            return Err(KeyHolderError::NotBootstrapped);
         };
 
         if *root_key_history_id != key_version {
             return Ok(false);
         }
 
-        let mut hmac = root_key
-            .0
-            .read_inline(|k| match HmacSha256::new_from_slice(k) {
-                Ok(v) => v,
-                Err(_) => unreachable!("HMAC accepts keys of any size"),
-            });
+        let mut hmac = root_key.0.read_inline(|k| {
+            HmacSha256::new_from_slice(k)
+                .unwrap_or_else(|_| unreachable!("HMAC accepts keys of any size"))
+        });
         hmac.update(&key_version.to_be_bytes());
         hmac.update(&mac_input);
 
@@ -374,13 +385,13 @@ impl KeyHolder {
     }
 
     #[message]
-    pub fn seal(&mut self) -> Result<(), Error> {
+    pub fn seal(&mut self) -> Result<(), KeyHolderError> {
         let State::Unsealed {
             root_key_history_id,
             ..
         } = &self.state
         else {
-            return Err(Error::NotBootstrapped);
+            return Err(KeyHolderError::NotBootstrapped);
         };
         self.state = State::Sealed {
             root_key_history_id: *root_key_history_id,
@@ -391,12 +402,7 @@ impl KeyHolder {
 
 #[cfg(test)]
 mod tests {
-    use diesel::SelectableHelper;
-
-    use diesel_async::RunQueryDsl;
-
-    use crate::db::{self};
-    use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
+    use arbiter_crypto::safecell::SafeCellHandle as _;
 
     use super::*;
 
@@ -412,12 +418,12 @@ mod tests {
     async fn nonce_monotonic_even_when_nonce_allocation_interleaves() {
         let db = db::create_test_pool().await;
         let mut actor = bootstrapped_actor(&db).await;
-        let root_key_history_id = match actor.state {
-            State::Unsealed {
-                root_key_history_id,
-                ..
-            } => root_key_history_id,
-            _ => panic!("expected unsealed state"),
+        let State::Unsealed {
+            root_key_history_id,
+            ..
+        } = actor.state
+        else {
+            panic!("expected unsealed state");
         };
 
         let n1 = KeyHolder::get_new_nonce(&db, root_key_history_id)
@@ -429,8 +435,8 @@ mod tests {
         assert!(n2.to_vec() > n1.to_vec(), "nonce must increase");
 
         let mut conn = db.get().await.unwrap();
-        let root_row: models::RootKeyHistory = schema::root_key_history::table
-            .select(models::RootKeyHistory::as_select())
+        let root_row = schema::root_key_history::table
+            .select(RootKeyHistory::as_select())
             .first(&mut conn)
             .await
             .unwrap();

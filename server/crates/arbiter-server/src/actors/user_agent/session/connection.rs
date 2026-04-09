@@ -11,12 +11,13 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::error::SendError;
 use kameo::messages;
 use kameo::prelude::Context;
+use thiserror::Error;
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
-use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
+use crate::{actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer, evm::policies::SharedGrantSettings};
 use crate::actors::keyholder::KeyHolderState;
-use crate::actors::user_agent::session::Error;
+use crate::actors::user_agent::session::UserAgentSessionError;
 use crate::actors::{
     evm::{
         ClientSignTransaction, Generate, ListWallets, SignTransactionError as EvmSignError,
@@ -34,10 +35,12 @@ use crate::db::models::{
 use crate::evm::policies::{Grant, SpecificGrant};
 
 impl UserAgentSession {
-    fn take_unseal_secret(&mut self) -> Result<(EphemeralSecret, PublicKey), Error> {
+    fn take_unseal_secret(&self) -> Result<(EphemeralSecret, PublicKey), UserAgentSessionError> {
         let UserAgentStates::WaitingForUnsealKey(unseal_context) = self.state.state() else {
             error!("Received encrypted key in invalid state");
-            return Err(Error::internal("Invalid state for unseal encrypted key"));
+            return Err(UserAgentSessionError::internal(
+                "Invalid state for unseal encrypted key",
+            ));
         };
 
         let ephemeral_secret = {
@@ -47,13 +50,14 @@ impl UserAgentSession {
             )]
             let mut secret_lock = unseal_context.secret.lock().unwrap();
             let secret = secret_lock.take();
-            match secret {
-                Some(secret) => secret,
-                None => {
-                    drop(secret_lock);
-                    error!("Ephemeral secret already taken");
-                    return Err(Error::internal("Ephemeral secret already taken"));
-                }
+            if let Some(secret) = secret {
+                secret
+            } else {
+                drop(secret_lock);
+                error!("Ephemeral secret already taken");
+                return Err(UserAgentSessionError::internal(
+                    "Ephemeral secret already taken",
+                ));
             }
         };
 
@@ -79,7 +83,7 @@ impl UserAgentSession {
         });
 
         match decryption_result {
-            Ok(_) => Ok(key_buffer),
+            Ok(()) => Ok(key_buffer),
             Err(err) => {
                 error!(?err, "Failed to decrypt encrypted key material");
                 Err(())
@@ -97,7 +101,7 @@ pub enum UnsealError {
     #[error("Invalid key provided for unsealing")]
     InvalidKey,
     #[error("Internal error during unsealing process")]
-    General(#[from] super::Error),
+    General(#[from] UserAgentSessionError),
 }
 
 #[derive(Debug, Error)]
@@ -108,7 +112,7 @@ pub enum BootstrapError {
     AlreadyBootstrapped,
 
     #[error("Internal error during bootstrapping process")]
-    General(#[from] super::Error),
+    General(#[from] UserAgentSessionError),
 }
 
 #[derive(Debug, Error)]
@@ -132,16 +136,16 @@ pub enum GrantMutationError {
 #[messages]
 impl UserAgentSession {
     #[message]
-    pub async fn handle_unseal_request(
+    pub fn handle_unseal_request(
         &mut self,
-        client_pubkey: x25519_dalek::PublicKey,
-    ) -> Result<UnsealStartResponse, Error> {
+        client_pubkey: PublicKey,
+    ) -> Result<UnsealStartResponse, UserAgentSessionError> {
         let secret = EphemeralSecret::random();
         let public_key = PublicKey::from(&secret);
 
         self.transition(UserAgentEvents::UnsealRequest(UnsealContext {
-            secret: Mutex::new(Some(secret)),
             client_public_key: client_pubkey,
+            secret: Mutex::new(Some(secret)),
         }))?;
 
         Ok(UnsealStartResponse {
@@ -158,27 +162,24 @@ impl UserAgentSession {
     ) -> Result<(), UnsealError> {
         let (ephemeral_secret, client_public_key) = match self.take_unseal_secret() {
             Ok(values) => values,
-            Err(Error::State) => {
+            Err(UserAgentSessionError::State) => {
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
                 return Err(UnsealError::InvalidKey);
             }
             Err(_err) => {
-                return Err(Error::internal("Failed to take unseal secret").into());
+                return Err(UserAgentSessionError::internal("Failed to take unseal secret").into());
             }
         };
 
-        let seal_key_buffer = match Self::decrypt_client_key_material(
+        let Ok(seal_key_buffer) = Self::decrypt_client_key_material(
             ephemeral_secret,
             client_public_key,
             &nonce,
             &ciphertext,
             &associated_data,
-        ) {
-            Ok(buffer) => buffer,
-            Err(()) => {
-                self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                return Err(UnsealError::InvalidKey);
-            }
+        ) else {
+            self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+            return Err(UnsealError::InvalidKey);
         };
 
         match self
@@ -190,12 +191,12 @@ impl UserAgentSession {
             })
             .await
         {
-            Ok(_) => {
+            Ok(()) => {
                 info!("Successfully unsealed key with client-provided key");
                 self.transition(UserAgentEvents::ReceivedValidKey)?;
                 Ok(())
             }
-            Err(SendError::HandlerError(keyholder::Error::InvalidKey)) => {
+            Err(SendError::HandlerError(keyholder::KeyHolderError::InvalidKey)) => {
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
                 Err(UnsealError::InvalidKey)
             }
@@ -207,7 +208,7 @@ impl UserAgentSession {
             Err(err) => {
                 error!(?err, "Failed to send unseal request to keyholder");
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                Err(Error::internal("Vault actor error").into())
+                Err(UserAgentSessionError::internal("Vault actor error").into())
             }
         }
     }
@@ -221,25 +222,22 @@ impl UserAgentSession {
     ) -> Result<(), BootstrapError> {
         let (ephemeral_secret, client_public_key) = match self.take_unseal_secret() {
             Ok(values) => values,
-            Err(Error::State) => {
+            Err(UserAgentSessionError::State) => {
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
                 return Err(BootstrapError::InvalidKey);
             }
             Err(err) => return Err(err.into()),
         };
 
-        let seal_key_buffer = match Self::decrypt_client_key_material(
+        let Ok(seal_key_buffer) = Self::decrypt_client_key_material(
             ephemeral_secret,
             client_public_key,
             &nonce,
             &ciphertext,
             &associated_data,
-        ) {
-            Ok(buffer) => buffer,
-            Err(()) => {
-                self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                return Err(BootstrapError::InvalidKey);
-            }
+        ) else {
+            self.transition(UserAgentEvents::ReceivedInvalidKey)?;
+            return Err(BootstrapError::InvalidKey);
         };
 
         match self
@@ -251,12 +249,12 @@ impl UserAgentSession {
             })
             .await
         {
-            Ok(_) => {
+            Ok(()) => {
                 info!("Successfully bootstrapped vault with client-provided key");
                 self.transition(UserAgentEvents::ReceivedValidKey)?;
                 Ok(())
             }
-            Err(SendError::HandlerError(keyholder::Error::AlreadyBootstrapped)) => {
+            Err(SendError::HandlerError(keyholder::KeyHolderError::AlreadyBootstrapped)) => {
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
                 Err(BootstrapError::AlreadyBootstrapped)
             }
@@ -268,7 +266,7 @@ impl UserAgentSession {
             Err(err) => {
                 error!(?err, "Failed to send bootstrap request to keyholder");
                 self.transition(UserAgentEvents::ReceivedInvalidKey)?;
-                Err(BootstrapError::General(Error::internal(
+                Err(BootstrapError::General(UserAgentSessionError::internal(
                     "Vault actor error",
                 )))
             }
@@ -279,14 +277,16 @@ impl UserAgentSession {
 #[messages]
 impl UserAgentSession {
     #[message]
-    pub(crate) async fn handle_query_vault_state(&mut self) -> Result<KeyHolderState, Error> {
+    pub(crate) async fn handle_query_vault_state(
+        &mut self,
+    ) -> Result<KeyHolderState, UserAgentSessionError> {
         use crate::actors::keyholder::GetState;
 
         let vault_state = match self.props.actors.key_holder.ask(GetState {}).await {
             Ok(state) => state,
             Err(err) => {
                 error!(?err, actor = "useragent", "keyholder.query.failed");
-                return Err(Error::internal("Vault is in broken state"));
+                return Err(UserAgentSessionError::internal("Vault is in broken state"));
             }
         };
 
@@ -297,26 +297,32 @@ impl UserAgentSession {
 #[messages]
 impl UserAgentSession {
     #[message]
-    pub(crate) async fn handle_evm_wallet_create(&mut self) -> Result<(i32, Address), Error> {
+    pub(crate) async fn handle_evm_wallet_create(
+        &mut self,
+    ) -> Result<(i32, Address), UserAgentSessionError> {
         match self.props.actors.evm.ask(Generate {}).await {
             Ok(address) => Ok(address),
-            Err(SendError::HandlerError(err)) => Err(Error::internal(format!(
+            Err(SendError::HandlerError(err)) => Err(UserAgentSessionError::internal(format!(
                 "EVM wallet generation failed: {err}"
             ))),
             Err(err) => {
                 error!(?err, "EVM actor unreachable during wallet create");
-                Err(Error::internal("EVM actor unreachable"))
+                Err(UserAgentSessionError::internal("EVM actor unreachable"))
             }
         }
     }
 
     #[message]
-    pub(crate) async fn handle_evm_wallet_list(&mut self) -> Result<Vec<(i32, Address)>, Error> {
+    pub(crate) async fn handle_evm_wallet_list(
+        &mut self,
+    ) -> Result<Vec<(i32, Address)>, UserAgentSessionError> {
         match self.props.actors.evm.ask(ListWallets {}).await {
             Ok(wallets) => Ok(wallets),
             Err(err) => {
                 error!(?err, "EVM wallet list failed");
-                Err(Error::internal("Failed to list EVM wallets"))
+                Err(UserAgentSessionError::internal(
+                    "Failed to list EVM wallets",
+                ))
             }
         }
     }
@@ -325,12 +331,14 @@ impl UserAgentSession {
 #[messages]
 impl UserAgentSession {
     #[message]
-    pub(crate) async fn handle_grant_list(&mut self) -> Result<Vec<Grant<SpecificGrant>>, Error> {
+    pub(crate) async fn handle_grant_list(
+        &mut self,
+    ) -> Result<Vec<Grant<SpecificGrant>>, UserAgentSessionError> {
         match self.props.actors.evm.ask(UseragentListGrants {}).await {
             Ok(grants) => Ok(grants),
             Err(err) => {
                 error!(?err, "EVM grant list failed");
-                Err(Error::internal("Failed to list EVM grants"))
+                Err(UserAgentSessionError::internal("Failed to list EVM grants"))
             }
         }
     }
@@ -338,8 +346,8 @@ impl UserAgentSession {
     #[message]
     pub(crate) async fn handle_grant_create(
         &mut self,
-        basic: crate::evm::policies::SharedGrantSettings,
-        grant: crate::evm::policies::SpecificGrant,
+        basic: SharedGrantSettings,
+        grant: SpecificGrant,
     ) -> Result<i32, GrantMutationError> {
         match self
             .props
@@ -357,6 +365,7 @@ impl UserAgentSession {
     }
 
     #[message]
+    #[expect(clippy::unused_async, reason = "false positive")]
     pub(crate) async fn handle_grant_delete(
         &mut self,
         grant_id: i32,
@@ -374,7 +383,7 @@ impl UserAgentSession {
         //         Err(GrantMutationError::Internal)
         //     }
         // }
-       let _ = grant_id;
+        let _ = grant_id;
         todo!()
     }
 
@@ -411,7 +420,7 @@ impl UserAgentSession {
     pub(crate) async fn handle_grant_evm_wallet_access(
         &mut self,
         entries: Vec<NewEvmWalletAccess>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), UserAgentSessionError> {
         let mut conn = self.props.db.get().await?;
         conn.transaction(|conn| {
             Box::pin(async move {
@@ -425,7 +434,7 @@ impl UserAgentSession {
                         .await?;
                 }
 
-                Result::<_, Error>::Ok(())
+                Result::<_, UserAgentSessionError>::Ok(())
             })
         })
         .await?;
@@ -436,7 +445,7 @@ impl UserAgentSession {
     pub(crate) async fn handle_revoke_evm_wallet_access(
         &mut self,
         entries: Vec<i32>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), UserAgentSessionError> {
         let mut conn = self.props.db.get().await?;
         conn.transaction(|conn| {
             Box::pin(async move {
@@ -448,7 +457,7 @@ impl UserAgentSession {
                         .await?;
                 }
 
-                Result::<_, Error>::Ok(())
+                Result::<_, UserAgentSessionError>::Ok(())
             })
         })
         .await?;
@@ -458,10 +467,9 @@ impl UserAgentSession {
     #[message]
     pub(crate) async fn handle_list_wallet_access(
         &mut self,
-    ) -> Result<Vec<EvmWalletAccess>, Error> {
+    ) -> Result<Vec<EvmWalletAccess>, UserAgentSessionError> {
         let mut conn = self.props.db.get().await?;
-        use crate::db::schema::evm_wallet_access;
-        let access_entries = evm_wallet_access::table
+        let access_entries = crate::db::schema::evm_wallet_access::table
             .select(EvmWalletAccess::as_select())
             .load::<_>(&mut conn)
             .await?;
@@ -476,14 +484,14 @@ impl UserAgentSession {
         &mut self,
         approved: bool,
         pubkey: authn::PublicKey,
-        ctx: &mut Context<Self, Result<(), Error>>,
-    ) -> Result<(), Error> {
-        let pending_approval = match self.pending_client_approvals.remove(&pubkey.to_bytes()) {
-            Some(approval) => approval,
-            None => {
-                error!("Received client connection response for unknown client");
-                return Err(Error::internal("Unknown client in connection response"));
-            }
+        ctx: &Context<Self, Result<(), UserAgentSessionError>>,
+    ) -> Result<(), UserAgentSessionError> {
+        let Some(pending_approval) = self.pending_client_approvals.remove(&pubkey.to_bytes())
+        else {
+            error!("Received client connection response for unknown client");
+            return Err(UserAgentSessionError::internal(
+                "Unknown client in connection response",
+            ));
         };
 
         pending_approval
@@ -495,7 +503,9 @@ impl UserAgentSession {
                     ?err,
                     "Failed to send client approval response to controller"
                 );
-                Error::internal("Failed to send client approval response to controller")
+                UserAgentSessionError::internal(
+                    "Failed to send client approval response to controller",
+                )
             })?;
 
         ctx.actor_ref().unlink(&pending_approval.controller).await;
@@ -506,7 +516,7 @@ impl UserAgentSession {
     #[message]
     pub(crate) async fn handle_sdk_client_list(
         &mut self,
-    ) -> Result<Vec<(ProgramClient, ProgramClientMetadata)>, Error> {
+    ) -> Result<Vec<(ProgramClient, ProgramClientMetadata)>, UserAgentSessionError> {
         use crate::db::schema::{client_metadata, program_client};
         let mut conn = self.props.db.get().await?;
 

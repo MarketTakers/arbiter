@@ -1,6 +1,7 @@
 use arbiter_crypto::authn::{self, CLIENT_CONTEXT};
 use arbiter_proto::{
     ClientMetadata,
+    proto::client::auth::{AuthChallenge as ProtoAuthChallenge, AuthResult as ProtoAuthResult},
     transport::{Bi, expect_message},
 };
 use chrono::Utc;
@@ -27,34 +28,60 @@ use crate::{
 };
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
-pub enum Error {
-    #[error("Database pool unavailable")]
-    DatabasePoolUnavailable,
-    #[error("Database operation failed")]
-    DatabaseOperationFailed,
-    #[error("Integrity check failed")]
-    IntegrityCheckFailed,
-    #[error("Invalid challenge solution")]
-    InvalidChallengeSolution,
+pub enum ClientAuthError {
     #[error("Client approval request failed")]
     ApproveError(#[from] ApproveError),
+
+    #[error("Database operation failed")]
+    DatabaseOperationFailed,
+
+    #[error("Database pool unavailable")]
+    DatabasePoolUnavailable,
+
+    #[error("Integrity check failed")]
+    IntegrityCheckFailed,
+
+    #[error("Invalid challenge solution")]
+    InvalidChallengeSolution,
+
     #[error("Transport error")]
     Transport,
 }
 
-impl From<diesel::result::Error> for Error {
+impl From<diesel::result::Error> for ClientAuthError {
     fn from(e: diesel::result::Error) -> Self {
         error!(?e, "Database error");
         Self::DatabaseOperationFailed
     }
 }
 
+impl From<ClientAuthError> for arbiter_proto::proto::client::auth::AuthResult {
+    fn from(value: ClientAuthError) -> Self {
+        match value {
+            ClientAuthError::ApproveError(e) => match e {
+                ApproveError::Denied => Self::ApprovalDenied,
+                ApproveError::Internal => Self::Internal,
+                ApproveError::Upstream(flow_coordinator::ApprovalError::NoUserAgentsConnected) => {
+                    Self::NoUserAgentsOnline
+                } // ApproveError::Upstream(_) => Self::Internal,
+            },
+            ClientAuthError::DatabaseOperationFailed
+            | ClientAuthError::DatabasePoolUnavailable
+            | ClientAuthError::IntegrityCheckFailed
+            | ClientAuthError::Transport => Self::Internal,
+            ClientAuthError::InvalidChallengeSolution => Self::InvalidSignature,
+        }
+    }
+}
+
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum ApproveError {
-    #[error("Internal error")]
-    Internal,
     #[error("Client connection denied by user agents")]
     Denied,
+
+    #[error("Internal error")]
+    Internal,
+
     #[error("Upstream error: {0}")]
     Upstream(flow_coordinator::ApprovalError),
 }
@@ -79,16 +106,28 @@ pub enum Outbound {
     AuthSuccess,
 }
 
+impl From<Outbound> for arbiter_proto::proto::client::auth::response::Payload {
+    fn from(value: Outbound) -> Self {
+        match value {
+            Outbound::AuthChallenge { pubkey, nonce } => Self::Challenge(ProtoAuthChallenge {
+                pubkey: pubkey.to_bytes(),
+                nonce,
+            }),
+            Outbound::AuthSuccess => Self::Result(ProtoAuthResult::Success.into()),
+        }
+    }
+}
+
 /// Returns the current nonce and client ID for a registered client.
 /// Returns `None` if the pubkey is not registered.
 async fn get_current_nonce_and_id(
     db: &db::DatabasePool,
     pubkey: &authn::PublicKey,
-) -> Result<Option<(i32, i32)>, Error> {
+) -> Result<Option<(i32, i32)>, ClientAuthError> {
     let pubkey_bytes = pubkey.to_bytes();
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
-        Error::DatabasePoolUnavailable
+        ClientAuthError::DatabasePoolUnavailable
     })?;
     program_client::table
         .filter(program_client::public_key.eq(&pubkey_bytes))
@@ -98,7 +137,7 @@ async fn get_current_nonce_and_id(
         .optional()
         .map_err(|e| {
             error!(error = ?e, "Database error");
-            Error::DatabaseOperationFailed
+            ClientAuthError::DatabaseOperationFailed
         })
 }
 
@@ -106,15 +145,15 @@ async fn verify_integrity(
     db: &db::DatabasePool,
     keyholder: &ActorRef<KeyHolder>,
     pubkey: &authn::PublicKey,
-) -> Result<(), Error> {
+) -> Result<(), ClientAuthError> {
     let mut db_conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
-        Error::DatabasePoolUnavailable
+        ClientAuthError::DatabasePoolUnavailable
     })?;
 
     let (id, nonce) = get_current_nonce_and_id(db, pubkey).await?.ok_or_else(|| {
         error!("Client not found during integrity verification");
-        Error::DatabaseOperationFailed
+        ClientAuthError::DatabaseOperationFailed
     })?;
 
     let attestation = integrity::verify_entity(
@@ -129,12 +168,12 @@ async fn verify_integrity(
     .await
     .map_err(|e| {
         error!(?e, "Integrity verification failed");
-        Error::IntegrityCheckFailed
+        ClientAuthError::IntegrityCheckFailed
     })?;
 
     if attestation != AttestationStatus::Attested {
         error!("Integrity attestation unavailable for client {id}");
-        return Err(Error::IntegrityCheckFailed);
+        return Err(ClientAuthError::IntegrityCheckFailed);
     }
 
     Ok(())
@@ -146,13 +185,13 @@ async fn create_nonce(
     db: &db::DatabasePool,
     keyholder: &ActorRef<KeyHolder>,
     pubkey: &authn::PublicKey,
-) -> Result<i32, Error> {
+) -> Result<i32, ClientAuthError> {
     let pubkey_bytes = pubkey.to_bytes();
     let pubkey = pubkey.clone();
 
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
-        Error::DatabasePoolUnavailable
+        ClientAuthError::DatabasePoolUnavailable
     })?;
 
     conn.exclusive_transaction(|conn| {
@@ -178,7 +217,7 @@ async fn create_nonce(
             .await
             .map_err(|e| {
                 error!(?e, "Integrity sign failed after nonce update");
-                Error::DatabaseOperationFailed
+                ClientAuthError::DatabaseOperationFailed
             })?;
 
             Ok(new_nonce)
@@ -190,7 +229,7 @@ async fn create_nonce(
 async fn approve_new_client(
     actors: &crate::actors::GlobalActors,
     profile: ClientProfile,
-) -> Result<(), Error> {
+) -> Result<(), ClientAuthError> {
     let result = actors
         .flow_coordinator
         .ask(RequestClientApproval { client: profile })
@@ -198,14 +237,14 @@ async fn approve_new_client(
 
     match result {
         Ok(true) => Ok(()),
-        Ok(false) => Err(Error::ApproveError(ApproveError::Denied)),
+        Ok(false) => Err(ClientAuthError::ApproveError(ApproveError::Denied)),
         Err(SendError::HandlerError(e)) => {
             error!(error = ?e, "Approval upstream error");
-            Err(Error::ApproveError(ApproveError::Upstream(e)))
+            Err(ClientAuthError::ApproveError(ApproveError::Upstream(e)))
         }
         Err(e) => {
             error!(error = ?e, "Approval request to flow coordinator failed");
-            Err(Error::ApproveError(ApproveError::Internal))
+            Err(ClientAuthError::ApproveError(ApproveError::Internal))
         }
     }
 }
@@ -215,14 +254,14 @@ async fn insert_client(
     keyholder: &ActorRef<KeyHolder>,
     pubkey: &authn::PublicKey,
     metadata: &ClientMetadata,
-) -> Result<i32, Error> {
-    use crate::db::schema::{client_metadata, program_client};
+) -> Result<i32, ClientAuthError> {
+    use crate::db::schema::client_metadata;
     let pubkey = pubkey.clone();
     let metadata = metadata.clone();
 
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
-        Error::DatabasePoolUnavailable
+        ClientAuthError::DatabasePoolUnavailable
     })?;
 
     conn.exclusive_transaction(|conn| {
@@ -264,7 +303,7 @@ async fn insert_client(
             .await
             .map_err(|e| {
                 error!(error = ?e, "Failed to sign integrity tag for new client key");
-                Error::DatabaseOperationFailed
+                ClientAuthError::DatabaseOperationFailed
             })?;
 
             Ok(client_id)
@@ -277,14 +316,14 @@ async fn sync_client_metadata(
     db: &db::DatabasePool,
     client_id: i32,
     metadata: &ClientMetadata,
-) -> Result<(), Error> {
+) -> Result<(), ClientAuthError> {
     use crate::db::schema::{client_metadata, client_metadata_history};
 
     let now = SqliteTimestamp(Utc::now());
 
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
-        Error::DatabasePoolUnavailable
+        ClientAuthError::DatabasePoolUnavailable
     })?;
 
     conn.exclusive_transaction(|conn| {
@@ -340,7 +379,7 @@ async fn sync_client_metadata(
     .await
     .map_err(|e| {
         error!(error = ?e, "Database error");
-        Error::DatabaseOperationFailed
+        ClientAuthError::DatabaseOperationFailed
     })
 }
 
@@ -348,9 +387,9 @@ async fn challenge_client<T>(
     transport: &mut T,
     pubkey: authn::PublicKey,
     nonce: i32,
-) -> Result<(), Error>
+) -> Result<(), ClientAuthError>
 where
-    T: Bi<Inbound, Result<Outbound, Error>> + ?Sized,
+    T: Bi<Inbound, Result<Outbound, ClientAuthError>> + ?Sized,
 {
     transport
         .send(Ok(Outbound::AuthChallenge {
@@ -360,51 +399,51 @@ where
         .await
         .map_err(|e| {
             error!(error = ?e, "Failed to send auth challenge");
-            Error::Transport
+            ClientAuthError::Transport
         })?;
 
     let signature = expect_message(transport, |req: Inbound| match req {
         Inbound::AuthChallengeSolution { signature } => Some(signature),
-        _ => None,
+        Inbound::AuthChallengeRequest { .. } => None,
     })
     .await
     .map_err(|e| {
         error!(error = ?e, "Failed to receive challenge solution");
-        Error::Transport
+        ClientAuthError::Transport
     })?;
 
     if !pubkey.verify(nonce, CLIENT_CONTEXT, &signature) {
         error!("Challenge solution verification failed");
-        return Err(Error::InvalidChallengeSolution);
+        return Err(ClientAuthError::InvalidChallengeSolution);
     }
 
     Ok(())
 }
 
-pub async fn authenticate<T>(props: &mut ClientConnection, transport: &mut T) -> Result<i32, Error>
+pub async fn authenticate<T>(
+    props: &mut ClientConnection,
+    transport: &mut T,
+) -> Result<i32, ClientAuthError>
 where
-    T: Bi<Inbound, Result<Outbound, Error>> + Send + ?Sized,
+    T: Bi<Inbound, Result<Outbound, ClientAuthError>> + Send + ?Sized,
 {
     let Some(Inbound::AuthChallengeRequest { pubkey, metadata }) = transport.recv().await else {
-        return Err(Error::Transport);
+        return Err(ClientAuthError::Transport);
     };
 
-    let client_id = match get_current_nonce_and_id(&props.db, &pubkey).await? {
-        Some((id, _)) => {
-            verify_integrity(&props.db, &props.actors.key_holder, &pubkey).await?;
-            id
-        }
-        None => {
-            approve_new_client(
-                &props.actors,
-                ClientProfile {
-                    pubkey: pubkey.clone(),
-                    metadata: metadata.clone(),
-                },
-            )
-            .await?;
-            insert_client(&props.db, &props.actors.key_holder, &pubkey, &metadata).await?
-        }
+    let client_id = if let Some((id, _)) = get_current_nonce_and_id(&props.db, &pubkey).await? {
+        verify_integrity(&props.db, &props.actors.key_holder, &pubkey).await?;
+        id
+    } else {
+        approve_new_client(
+            &props.actors,
+            ClientProfile {
+                pubkey: pubkey.clone(),
+                metadata: metadata.clone(),
+            },
+        )
+        .await?;
+        insert_client(&props.db, &props.actors.key_holder, &pubkey, &metadata).await?
     };
 
     sync_client_metadata(&props.db, client_id, &metadata).await?;
@@ -416,7 +455,7 @@ where
         .await
         .map_err(|e| {
             error!(error = ?e, "Failed to send auth success");
-            Error::Transport
+            ClientAuthError::Transport
         })?;
 
     Ok(client_id)

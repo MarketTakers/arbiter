@@ -59,7 +59,11 @@ pub struct ArbiterEvmWallet {
 }
 
 impl ArbiterEvmWallet {
-    pub(crate) fn new(transport: Arc<Mutex<ClientTransport>>, address: Address) -> Self {
+    #[expect(
+        dead_code,
+        reason = "new will be used in future methods for creating wallets with different parameters"
+    )]
+    pub(crate) const fn new(transport: Arc<Mutex<ClientTransport>>, address: Address) -> Self {
         Self {
             transport,
             address,
@@ -67,11 +71,12 @@ impl ArbiterEvmWallet {
         }
     }
 
-    pub fn address(&self) -> Address {
+    pub const fn address(&self) -> Address {
         self.address
     }
 
-    pub fn with_chain_id(mut self, chain_id: ChainId) -> Self {
+    #[must_use]
+    pub const fn with_chain_id(mut self, chain_id: ChainId) -> Self {
         self.chain_id = Some(chain_id);
         self
     }
@@ -146,6 +151,7 @@ impl TxSigner<Signature> for ArbiterEvmWallet {
             .recv()
             .await
             .map_err(|_| Error::other("failed to receive evm sign transaction response"))?;
+        drop(transport);
 
         if response.request_id != Some(request_id) {
             return Err(Error::other(

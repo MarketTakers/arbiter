@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
-    actors::keyholder::Error,
+    actors::keyholder::KeyHolderError,
     crypto::encryption::v1::Nonce,
     db::{self, models, schema},
 };
@@ -14,7 +14,7 @@ use crate::common;
 
 #[tokio::test]
 #[test_log::test]
-async fn test_create_decrypt_roundtrip() {
+async fn create_decrypt_roundtrip() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_keyholder(&db).await;
 
@@ -30,17 +30,17 @@ async fn test_create_decrypt_roundtrip() {
 
 #[tokio::test]
 #[test_log::test]
-async fn test_decrypt_nonexistent_returns_not_found() {
+async fn decrypt_nonexistent_returns_not_found() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_keyholder(&db).await;
 
     let err = actor.decrypt(9999).await.unwrap_err();
-    assert!(matches!(err, Error::NotFound));
+    assert!(matches!(err, KeyHolderError::NotFound));
 }
 
 #[tokio::test]
 #[test_log::test]
-async fn test_ciphertext_differs_across_entries() {
+async fn ciphertext_differs_across_entries() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_keyholder(&db).await;
 
@@ -78,7 +78,7 @@ async fn test_ciphertext_differs_across_entries() {
 
 #[tokio::test]
 #[test_log::test]
-async fn test_nonce_never_reused() {
+async fn nonce_never_reused() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_keyholder(&db).await;
 
@@ -142,7 +142,7 @@ async fn broken_db_nonce_format_fails_closed() {
         .create_new(SafeCell::new(b"must fail".to_vec()))
         .await
         .unwrap_err();
-    assert!(matches!(err, Error::BrokenDatabase));
+    assert!(matches!(err, KeyHolderError::BrokenDatabase));
 
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_keyholder(&db).await;
@@ -159,5 +159,5 @@ async fn broken_db_nonce_format_fails_closed() {
     drop(conn);
 
     let err = actor.decrypt(id).await.unwrap_err();
-    assert!(matches!(err, Error::BrokenDatabase));
+    assert!(matches!(err, KeyHolderError::BrokenDatabase));
 }

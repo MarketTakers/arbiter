@@ -31,7 +31,7 @@ pub struct ClientConnection {
 }
 
 impl ClientConnection {
-    pub fn new(db: db::DatabasePool, actors: GlobalActors) -> Self {
+    pub const fn new(db: db::DatabasePool, actors: GlobalActors) -> Self {
         Self { db, actors }
     }
 }
@@ -41,10 +41,10 @@ pub mod session;
 
 pub async fn connect_client<T>(mut props: ClientConnection, transport: &mut T)
 where
-    T: Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> + Send + ?Sized,
+    T: Bi<auth::Inbound, Result<auth::Outbound, auth::ClientAuthError>> + Send + ?Sized,
 {
     let fut = auth::authenticate(&mut props, transport);
-    println!("authenticate future size: {}", std::mem::size_of_val(&fut));
+    println!("authenticate future size: {}", size_of_val(&fut));
     match fut.await {
         Ok(client_id) => {
             ClientSession::spawn(ClientSession::new(props, client_id));
