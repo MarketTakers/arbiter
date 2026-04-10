@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:arbiter/features/connection/connection.dart';
 import 'package:arbiter/features/connection/server_info_storage.dart';
 import 'package:arbiter/features/identity/pk_manager.dart';
+import 'package:crypto/crypto.dart';
 import 'package:arbiter/proto/arbiter.pbgrpc.dart';
 import 'package:arbiter/proto/user_agent/auth.pb.dart' as ua_auth;
 import 'package:arbiter/proto/user_agent.pb.dart';
@@ -43,6 +44,18 @@ class ConnectionException implements Exception {
 
   @override
   String toString() => message;
+}
+
+String certificateFingerprintHex(List<int> derBytes) {
+  return sha256.convert(derBytes).toString();
+}
+
+bool isPinnedServerCertificate({
+  required String expectedFingerprint,
+  required List<int> certificateDer,
+}) {
+  return certificateFingerprintHex(certificateDer) ==
+      expectedFingerprint.toLowerCase();
 }
 
 Future<Connection> connectAndAuthorize(
@@ -155,7 +168,12 @@ Future<Connection> _connect(StoredServerInfo serverInfo) async {
       connectTimeout: const Duration(seconds: 10),
       credentials: ChannelCredentials.secure(
         onBadCertificate: (cert, host) {
-          return true;
+          final isExpectedHost = host == serverInfo.address;
+          final isPinnedCert = isPinnedServerCertificate(
+            expectedFingerprint: serverInfo.caCertFingerprint,
+            certificateDer: cert.der,
+          );
+          return isExpectedHost && isPinnedCert;
         },
       ),
     ),
