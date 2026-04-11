@@ -5,23 +5,25 @@ use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
 
 use crate::{
     actors::{
-        GlobalActors,
         client::ClientConnection,
         evm::{ClientSignTransaction, SignTransactionError},
         flow_coordinator::RegisterClient,
         keyholder::KeyHolderState,
     },
-    db,
+    crypto::integrity::Verified,
     evm::VetError,
 };
 
+#[cfg(test)]
+use crate::{actors::GlobalActors, db};
+
 pub struct ClientSession {
     props: ClientConnection,
-    client_id: i32,
+    client_id: Verified<i32>,
 }
 
 impl ClientSession {
-    pub(crate) fn new(props: ClientConnection, client_id: i32) -> Self {
+    pub(crate) fn new(props: ClientConnection, client_id: Verified<i32>) -> Self {
         Self { props, client_id }
     }
 }
@@ -54,7 +56,7 @@ impl ClientSession {
             .actors
             .evm
             .ask(ClientSignTransaction {
-                client_id: self.client_id,
+                client_id: *self.client_id,
                 wallet_address,
                 transaction,
             })
@@ -92,11 +94,12 @@ impl Actor for ClientSession {
 }
 
 impl ClientSession {
+    #[cfg(test)]
     pub fn new_test(db: db::DatabasePool, actors: GlobalActors) -> Self {
         let props = ClientConnection::new(db, actors);
         Self {
             props,
-            client_id: 0,
+            client_id: Verified::new_unchecked(0),
         }
     }
 }

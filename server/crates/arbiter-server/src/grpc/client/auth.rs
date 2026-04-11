@@ -22,6 +22,7 @@ use tracing::warn;
 
 use crate::{
     actors::client::{self, ClientConnection, auth},
+    crypto::integrity::Verified,
     grpc::request_tracker::RequestTracker,
 };
 
@@ -200,7 +201,7 @@ pub async fn start(
     conn: &mut ClientConnection,
     bi: &mut GrpcBi<ClientRequest, ClientResponse>,
     request_tracker: &mut RequestTracker,
-) -> Result<i32, auth::Error> {
+) -> Result<Verified<i32>, auth::Error> {
     let mut transport = AuthTransportAdapter::new(bi, request_tracker);
     client::auth::authenticate(conn, &mut transport).await
 }

@@ -53,7 +53,7 @@ async fn insert_registered_client(
         .await
         .unwrap();
 
-    integrity::sign_entity(
+    let _ = integrity::sign_entity(
         &mut conn,
         &actors.key_holder,
         &ClientCredentials { pubkey, nonce: 1 },

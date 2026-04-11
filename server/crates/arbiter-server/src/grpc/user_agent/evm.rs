@@ -66,7 +66,7 @@ async fn handle_wallet_create(
 ) -> Result<Option<UserAgentResponsePayload>, Status> {
     let result = match actor.ask(HandleEvmWalletCreate {}).await {
         Ok((wallet_id, address)) => WalletCreateResult::Wallet(WalletEntry {
-            id: wallet_id,
+            id: wallet_id.drop_verification_provenance(),
             address: address.to_vec(),
         }),
         Err(err) => {
@@ -150,7 +150,7 @@ async fn handle_grant_create(
         .try_convert()?;
 
     let result = match actor.ask(HandleGrantCreate { basic, grant }).await {
-        Ok(grant_id) => EvmGrantCreateResult::GrantId(grant_id.into_inner()),
+        Ok(grant_id) => EvmGrantCreateResult::GrantId(grant_id.drop_verification_provenance()),
         Err(kameo::error::SendError::HandlerError(GrantMutationError::VaultSealed)) => {
             EvmGrantCreateResult::Error(ProtoEvmError::VaultSealed.into())
         }

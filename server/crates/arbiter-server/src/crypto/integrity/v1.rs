@@ -11,6 +11,7 @@ use kameo::{actor::ActorRef, error::SendError};
 use sha2::Digest as _;
 
 pub mod hashing;
+pub mod verified;
 use self::hashing::Hashable;
 
 use crate::{
@@ -21,6 +22,12 @@ use crate::{
         schema::integrity_envelope,
     },
 };
+
+pub const CURRENT_PAYLOAD_VERSION: i32 = 1;
+pub const INTEGRITY_SUBKEY_TAG: &[u8] = b"arbiter/db-integrity-key/v1";
+
+pub type HmacSha256 = Hmac<Sha256>;
+pub use self::verified::Verified;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -56,62 +63,14 @@ pub enum AttestationStatus {
     Unavailable,
 }
 
-#[derive(Debug)]
-pub struct Verified<T>(T);
-
-impl<T> AsRef<T> for Verified<T> {
-    fn as_ref(&self) -> &T {
-        &self.0
-    }
-}
-
-impl<T> Verified<T> {
-    pub fn into_inner(self) -> T {
-        self.0
-    }
-}
-
-impl<T> Deref for Verified<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-pub const CURRENT_PAYLOAD_VERSION: i32 = 1;
-pub const INTEGRITY_SUBKEY_TAG: &[u8] = b"arbiter/db-integrity-key/v1";
-
-pub type HmacSha256 = Hmac<Sha256>;
-
 pub trait Integrable: Hashable {
     const KIND: &'static str;
     const VERSION: i32 = 1;
 }
 
-fn payload_hash(payload: &impl Hashable) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    payload.hash(&mut hasher);
-    hasher.finalize().into()
-}
-
-fn push_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
-    out.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
-    out.extend_from_slice(bytes);
-}
-
-fn build_mac_input(
-    entity_kind: &str,
-    entity_id: &[u8],
-    payload_version: i32,
-    payload_hash: &[u8; 32],
-) -> Vec<u8> {
-    let mut out = Vec::with_capacity(8 + entity_kind.len() + entity_id.len() + 32);
-    push_len_prefixed(&mut out, entity_kind.as_bytes());
-    push_len_prefixed(&mut out, entity_id);
-    out.extend_from_slice(&payload_version.to_be_bytes());
-    out.extend_from_slice(payload_hash);
-    out
+impl<T: Integrable> Integrable for &T {
+    const KIND: &'static str = T::KIND;
+    const VERSION: i32 = T::VERSION;
 }
 
 #[derive(Debug, Clone)]
@@ -137,52 +96,32 @@ impl From<&'_ [u8]> for EntityId {
     }
 }
 
-pub async fn lookup_verified<E, C, F, Fut>(
+pub async fn lookup_verified<E, Id, C, F, Fut>(
     conn: &mut C,
     keyholder: &ActorRef<KeyHolder>,
-    entity_id: impl Into<EntityId>,
+    entity_id: Id,
     load: F,
-) -> Result<Verified<E>, Error>
+) -> Result<Verified<Entity<E, Id>>, Error>
 where
     C: AsyncConnection<Backend = Sqlite>,
     E: Integrable,
+    Id: Into<EntityId> + Clone,
     F: FnOnce(&mut C) -> Fut,
     Fut: Future<Output = Result<E, db::DatabaseError>>,
 {
     let entity = load(conn).await?;
-    verify_entity(conn, keyholder, &entity, entity_id).await?;
-    Ok(Verified(entity))
-}
-
-pub async fn lookup_verified_allow_unavailable<E, C, F, Fut>(
-    conn: &mut C,
-    keyholder: &ActorRef<KeyHolder>,
-    entity_id: impl Into<EntityId>,
-    load: F,
-) -> Result<Verified<E>, Error>
-where
-    C: AsyncConnection<Backend = Sqlite>,
-    E: Integrable+ 'static,
-    F: FnOnce(&mut C) -> Fut,
-    Fut: Future<Output = Result<E, db::DatabaseError>>,
-{
-    let entity = load(conn).await?;
-    match check_entity_attestation(conn, keyholder, &entity, entity_id.into()).await? {
-        // IMPORTANT: allow_unavailable mode must succeed with an unattested result when vault key
-        // material is unavailable, otherwise integrity checks can be silently bypassed while sealed.
-        AttestationStatus::Attested | AttestationStatus::Unavailable => Ok(Verified(entity)),
-    }
+    verify_entity(conn, keyholder, entity, entity_id).await
 }
 
 pub async fn lookup_verified_from_query<E, Id, C, F>(
     conn: &mut C,
     keyholder: &ActorRef<KeyHolder>,
     load: F,
-) -> Result<Verified<E>, Error>
+) -> Result<Verified<Entity<E, Id>>, Error>
 where
     C: AsyncConnection<Backend = Sqlite> + Send,
     E: Integrable,
-    Id: Into<EntityId>,
+    Id: Into<EntityId> + Clone,
     F: for<'a> FnOnce(
         &'a mut C,
     ) -> Pin<
@@ -190,8 +129,7 @@ where
     >,
 {
     let (entity_id, entity) = load(conn).await?;
-    verify_entity(conn, keyholder, &entity, entity_id).await?;
-    Ok(Verified(entity))
+    verify_entity(conn, keyholder, entity, entity_id).await
 }
 
 pub async fn sign_entity<E: Integrable, Id: Into<EntityId> + Clone>(
@@ -236,7 +174,7 @@ pub async fn sign_entity<E: Integrable, Id: Into<EntityId> + Clone>(
         .await
         .map_err(db::DatabaseError::from)?;
 
-    Ok(Verified(as_entity_id))
+    Ok(Verified::new(as_entity_id))
 }
 
 pub async fn check_entity_attestation<E: Integrable>(
@@ -289,14 +227,41 @@ pub async fn check_entity_attestation<E: Integrable>(
     }
 }
 
-pub async fn verify_entity<'a, E: Integrable>(
+#[derive(Debug, Clone, crate::VerifiedFields!)]
+#[repr(C)]
+pub struct Entity<E, Id> {
+    pub entity: E,
+    pub entity_id: Id,
+}
+
+impl<E, Id> Deref for Entity<E, Id> {
+    type Target = E;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entity
+    }
+}
+
+pub async fn verify_entity<E: Integrable, Id: Into<EntityId> + Clone>(
     conn: &mut impl AsyncConnection<Backend = Sqlite>,
     keyholder: &ActorRef<KeyHolder>,
-    entity: &'a E,
-    entity_id: impl Into<EntityId>,
-) -> Result<Verified<&'a E>, Error> {
-    match check_entity_attestation::<E>(conn, keyholder, entity, entity_id).await? {
-        AttestationStatus::Attested => Ok(Verified(entity)),
+    entity: E,
+    entity_id: Id,
+) -> Result<Verified<Entity<E, Id>>, Error> {
+    match check_entity_attestation(conn, keyholder, &entity, entity_id.clone()).await? {
+        AttestationStatus::Attested => Ok(Verified::new(Entity { entity, entity_id })),
+        AttestationStatus::Unavailable => Err(Error::Keyholder(keyholder::Error::NotBootstrapped)),
+    }
+}
+
+pub async fn verify_entity_ref<'e, E: Integrable, Id: Into<EntityId> + Clone>(
+    conn: &mut impl AsyncConnection<Backend = Sqlite>,
+    keyholder: &ActorRef<KeyHolder>,
+    entity: &'e E,
+    entity_id: Id,
+) -> Result<Verified<Entity<&'e E, Id>>, Error> {
+    match check_entity_attestation(conn, keyholder, entity, entity_id.clone()).await? {
+        AttestationStatus::Attested => Ok(Verified::new(Entity { entity, entity_id })),
         AttestationStatus::Unavailable => Err(Error::Keyholder(keyholder::Error::NotBootstrapped)),
     }
 }
@@ -319,363 +284,30 @@ pub async fn delete_envelope<E: Integrable>(
     Ok(affected)
 }
 
-#[cfg(test)]
-mod tests {
-    use diesel::{ExpressionMethods as _, QueryDsl};
-    use diesel_async::RunQueryDsl;
-    use kameo::{actor::ActorRef, prelude::Spawn};
-    use sha2::Digest;
-
-    use crate::{
-        actors::keyholder::{Bootstrap, KeyHolder},
-        db::{self, schema},
-        safe_cell::{SafeCell, SafeCellHandle as _},
-    };
-
-    use super::hashing::Hashable;
-    use super::{
-        check_entity_attestation, AttestationStatus, Error, Integrable, lookup_verified,
-        lookup_verified_allow_unavailable, lookup_verified_from_query, sign_entity, verify_entity,
-    };
-
-    #[derive(Clone, Debug)]
-    struct DummyEntity {
-        payload_version: i32,
-        payload: Vec<u8>,
-    }
-
-    impl Hashable for DummyEntity {
-        fn hash<H: Digest>(&self, hasher: &mut H) {
-            self.payload_version.hash(hasher);
-            self.payload.hash(hasher);
-        }
-    }
-    impl Integrable for DummyEntity {
-        const KIND: &'static str = "dummy_entity";
-    }
-
-    async fn bootstrapped_keyholder(db: &db::DatabasePool) -> ActorRef<KeyHolder> {
-        let actor = KeyHolder::spawn(KeyHolder::new(db.clone()).await.unwrap());
-        actor
-            .ask(Bootstrap {
-                seal_key_raw: SafeCell::new(b"integrity-test-seal-key".to_vec()),
-            })
-            .await
-            .unwrap();
-        actor
-    }
-
-    #[tokio::test]
-    async fn sign_writes_envelope_and_verify_passes() {
-        let db = db::create_test_pool().await;
-        let keyholder = bootstrapped_keyholder(&db).await;
-        let mut conn = db.get().await.unwrap();
-
-        const ENTITY_ID: &[u8] = b"entity-id-7";
-
-        let entity = DummyEntity {
-            payload_version: 1,
-            payload: b"payload-v1".to_vec(),
-        };
-
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
-            .await
-            .unwrap();
-
-        let count: i64 = schema::integrity_envelope::table
-            .filter(schema::integrity_envelope::entity_kind.eq("dummy_entity"))
-            .filter(schema::integrity_envelope::entity_id.eq(ENTITY_ID))
-            .count()
-            .get_result(&mut conn)
-            .await
-            .unwrap();
-
-        assert_eq!(count, 1, "envelope row must be created exactly once");
-        let _ = check_entity_attestation(&mut conn, &keyholder, &entity, ENTITY_ID)
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn tampered_mac_fails_verification() {
-        let db = db::create_test_pool().await;
-        let keyholder = bootstrapped_keyholder(&db).await;
-        let mut conn = db.get().await.unwrap();
-
-        const ENTITY_ID: &[u8] = b"entity-id-11";
-
-        let entity = DummyEntity {
-            payload_version: 1,
-            payload: b"payload-v1".to_vec(),
-        };
-
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
-            .await
-            .unwrap();
-
-        diesel::update(schema::integrity_envelope::table)
-            .filter(schema::integrity_envelope::entity_kind.eq("dummy_entity"))
-            .filter(schema::integrity_envelope::entity_id.eq(ENTITY_ID))
-            .set(schema::integrity_envelope::mac.eq(vec![0u8; 32]))
-            .execute(&mut conn)
-            .await
-            .unwrap();
-
-        let err = check_entity_attestation(&mut conn, &keyholder, &entity, ENTITY_ID)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, Error::MacMismatch { .. }));
-    }
-
-    #[tokio::test]
-    async fn changed_payload_fails_verification() {
-        let db = db::create_test_pool().await;
-        let keyholder = bootstrapped_keyholder(&db).await;
-        let mut conn = db.get().await.unwrap();
-
-        const ENTITY_ID: &[u8] = b"entity-id-21";
-
-        let entity = DummyEntity {
-            payload_version: 1,
-            payload: b"payload-v1".to_vec(),
-        };
-
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
-            .await
-            .unwrap();
-
-        let tampered = DummyEntity {
-            payload: b"payload-v1-but-tampered".to_vec(),
-            ..entity
-        };
-
-        let err = check_entity_attestation(&mut conn, &keyholder, &tampered, ENTITY_ID)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, Error::MacMismatch { .. }));
-    }
-
-    #[tokio::test]
-    async fn allow_unavailable_lookup_passes_while_sealed() {
-        let db = db::create_test_pool().await;
-        let keyholder = bootstrapped_keyholder(&db).await;
-        let mut conn = db.get().await.unwrap();
-
-        const ENTITY_ID: &[u8] = b"entity-id-31";
-
-        let entity = DummyEntity {
-            payload_version: 1,
-            payload: b"payload-v1".to_vec(),
-        };
-
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
-            .await
-            .unwrap();
-        drop(keyholder);
-
-        let sealed_keyholder = KeyHolder::spawn(KeyHolder::new(db.clone()).await.unwrap());
-        let status = check_entity_attestation(&mut conn, &sealed_keyholder, &entity, ENTITY_ID)
-            .await
-            .unwrap();
-        assert_eq!(status, AttestationStatus::Unavailable);
-
-        #[expect(clippy::disallowed_methods, reason = "test only")]
-        lookup_verified_allow_unavailable(&mut conn, &sealed_keyholder, ENTITY_ID, |_| async {
-            Ok::<_, db::DatabaseError>(DummyEntity {
-                payload_version: 1,
-                payload: b"payload-v1".to_vec(),
-            })
-        })
-        .await
-        .unwrap();
-    }
-
-    #[tokio::test]
-    async fn strict_verify_fails_closed_while_sealed() {
-        let db = db::create_test_pool().await;
-        let keyholder = bootstrapped_keyholder(&db).await;
-        let mut conn = db.get().await.unwrap();
-
-        const ENTITY_ID: &[u8] = b"entity-id-41";
-
-        let entity = DummyEntity {
-            payload_version: 1,
-            payload: b"payload-v1".to_vec(),
-        };
-
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
-            .await
-            .unwrap();
-        drop(keyholder);
-
-        let sealed_keyholder = KeyHolder::spawn(KeyHolder::new(db.clone()).await.unwrap());
-
-        let err = verify_entity(&mut conn, &sealed_keyholder, &entity, ENTITY_ID)
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            Error::Keyholder(crate::actors::keyholder::Error::NotBootstrapped)
-        ));
-
-        let err = lookup_verified(&mut conn, &sealed_keyholder, ENTITY_ID, |_| async {
-            Ok::<_, db::DatabaseError>(DummyEntity {
-                payload_version: 1,
-                payload: b"payload-v1".to_vec(),
-            })
-        })
-        .await
-        .unwrap_err();
-        assert!(matches!(
-            err,
-            Error::Keyholder(crate::actors::keyholder::Error::NotBootstrapped)
-        ));
-    }
-
-    #[tokio::test]
-    async fn lookup_verified_supports_loaded_aggregate() {
-        let db = db::create_test_pool().await;
-        let keyholder = bootstrapped_keyholder(&db).await;
-        let mut conn = db.get().await.unwrap();
-
-        const ENTITY_ID: i32 = 77;
-
-        let entity = DummyEntity {
-            payload_version: 1,
-            payload: b"payload-v1".to_vec(),
-        };
-
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
-            .await
-            .unwrap();
-
-        let verified = lookup_verified(&mut conn, &keyholder, ENTITY_ID, |_| async {
-            Ok::<_, db::DatabaseError>(DummyEntity {
-                payload_version: 1,
-                payload: b"payload-v1".to_vec(),
-            })
-        })
-        .await
-        .unwrap();
-
-        assert_eq!(verified.payload, b"payload-v1".to_vec());
-    }
-
-    #[tokio::test]
-    async fn lookup_verified_allow_unavailable_works_while_sealed() {
-        let db = db::create_test_pool().await;
-        let keyholder = bootstrapped_keyholder(&db).await;
-        let mut conn = db.get().await.unwrap();
-
-        const ENTITY_ID: i32 = 78;
-
-        let entity = DummyEntity {
-            payload_version: 1,
-            payload: b"payload-v1".to_vec(),
-        };
-
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
-            .await
-            .unwrap();
-        drop(keyholder);
-
-        let sealed_keyholder = KeyHolder::spawn(KeyHolder::new(db.clone()).await.unwrap());
-
-        #[expect(clippy::disallowed_methods, reason = "test only")]
-        lookup_verified_allow_unavailable(&mut conn, &sealed_keyholder, ENTITY_ID, |_| async {
-            Ok::<_, db::DatabaseError>(DummyEntity {
-                payload_version: 1,
-                payload: b"payload-v1".to_vec(),
-            })
-        })
-        .await
-        .unwrap();
-    }
-
-    #[tokio::test]
-    async fn extension_trait_lookup_verified_required_works() {
-        let db = db::create_test_pool().await;
-        let keyholder = bootstrapped_keyholder(&db).await;
-        let mut conn = db.get().await.unwrap();
-
-        const ENTITY_ID: i32 = 79;
-
-        let entity = DummyEntity {
-            payload_version: 1,
-            payload: b"payload-v1".to_vec(),
-        };
-
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
-            .await
-            .unwrap();
-
-        let verified = lookup_verified(&mut conn, &keyholder, ENTITY_ID, |_| {
-            Box::pin(async {
-                Ok::<_, db::DatabaseError>(DummyEntity {
-                    payload_version: 1,
-                    payload: b"payload-v1".to_vec(),
-                })
-            })
-        })
-        .await
-        .unwrap();
-
-        assert_eq!(verified.payload, b"payload-v1".to_vec());
-    }
-
-    #[tokio::test]
-    async fn lookup_verified_from_query_helpers_work() {
-        let db = db::create_test_pool().await;
-        let keyholder = bootstrapped_keyholder(&db).await;
-        let mut conn = db.get().await.unwrap();
-
-        const ENTITY_ID: i32 = 80;
-
-        let entity = DummyEntity {
-            payload_version: 1,
-            payload: b"payload-v1".to_vec(),
-        };
-
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
-            .await
-            .unwrap();
-
-        let verified = lookup_verified_from_query(&mut conn, &keyholder, |_| {
-            Box::pin(async {
-                Ok::<_, db::DatabaseError>((
-                    ENTITY_ID,
-                    DummyEntity {
-                        payload_version: 1,
-                        payload: b"payload-v1".to_vec(),
-                    },
-                ))
-            })
-        })
-        .await
-        .unwrap();
-
-        assert_eq!(verified.payload, b"payload-v1".to_vec());
-
-        drop(keyholder);
-        let sealed_keyholder = KeyHolder::spawn(KeyHolder::new(db.clone()).await.unwrap());
-
-        let err = lookup_verified_from_query(&mut conn, &sealed_keyholder, |_| {
-            Box::pin(async {
-                Ok::<_, db::DatabaseError>((
-                    ENTITY_ID,
-                    DummyEntity {
-                        payload_version: 1,
-                        payload: b"payload-v1".to_vec(),
-                    },
-                ))
-            })
-        })
-        .await
-        .unwrap_err();
-
-        assert!(matches!(
-            err,
-            Error::Keyholder(crate::actors::keyholder::Error::NotBootstrapped)
-        ));
-    }
+fn payload_hash(payload: &impl Hashable) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    payload.hash(&mut hasher);
+    hasher.finalize().into()
 }
+
+fn build_mac_input(
+    entity_kind: &str,
+    entity_id: &[u8],
+    payload_version: i32,
+    payload_hash: &[u8; 32],
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(8 + entity_kind.len() + entity_id.len() + 32);
+    push_len_prefixed(&mut out, entity_kind.as_bytes());
+    push_len_prefixed(&mut out, entity_id);
+    out.extend_from_slice(&payload_version.to_be_bytes());
+    out.extend_from_slice(payload_hash);
+    out
+}
+
+fn push_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
+    out.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+    out.extend_from_slice(bytes);
+}
+
+#[cfg(test)]
+mod tests;

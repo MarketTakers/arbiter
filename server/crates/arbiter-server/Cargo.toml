@@ -61,6 +61,8 @@ anyhow = "1.0.102"
 serde_with = "3.18.0"
 mutants.workspace = true
 subtle = "2.6.1"
+macro_rules_attribute = "0.2.2"
+paste = "1.0.15"
 
 [dev-dependencies]
 insta = "1.46.3"

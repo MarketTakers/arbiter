@@ -1,5 +1,7 @@
-#![forbid(unsafe_code)]
 use crate::context::ServerContext;
+
+#[macro_use]
+extern crate macro_rules_attribute;
 
 pub mod actors;
 pub mod context;

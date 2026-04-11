@@ -138,7 +138,8 @@ async fn create_nonce(
                     id,
                 )
                 .await
-                .map_err(|e| Error::internal("Database error", &e))?;
+                .map_err(|e| Error::internal("Database error", &e))?
+                .drop_verification_provenance();
 
                 Result::<_, Error>::Ok(new_nonce)
             })

@@ -139,7 +139,8 @@ pub async fn test_challenge_auth() {
             id,
         )
         .await
-        .unwrap();
+        .unwrap()
+        .drop_verification_provenance();
     }
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
@@ -278,7 +279,8 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
             id,
         )
         .await
-        .unwrap();
+        .unwrap()
+        .drop_verification_provenance();
     }
 
     let (server_transport, mut test_transport) = ChannelTransport::new();

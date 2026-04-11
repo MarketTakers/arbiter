@@ -12,7 +12,7 @@ use kameo::actor::ActorRef;
 
 use crate::{
     actors::keyholder::KeyHolder,
-    crypto::integrity::{self, Verified},
+    crypto::integrity::{self, Verified, VerifiedEntity, verified::VerifiedFieldsAccessor},
     db::{
         self, DatabaseError,
         models::{
@@ -182,7 +182,10 @@ impl Engine {
         // IMPORTANT: policy evaluation uses extra non-integrity fields from Grant
         // (e.g., per-policy ids), so we currently reload Grant after the query-native
         // integrity check over canonicalized settings.
-        grant.settings = verified_settings.into_inner();
+        grant.settings = verified_settings
+            .inherit()
+            .entity
+            .drop_verification_provenance();
 
         let mut violations = check_shared_constraints(
             &context,
@@ -310,18 +313,24 @@ impl Engine {
 
         // Verify integrity of all grants before returning any results.
         for grant in all_grants {
-            integrity::verify_entity(
+            let VerifiedEntity {
+                entity: verified_settings,
+                entity_id: _,
+            } = integrity::verify_entity(
                 conn,
                 &self.keyholder,
-                &grant.settings,
+                grant.settings,
                 grant.common_settings_id,
             )
-            .await?;
+            .await?
+            .inherit();
 
             verified_grants.push(Grant {
                 id: grant.id,
                 common_settings_id: grant.common_settings_id,
-                settings: grant.settings.generalize(),
+                settings: verified_settings
+                    .drop_verification_provenance()
+                    .generalize(),
             });
         }
 

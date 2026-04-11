@@ -18,7 +18,7 @@ use crate::{
         flow_coordinator::{self, RequestClientApproval},
         keyholder::KeyHolder,
     },
-    crypto::integrity::{self},
+    crypto::integrity::{self, Verified, verified::VerifiedFieldsAccessor},
     db::{
         self,
         models::{ProgramClientMetadata, SqliteTimestamp},
@@ -99,39 +99,6 @@ async fn get_current_nonce_and_id(
         })
 }
 
-async fn verify_integrity(
-    db: &db::DatabasePool,
-    keyholder: &ActorRef<KeyHolder>,
-    pubkey: &VerifyingKey,
-) -> Result<(), Error> {
-    let mut db_conn = db.get().await.map_err(|e| {
-        error!(error = ?e, "Database pool error");
-        Error::DatabasePoolUnavailable
-    })?;
-
-    let (id, nonce) = get_current_nonce_and_id(db, pubkey).await?.ok_or_else(|| {
-        error!("Client not found during integrity verification");
-        Error::DatabaseOperationFailed
-    })?;
-
-    integrity::verify_entity(
-        &mut db_conn,
-        keyholder,
-        &ClientCredentials {
-            pubkey: *pubkey,
-            nonce,
-        },
-        id,
-    )
-    .await
-    .map_err(|e| {
-        error!(?e, "Integrity verification failed");
-        Error::IntegrityCheckFailed
-    })?;
-
-    Ok(())
-}
-
 /// Atomically increments the nonce and re-signs the integrity envelope.
 /// Returns the new nonce, which is used as the challenge nonce.
 async fn create_nonce(
@@ -169,7 +136,8 @@ async fn create_nonce(
             .map_err(|e| {
                 error!(?e, "Integrity sign failed after nonce update");
                 Error::DatabaseOperationFailed
-            })?;
+            })?
+            .drop_verification_provenance();
 
             Ok(new_nonce)
         })
@@ -205,7 +173,7 @@ async fn insert_client(
     keyholder: &ActorRef<KeyHolder>,
     pubkey: &VerifyingKey,
     metadata: &ClientMetadata,
-) -> Result<i32, Error> {
+) -> Result<Verified<i32>, Error> {
     use crate::db::schema::{client_metadata, program_client};
     let metadata = metadata.clone();
 
@@ -240,7 +208,7 @@ async fn insert_client(
                 .get_result::<i32>(conn)
                 .await?;
 
-            integrity::sign_entity(
+            let verified_id = integrity::sign_entity(
                 conn,
                 &keyholder,
                 &ClientCredentials {
@@ -255,7 +223,7 @@ async fn insert_client(
                 Error::DatabaseOperationFailed
             })?;
 
-            Ok(client_id)
+            Ok(verified_id)
         })
     })
     .await
@@ -368,7 +336,10 @@ where
     Ok(())
 }
 
-pub async fn authenticate<T>(props: &mut ClientConnection, transport: &mut T) -> Result<i32, Error>
+pub async fn authenticate<T>(
+    props: &mut ClientConnection,
+    transport: &mut T,
+) -> Result<Verified<i32>, Error>
 where
     T: Bi<Inbound, Result<Outbound, Error>> + Send + ?Sized,
 {
@@ -376,10 +347,27 @@ where
         return Err(Error::Transport);
     };
 
+    // fixme! triage needed: probable regretion since in match->Some get_current_nonce_and_id called only once instead of twice
     let client_id = match get_current_nonce_and_id(&props.db, &pubkey).await? {
-        Some((id, _)) => {
-            verify_integrity(&props.db, &props.actors.key_holder, &pubkey).await?;
-            id
+        Some((nonce, id)) => {
+            let mut db_conn = props.db.get().await.map_err(|e| {
+                error!(error = ?e, "Database pool error");
+                Error::DatabasePoolUnavailable
+            })?;
+
+            integrity::verify_entity(
+                &mut db_conn,
+                &props.actors.key_holder,
+                ClientCredentials { pubkey, nonce },
+                id,
+            )
+            .await
+            .map_err(|e| {
+                error!(?e, "Integrity verification failed");
+                Error::IntegrityCheckFailed
+            })?
+            .inherit()
+            .entity_id
         }
         None => {
             approve_new_client(
@@ -394,7 +382,7 @@ where
         }
     };
 
-    sync_client_metadata(&props.db, client_id, &metadata).await?;
+    sync_client_metadata(&props.db, *client_id, &metadata).await?;
     let challenge_nonce = create_nonce(&props.db, &props.actors.key_holder, &pubkey).await?;
     challenge_client(transport, pubkey, challenge_nonce).await?;
 

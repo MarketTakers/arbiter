@@ -81,7 +81,8 @@ impl UserAgentSession {
                     .await
                     .map_err(|e| {
                         Error::internal(format!("Failed to backfill user-agent integrity: {e}"))
-                    })?;
+                    })?
+                    .drop_verification_provenance();
                 }
 
                 Result::<_, Error>::Ok(())
@@ -357,7 +358,9 @@ impl UserAgentSession {
 #[messages]
 impl UserAgentSession {
     #[message]
-    pub(crate) async fn handle_evm_wallet_create(&mut self) -> Result<(i32, Address), Error> {
+    pub(crate) async fn handle_evm_wallet_create(
+        &mut self,
+    ) -> Result<(Verified<i32>, Address), Error> {
         match self.props.actors.evm.ask(Generate {}).await {
             Ok(address) => Ok(address),
             Err(SendError::HandlerError(err)) => Err(Error::internal(format!(
