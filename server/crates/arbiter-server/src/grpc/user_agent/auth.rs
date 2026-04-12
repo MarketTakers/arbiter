@@ -23,8 +23,8 @@ use crate::{
 };
 
 pub struct AuthTransportAdapter<'a> {
-    bi: &'a mut GrpcBi<UserAgentRequest, UserAgentResponse>,
-    request_tracker: &'a mut RequestTracker,
+    pub(super) bi: &'a mut GrpcBi<UserAgentRequest, UserAgentResponse>,
+    pub(super) request_tracker: &'a mut RequestTracker,
 }
 
 impl<'a> AuthTransportAdapter<'a> {
@@ -38,18 +38,34 @@ impl<'a> AuthTransportAdapter<'a> {
         }
     }
 
-    async fn send_user_agent_response(
+    pub(super) fn bi_mut(&mut self) -> &mut GrpcBi<UserAgentRequest, UserAgentResponse> {
+        self.bi
+    }
+
+    pub(super) fn tracker_mut(&mut self) -> &mut RequestTracker {
+        self.request_tracker
+    }
+
+    pub(super) async fn send_response_payload(
         &mut self,
-        payload: AuthResponsePayload,
+        payload: UserAgentResponsePayload,
     ) -> Result<(), TransportError> {
         self.bi
             .send(Ok(UserAgentResponse {
                 id: Some(self.request_tracker.current_request_id()),
-                payload: Some(UserAgentResponsePayload::Auth(proto_auth::Response {
-                    payload: Some(payload),
-                })),
+                payload: Some(payload),
             }))
             .await
+    }
+
+    async fn send_user_agent_response(
+        &mut self,
+        payload: AuthResponsePayload,
+    ) -> Result<(), TransportError> {
+        self.send_response_payload(UserAgentResponsePayload::Auth(proto_auth::Response {
+            payload: Some(payload),
+        }))
+        .await
     }
 }
 
@@ -168,6 +184,6 @@ pub async fn start(
     bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
     request_tracker: &mut RequestTracker,
 ) -> Result<AuthCredentials, auth::Error> {
-    let transport = AuthTransportAdapter::new(bi, request_tracker);
-    auth::authenticate(conn, transport).await
+    let mut transport = AuthTransportAdapter::new(bi, request_tracker);
+    auth::authenticate(conn, &mut transport).await
 }

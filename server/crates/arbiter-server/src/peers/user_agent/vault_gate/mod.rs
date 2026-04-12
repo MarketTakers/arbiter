@@ -119,7 +119,7 @@ impl VaultGate {
     }
 }
 
-#[messages]
+#[messages(messages = Inbound, replies = Outbound)]
 impl VaultGate {
     #[message]
     pub async fn handle_handshake(
@@ -185,7 +185,7 @@ impl VaultGate {
     }
 
     #[message]
-    pub(crate) async fn handle_bootstrap_encrypted_key(
+    pub async fn handle_bootstrap_encrypted_key(
         &mut self,
         nonce: Vec<u8>,
         ciphertext: Vec<u8>,

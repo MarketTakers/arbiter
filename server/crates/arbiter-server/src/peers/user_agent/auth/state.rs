@@ -174,20 +174,20 @@ async fn register_key(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<i3
     Ok(id)
 }
 
-pub struct AuthContext<'a, T> {
+pub struct AuthContext<'a, T: ?Sized> {
     pub(super) conn: &'a mut UserAgentConnection,
-    pub(super) transport: T,
+    pub(super) transport: &'a mut T,
 }
 
-impl<'a, T> AuthContext<'a, T> {
-    pub fn new(conn: &'a mut UserAgentConnection, transport: T) -> Self {
+impl<'a, T: ?Sized> AuthContext<'a, T> {
+    pub fn new(conn: &'a mut UserAgentConnection, transport: &'a mut T) -> Self {
         Self { conn, transport }
     }
 }
 
 impl<T> AuthStateMachineContext for AuthContext<'_, T>
 where
-    T: Bi<super::Inbound, Result<super::Outbound, Error>> + Send,
+    T: Bi<super::Inbound, Result<super::Outbound, Error>> + Send + ?Sized,
 {
     type Error = Error;
 

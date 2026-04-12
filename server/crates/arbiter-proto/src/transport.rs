@@ -106,6 +106,36 @@ pub trait Receiver<Inbound>: Send + Sync {
 /// any built-in correlation mechanism between inbound and outbound items.
 pub trait Bi<Inbound, Outbound>: Sender<Outbound> + Receiver<Inbound> + Send + Sync {}
 
+#[async_trait]
+impl<T, Outbound> Sender<Outbound> for &mut T
+where
+    T: Sender<Outbound> + ?Sized,
+    Outbound: Send + 'static,
+{
+    async fn send(&mut self, item: Outbound) -> Result<(), Error> {
+        (**self).send(item).await
+    }
+}
+
+#[async_trait]
+impl<T, Inbound> Receiver<Inbound> for &mut T
+where
+    T: Receiver<Inbound> + ?Sized,
+    Inbound: Send + 'static,
+{
+    async fn recv(&mut self) -> Option<Inbound> {
+        (**self).recv().await
+    }
+}
+
+impl<T, Inbound, Outbound> Bi<Inbound, Outbound> for &mut T
+where
+    T: Bi<Inbound, Outbound> + ?Sized,
+    Inbound: Send + 'static,
+    Outbound: Send + 'static,
+{
+}
+
 pub trait SplittableBi<Inbound, Outbound>: Bi<Inbound, Outbound> {
     type Sender: Sender<Outbound>;
     type Receiver: Receiver<Inbound>;
