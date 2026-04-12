@@ -58,6 +58,7 @@
 use std::marker::PhantomData;
 
 use async_trait::async_trait;
+use kameo::{error::Infallible, prelude::*};
 
 /// Errors returned by transport adapters implementing [`Bi`].
 #[derive(thiserror::Error, Debug)]
@@ -105,6 +106,36 @@ pub trait Receiver<Inbound>: Send + Sync {
 /// It does not imply request/response sequencing, one-at-a-time exchange, or
 /// any built-in correlation mechanism between inbound and outbound items.
 pub trait Bi<Inbound, Outbound>: Sender<Outbound> + Receiver<Inbound> + Send + Sync {}
+
+#[async_trait]
+impl<T, Outbound> Sender<Outbound> for &mut T
+where
+    T: Sender<Outbound> + ?Sized,
+    Outbound: Send + 'static,
+{
+    async fn send(&mut self, item: Outbound) -> Result<(), Error> {
+        (**self).send(item).await
+    }
+}
+
+#[async_trait]
+impl<T, Inbound> Receiver<Inbound> for &mut T
+where
+    T: Receiver<Inbound> + ?Sized,
+    Inbound: Send + 'static,
+{
+    async fn recv(&mut self) -> Option<Inbound> {
+        (**self).recv().await
+    }
+}
+
+impl<T, Inbound, Outbound> Bi<Inbound, Outbound> for &mut T
+where
+    T: Bi<Inbound, Outbound> + ?Sized,
+    Inbound: Send + 'static,
+    Outbound: Send + 'static,
+{
+}
 
 pub trait SplittableBi<Inbound, Outbound>: Bi<Inbound, Outbound> {
     type Sender: Sender<Outbound>;
@@ -161,3 +192,29 @@ where
 }
 
 pub mod grpc;
+
+#[derive(thiserror::Error, Debug)]
+pub enum ForwardError<I> {
+    #[error("Transport error: {0}")]
+    Transport(#[from] Error),
+    #[error("Actor delivery error: {0}")]
+    Actor(SendError<I>),
+}
+
+pub async fn forward_to_actor<Transport, Inbound, Outbound, Handler>(
+    transport: &mut Transport,
+    actor: &ActorRef<Handler>,
+) -> Result<(), ForwardError<Inbound>>
+where
+    Transport: Bi<Inbound, <Outbound as Reply>::Ok>,
+    Handler: Actor + Message<Inbound, Reply = Outbound>,
+    Inbound: Send + 'static,
+    Outbound: Send + 'static + Reply<Error = Infallible>, // `Infallible` to enforce contract that `Outbound` carries handler-level error
+{
+    while let Some(request) = transport.recv().await {
+        let resp = actor.ask(request).await.map_err(ForwardError::Actor)?;
+        transport.send(resp).await?
+    }
+
+    Err(Error::ChannelClosed.into())
+}
