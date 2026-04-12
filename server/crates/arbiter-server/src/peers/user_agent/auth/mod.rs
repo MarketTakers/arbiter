@@ -68,10 +68,10 @@ fn parse_auth_event(payload: Inbound) -> AuthEvents {
 
 pub async fn authenticate<T>(
     props: &mut UserAgentConnection,
-    transport: T,
+    transport: &mut T,
 ) -> Result<AuthCredentials, Error>
 where
-    T: Bi<Inbound, Result<Outbound, Error>> + Send,
+    T: Bi<Inbound, Result<Outbound, Error>> + Send + ?Sized,
 {
     let mut state = AuthStateMachine::new(AuthContext::new(props, transport));
 

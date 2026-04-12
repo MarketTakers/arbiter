@@ -42,11 +42,11 @@ pub async fn test_bootstrap_token_auth() {
         .unwrap();
     let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
 
-    let (server_transport, mut test_transport) = ChannelTransport::new();
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
     let db_for_task = db.clone();
     let task = tokio::spawn(async move {
         let mut props = UserAgentConnection::new(db_for_task, actors);
-        auth::authenticate(&mut props, server_transport).await
+        auth::authenticate(&mut props, &mut server_transport).await
     });
 
     let new_key = MlDsa87::key_gen(&mut rand::rng());
@@ -84,11 +84,11 @@ pub async fn test_bootstrap_invalid_token_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
-    let (server_transport, mut test_transport) = ChannelTransport::new();
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
     let db_for_task = db.clone();
     let task = tokio::spawn(async move {
         let mut props = UserAgentConnection::new(db_for_task, actors);
-        auth::authenticate(&mut props, server_transport).await
+        auth::authenticate(&mut props, &mut server_transport).await
     });
 
     let new_key = MlDsa87::key_gen(&mut rand::rng());
@@ -157,11 +157,11 @@ pub async fn test_challenge_auth() {
         .unwrap();
     }
 
-    let (server_transport, mut test_transport) = ChannelTransport::new();
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
     let db_for_task = db.clone();
     let task = tokio::spawn(async move {
         let mut props = UserAgentConnection::new(db_for_task, actors);
-        auth::authenticate(&mut props, server_transport).await
+        auth::authenticate(&mut props, &mut server_transport).await
     });
 
     test_transport
@@ -234,11 +234,11 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() 
             .unwrap();
     }
 
-    let (server_transport, mut test_transport) = ChannelTransport::new();
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
     let db_for_task = db.clone();
     let task = tokio::spawn(async move {
         let mut props = UserAgentConnection::new(db_for_task, actors);
-        auth::authenticate(&mut props, server_transport).await
+        auth::authenticate(&mut props, &mut server_transport).await
     });
 
     test_transport
@@ -298,11 +298,11 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
         .unwrap();
     }
 
-    let (server_transport, mut test_transport) = ChannelTransport::new();
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
     let db_for_task = db.clone();
     let task = tokio::spawn(async move {
         let mut props = UserAgentConnection::new(db_for_task, actors);
-        auth::authenticate(&mut props, server_transport).await
+        auth::authenticate(&mut props, &mut server_transport).await
     });
 
     test_transport

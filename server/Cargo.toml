@@ -26,7 +26,6 @@ thiserror = "2.0.18"
 async-trait = "0.1.89"
 futures = "0.3.32"
 tokio-stream = { version = "0.1.18", features = ["full"] }
-kameo = "0.20"
 prost-types = { version = "0.14.3", features = ["chrono"] }
 x25519-dalek = { version = "2.0.1", features = ["getrandom"] }
 rstest = "0.26.1"
@@ -47,3 +46,6 @@ miette = { version = "7.6.0", features = ["fancy", "serde"] }
 mutants = "0.0.4"
 ml-dsa = { version = "0.1.0-rc.8", features = ["zeroize"] }
 base64 = "0.22.1"
+kameo = {git = "https://github.com/hdbg/kameo.git", rev = "805b417"}
+kameo_actors = {git = "https://github.com/hdbg/kameo.git", rev = "805b417"}
+
