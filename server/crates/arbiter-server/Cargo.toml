@@ -61,7 +61,7 @@ x25519-dalek.workspace = true
 k256.workspace = true
 
 [dev-dependencies]
-insta = "1.46.3"
+insta = "1.47.2"
 proptest = "1.11.0"
 rstest.workspace = true
 test-log = { version = "0.2", default-features = false, features = ["trace"] }

@@ -16,22 +16,22 @@ tonic = { version = "0.14.5", features = [
     "zstd",
 ] }
 tracing = "0.1.44"
-tokio = { version = "1.50.0", features = ["full"] }
+tokio = { version = "1.51.1", features = ["full"] }
 ed25519-dalek = { version = "3.0.0-pre.6", features = ["rand_core"] }
 chrono = { version = "0.4.44", features = ["serde"] }
-rand = "0.10.0"
-rustls = { version = "0.23.37", features = ["aws-lc-rs", "logging", "prefer-post-quantum", "std"], default-features = false }
+rand = "0.10.1"
+rustls = { version = "0.23.38", features = ["aws-lc-rs", "logging", "prefer-post-quantum", "std"], default-features = false }
 smlang = "0.8.0"
 thiserror = "2.0.18"
 async-trait = "0.1.89"
 futures = "0.3.32"
 tokio-stream = { version = "0.1.18", features = ["full"] }
-kameo = "0.19.2"
+kameo = "0.20.0"
 prost-types = { version = "0.14.3", features = ["chrono"] }
 x25519-dalek = { version = "2.0.1", features = ["getrandom"] }
 rstest = "0.26.1"
 rustls-pki-types = "1.14.0"
-alloy = "1.7.3"
+alloy = "2.0.0"
 rcgen = { version = "0.14.7", features = [
     "aws_lc_rs",
     "pem",
@@ -40,11 +40,11 @@ rcgen = { version = "0.14.7", features = [
 ], default-features = false }
 k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"] }
 rsa = { version = "0.9", features = ["sha2"] }
-sha2 = "0.10"
-spki = "0.7"
+sha2 = "0.11"
+spki = "0.8"
 prost = "0.14.3"
 miette = { version = "7.6.0", features = ["fancy", "serde"] }
 mutants = "0.0.4"
 ml-dsa = { version = "0.1.0-rc.8", features = ["zeroize"] }
 base64 = "0.22.1"
-hmac = "0.12.1"
+hmac = "0.13.0"

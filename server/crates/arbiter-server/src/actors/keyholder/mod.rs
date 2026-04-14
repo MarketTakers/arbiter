@@ -4,7 +4,7 @@ use diesel::{
     dsl::{insert_into, update},
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use hmac::Mac as _;
+use hmac::{KeyInit as _, Mac as _};
 use kameo::{Actor, Reply, messages};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
