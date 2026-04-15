@@ -221,7 +221,8 @@ async fn insert_client(
             .map_err(|e| {
                 error!(error = ?e, "Failed to sign integrity tag for new client key");
                 Error::DatabaseOperationFailed
-            })?;
+            })?
+            .unqualify_origin();
 
             Ok(verified_id)
         })
@@ -368,6 +369,7 @@ where
             })?
             .inherit()
             .entity_id
+            .unqualify_origin()
         }
         None => {
             approve_new_client(

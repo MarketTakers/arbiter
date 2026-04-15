@@ -27,7 +27,7 @@ pub const CURRENT_PAYLOAD_VERSION: i32 = 1;
 pub const INTEGRITY_SUBKEY_TAG: &[u8] = b"arbiter/db-integrity-key/v1";
 
 pub type HmacSha256 = Hmac<Sha256>;
-pub use self::verified::Verified;
+pub use self::verified::{Nested, Root, VerificationOrigin, Verified};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -101,7 +101,7 @@ pub async fn lookup_verified<E, Id, C, F, Fut>(
     keyholder: &ActorRef<KeyHolder>,
     entity_id: Id,
     load: F,
-) -> Result<Verified<Entity<E, Id>>, Error>
+) -> Result<Verified<Entity<E, Id>, Nested<E>>, Error>
 where
     C: AsyncConnection<Backend = Sqlite>,
     E: Integrable,
@@ -117,7 +117,7 @@ pub async fn lookup_verified_from_query<E, Id, C, F>(
     conn: &mut C,
     keyholder: &ActorRef<KeyHolder>,
     load: F,
-) -> Result<Verified<Entity<E, Id>>, Error>
+) -> Result<Verified<Entity<E, Id>, Nested<E>>, Error>
 where
     C: AsyncConnection<Backend = Sqlite> + Send,
     E: Integrable,
@@ -137,7 +137,7 @@ pub async fn sign_entity<E: Integrable, Id: Into<EntityId> + Clone>(
     keyholder: &ActorRef<KeyHolder>,
     entity: &E,
     as_entity_id: Id,
-) -> Result<Verified<Id>, Error> {
+) -> Result<Verified<Id, Nested<E>>, Error> {
     let payload_hash = payload_hash(entity);
 
     let entity_id = as_entity_id.clone().into();
@@ -174,7 +174,7 @@ pub async fn sign_entity<E: Integrable, Id: Into<EntityId> + Clone>(
         .await
         .map_err(db::DatabaseError::from)?;
 
-    Ok(Verified::new(as_entity_id))
+    Ok(Verified::<Id, Nested<E>>::new(as_entity_id))
 }
 
 pub async fn check_entity_attestation<E: Integrable>(
@@ -247,9 +247,12 @@ pub async fn verify_entity<E: Integrable, Id: Into<EntityId> + Clone>(
     keyholder: &ActorRef<KeyHolder>,
     entity: E,
     entity_id: Id,
-) -> Result<Verified<Entity<E, Id>>, Error> {
+) -> Result<Verified<Entity<E, Id>, Nested<E>>, Error> {
     match check_entity_attestation(conn, keyholder, &entity, entity_id.clone()).await? {
-        AttestationStatus::Attested => Ok(Verified::new(Entity { entity, entity_id })),
+        AttestationStatus::Attested => Ok(Verified::<Entity<E, Id>, Nested<E>>::new(Entity {
+            entity,
+            entity_id,
+        })),
         AttestationStatus::Unavailable => Err(Error::Keyholder(keyholder::Error::NotBootstrapped)),
     }
 }
@@ -259,9 +262,12 @@ pub async fn verify_entity_ref<'e, E: Integrable, Id: Into<EntityId> + Clone>(
     keyholder: &ActorRef<KeyHolder>,
     entity: &'e E,
     entity_id: Id,
-) -> Result<Verified<Entity<&'e E, Id>>, Error> {
+) -> Result<Verified<Entity<&'e E, Id>, Nested<E>>, Error> {
     match check_entity_attestation(conn, keyholder, entity, entity_id.clone()).await? {
-        AttestationStatus::Attested => Ok(Verified::new(Entity { entity, entity_id })),
+        AttestationStatus::Attested => Ok(Verified::<Entity<&'e E, Id>, Nested<E>>::new(Entity {
+            entity,
+            entity_id,
+        })),
         AttestationStatus::Unavailable => Err(Error::Keyholder(keyholder::Error::NotBootstrapped)),
     }
 }

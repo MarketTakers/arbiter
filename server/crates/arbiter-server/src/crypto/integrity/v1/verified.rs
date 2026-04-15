@@ -1,222 +1,98 @@
 use std::ops::Deref;
 
-// todo! rewrite macro_rules to derive crate
-#[macro_export]
-macro_rules! VerifiedFields {
-    // --- Entry point ---
-    (
-        $(#$attr:tt)*
-        $vis:vis struct $name:ident $(<$($gen:tt),*>)?
-        {
-            $(
-                $field_vis:vis $field_name:ident : $field_ty:ty
-            ),* $(,)?
-        }
-    ) => {
-        // Attribute-list checks run in isolation — they only receive the attrs,
-        // not the struct body.
-        $crate::VerifiedFields!(@require_repr [$(#$attr)*]);
-        $crate::VerifiedFields!(@reject_packed [$(#$attr)*]);
+use super::Integrable;
 
-        paste::paste! {
-            #[doc = concat!(
-                "Field-wise verified counterpart of [`", stringify!($name), "`]."
-            )]
-            //
-            // `#[repr(C)]` is required for the pointer casts in `inherit_ref`
-            // and `inherit` to be sound. Both the source struct (enforced by
-            // `@require_repr`) and this counterpart carry `#[repr(C)]`, which
-            // guarantees matching field offsets. Combined with each
-            // `Verified<F>` being `#[repr(transparent)]` over `F`, the two
-            // structs have identical memory layout.
-            //
-            // `#[repr(transparent)]` is not usable here because it only permits
-            // a single non-ZST field; multi-field structs would fail to compile.
-            #[repr(C)]
-            $vis struct [<Verified $name>] $(<$($gen),*>)?
-            {
-                $(
-                    $field_vis $field_name : $crate::crypto::integrity::Verified<$field_ty>
-                ),*
-            }
-
-            impl $(<$($gen),*>)?
-                $crate::crypto::integrity::v1::verified::VerifiedFieldsAccessor
-                for $crate::crypto::integrity::Verified<$name $(<$($gen),*>)?>
-            {
-                type Counterpart = [<Verified $name>] $(<$($gen),*>)?;
-
-                fn inherit_ref(&self) -> &Self::Counterpart {
-                    // SAFETY: `Self` is `Verified<T>` (transparent over
-                    // `T #[repr(C)]`) and `Self::Counterpart` is `#[repr(C)]`
-                    // with the same fields in the same order, each wrapped in
-                    // a `#[repr(transparent)]` `Verified<F>`. The two types
-                    // therefore have identical memory layout, which
-                    // `reinterpret_layout_ref` re-checks as size/align
-                    // equality at monomorphization.
-                    unsafe {
-                        $crate::crypto::integrity::v1::verified::reinterpret_layout_ref::<
-                            Self,
-                            Self::Counterpart,
-                        >(self)
-                    }
-                }
-
-                fn inherit(self) -> Self::Counterpart {
-                    // SAFETY: identical layout — see `inherit_ref`. The owned
-                    // helper additionally suppresses the source destructor so
-                    // the returned counterpart owns the original bytes (no
-                    // double-drop is possible).
-                    unsafe {
-                        $crate::crypto::integrity::v1::verified::reinterpret_layout::<
-                            Self,
-                            Self::Counterpart,
-                        >(self)
-                    }
-                }
-            }
-        }
-    };
-
-    // --- @require_repr: ensure `#[repr(C)]` appears in the attribute list ---
-    (@require_repr [#[repr(C)] $($rest:tt)*]) => {};
-    (@require_repr [#$other:tt $($rest:tt)*]) => {
-        $crate::VerifiedFields!(@require_repr [$($rest)*]);
-    };
-    (@require_repr []) => {
-        ::std::compile_error!(
-            "VerifiedFields requires `#[repr(C)]` on the struct to guarantee field layout"
-        );
-    };
-
-    // --- @reject_packed: walk attrs and reject any `#[repr(..., packed, ...)]`.
-    //
-    // Without this, a packed struct would still fail at monomorphization via
-    // the const assertions inside the `reinterpret_layout*` helpers, but the
-    // diagnostic would be much harder to read. `align(N)` is *not* rejected
-    // here because const assertions catch alignment mismatches cleanly, and
-    // forbidding it would be unnecessarily restrictive.
-    (@reject_packed [#[repr($($inner:tt)*)] $($rest:tt)*]) => {
-        $crate::VerifiedFields!(@reject_packed_inner [$($inner)*]);
-        $crate::VerifiedFields!(@reject_packed [$($rest)*]);
-    };
-    (@reject_packed [#$other:tt $($rest:tt)*]) => {
-        $crate::VerifiedFields!(@reject_packed [$($rest)*]);
-    };
-    (@reject_packed []) => {};
-
-    (@reject_packed_inner [packed $($rest:tt)*]) => {
-        ::std::compile_error!(
-            "VerifiedFields does not support packed layouts; the generated \
-             counterpart would not share layout with the source struct"
-        );
-    };
-    (@reject_packed_inner [$first:tt $($rest:tt)*]) => {
-        $crate::VerifiedFields!(@reject_packed_inner [$($rest)*]);
-    };
-    (@reject_packed_inner []) => {};
+mod private {
+    pub trait Sealed {}
 }
 
-/// Implemented on `Verified<T>` by [`VerifiedFields!`], exposing the field-wise counterpart.
+/// Marker trait for type-level verification provenance.
 ///
-/// ## Disclaimer
-/// Do not implement this trait manually. It is intended to be implemented only
-/// by the `VerifiedFields!` macro, which generates the necessary layout
-/// guarantees for sound pointer casts.
-///
-/// ## Soundness
-/// When [`verify_entity`][crate::crypto::integrity::verify_entity] attests an
-/// entity, it returns `Verified<T>` — an aggregate proof over the whole value.
-/// This trait converts that wrapper into `Counterpart` (e.g.
-/// `VerifiedMyStruct`), where every field is individually wrapped in
-/// [`Verified`], allowing verified data to flow into functions that require
-/// `Verified<FieldType>` without re-verifying.
-///
-/// ## Safety
-/// The conversion is a zero-cost reinterpretation — no copying (beyond a
-/// bitwise move in the owned variant) or HMAC work occurs. Soundness rests on
-/// identical memory layout between `Verified<T>` and `Counterpart`:
-///
-/// - `T` carries `#[repr(C)]` (enforced by `@require_repr` in the macro).
-/// - `T` does **not** carry `packed` (enforced by `@reject_packed`).
-/// - `Counterpart` also carries `#[repr(C)]`, with the same fields in the same
-///   order.
-/// - Each `Verified<F>` field is `#[repr(transparent)]` over `F`, so its size
-///   and alignment match `F` exactly.
-/// - `Verified<T>` itself is `#[repr(transparent)]` over `T`.
-///
-/// As an additional machine-checked guard, [`reinterpret_layout`] and
-/// [`reinterpret_layout_ref`] assert size/align equality of the two types at
-/// monomorphization time.
-///
-/// The trait is implemented directly on `Verified<T>` (not on `T`), so no
-/// `Deref`-coercion or auto-ref stripping is needed at call sites — the impl
-/// is unambiguous.
-pub trait VerifiedFieldsAccessor {
-    /// The field-wise verified counterpart, e.g. `VerifiedMyStruct`.
-    type Counterpart;
-
-    /// Reinterprets `&self` as `&Counterpart` via a layout-preserving pointer cast.
-    ///
-    /// No data is copied and no re-verification occurs. The returned reference
-    /// borrows from `self` and has the same lifetime.
-    fn inherit_ref(&self) -> &Self::Counterpart;
-
-    /// Consumes `self` and returns `Counterpart` via a layout-preserving
-    /// bitwise move.
-    ///
-    /// The original `Verified<T>` is moved without running its destructor
-    /// (there is none — `Verified` is a transparent wrapper with no heap
-    /// allocation), and the returned counterpart owns the original bytes. No
-    /// re-verification occurs.
-    fn inherit(self) -> Self::Counterpart;
+/// This trait is intentionally sealed so external code cannot invent arbitrary
+/// provenance tags and bypass the intended type-level guarantees.
+pub trait VerificationOrigin: private::Sealed {
+    type Origin: VerificationOrigin;
 }
 
-/// A value whose integrity has been verified against the HMAC envelope stored
-/// in the database.
-///
-/// `Verified<T>` is a zero-cost transparent wrapper produced exclusively by
-/// [`crate::crypto::integrity`](super) module's functions. Holding one is proof
-/// that the underlying value passed an HMAC check keyed with the vault's
-/// integrity subkey.
-///
-/// The wrapper is intentionally narrow: it does not expose a constructor and
-/// the inner value cannot be moved out without explicitly calling
-/// [`drop_verification_provenance`][Verified::drop_verification_provenance],
-/// making accidental provenance loss visible at the call site.
+/// Root provenance marker for values directly produced by integrity APIs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct Root;
+
+/// Nested provenance marker carrying the source integrable type and previous
+/// provenance marker in the chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Nested<From, P: VerificationOrigin = Root>(core::marker::PhantomData<(From, P)>);
+
+impl private::Sealed for Root {}
+impl VerificationOrigin for Root {
+    type Origin = Self;
+}
+
+impl<T, P: VerificationOrigin> private::Sealed for Nested<T, P> {}
+impl<T, P: VerificationOrigin> VerificationOrigin for Nested<T, P> {
+    type Origin = P;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 #[must_use = "Verified<T> is a proof-bearing wrapper; use self.drop_verification_provenance() to explicitly discard integrity provenance when needed"]
-pub struct Verified<T>(T);
+pub struct Verified<T, O: VerificationOrigin = Root> {
+    inner: T,
+    origin: core::marker::PhantomData<O>,
+}
 
-impl<T> AsRef<Verified<T>> for Verified<&T> {
-    fn as_ref(&self) -> &Verified<T> {
+impl<T, O: VerificationOrigin> AsRef<Verified<T, O>> for Verified<&T, O> {
+    fn as_ref(&self) -> &Verified<T, O> {
         // SAFETY: `Verified<T>` is `#[repr(transparent)]` over `T`, so `&T`
         // and `&Verified<T>` have identical layout.
-        unsafe { reinterpret_layout_ref::<T, Verified<T>>(self.0) }
+        unsafe { reinterpret_layout_ref::<T, Verified<T, O>>(self.inner) }
     }
 }
 
-impl<T> Deref for Verified<T> {
+impl<T, U: Integrable, O: VerificationOrigin> Deref for Verified<T, Nested<U, O>> {
+    type Target = Verified<T, O::Origin>;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: `Verified<T, Nested<U, O>>` is `#[repr(transparent)]` over `T`, so `&Verified<T, Nested<U, O>>`
+        // and `&Nested<U, O>` have identical layout.
+        unsafe { reinterpret_layout_ref::<Self, Verified<T, O::Origin>>(self) }
+    }
+}
+impl<T> Deref for Verified<T, Root> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.inner
     }
 }
 
-impl<T> Verified<T> {
+impl<T, O: VerificationOrigin> Verified<T, O> {
     /// Unwraps the verified value, discarding the integrity provenance.
     ///
     /// The name is intentionally verbose — call sites where provenance is
     /// dropped should be easy to find and audit.
     pub fn drop_verification_provenance(self) -> T {
-        self.0
+        self.inner
+    }
+
+    /// Downgrades the origin provenance to any lower nestedness level,
+    /// e.g. `Verified<T, Nested<Other>>` to `Verified<T, Root>`.
+    pub fn unqualify_origin<Target: VerificationOrigin>(self) -> Verified<T, Target>
+    where
+        O: VerificationOrigin<Origin = Target>,
+    {
+        Verified {
+            inner: self.inner,
+            origin: core::marker::PhantomData,
+        }
     }
 
     /// Constructs a `Verified<T>` by wrapping a `T`.
     pub(super) fn new(value: T) -> Self {
-        Self(value)
+        Self {
+            inner: value,
+            origin: core::marker::PhantomData,
+        }
     }
 
     /// Constructs a `Verified<T>` from a raw value without performing any
@@ -224,7 +100,10 @@ impl<T> Verified<T> {
     /// module's functions to obtain a `Verified<T>` in production code.
     #[cfg(test)]
     pub(crate) fn new_unchecked(value: T) -> Self {
-        Self(value)
+        Self {
+            inner: value,
+            origin: core::marker::PhantomData,
+        }
     }
 
     /// Reinterprets `&T` as `&Verified<T>`.
@@ -301,6 +180,253 @@ pub const unsafe fn reinterpret_layout_ref<From, To>(value: &From) -> &To {
     unsafe { &*(value as *const From as *const To) }
 }
 
+/// Implemented on `Verified<T>` by [`VerifiedFields!`], exposing the field-wise counterpart.
+///
+/// ## Disclaimer
+/// Do not implement this trait manually. It is intended to be implemented only
+/// by the `VerifiedFields!` macro, which generates the necessary layout
+/// guarantees for sound pointer casts.
+///
+/// ## Soundness
+/// When [`verify_entity`][crate::crypto::integrity::verify_entity] attests an
+/// entity, it returns `Verified<T>` — an aggregate proof over the whole value.
+/// This trait converts that wrapper into `Counterpart` (e.g.
+/// `VerifiedMyStruct`), where every field is individually wrapped in
+/// [`Verified`], allowing verified data to flow into functions that require
+/// `Verified<FieldType>` without re-verifying.
+///
+/// ## Safety
+/// The conversion is a zero-cost reinterpretation — no copying (beyond a
+/// bitwise move in the owned variant) or HMAC work occurs. Soundness rests on
+/// identical memory layout between `Verified<T>` and `Counterpart`:
+///
+/// - `T` carries `#[repr(C)]` (enforced by `@require_repr` in the macro).
+/// - `T` does **not** carry `packed` (enforced by `@reject_packed`).
+/// - `Counterpart` also carries `#[repr(C)]`, with the same fields in the same
+///   order.
+/// - Each `Verified<F>` field is `#[repr(transparent)]` over `F`, so its size
+///   and alignment match `F` exactly.
+/// - `Verified<T>` itself is `#[repr(transparent)]` over `T`.
+///
+/// As an additional machine-checked guard, [`reinterpret_layout`] and
+/// [`reinterpret_layout_ref`] assert size/align equality of the two types at
+/// monomorphization time.
+///
+/// The trait is implemented directly on `Verified<T>` (not on `T`), so no
+/// `Deref`-coercion or auto-ref stripping is needed at call sites — the impl
+/// is unambiguous.
+pub trait VerifiedFieldsAccessor {
+    /// The field-wise verified counterpart, e.g. `VerifiedMyStruct`.
+    type Counterpart;
+
+    /// Reinterprets `&self` as `&Counterpart` via a layout-preserving pointer cast.
+    ///
+    /// No data is copied and no re-verification occurs. The returned reference
+    /// borrows from `self` and has the same lifetime.
+    fn inherit_ref(&self) -> &Self::Counterpart;
+
+    /// Consumes `self` and returns `Counterpart` via a layout-preserving
+    /// bitwise move.
+    ///
+    /// The original `Verified<T>` is moved without running its destructor
+    /// (there is none — `Verified` is a transparent wrapper with no heap
+    /// allocation), and the returned counterpart owns the original bytes. No
+    /// re-verification occurs.
+    fn inherit(self) -> Self::Counterpart;
+}
+
+// todo! rewrite macro_rules to derive crate
+#[macro_export]
+macro_rules! VerifiedFields {
+    // --- Entry point (no source generics) ---
+    (
+        $(#$attr:tt)*
+        $vis:vis struct $name:ident
+        {
+            $(
+                $field_vis:vis $field_name:ident : $field_ty:ty
+            ),* $(,)?
+        }
+    ) => {
+        // Attribute-list checks run in isolation — they only receive the attrs,
+        // not the struct body.
+        $crate::VerifiedFields!(@require_repr [$(#$attr)*]);
+        $crate::VerifiedFields!(@reject_packed [$(#$attr)*]);
+
+        paste::paste! {
+            #[doc = concat!(
+                "Field-wise verified counterpart of [`", stringify!($name), "`]."
+            )]
+            //
+            // `#[repr(C)]` is required for the pointer casts in `inherit_ref`
+            // and `inherit` to be sound. Both the source struct (enforced by
+            // `@require_repr`) and this counterpart carry `#[repr(C)]`, which
+            // guarantees matching field offsets. Combined with each
+            // `Verified<F>` being `#[repr(transparent)]` over `F`, the two
+            // structs have identical memory layout.
+            //
+            // `#[repr(transparent)]` is not usable here because it only permits
+            // a single non-ZST field; multi-field structs would fail to compile.
+            #[repr(C)]
+            $vis struct [<Verified $name>]<P: $crate::crypto::integrity::v1::verified::VerificationOrigin>
+            {
+                $(
+                    $field_vis $field_name : $crate::crypto::integrity::Verified<$field_ty, P>
+                ),*
+            }
+
+            impl<P: $crate::crypto::integrity::v1::verified::VerificationOrigin>
+                $crate::crypto::integrity::v1::verified::VerifiedFieldsAccessor
+                for $crate::crypto::integrity::Verified<$name, P>
+            {
+                type Counterpart = [<Verified $name>]<P>;
+
+                fn inherit_ref(&self) -> &Self::Counterpart {
+                    // SAFETY: `Self` is `Verified<T>` (transparent over
+                    // `T #[repr(C)]`) and `Self::Counterpart` is `#[repr(C)]`
+                    // with the same fields in the same order, each wrapped in
+                    // a `#[repr(transparent)]` `Verified<F>`. The two types
+                    // therefore have identical memory layout, which
+                    // `reinterpret_layout_ref` re-checks as size/align
+                    // equality at monomorphization.
+                    unsafe {
+                        $crate::crypto::integrity::v1::verified::reinterpret_layout_ref::<
+                            Self,
+                            Self::Counterpart,
+                        >(self)
+                    }
+                }
+
+                fn inherit(self) -> Self::Counterpart {
+                    // SAFETY: identical layout — see `inherit_ref`. The owned
+                    // helper additionally suppresses the source destructor so
+                    // the returned counterpart owns the original bytes (no
+                    // double-drop is possible).
+                    unsafe {
+                        $crate::crypto::integrity::v1::verified::reinterpret_layout::<
+                            Self,
+                            Self::Counterpart,
+                        >(self)
+                    }
+                }
+            }
+        }
+    };
+
+    // --- Entry point (source has generics) ---
+    (
+        $(#$attr:tt)*
+        $vis:vis struct $name:ident <$($gen:tt),*>
+        {
+            $(
+                $field_vis:vis $field_name:ident : $field_ty:ty
+            ),* $(,)?
+        }
+    ) => {
+        // Attribute-list checks run in isolation — they only receive the attrs,
+        // not the struct body.
+        $crate::VerifiedFields!(@require_repr [$(#$attr)*]);
+        $crate::VerifiedFields!(@reject_packed [$(#$attr)*]);
+
+        paste::paste! {
+            #[doc = concat!(
+                "Field-wise verified counterpart of [`", stringify!($name), "`]."
+            )]
+            //
+            // `#[repr(C)]` is required for the pointer casts in `inherit_ref`
+            // and `inherit` to be sound. Both the source struct (enforced by
+            // `@require_repr`) and this counterpart carry `#[repr(C)]`, which
+            // guarantees matching field offsets. Combined with each
+            // `Verified<F>` being `#[repr(transparent)]` over `F`, the two
+            // structs have identical memory layout.
+            //
+            // `#[repr(transparent)]` is not usable here because it only permits
+            // a single non-ZST field; multi-field structs would fail to compile.
+            #[repr(C)]
+            $vis struct [<Verified $name>]<$($gen),*, P: $crate::crypto::integrity::v1::verified::VerificationOrigin>
+            {
+                $(
+                    $field_vis $field_name : $crate::crypto::integrity::Verified<$field_ty, P>
+                ),*
+            }
+
+            impl<$($gen),*, P: $crate::crypto::integrity::v1::verified::VerificationOrigin>
+                $crate::crypto::integrity::v1::verified::VerifiedFieldsAccessor
+                for $crate::crypto::integrity::Verified<$name<$($gen),*>, P>
+            {
+                type Counterpart = [<Verified $name>]<$($gen),*, P>;
+
+                fn inherit_ref(&self) -> &Self::Counterpart {
+                    // SAFETY: `Self` is `Verified<T>` (transparent over
+                    // `T #[repr(C)]`) and `Self::Counterpart` is `#[repr(C)]`
+                    // with the same fields in the same order, each wrapped in
+                    // a `#[repr(transparent)]` `Verified<F>`. The two types
+                    // therefore have identical memory layout, which
+                    // `reinterpret_layout_ref` re-checks as size/align
+                    // equality at monomorphization.
+                    unsafe {
+                        $crate::crypto::integrity::v1::verified::reinterpret_layout_ref::<
+                            Self,
+                            Self::Counterpart,
+                        >(self)
+                    }
+                }
+
+                fn inherit(self) -> Self::Counterpart {
+                    // SAFETY: identical layout — see `inherit_ref`. The owned
+                    // helper additionally suppresses the source destructor so
+                    // the returned counterpart owns the original bytes (no
+                    // double-drop is possible).
+                    unsafe {
+                        $crate::crypto::integrity::v1::verified::reinterpret_layout::<
+                            Self,
+                            Self::Counterpart,
+                        >(self)
+                    }
+                }
+            }
+        }
+    };
+
+    // --- @require_repr: ensure `#[repr(C)]` appears in the attribute list ---
+    (@require_repr [#[repr(C)] $($rest:tt)*]) => {};
+    (@require_repr [#$other:tt $($rest:tt)*]) => {
+        $crate::VerifiedFields!(@require_repr [$($rest)*]);
+    };
+    (@require_repr []) => {
+        ::std::compile_error!(
+            "VerifiedFields requires `#[repr(C)]` on the struct to guarantee field layout"
+        );
+    };
+
+    // --- @reject_packed: walk attrs and reject any `#[repr(..., packed, ...)]`.
+    //
+    // Without this, a packed struct would still fail at monomorphization via
+    // the const assertions inside the `reinterpret_layout*` helpers, but the
+    // diagnostic would be much harder to read. `align(N)` is *not* rejected
+    // here because const assertions catch alignment mismatches cleanly, and
+    // forbidding it would be unnecessarily restrictive.
+    (@reject_packed [#[repr($($inner:tt)*)] $($rest:tt)*]) => {
+        $crate::VerifiedFields!(@reject_packed_inner [$($inner)*]);
+        $crate::VerifiedFields!(@reject_packed [$($rest)*]);
+    };
+    (@reject_packed [#$other:tt $($rest:tt)*]) => {
+        $crate::VerifiedFields!(@reject_packed [$($rest)*]);
+    };
+    (@reject_packed []) => {};
+
+    (@reject_packed_inner [packed $($rest:tt)*]) => {
+        ::std::compile_error!(
+            "VerifiedFields does not support packed layouts; the generated \
+             counterpart would not share layout with the source struct"
+        );
+    };
+    (@reject_packed_inner [$first:tt $($rest:tt)*]) => {
+        $crate::VerifiedFields!(@reject_packed_inner [$($rest)*]);
+    };
+    (@reject_packed_inner []) => {};
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,7 +440,10 @@ mod tests {
     }
 
     fn verify<T>(t: T) -> Verified<T> {
-        Verified(t)
+        Verified {
+            inner: t,
+            origin: core::marker::PhantomData,
+        }
     }
 
     // --- inherit_ref ---
@@ -356,8 +485,9 @@ mod tests {
             field1: "x".into(),
             field2: 7u32,
         });
-        let fields: &VerifiedMyStruct<u32> = v.inherit_ref();
-        let back_ptr = fields as *const VerifiedMyStruct<u32> as *const Verified<MyStruct<u32>>;
+        let fields: &VerifiedMyStruct<u32, Root> = v.inherit_ref();
+        let back_ptr =
+            fields as *const VerifiedMyStruct<u32, Root> as *const Verified<MyStruct<u32>>;
         assert_eq!(
             back_ptr as *const u8, &v as *const _ as *const u8,
             "cast of counterpart must point back to the same Verified<T>"
@@ -375,7 +505,7 @@ mod tests {
             pub val: u64,
         }
 
-        let v = Verified(WithZst { unit: (), val: 777 });
+        let v = Verified::<WithZst>::new_unchecked(WithZst { unit: (), val: 777 });
         let fields = v.inherit_ref();
         assert_eq!(*fields.val, 777);
         assert_eq!(*fields.unit, ());
@@ -419,7 +549,7 @@ mod tests {
 
         DROP_COUNT.store(0, Ordering::Relaxed);
         {
-            let v = Verified(WithDrop { val: DropCounter });
+            let v = Verified::<WithDrop>::new_unchecked(WithDrop { val: DropCounter });
             let _ = v.inherit();
         }
         assert_eq!(
@@ -453,7 +583,7 @@ mod tests {
     #[test]
     fn verified_ref_as_ref_is_same_address() {
         let val = 99u32;
-        let vref: Verified<&u32> = Verified(&val);
+        let vref: Verified<&u32> = Verified::new_unchecked(&val);
         let v: &Verified<u32> = vref.as_ref();
         assert_eq!(
             &val as *const u32 as *const u8, v as *const _ as *const u8,

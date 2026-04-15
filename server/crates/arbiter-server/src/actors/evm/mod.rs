@@ -129,7 +129,7 @@ impl EvmActor {
             .map_err(|_| Error::KeyholderSend)?;
 
         let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
-        let wallet_id = insert_into(schema::evm_wallet::table)
+        let wallet_id: i32 = insert_into(schema::evm_wallet::table)
             .values(&models::NewEvmWallet {
                 address: address.as_slice().to_vec(),
                 aead_encrypted_id: aead_id,
@@ -146,7 +146,8 @@ impl EvmActor {
         };
         let verified_wallet_id =
             integrity::sign_entity(&mut conn, &self.keyholder, &wallet_integrity, wallet_id)
-                .await?;
+                .await?
+                .unqualify_origin();
 
         Ok((verified_wallet_id, address))
     }
