@@ -12,7 +12,8 @@ use tracing::error;
 
 use crate::{
     actors::{
-        flow_coordinator::{RegisterUserAgent, client_connect_approval::ClientApprovalController},
+        flow_coordinator::client_connect_approval::ClientApprovalController,
+        useragent_registry::ConnectUseragent,
         vault::events,
     }, crypto::integrity, db::schema::useragent_client, peers::{client::ClientProfile, user_agent::{AuthCredentials, Credentials}}
 };
@@ -123,17 +124,17 @@ impl Actor for UserAgentSession {
     ) -> Result<Self, Self::Error> {
         args.props
             .actors
-            .flow_coordinator
-            .ask(RegisterUserAgent {
+            .useragent_registry
+            .ask(ConnectUseragent {
                 actor: this.clone(),
             })
             .await
             .map_err(|err| {
                 error!(
                     ?err,
-                    "Failed to register user agent connection with flow coordinator"
+                    "Failed to register user agent connection with user agent registry"
                 );
-                Error::internal("Failed to register user agent connection with flow coordinator")
+                Error::internal("Failed to register user agent connection with user agent registry")
             })?;
         Ok(args)
     }
