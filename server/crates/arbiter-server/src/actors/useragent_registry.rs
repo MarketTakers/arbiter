@@ -1,57 +1,58 @@
-use alloy::primitives::map::HashMap;
-use arbiter_crypto::authn;
-use kameo::{error::Infallible, prelude::*};
+use std::{collections::HashMap, ops::ControlFlow};
 
-use crate::{db::DatabasePool, peers::user_agent::{Credentials, UserAgentSession}};
+use kameo::{
+    Actor,
+    actor::{ActorId, ActorRef},
+    error::Infallible,
+    messages,
+    prelude::{ActorStopReason, Context, WeakActorRef},
+};
+use tracing::info;
 
-use super::vault::{Vault, events as vault_events};
+use crate::peers::user_agent::UserAgentSession;
 
-pub struct Args {
-    pub vault: ActorRef<Vault>,
-    pub pool: DatabasePool,
-}
-
+#[derive(Default)]
 pub struct UserAgentRegistry {
-    vault: ActorRef<Vault>,
-    pool: DatabasePool,
-    connected: HashMap<Credentials, ActorRef<UserAgentSession>>,
+    connected: HashMap<ActorId, ActorRef<UserAgentSession>>,
 }
 
-impl Message<vault_events::Bootstrapped> for UserAgentRegistry {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        msg: vault_events::Bootstrapped,
-        ctx: &mut Context<Self, Self::Reply>,
-    ) -> Self::Reply {
-        todo!()
-    }
-}
-
-impl Message<vault_events::Unsealed> for UserAgentRegistry {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        msg: vault_events::Unsealed,
-        ctx: &mut Context<Self, Self::Reply>,
-    ) -> Self::Reply {
-        todo!()
-    }
-}
 impl Actor for UserAgentRegistry {
-    type Args = Args;
+    type Args = Self;
 
     type Error = Infallible;
 
-    async fn on_start(args: Self::Args, actor_ref: ActorRef<Self>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            vault: args.vault,
-            pool: args.pool,
-            connected: HashMap::default(),
-        })
+    async fn on_start(args: Self::Args, _: ActorRef<Self>) -> Result<Self, Self::Error> {
+        Ok(args)
     }
 
-    
+    async fn on_link_died(
+        &mut self,
+        _: WeakActorRef<Self>,
+        id: ActorId,
+        _: ActorStopReason,
+    ) -> Result<ControlFlow<ActorStopReason>, Self::Error> {
+        if self.connected.remove(&id).is_some() {
+            info!(?id, actor = "UserAgentRegistry", event = "useragent.disconnected");
+        }
+        Ok(ControlFlow::Continue(()))
+    }
+}
+
+#[messages]
+impl UserAgentRegistry {
+    #[message(ctx)]
+    pub async fn connect_useragent(
+        &mut self,
+        actor: ActorRef<UserAgentSession>,
+        ctx: &mut Context<Self, ()>,
+    ) {
+        info!(id = %actor.id(), actor = "UserAgentRegistry", event = "useragent.connected");
+        ctx.actor_ref().link(&actor).await;
+        self.connected.insert(actor.id(), actor);
+    }
+
+    #[message]
+    pub fn get_connected(&self) -> Vec<ActorRef<UserAgentSession>> {
+        self.connected.values().cloned().collect()
+    }
 }
