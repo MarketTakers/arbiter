@@ -1,16 +1,19 @@
 use arbiter_proto::{
-    proto::user_agent::{
-        user_agent_request::Payload as UserAgentRequestPayload,
-        user_agent_response::Payload as UserAgentResponsePayload,
-        vault::{
-            self as proto_vault,
-            bootstrap::{self as proto_bootstrap, BootstrapResult as ProtoBootstrapResult},
-            request::Payload as VaultRequestPayload,
-            response::Payload as VaultResponsePayload,
-            unseal::{
-                self as proto_unseal, UnsealResult as ProtoUnsealResult,
-                request::Payload as UnsealRequestPayload,
-                response::Payload as UnsealResponsePayload,
+    proto::{
+        shared::VaultState as ProtoVaultState,
+        user_agent::{
+            user_agent_request::Payload as UserAgentRequestPayload,
+            user_agent_response::Payload as UserAgentResponsePayload,
+            vault::{
+                self as proto_vault,
+                bootstrap::{self as proto_bootstrap, BootstrapResult as ProtoBootstrapResult},
+                request::Payload as VaultRequestPayload,
+                response::Payload as VaultResponsePayload,
+                unseal::{
+                    self as proto_unseal, UnsealResult as ProtoUnsealResult,
+                    request::Payload as UnsealRequestPayload,
+                    response::Payload as UnsealResponsePayload,
+                },
             },
         },
     },
@@ -21,8 +24,11 @@ use tonic::Status;
 use tracing::warn;
 
 use super::auth::AuthTransportAdapter;
-use crate::peers::user_agent::vault_gate::{
-    self as vault_gate, HandleBootstrapEncryptedKey, HandleHandshake, HandleUnsealEncryptedKey,
+use crate::{
+    actors::vault::VaultState,
+    peers::user_agent::vault_gate::{
+        self as vault_gate, HandleBootstrapEncryptedKey, HandleHandshake, HandleUnsealEncryptedKey,
+    },
 };
 
 fn wrap_vault_response(payload: VaultResponsePayload) -> UserAgentResponsePayload {
@@ -43,15 +49,7 @@ fn wrap_bootstrap_response(result: ProtoBootstrapResult) -> UserAgentResponsePay
     }))
 }
 
-impl AuthTransportAdapter<'_> {
-    async fn send_query_state(&mut self) -> Result<(), TransportError> {
-        use arbiter_proto::proto::shared::VaultState as ProtoVaultState;
-        self.send_response_payload(wrap_vault_response(VaultResponsePayload::State(
-            ProtoVaultState::Sealed.into(),
-        )))
-        .await
-    }
-}
+impl AuthTransportAdapter<'_> {}
 
 #[async_trait]
 impl Receiver<vault_gate::Inbound> for AuthTransportAdapter<'_> {
@@ -60,7 +58,10 @@ impl Receiver<vault_gate::Inbound> for AuthTransportAdapter<'_> {
             let request = match self.bi_mut().recv().await? {
                 Ok(request) => request,
                 Err(error) => {
-                    warn!(?error, "Failed to receive user agent request during vault gate");
+                    warn!(
+                        ?error,
+                        "Failed to receive user agent request during vault gate"
+                    );
                     return None;
                 }
             };
@@ -94,23 +95,24 @@ impl Receiver<vault_gate::Inbound> for AuthTransportAdapter<'_> {
             let Some(vault_payload) = vault_req.payload else {
                 let _ = self
                     .bi_mut()
-                    .send(Err(Status::invalid_argument("Missing vault request payload")))
+                    .send(Err(Status::invalid_argument(
+                        "Missing vault request payload",
+                    )))
                     .await;
                 return None;
             };
 
             match vault_payload {
                 VaultRequestPayload::QueryState(_) => {
-                    if self.send_query_state().await.is_err() {
-                        return None;
-                    }
-                    continue;
+                    return Some(vault_gate::Inbound::HandleVaultState);
                 }
                 VaultRequestPayload::Unseal(req) => {
                     let Some(unseal_payload) = req.payload else {
                         let _ = self
                             .bi_mut()
-                            .send(Err(Status::invalid_argument("Missing unseal request payload")))
+                            .send(Err(Status::invalid_argument(
+                                "Missing unseal request payload",
+                            )))
                             .await;
                         return None;
                     };
@@ -181,13 +183,29 @@ impl Sender<Result<vault_gate::Outbound, vault_gate::Error>> for AuthTransportAd
         };
 
         let payload = match outbound {
-            vault_gate::Outbound::HandleHandshake(Ok(response)) => {
-                wrap_unseal_response(UnsealResponsePayload::Start(
-                    proto_unseal::UnsealStartResponse {
-                        server_pubkey: response.server_pubkey.as_bytes().to_vec(),
-                    },
-                ))
-            }
+            vault_gate::Outbound::HandleVaultState(result) => match result {
+                Ok(state) => {
+                    let state = match state {
+                        VaultState::Unbootstrapped => ProtoVaultState::Unbootstrapped,
+                        VaultState::Sealed => ProtoVaultState::Sealed,
+                        VaultState::Unsealed => ProtoVaultState::Unsealed,
+                    };
+
+                    wrap_vault_response(VaultResponsePayload::State(state.into()))
+                }
+                Err(err) => {
+                    warn!(?err, "vault state query failed");
+                    return self
+                        .bi_mut()
+                        .send(Err(Status::internal("Failed to query vault state")))
+                        .await;
+                }
+            },
+            vault_gate::Outbound::HandleHandshake(Ok(response)) => wrap_unseal_response(
+                UnsealResponsePayload::Start(proto_unseal::UnsealStartResponse {
+                    server_pubkey: response.server_pubkey.as_bytes().to_vec(),
+                }),
+            ),
             vault_gate::Outbound::HandleHandshake(Err(err)) => {
                 warn!(?err, "handshake failed");
                 return self
