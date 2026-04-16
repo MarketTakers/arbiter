@@ -13,7 +13,7 @@ use super::{AuthCredentials, Credentials};
 use crate::{
     actors::{
         GlobalActors,
-        vault::{self, Bootstrap, TryUnseal, events},
+        vault::{self, Bootstrap, GetState, TryUnseal, VaultState, events},
     },
     crypto::integrity::{self, AttestationStatus},
     db::DatabasePool,
@@ -228,6 +228,18 @@ impl VaultGate {
             }
         }
     }
+
+    #[message]
+    pub async fn handle_vault_state(&mut self) -> Result<VaultState, Error> {
+        let answer = self
+            .actors
+            .vault
+            .ask(GetState {})
+            .await
+            .map_err(|_| Error::internal("failed to query vault"))?;
+
+        Ok(answer)
+    }
 }
 
 impl Message<events::Bootstrapped> for VaultGate {
@@ -239,13 +251,22 @@ impl Message<events::Bootstrapped> for VaultGate {
         ctx: &mut kameo::prelude::Context<Self, Self::Reply>,
     ) -> Self::Reply {
         let result = async {
-            let mut conn = self.db.get().await.map_err(|_| Error::internal("DB unavailable"))?;
-            integrity::sign_entity(&mut conn, &self.actors.vault, &self.auth_creds, self.auth_creds.creds.id)
+            let mut conn = self
+                .db
+                .get()
                 .await
-                .map_err(|e| {
-                    error!(?e, "Failed to sign integrity envelope on bootstrap");
-                    Error::internal("Integrity sign failed")
-                })?;
+                .map_err(|_| Error::internal("DB unavailable"))?;
+            integrity::sign_entity(
+                &mut conn,
+                &self.actors.vault,
+                &self.auth_creds,
+                self.auth_creds.creds.id,
+            )
+            .await
+            .map_err(|e| {
+                error!(?e, "Failed to sign integrity envelope on bootstrap");
+                Error::internal("Integrity sign failed")
+            })?;
             Ok(self.auth_creds.creds.clone())
         }
         .await;
@@ -266,7 +287,11 @@ impl Message<events::Unsealed> for VaultGate {
         ctx: &mut kameo::prelude::Context<Self, Self::Reply>,
     ) -> Self::Reply {
         let result = async {
-            let mut conn = self.db.get().await.map_err(|_| Error::internal("DB unavailable"))?;
+            let mut conn = self
+                .db
+                .get()
+                .await
+                .map_err(|_| Error::internal("DB unavailable"))?;
             match integrity::verify_entity(
                 &mut conn,
                 &self.actors.vault,
