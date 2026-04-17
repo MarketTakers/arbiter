@@ -71,7 +71,6 @@ create unique index if not exists uniq_metadata_binding_client on client_metadat
 
 create table if not exists program_client (
     id integer not null primary key,
-    nonce integer not null default(1), -- used for auth challenge
     public_key blob not null,
     metadata_id integer not null references client_metadata (id) on delete cascade,
     created_at integer not null default(unixepoch ('now')),
