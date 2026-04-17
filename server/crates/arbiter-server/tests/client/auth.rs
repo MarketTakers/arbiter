@@ -1,5 +1,5 @@
 use arbiter_crypto::{
-    authn::{self, CLIENT_CONTEXT, format_challenge},
+    authn::{self, AuthChallenge, CLIENT_CONTEXT},
     safecell::{SafeCell, SafeCellHandle as _},
 };
 use arbiter_proto::ClientMetadata;
@@ -66,12 +66,8 @@ async fn insert_registered_client(
     .unwrap();
 }
 
-fn sign_client_challenge(
-    key: &SigningKey<MlDsa87>,
-    nonce: i32,
-    pubkey: &authn::PublicKey,
-) -> authn::Signature {
-    let challenge = format_challenge(nonce, &pubkey.to_bytes());
+fn sign_client_challenge(key: &SigningKey<MlDsa87>, challenge: &AuthChallenge) -> authn::Signature {
+    let challenge = challenge.format();
     key.signing_key()
         .sign_deterministic(&challenge, CLIENT_CONTEXT)
         .unwrap()

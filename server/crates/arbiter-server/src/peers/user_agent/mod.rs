@@ -1,7 +1,10 @@
 use crate::{
-    actors::GlobalActors,
-    crypto::integrity::{self, Integrable},
-    db::{self, DatabaseError},
+    actors::{
+        GlobalActors,
+        vault::{GetState, Vault},
+    },
+    crypto::integrity::{self, AttestationStatus, Integrable},
+    db::{self, DatabaseError, DatabasePool},
     peers::client::ClientProfile,
 };
 use arbiter_crypto::authn;
@@ -11,7 +14,7 @@ pub use auth::authenticate;
 use kameo::actor::{ActorRef, Spawn as _};
 pub use session::UserAgentSession;
 use tokio::sync::oneshot;
-use tracing::warn;
+use tracing::{error, warn};
 use vault_gate::VaultGate;
 
 use crate::crypto::integrity::hashing::Hashable;
@@ -20,23 +23,10 @@ pub mod auth;
 pub mod session;
 pub mod vault_gate;
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub struct Credentials {
     pub id: i32,
     pub pubkey: authn::PublicKey,
-}
-impl Hashable for Credentials {
-    fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        self.id.hash(hasher);
-        self.pubkey.hash(hasher);
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct AuthCredentials {
-    pub creds: Credentials,
-    // denotes new nonce, not current
-    pub new_nonce: i32,
 }
 
 impl Hashable for authn::PublicKey {
@@ -45,14 +35,14 @@ impl Hashable for authn::PublicKey {
     }
 }
 
-impl Hashable for AuthCredentials {
+impl Hashable for Credentials {
     fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
-        self.creds.hash(hasher);
-        self.new_nonce.hash(hasher);
+        self.id.hash(hasher);
+        self.pubkey.hash(hasher);
     }
 }
 
-impl Integrable for AuthCredentials {
+impl Integrable for Credentials {
     const KIND: &'static str = "useragent_credentials";
 }
 
@@ -95,38 +85,44 @@ impl From<auth::Error> for Error {
     }
 }
 
-pub async fn start<T>(
-    props: &mut UserAgentConnection,
-    mut transport: T,
-    oob_sender: Box<dyn Sender<OutOfBand>>,
-) -> Result<ActorRef<UserAgentSession>, Error>
-where
-    T: Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> + Send,
-    T: Bi<vault_gate::Inbound, Result<vault_gate::Outbound, vault_gate::Error>> + Send,
-{
-    let auth_creds = authenticate(props, &mut transport).await?;
-
-    let creds = match integrity::is_signing_available(&props.actors.vault)
+async fn verify_integrity(
+    db: &DatabasePool,
+    vault: &ActorRef<Vault>,
+    credentials: &Credentials,
+) -> Result<(), Error> {
+    let mut conn = db
+        .get()
         .await
-        .map_err(|_| Error::Internal("Integrity verification failed".into()))?
-    {
-        // credentials were checked by `auth` stage
-        true => auth_creds.creds,
-        false => run_vault_gate(props, &mut transport, auth_creds).await?,
-    };
+        .map_err(|_| Error::Internal("DB unavailable".into()))?;
+    match integrity::verify_entity(&mut conn, &vault, credentials, credentials.id).await {
+        Ok(AttestationStatus::Attested) => Ok(()),
+        Ok(AttestationStatus::Unavailable) => {
+            Err(Error::Internal("Vault sealed during promotion".into()))
+        }
+        Err(e) => {
+            error!(?e, "Integrity verification failed during unseal promotion");
+            Err(Error::Internal("Integrity check failed".into()))
+        }
+    }
+}
 
-    Ok(UserAgentSession::spawn(UserAgentSession::new(
-        props.clone(),
-        creds,
-        oob_sender,
-    )))
+async fn should_run_gate(vault: &ActorRef<Vault>) -> Result<bool, Error> {
+    let vault_state = vault
+        .ask(GetState {})
+        .await
+        .map_err(|_| Error::Internal("Failed to contact the vault".into()))?;
+
+    Ok(!matches!(
+        vault_state,
+        crate::actors::vault::VaultState::Unsealed
+    ))
 }
 
 async fn run_vault_gate<T>(
     props: &UserAgentConnection,
     transport: &mut T,
-    auth_creds: AuthCredentials,
-) -> Result<Credentials, Error>
+    auth_creds: Credentials,
+) -> Result<(), Error>
 where
     T: Bi<vault_gate::Inbound, Result<vault_gate::Outbound, vault_gate::Error>> + Send + ?Sized,
 {
@@ -174,4 +170,30 @@ where
 
     gate.kill();
     result
+}
+
+pub async fn start<T>(
+    props: &mut UserAgentConnection,
+    mut transport: T,
+    oob_sender: Box<dyn Sender<OutOfBand>>,
+) -> Result<ActorRef<UserAgentSession>, Error>
+where
+    T: Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> + Send,
+    T: Bi<vault_gate::Inbound, Result<vault_gate::Outbound, vault_gate::Error>> + Send,
+{
+    let creds = authenticate(props, &mut transport).await?;
+
+    // should run vault gate only if sealed / unbootstrapped
+    if should_run_gate(&props.actors.vault).await? {
+        run_vault_gate(props, &mut transport, creds.clone()).await?;
+    }
+
+    // checking the integrity
+    verify_integrity(&props.db, &props.actors.vault, &creds).await?;
+
+    Ok(UserAgentSession::spawn(UserAgentSession::new(
+        props.clone(),
+        creds,
+        oob_sender,
+    )))
 }

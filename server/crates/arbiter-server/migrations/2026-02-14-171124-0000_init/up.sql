@@ -45,9 +45,7 @@ insert into arbiter_settings (id) values (1) on conflict do nothing;
 
 create table if not exists useragent_client (
     id integer not null primary key,
-    nonce integer not null default(1), -- used for auth challenge
     public_key blob not null,
-    key_type integer not null default(1),
     created_at integer not null default(unixepoch ('now')),
     updated_at integer not null default(unixepoch ('now'))
 ) STRICT;

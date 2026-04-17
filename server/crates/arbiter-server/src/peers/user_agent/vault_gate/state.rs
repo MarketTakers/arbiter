@@ -1,6 +1,5 @@
-use std::sync::Mutex;
 
-use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
+use x25519_dalek::{PublicKey, SharedSecret};
 
 pub struct Handshake {
     client_pubkey: PublicKey,
