@@ -49,7 +49,7 @@ create table if not exists useragent_client (
     created_at integer not null default(unixepoch ('now')),
     updated_at integer not null default(unixepoch ('now'))
 ) STRICT;
-create unique index if not exists uniq_useragent_client_public_key on useragent_client (public_key, key_type);
+create unique index if not exists uniq_useragent_client_public_key on useragent_client (public_key);
 
 create table if not exists client_metadata (
     id integer not null primary key,

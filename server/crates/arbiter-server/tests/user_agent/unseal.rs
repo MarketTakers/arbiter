@@ -26,7 +26,7 @@ async fn setup_sealed_gate(
 ) -> (
     db::DatabasePool,
     kameo::actor::ActorRef<VaultGate>,
-    oneshot::Receiver<Result<Credentials, VaultGateError>>,
+    oneshot::Receiver<Result<(), VaultGateError>>,
 ) {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
