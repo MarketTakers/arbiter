@@ -62,15 +62,15 @@ final $typed_data.Uint8List authChallengeRequestDescriptor = $convert.base64Deco
 const AuthChallenge$json = {
   '1': 'AuthChallenge',
   '2': [
-    {'1': 'pubkey', '3': 1, '4': 1, '5': 12, '10': 'pubkey'},
-    {'1': 'nonce', '3': 2, '4': 1, '5': 5, '10': 'nonce'},
+    {'1': 'timestamp_nanos', '3': 1, '4': 1, '5': 4, '10': 'timestampNanos'},
+    {'1': 'random', '3': 2, '4': 1, '5': 12, '10': 'random'},
   ],
 };
 
 /// Descriptor for `AuthChallenge`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List authChallengeDescriptor = $convert.base64Decode(
-    'Cg1BdXRoQ2hhbGxlbmdlEhYKBnB1YmtleRgBIAEoDFIGcHVia2V5EhQKBW5vbmNlGAIgASgFUg'
-    'Vub25jZQ==');
+    'Cg1BdXRoQ2hhbGxlbmdlEicKD3RpbWVzdGFtcF9uYW5vcxgBIAEoBFIOdGltZXN0YW1wTmFub3'
+    'MSFgoGcmFuZG9tGAIgASgMUgZyYW5kb20=');
 
 @$core.Deprecated('Use authChallengeSolutionDescriptor instead')
 const AuthChallengeSolution$json = {

@@ -12,6 +12,7 @@
 
 import 'dart:core' as $core;
 
+import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
 import 'auth.pbenum.dart';
@@ -90,10 +91,12 @@ class AuthChallengeRequest extends $pb.GeneratedMessage {
 
 class AuthChallenge extends $pb.GeneratedMessage {
   factory AuthChallenge({
-    $core.int? nonce,
+    $fixnum.Int64? timestampNanos,
+    $core.List<$core.int>? random,
   }) {
     final result = create();
-    if (nonce != null) result.nonce = nonce;
+    if (timestampNanos != null) result.timestampNanos = timestampNanos;
+    if (random != null) result.random = random;
     return result;
   }
 
@@ -111,7 +114,11 @@ class AuthChallenge extends $pb.GeneratedMessage {
       package: const $pb.PackageName(
           _omitMessageNames ? '' : 'arbiter.user_agent.auth'),
       createEmptyInstance: create)
-    ..aI(1, _omitFieldNames ? '' : 'nonce')
+    ..a<$fixnum.Int64>(
+        1, _omitFieldNames ? '' : 'timestampNanos', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$core.List<$core.int>>(
+        2, _omitFieldNames ? '' : 'random', $pb.PbFieldType.OY)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -134,13 +141,22 @@ class AuthChallenge extends $pb.GeneratedMessage {
   static AuthChallenge? _defaultInstance;
 
   @$pb.TagNumber(1)
-  $core.int get nonce => $_getIZ(0);
+  $fixnum.Int64 get timestampNanos => $_getI64(0);
   @$pb.TagNumber(1)
-  set nonce($core.int value) => $_setSignedInt32(0, value);
+  set timestampNanos($fixnum.Int64 value) => $_setInt64(0, value);
   @$pb.TagNumber(1)
-  $core.bool hasNonce() => $_has(0);
+  $core.bool hasTimestampNanos() => $_has(0);
   @$pb.TagNumber(1)
-  void clearNonce() => $_clearField(1);
+  void clearTimestampNanos() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.List<$core.int> get random => $_getN(1);
+  @$pb.TagNumber(2)
+  set random($core.List<$core.int> value) => $_setBytes(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasRandom() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearRandom() => $_clearField(2);
 }
 
 class AuthChallengeSolution extends $pb.GeneratedMessage {
