@@ -1,13 +1,15 @@
 use anyhow::anyhow;
+use arbiter_crypto::authn::{self, AuthChallenge, USERAGENT_CONTEXT};
 use flutter_rust_bridge::frb;
-use arbiter_crypto::authn::{self, USERAGENT_CONTEXT};
 
 #[frb(opaque)]
 pub struct MldsaKey(authn::SigningKey);
 
 impl MldsaKey {
     pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
-        let bytes: [u8; 32] = bytes.try_into().map_err(|_| anyhow!("Invalid key length"))?;
+        let bytes: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| anyhow!("Invalid key length"))?;
         Ok(Self(authn::SigningKey::from_seed(bytes)))
     }
 
@@ -26,4 +28,11 @@ impl MldsaKey {
     pub fn get_public_key(&self) -> Vec<u8> {
         self.0.public_key().to_bytes().to_vec()
     }
+}
+
+pub fn format_challenge(random: Vec<u8>, timestamp: i64) -> Result<Vec<u8>, String> {
+    let challenge = AuthChallenge::from_parts(&random, timestamp)
+        .map_err(|_| "Invalid nonce length".to_string())?;
+
+    Ok(challenge.format())
 }

@@ -43,6 +43,14 @@ impl AuthChallenge {
             buffer
         }
     }
+
+    pub fn from_parts(nonce: &[u8], timestamp: i64) -> Result<Self, ()> {
+        let random_nonce = nonce.as_array().ok_or(())?;
+        Ok(AuthChallenge {
+            nonce: *random_nonce,
+            timestamp: DateTime::from_timestamp_nanos(timestamp),
+        })
+    }
 }
 
 pub type KeyParams = MlDsa87;

@@ -7,6 +7,7 @@ import 'package:arbiter/features/identity/pk_manager.dart';
 import 'package:arbiter/proto/arbiter.pbgrpc.dart';
 import 'package:arbiter/proto/user_agent/auth.pb.dart' as ua_auth;
 import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/src/rust/api.dart';
 import 'package:grpc/grpc.dart';
 import 'package:mtcore/markettakers.dart';
 
@@ -92,7 +93,10 @@ Future<Connection> connectAndAuthorize(
       );
     }
 
-    final challenge = _formatChallenge(authResponse.challenge, pubkey);
+    final challenge = await formatChallenge(
+      random: authResponse.challenge.random,
+      timestamp: authResponse.challenge.timestampNanos.toInt(),
+    );
     talker.info(
       'Received auth challenge, signing with key ${base64Encode(pubkey)}',
     );
@@ -163,10 +167,4 @@ Future<Connection> _connect(StoredServerInfo serverInfo) async {
   final rx = client.userAgent(tx.stream);
 
   return Connection(channel: channel, tx: tx, rx: rx);
-}
-
-List<int> _formatChallenge(ua_auth.AuthChallenge challenge, List<int> pubkey) {
-  final encodedPubkey = base64Encode(pubkey);
-  final payload = "${challenge.nonce}:$encodedPubkey";
-  return utf8.encode(payload);
 }

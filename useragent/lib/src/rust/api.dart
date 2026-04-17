@@ -6,6 +6,14 @@
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+Future<Uint8List> formatChallenge({
+  required List<int> random,
+  required PlatformInt64 timestamp,
+}) => RustLib.instance.api.crateApiFormatChallenge(
+  random: random,
+  timestamp: timestamp,
+);
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<MldsaKey>>
 abstract class MldsaKey implements RustOpaqueInterface {
   static Future<MldsaKey> fromBytes({required List<int> bytes}) =>
