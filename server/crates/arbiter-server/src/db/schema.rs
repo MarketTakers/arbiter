@@ -189,7 +189,6 @@ diesel::table! {
     useragent_client (id) {
         id -> Integer,
         public_key -> Binary,
-        key_type -> Integer,
         created_at -> Integer,
         updated_at -> Integer,
     }

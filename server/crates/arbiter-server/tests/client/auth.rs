@@ -58,7 +58,6 @@ async fn insert_registered_client(
         &actors.vault,
         &ClientCredentials {
             pubkey: pubkey.into(),
-            nonce: 1,
         },
         client_id,
     )
@@ -82,10 +81,7 @@ async fn insert_bootstrap_sentinel_useragent(db: &db::DatabasePool) {
         .to_vec();
 
     insert_into(schema::useragent_client::table)
-        .values((
-            schema::useragent_client::public_key.eq(sentinel_key),
-            schema::useragent_client::key_type.eq(1i32),
-        ))
+        .values((schema::useragent_client::public_key.eq(sentinel_key),))
         .execute(&mut conn)
         .await
         .unwrap();
@@ -171,14 +167,14 @@ pub async fn test_challenge_auth() {
         .expect("should receive challenge");
     let challenge = match response {
         Ok(resp) => match resp {
-            auth::Outbound::AuthChallenge { pubkey, nonce } => (pubkey, nonce),
+            auth::Outbound::AuthChallenge { challenge } => challenge,
             other => panic!("Expected AuthChallenge, got {other:?}"),
         },
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };
 
     // Sign the challenge and send solution
-    let signature = sign_client_challenge(&new_key, challenge.1, &challenge.0);
+    let signature = sign_client_challenge(&new_key, &challenge);
 
     test_transport
         .send(auth::Inbound::AuthChallengeSolution { signature })
@@ -226,11 +222,11 @@ pub async fn test_metadata_unchanged_does_not_append_history() {
         .unwrap();
 
     let response = test_transport.recv().await.unwrap().unwrap();
-    let (pubkey, nonce) = match response {
-        auth::Outbound::AuthChallenge { pubkey, nonce } => (pubkey, nonce),
+    let challenge = match response {
+        auth::Outbound::AuthChallenge { challenge } => challenge,
         other => panic!("Expected AuthChallenge, got {other:?}"),
     };
-    let signature = sign_client_challenge(&new_key, nonce, &pubkey);
+    let signature = sign_client_challenge(&new_key, &challenge);
     test_transport
         .send(auth::Inbound::AuthChallengeSolution { signature })
         .await
@@ -288,11 +284,11 @@ pub async fn test_metadata_change_appends_history_and_repoints_binding() {
         .unwrap();
 
     let response = test_transport.recv().await.unwrap().unwrap();
-    let (pubkey, nonce) = match response {
-        auth::Outbound::AuthChallenge { pubkey, nonce } => (pubkey, nonce),
+    let challenge = match response {
+        auth::Outbound::AuthChallenge { challenge } => challenge,
         other => panic!("Expected AuthChallenge, got {other:?}"),
     };
-    let signature = sign_client_challenge(&new_key, nonce, &pubkey);
+    let signature = sign_client_challenge(&new_key, &challenge);
     test_transport
         .send(auth::Inbound::AuthChallengeSolution { signature })
         .await

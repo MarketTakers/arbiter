@@ -87,7 +87,7 @@ async fn test_new_restores_sealed_state() {
         .await
         .unwrap();
     let err = actor2.decrypt(1).await.unwrap_err();
-    assert!(matches!(err, Error::NotBootstrapped));
+    assert!(matches!(err, Error::Sealed));
 }
 
 #[tokio::test]
