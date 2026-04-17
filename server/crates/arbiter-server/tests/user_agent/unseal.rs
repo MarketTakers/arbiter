@@ -9,8 +9,10 @@ use arbiter_server::{
     },
     db,
     peers::user_agent::{
-        AuthCredentials, Credentials,
-        vault_gate::{Error as VaultGateError, HandleHandshake, HandleUnsealEncryptedKey, VaultGate},
+        Credentials,
+        vault_gate::{
+            Error as VaultGateError, HandleHandshake, HandleUnsealEncryptedKey, VaultGate,
+        },
     },
 };
 
@@ -21,7 +23,11 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 
 async fn setup_sealed_gate(
     seal_key: &[u8],
-) -> (db::DatabasePool, kameo::actor::ActorRef<VaultGate>, oneshot::Receiver<Result<Credentials, VaultGateError>>) {
+) -> (
+    db::DatabasePool,
+    kameo::actor::ActorRef<VaultGate>,
+    oneshot::Receiver<Result<Credentials, VaultGateError>>,
+) {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
@@ -36,10 +42,7 @@ async fn setup_sealed_gate(
 
     let (promotion_tx, promotion_rx) = oneshot::channel();
     let pubkey = authn::SigningKey::generate().public_key();
-    let auth_creds = AuthCredentials {
-        creds: Credentials { id: 1, pubkey },
-        new_nonce: 1,
-    };
+    let auth_creds = Credentials { id: 1, pubkey };
     let gate = VaultGate::spawn(VaultGate::new(auth_creds, actors, db.clone(), promotion_tx));
 
     (db, gate, promotion_rx)

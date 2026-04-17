@@ -18,7 +18,6 @@ pub struct ClientProfile {
 
 pub struct ClientCredentials {
     pub pubkey: authn::PublicKey,
-    pub nonce: i32,
 }
 
 impl Integrable for ClientCredentials {
@@ -28,7 +27,6 @@ impl Integrable for ClientCredentials {
 impl Hashable for ClientCredentials {
     fn hash<H: sha2::Digest>(&self, hasher: &mut H) {
         hasher.update(self.pubkey.to_bytes());
-        self.nonce.hash(hasher);
     }
 }
 

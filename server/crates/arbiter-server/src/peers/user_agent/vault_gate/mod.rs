@@ -1,22 +1,24 @@
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
+use arbiter_proto::transport::Bi;
 use chacha20poly1305::{AeadInPlace, KeyInit as _, XChaCha20Poly1305, XNonce};
 use kameo::{Actor, error::SendError, messages, prelude::Message};
 use kameo_actors::message_bus::Register;
 use tokio::sync::oneshot;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
 pub mod state;
 use state::*;
 
-use super::{AuthCredentials, Credentials};
+use super::Credentials;
 use crate::{
     actors::{
         GlobalActors,
         vault::{self, Bootstrap, GetState, TryUnseal, VaultState, events},
     },
-    crypto::integrity::{self, AttestationStatus},
+    crypto::integrity::{self},
     db::DatabasePool,
+    peers::user_agent::UserAgentConnection,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -43,8 +45,8 @@ pub struct HandshakeResponse {
 }
 
 pub struct VaultGate {
-    pub auth_creds: AuthCredentials,
-    pub promotion_tx: Option<oneshot::Sender<Result<Credentials, Error>>>,
+    pub auth_creds: Credentials,
+    pub promotion_tx: Option<oneshot::Sender<Result<(), Error>>>,
     pub state: State,
     pub actors: GlobalActors,
     pub db: DatabasePool,
@@ -52,10 +54,10 @@ pub struct VaultGate {
 
 impl VaultGate {
     pub fn new(
-        auth_creds: AuthCredentials,
+        auth_creds: Credentials,
         actors: GlobalActors,
         db: DatabasePool,
-        promotion_tx: oneshot::Sender<Result<Credentials, Error>>,
+        promotion_tx: oneshot::Sender<Result<(), Error>>,
     ) -> Self {
         Self {
             auth_creds,
@@ -260,14 +262,14 @@ impl Message<events::Bootstrapped> for VaultGate {
                 &mut conn,
                 &self.actors.vault,
                 &self.auth_creds,
-                self.auth_creds.creds.id,
+                self.auth_creds.id,
             )
             .await
             .map_err(|e| {
                 error!(?e, "Failed to sign integrity envelope on bootstrap");
                 Error::internal("Integrity sign failed")
             })?;
-            Ok(self.auth_creds.creds.clone())
+            Ok(())
         }
         .await;
 
@@ -286,34 +288,8 @@ impl Message<events::Unsealed> for VaultGate {
         _: events::Unsealed,
         ctx: &mut kameo::prelude::Context<Self, Self::Reply>,
     ) -> Self::Reply {
-        let result = async {
-            let mut conn = self
-                .db
-                .get()
-                .await
-                .map_err(|_| Error::internal("DB unavailable"))?;
-            match integrity::verify_entity(
-                &mut conn,
-                &self.actors.vault,
-                &self.auth_creds,
-                self.auth_creds.creds.id,
-            )
-            .await
-            {
-                Ok(AttestationStatus::Attested) => Ok(self.auth_creds.creds.clone()),
-                Ok(AttestationStatus::Unavailable) => {
-                    Err(Error::internal("Vault sealed during promotion"))
-                }
-                Err(e) => {
-                    error!(?e, "Integrity verification failed during unseal promotion");
-                    Err(Error::InvalidKey)
-                }
-            }
-        }
-        .await;
-
         if let Some(tx) = self.promotion_tx.take() {
-            let _ = tx.send(result);
+            let _ = tx.send(Ok(()));
         }
         ctx.stop();
     }

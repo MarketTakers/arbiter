@@ -19,7 +19,7 @@ use tracing::warn;
 
 use crate::{
     grpc::request_tracker::RequestTracker,
-    peers::user_agent::{AuthCredentials, UserAgentConnection, auth},
+    peers::user_agent::{Credentials, UserAgentConnection, auth},
 };
 
 pub struct AuthTransportAdapter<'a> {
@@ -77,8 +77,15 @@ impl Sender<Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {
     ) -> Result<(), TransportError> {
         use auth::{Error, Outbound};
         let payload = match item {
-            Ok(Outbound::AuthChallenge { nonce }) => {
-                AuthResponsePayload::Challenge(ProtoAuthChallenge { nonce })
+            Ok(Outbound::AuthChallenge { challenge }) => {
+                AuthResponsePayload::Challenge(ProtoAuthChallenge {
+                    timestamp_nanos: challenge
+                        .timestamp
+                        .timestamp_nanos_opt()
+                        .expect("timestamp within range")
+                        as u64,
+                    random: challenge.nonce.to_vec(),
+                })
             }
             Ok(Outbound::AuthSuccess) => {
                 AuthResponsePayload::Result(ProtoAuthResult::Success.into())
@@ -183,7 +190,7 @@ pub async fn start(
     conn: &mut UserAgentConnection,
     bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
     request_tracker: &mut RequestTracker,
-) -> Result<AuthCredentials, auth::Error> {
+) -> Result<Credentials, auth::Error> {
     let mut transport = AuthTransportAdapter::new(bi, request_tracker);
     auth::authenticate(conn, &mut transport).await
 }

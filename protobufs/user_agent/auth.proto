@@ -8,7 +8,8 @@ message AuthChallengeRequest {
 }
 
 message AuthChallenge {
-  int32 nonce = 1;
+  uint64 timestamp_nanos = 1;
+  bytes random = 2;
 }
 
 message AuthChallengeSolution {

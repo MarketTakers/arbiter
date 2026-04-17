@@ -1,12 +1,9 @@
 use arbiter_crypto::authn;
-use diesel::{ExpressionMethods, QueryDsl};
-use diesel_async::{RunQueryDsl};
-use kameo_actors::message_bus::Register;
 
 use std::{borrow::Cow, collections::HashMap};
 
 use arbiter_proto::transport::Sender;
-use kameo::{Actor, actor::ActorRef, messages, prelude::Message};
+use kameo::{Actor, actor::ActorRef, messages};
 use thiserror::Error;
 use tracing::error;
 
@@ -14,8 +11,8 @@ use crate::{
     actors::{
         flow_coordinator::client_connect_approval::ClientApprovalController,
         useragent_registry::ConnectUseragent,
-        vault::events,
-    }, crypto::integrity, db::schema::useragent_client, peers::{client::ClientProfile, user_agent::{AuthCredentials, Credentials}}
+    },
+    peers::{client::ClientProfile, user_agent::Credentials},
 };
 
 use super::{OutOfBand, UserAgentConnection};

@@ -1,11 +1,12 @@
-use arbiter_crypto::authn;
+use arbiter_crypto::authn::{self, AuthChallenge};
 use arbiter_proto::transport::Bi;
 use tracing::error;
 
 mod state;
 use state::*;
 
-use super::{AuthCredentials, UserAgentConnection};
+use super::Credentials;
+use super::UserAgentConnection;
 
 #[derive(Debug, Clone)]
 pub enum Inbound {
@@ -44,7 +45,7 @@ impl From<diesel::result::Error> for Error {
 
 #[derive(Debug, Clone)]
 pub enum Outbound {
-    AuthChallenge { nonce: i32 },
+    AuthChallenge { challenge: AuthChallenge },
     AuthSuccess,
 }
 
@@ -52,12 +53,11 @@ fn parse_auth_event(payload: Inbound) -> AuthEvents {
     match payload {
         Inbound::AuthChallengeRequest {
             pubkey,
-            bootstrap_token: None,
-        } => AuthEvents::AuthRequest(ChallengeRequest { pubkey }),
-        Inbound::AuthChallengeRequest {
+            bootstrap_token,
+        } => AuthEvents::AuthRequest(ChallengeRequest {
             pubkey,
-            bootstrap_token: Some(token),
-        } => AuthEvents::BootstrapAuthRequest(BootstrapAuthRequest { pubkey, token }),
+            bootstrap_token,
+        }),
         Inbound::AuthChallengeSolution { signature } => {
             AuthEvents::ReceivedSolution(ChallengeSolution {
                 solution: signature,
@@ -69,14 +69,13 @@ fn parse_auth_event(payload: Inbound) -> AuthEvents {
 pub async fn authenticate<T>(
     props: &mut UserAgentConnection,
     transport: &mut T,
-) -> Result<AuthCredentials, Error>
+) -> Result<Credentials, Error>
 where
     T: Bi<Inbound, Result<Outbound, Error>> + Send + ?Sized,
 {
     let mut state = AuthStateMachine::new(AuthContext::new(props, transport));
 
     loop {
-        // `state` holds a mutable reference to `props` so we can't access it directly here
         let Some(payload) = state.context_mut().transport.recv().await else {
             return Err(Error::Transport);
         };

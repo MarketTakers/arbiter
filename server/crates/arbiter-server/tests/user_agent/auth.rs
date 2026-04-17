@@ -8,7 +8,7 @@ use arbiter_server::{
     actors::{GlobalActors, bootstrap::GetToken, vault::Bootstrap},
     crypto::integrity,
     db::{self, schema},
-    peers::user_agent::{AuthCredentials, Credentials, UserAgentConnection, auth},
+    peers::user_agent::{Credentials, Credentials, UserAgentConnection, auth},
 };
 use diesel::{ExpressionMethods as _, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
@@ -144,7 +144,7 @@ pub async fn test_challenge_auth() {
         integrity::sign_entity(
             &mut conn,
             &actors.vault,
-            &AuthCredentials {
+            &Credentials {
                 creds: Credentials {
                     id,
                     pubkey: new_key.verifying_key().into(),
@@ -285,7 +285,7 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
         integrity::sign_entity(
             &mut conn,
             &actors.vault,
-            &AuthCredentials {
+            &Credentials {
                 creds: Credentials {
                     id,
                     pubkey: new_key.verifying_key().into(),

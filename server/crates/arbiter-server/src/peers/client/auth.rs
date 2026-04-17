@@ -1,4 +1,4 @@
-use arbiter_crypto::authn::{self, CLIENT_CONTEXT};
+use arbiter_crypto::authn::{self, AuthChallenge, CLIENT_CONTEXT};
 use arbiter_proto::{
     ClientMetadata,
     transport::{Bi, expect_message},
@@ -74,19 +74,14 @@ pub enum Inbound {
 
 #[derive(Debug, Clone)]
 pub enum Outbound {
-    AuthChallenge {
-        pubkey: authn::PublicKey,
-        nonce: i32,
-    },
+    AuthChallenge { challenge: AuthChallenge },
     AuthSuccess,
 }
 
-/// Returns the current nonce and client ID for a registered client.
-/// Returns `None` if the pubkey is not registered.
-async fn get_current_nonce_and_id(
+async fn get_client_id(
     db: &db::DatabasePool,
     pubkey: &authn::PublicKey,
-) -> Result<Option<(i32, i32)>, Error> {
+) -> Result<Option<i32>, Error> {
     let pubkey_bytes = pubkey.to_bytes();
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
@@ -94,8 +89,8 @@ async fn get_current_nonce_and_id(
     })?;
     program_client::table
         .filter(program_client::public_key.eq(&pubkey_bytes))
-        .select((program_client::id, program_client::nonce))
-        .first::<(i32, i32)>(&mut conn)
+        .select(program_client::id)
+        .first::<i32>(&mut conn)
         .await
         .optional()
         .map_err(|e| {
@@ -114,7 +109,7 @@ async fn verify_integrity(
         Error::DatabasePoolUnavailable
     })?;
 
-    let (id, nonce) = get_current_nonce_and_id(db, pubkey).await?.ok_or_else(|| {
+    let id = get_client_id(db, pubkey).await?.ok_or_else(|| {
         error!("Client not found during integrity verification");
         Error::DatabaseOperationFailed
     })?;
@@ -124,7 +119,6 @@ async fn verify_integrity(
         vault,
         &ClientCredentials {
             pubkey: pubkey.clone(),
-            nonce,
         },
         id,
     )
@@ -140,53 +134,6 @@ async fn verify_integrity(
     }
 
     Ok(())
-}
-
-/// Atomically increments the nonce and re-signs the integrity envelope.
-/// Returns the new nonce, which is used as the challenge nonce.
-async fn create_nonce(
-    db: &db::DatabasePool,
-    vault: &ActorRef<Vault>,
-    pubkey: &authn::PublicKey,
-) -> Result<i32, Error> {
-    let pubkey_bytes = pubkey.to_bytes();
-    let pubkey = pubkey.clone();
-
-    let mut conn = db.get().await.map_err(|e| {
-        error!(error = ?e, "Database pool error");
-        Error::DatabasePoolUnavailable
-    })?;
-
-    conn.exclusive_transaction(|conn| {
-        let vault = vault.clone();
-        let pubkey = pubkey.clone();
-        Box::pin(async move {
-            let (id, new_nonce): (i32, i32) = update(program_client::table)
-                .filter(program_client::public_key.eq(&pubkey_bytes))
-                .set(program_client::nonce.eq(program_client::nonce + 1))
-                .returning((program_client::id, program_client::nonce))
-                .get_result(conn)
-                .await?;
-
-            integrity::sign_entity(
-                conn,
-                &vault,
-                &ClientCredentials {
-                    pubkey: pubkey.clone(),
-                    nonce: new_nonce,
-                },
-                id,
-            )
-            .await
-            .map_err(|e| {
-                error!(?e, "Integrity sign failed after nonce update");
-                Error::DatabaseOperationFailed
-            })?;
-
-            Ok(new_nonce)
-        })
-    })
-    .await
 }
 
 async fn approve_new_client(actors: &GlobalActors, profile: ClientProfile) -> Result<(), Error> {
@@ -228,8 +175,6 @@ async fn insert_client(
         let vault = vault.clone();
         let pubkey = pubkey.clone();
         Box::pin(async move {
-            const NONCE_START: i32 = 1;
-
             let metadata_id = insert_into(client_metadata::table)
                 .values((
                     client_metadata::name.eq(&metadata.name),
@@ -244,7 +189,6 @@ async fn insert_client(
                 .values((
                     program_client::public_key.eq(pubkey.to_bytes()),
                     program_client::metadata_id.eq(metadata_id),
-                    program_client::nonce.eq(NONCE_START),
                 ))
                 .on_conflict_do_nothing()
                 .returning(program_client::id)
@@ -256,7 +200,6 @@ async fn insert_client(
                 &vault,
                 &ClientCredentials {
                     pubkey: pubkey.clone(),
-                    nonce: NONCE_START,
                 },
                 client_id,
             )
@@ -346,15 +289,14 @@ async fn sync_client_metadata(
 async fn challenge_client<T>(
     transport: &mut T,
     pubkey: authn::PublicKey,
-    nonce: i32,
+    challenge: AuthChallenge,
 ) -> Result<(), Error>
 where
     T: Bi<Inbound, Result<Outbound, Error>> + ?Sized,
 {
     transport
         .send(Ok(Outbound::AuthChallenge {
-            pubkey: pubkey.clone(),
-            nonce,
+            challenge: challenge.clone(),
         }))
         .await
         .map_err(|e| {
@@ -372,7 +314,7 @@ where
         Error::Transport
     })?;
 
-    if !pubkey.verify(nonce, CLIENT_CONTEXT, &signature) {
+    if !pubkey.verify(&challenge, CLIENT_CONTEXT, &signature) {
         error!("Challenge solution verification failed");
         return Err(Error::InvalidChallengeSolution);
     }
@@ -388,8 +330,8 @@ where
         return Err(Error::Transport);
     };
 
-    let client_id = match get_current_nonce_and_id(&props.db, &pubkey).await? {
-        Some((id, _)) => {
+    let client_id = match get_client_id(&props.db, &pubkey).await? {
+        Some(id) => {
             verify_integrity(&props.db, &props.actors.vault, &pubkey).await?;
             id
         }
@@ -407,8 +349,9 @@ where
     };
 
     sync_client_metadata(&props.db, client_id, &metadata).await?;
-    let challenge_nonce = create_nonce(&props.db, &props.actors.vault, &pubkey).await?;
-    challenge_client(transport, pubkey, challenge_nonce).await?;
+
+    let challenge = AuthChallenge::generate(&mut rand::rng());
+    challenge_client(transport, pubkey, challenge).await?;
 
     transport
         .send(Ok(Outbound::AuthSuccess))

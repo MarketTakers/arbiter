@@ -10,8 +10,8 @@ message AuthChallengeRequest {
 }
 
 message AuthChallenge {
-  bytes pubkey = 1;
-  int32 nonce = 2;
+  uint64 timestamp_nanos = 1;
+  bytes random = 2;
 }
 
 message AuthChallengeSolution {

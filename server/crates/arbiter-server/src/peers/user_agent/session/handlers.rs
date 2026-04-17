@@ -1,27 +1,22 @@
-use std::sync::Mutex;
 
 use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
 use arbiter_crypto::{
     authn,
-    safecell::{SafeCell, SafeCellHandle as _},
+    safecell::SafeCellHandle as _,
 };
-use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
+use chacha20poly1305::aead::KeyInit;
 use diesel::{ExpressionMethods as _, QueryDsl as _, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::error::SendError;
 use kameo::messages;
 use kameo::prelude::Context;
-use tracing::{error, info};
-use x25519_dalek::{EphemeralSecret, PublicKey};
+use tracing::error;
 
 use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
-use crate::actors::{
-    evm::{
+use crate::actors::evm::{
         ClientSignTransaction, Generate, ListWallets, SignTransactionError as EvmSignError,
         UseragentCreateGrant, UseragentListGrants,
-    },
-    vault::{self, Bootstrap, TryUnseal},
-};
+    };
 use crate::db::models::{
     EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
 };

@@ -1,32 +1,26 @@
-use super::super::{AuthCredentials, Credentials, UserAgentConnection};
-use arbiter_crypto::authn::{self, USERAGENT_CONTEXT};
+use super::super::{Credentials, UserAgentConnection};
+use arbiter_crypto::authn::{self, AuthChallenge, USERAGENT_CONTEXT};
 use arbiter_proto::transport::Bi;
-use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl, sqlite::Sqlite, update};
-use diesel_async::{AsyncConnection, RunQueryDsl};
-use kameo::actor::ActorRef;
+use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl};
+use diesel_async::RunQueryDsl;
 use tracing::error;
 
 use super::Error;
-use crate::peers::user_agent::auth::Outbound;
 use crate::{
-    actors::{bootstrap::ConsumeToken, vault::Vault},
-    crypto::integrity,
+    actors::bootstrap::ConsumeToken,
     db::{DatabasePool, schema::useragent_client},
+    peers::user_agent::auth::Outbound,
 };
 
 pub struct ChallengeRequest {
     pub pubkey: authn::PublicKey,
-}
-
-pub struct BootstrapAuthRequest {
-    pub pubkey: authn::PublicKey,
-    pub token: String,
+    pub bootstrap_token: Option<String>,
 }
 
 pub struct ChallengeContext {
-    pub id: i32,
-    pub challenge_nonce: i32,
-    pub key: authn::PublicKey,
+    pub challenge: AuthChallenge,
+    pub pubkey: authn::PublicKey,
+    pub bootstrap_token: Option<String>,
 }
 
 pub struct ChallengeSolution {
@@ -38,117 +32,26 @@ smlang::statemachine!(
     custom_error: true,
     transitions: {
         *Init + AuthRequest(ChallengeRequest) / async prepare_challenge = SentChallenge(ChallengeContext),
-        Init + BootstrapAuthRequest(BootstrapAuthRequest) / async verify_bootstrap_token = AuthOk(AuthCredentials),
-        SentChallenge(ChallengeContext) + ReceivedSolution(ChallengeSolution) / async verify_solution = AuthOk(AuthCredentials),
+        SentChallenge(ChallengeContext) + ReceivedSolution(ChallengeSolution) / async verify_solution = AuthOk(Credentials),
     }
 );
 
-const NONCE_START: i32 = 1;
-
-/// Returns the current nonce, ready to use for the challenge nonce.
-async fn get_current_nonce_and_id(
-    db: &DatabasePool,
-    key: &authn::PublicKey,
-) -> Result<(i32, i32), Error> {
-    let mut db_conn = db.get().await.map_err(|e| {
+async fn get_client_id(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<Option<i32>, Error> {
+    let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
         Error::internal("Database unavailable")
     })?;
-    db_conn
-        .exclusive_transaction(|conn| {
-            Box::pin(async move {
-                useragent_client::table
-                    .filter(useragent_client::public_key.eq(key.to_bytes()))
-                    .select((useragent_client::id, useragent_client::nonce))
-                    .first::<(i32, i32)>(conn)
-                    .await
-            })
-        })
+
+    useragent_client::table
+        .filter(useragent_client::public_key.eq(pubkey.to_bytes()))
+        .select(useragent_client::id)
+        .first::<i32>(&mut conn)
         .await
         .optional()
         .map_err(|e| {
             error!(error = ?e, "Database error");
             Error::internal("Database operation failed")
-        })?
-        .ok_or_else(|| {
-            error!(?key, "Public key not found in database");
-            Error::UnregisteredPublicKey
         })
-}
-
-async fn verify_integrity(
-    db: &DatabasePool,
-    vault: &ActorRef<Vault>,
-    pubkey: &authn::PublicKey,
-) -> Result<(), Error> {
-    let mut db_conn = db.get().await.map_err(|e| {
-        error!(error = ?e, "Database pool error");
-        Error::internal("Database unavailable")
-    })?;
-
-    let (id, nonce) = get_current_nonce_and_id(db, pubkey).await?;
-
-    let _result = integrity::verify_entity(
-        &mut db_conn,
-        vault,
-        &AuthCredentials {
-            creds: Credentials {
-                id,
-                pubkey: pubkey.clone(),
-            },
-            new_nonce: nonce,
-        },
-        id,
-    )
-    .await
-    .map_err(|e| {
-        error!(?e, "Integrity verification failed");
-        Error::internal("Integrity verification failed")
-    })?;
-
-    Ok(())
-}
-
-async fn compute_current_nonce(
-    conn: &mut impl AsyncConnection<Backend = Sqlite>,
-    pubkey: &authn::PublicKey,
-) -> Result<(i32, i32), Error> {
-    update(useragent_client::table)
-        .filter(useragent_client::public_key.eq(pubkey.to_bytes()))
-        .set(useragent_client::nonce.eq(useragent_client::nonce + 1))
-        .returning((useragent_client::id, useragent_client::nonce))
-        .get_result(conn)
-        .await
-        .map_err(|e| {
-            error!(error = ?e, "Database error incrementing nonce");
-            Error::internal("Database operation failed")
-        })
-}
-
-async fn resign_credentials(
-    conn: &mut impl AsyncConnection<Backend = Sqlite>,
-    vault: &ActorRef<Vault>,
-    id: i32,
-    pubkey: &authn::PublicKey,
-    new_nonce: i32,
-) -> Result<(), Error> {
-    integrity::sign_entity(
-        conn,
-        vault,
-        &AuthCredentials {
-            creds: Credentials {
-                id,
-                pubkey: pubkey.clone(),
-            },
-            new_nonce,
-        },
-        id,
-    )
-    .await
-    .map_err(|e| {
-        error!(?e, "Integrity signature update failed");
-        Error::internal("Database error")
-    })
 }
 
 async fn register_key(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<i32, Error> {
@@ -159,10 +62,7 @@ async fn register_key(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<i3
     })?;
 
     let id: i32 = diesel::insert_into(useragent_client::table)
-        .values((
-            useragent_client::public_key.eq(pubkey_bytes),
-            useragent_client::nonce.eq(NONCE_START),
-        ))
+        .values((useragent_client::public_key.eq(pubkey_bytes),))
         .returning(useragent_client::id)
         .get_result(&mut conn)
         .await
@@ -193,38 +93,25 @@ where
 
     async fn prepare_challenge(
         &mut self,
-        ChallengeRequest { pubkey }: ChallengeRequest,
+        ChallengeRequest {
+            pubkey,
+            bootstrap_token,
+        }: ChallengeRequest,
     ) -> Result<ChallengeContext, Self::Error> {
-        let is_signing = integrity::is_signing_available(&self.conn.actors.vault)
-            .await
-            .unwrap_or(false);
-
-        if is_signing {
-            verify_integrity(&self.conn.db, &self.conn.actors.vault, &pubkey).await?;
+        // Verify pubkey is registered (unless bootstrapping)
+        if bootstrap_token.is_none() {
+            let id = get_client_id(&self.conn.db, &pubkey).await?;
+            if id.is_none() {
+                return Err(Error::UnregisteredPublicKey);
+            }
         }
 
-        let vault = self.conn.actors.vault.clone();
-        let mut conn = self.conn.db.get().await.map_err(|e| {
-            error!(error = ?e, "Database pool error");
-            Error::internal("Database unavailable")
-        })?;
-
-        let (id, nonce) = conn
-            .exclusive_transaction(|conn| {
-                let pubkey = pubkey.clone();
-                let vault = vault.clone();
-                Box::pin(async move {
-                    let (id, new_nonce) = compute_current_nonce(conn, &pubkey).await?;
-                    if is_signing {
-                        resign_credentials(conn, &vault, id, &pubkey, new_nonce).await?;
-                    }
-                    Result::<_, Error>::Ok((id, new_nonce))
-                })
-            })
-            .await?;
+        let challenge = AuthChallenge::generate(&mut rand::rng());
 
         self.transport
-            .send(Ok(Outbound::AuthChallenge { nonce }))
+            .send(Ok(Outbound::AuthChallenge {
+                challenge: challenge.clone(),
+            }))
             .await
             .map_err(|e| {
                 error!(?e, "Failed to send auth challenge");
@@ -232,57 +119,10 @@ where
             })?;
 
         Ok(ChallengeContext {
-            id,
-            challenge_nonce: nonce,
-            key: pubkey,
+            challenge,
+            pubkey,
+            bootstrap_token,
         })
-    }
-
-    #[allow(missing_docs)]
-    #[allow(clippy::result_unit_err)]
-    async fn verify_bootstrap_token(
-        &mut self,
-        BootstrapAuthRequest { pubkey, token }: BootstrapAuthRequest,
-    ) -> Result<AuthCredentials, Self::Error> {
-        let token_ok: bool = self
-            .conn
-            .actors
-            .bootstrapper
-            .ask(ConsumeToken {
-                token: token.clone(),
-            })
-            .await
-            .map_err(|e| {
-                error!(?e, "Failed to consume bootstrap token");
-                Error::internal("Failed to consume bootstrap token")
-            })?;
-
-        if !token_ok {
-            error!("Invalid bootstrap token provided");
-            return Err(Error::InvalidBootstrapToken);
-        }
-
-        match token_ok {
-            true => {
-                let id = register_key(&self.conn.db, &pubkey).await?;
-                self.transport
-                    .send(Ok(Outbound::AuthSuccess))
-                    .await
-                    .map_err(|_| Error::Transport)?;
-                Ok(AuthCredentials {
-                    creds: Credentials { id, pubkey },
-                    new_nonce: NONCE_START,
-                })
-            }
-            false => {
-                error!("Invalid bootstrap token provided");
-                self.transport
-                    .send(Err(Error::InvalidBootstrapToken))
-                    .await
-                    .map_err(|_| Error::Transport)?;
-                Err(Error::InvalidBootstrapToken)
-            }
-        }
     }
 
     #[allow(missing_docs)]
@@ -290,40 +130,67 @@ where
     async fn verify_solution(
         &mut self,
         ChallengeContext {
-            id,
-            challenge_nonce,
-            key,
+            challenge,
+            pubkey,
+            bootstrap_token,
         }: &ChallengeContext,
         ChallengeSolution { solution }: ChallengeSolution,
-    ) -> Result<AuthCredentials, Self::Error> {
+    ) -> Result<Credentials, Self::Error> {
         let signature = authn::Signature::try_from(solution.as_slice()).map_err(|_| {
             error!("Failed to decode signature in challenge solution");
             Error::InvalidChallengeSolution
         })?;
 
-        let valid = key.verify(*challenge_nonce, USERAGENT_CONTEXT, &signature);
+        let valid = pubkey.verify(challenge, USERAGENT_CONTEXT, &signature);
 
-        match valid {
-            true => {
-                self.transport
-                    .send(Ok(Outbound::AuthSuccess))
-                    .await
-                    .map_err(|_| Error::Transport)?;
-                Ok(AuthCredentials {
-                    creds: Credentials {
-                        id: *id,
-                        pubkey: key.clone(),
-                    },
-                    new_nonce: *challenge_nonce,
-                })
-            }
-            false => {
-                self.transport
-                    .send(Err(Error::InvalidChallengeSolution))
-                    .await
-                    .map_err(|_| Error::Transport)?;
-                Err(Error::InvalidChallengeSolution)
-            }
+        if !valid {
+            self.transport
+                .send(Err(Error::InvalidChallengeSolution))
+                .await
+                .map_err(|_| Error::Transport)?;
+            return Err(Error::InvalidChallengeSolution);
         }
+
+        // Resolve client id: bootstrap (consume token + register) or lookup
+        let id = match bootstrap_token {
+            Some(token) => {
+                let token_ok: bool = self
+                    .conn
+                    .actors
+                    .bootstrapper
+                    .ask(ConsumeToken {
+                        token: token.clone(),
+                    })
+                    .await
+                    .map_err(|e| {
+                        error!(?e, "Failed to consume bootstrap token");
+                        Error::internal("Failed to consume bootstrap token")
+                    })?;
+
+                if !token_ok {
+                    error!("Invalid bootstrap token provided");
+                    self.transport
+                        .send(Err(Error::InvalidBootstrapToken))
+                        .await
+                        .map_err(|_| Error::Transport)?;
+                    return Err(Error::InvalidBootstrapToken);
+                }
+
+                register_key(&self.conn.db, pubkey).await?
+            }
+            None => get_client_id(&self.conn.db, pubkey)
+                .await?
+                .ok_or(Error::UnregisteredPublicKey)?,
+        };
+
+        self.transport
+            .send(Ok(Outbound::AuthSuccess))
+            .await
+            .map_err(|_| Error::Transport)?;
+
+        Ok(Credentials {
+            id,
+            pubkey: pubkey.clone(),
+        })
     }
 }
