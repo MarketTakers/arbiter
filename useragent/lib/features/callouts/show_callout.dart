@@ -14,11 +14,8 @@ Future<void> showCallout(BuildContext context, WidgetRef ref, String id) async {
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     barrierColor: Colors.transparent,
     transitionDuration: const Duration(milliseconds: 320),
-    pageBuilder: (_, animation, _) => _CalloutOverlay(
-      id: id,
-      data: data,
-      animation: animation,
-    ),
+    pageBuilder: (_, animation, _) =>
+        _CalloutOverlay(id: id, data: data, animation: animation),
   );
 }
 
@@ -35,22 +32,25 @@ class _CalloutOverlay extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.listen(
-      calloutManagerProvider.select((map) => map.containsKey(id)),
-      (wasPresent, isPresent) {
-        if (wasPresent == true && !isPresent && context.mounted) {
-          Navigator.of(context).pop();
-        }
-      },
-    );
+    ref.listen(calloutManagerProvider.select((map) => map.containsKey(id)), (
+      wasPresent,
+      isPresent,
+    ) {
+      if (wasPresent == true && !isPresent && context.mounted) {
+        Navigator.of(context).pop();
+      }
+    });
 
     final content = switch (data) {
-      ConnectApprovalData(:final pubkey, :final clientInfo) => SdkConnectCallout(
-        pubkey: pubkey,
-        clientInfo: clientInfo,
-        onAccept: () => ref.read(calloutManagerProvider.notifier).sendDecision(id, true),
-        onDecline: () => ref.read(calloutManagerProvider.notifier).sendDecision(id, false),
-      ),
+      ConnectApprovalData(:final pubkey, :final clientInfo) =>
+        SdkConnectCallout(
+          pubkey: pubkey,
+          clientInfo: clientInfo,
+          onAccept: () =>
+              ref.read(calloutManagerProvider.notifier).sendDecision(id, true),
+          onDecline: () =>
+              ref.read(calloutManagerProvider.notifier).sendDecision(id, false),
+        ),
     };
 
     final barrierAnim = CurvedAnimation(

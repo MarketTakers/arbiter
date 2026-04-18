@@ -1,7 +1,6 @@
-use std::fmt::Display;
-
 use base64::{Engine as _, prelude::BASE64_URL_SAFE};
 use rustls_pki_types::CertificateDer;
+use std::fmt::Display;
 
 const ARBITER_URL_SCHEME: &str = "arbiter";
 const CERT_QUERY_KEY: &str = "cert";

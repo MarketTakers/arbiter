@@ -1,16 +1,17 @@
-use std::ops::ControlFlow;
+use crate::{
+    actors::flow_coordinator::ApprovalError,
+    peers::{
+        client::ClientProfile,
+        user_agent::{UserAgentSession, session::BeginNewClientApproval},
+    },
+};
 
 use kameo::{
     Actor, messages,
     prelude::{ActorId, ActorRef, ActorStopReason, Context, WeakActorRef},
     reply::ReplySender,
 };
-
-use crate::actors::{
-    client::ClientProfile,
-    flow_coordinator::ApprovalError,
-    user_agent::{UserAgentSession, session::BeginNewClientApproval},
-};
+use std::ops::ControlFlow;
 
 pub struct Args {
     pub client: ClientProfile,

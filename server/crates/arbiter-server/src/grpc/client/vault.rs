@@ -1,3 +1,7 @@
+use crate::{
+    actors::vault::VaultState,
+    peers::client::session::{ClientSession, Error, HandleQueryVaultState},
+};
 use arbiter_proto::proto::{
     client::{
         client_response::Payload as ClientResponsePayload,
@@ -8,14 +12,10 @@ use arbiter_proto::proto::{
     },
     shared::VaultState as ProtoVaultState,
 };
+
 use kameo::{actor::ActorRef, error::SendError};
 use tonic::Status;
 use tracing::warn;
-
-use crate::actors::{
-    client::session::{ClientSession, Error, HandleQueryVaultState},
-    keyholder::KeyHolderState,
-};
 
 pub(super) async fn dispatch(
     actor: &ActorRef<ClientSession>,
@@ -30,9 +30,9 @@ pub(super) async fn dispatch(
     match payload {
         VaultRequestPayload::QueryState(_) => {
             let state = match actor.ask(HandleQueryVaultState {}).await {
-                Ok(KeyHolderState::Unbootstrapped) => ProtoVaultState::Unbootstrapped,
-                Ok(KeyHolderState::Sealed) => ProtoVaultState::Sealed,
-                Ok(KeyHolderState::Unsealed) => ProtoVaultState::Unsealed,
+                Ok(VaultState::Unbootstrapped) => ProtoVaultState::Unbootstrapped,
+                Ok(VaultState::Sealed) => ProtoVaultState::Sealed,
+                Ok(VaultState::Unsealed) => ProtoVaultState::Unsealed,
                 Err(SendError::HandlerError(Error::Internal)) => ProtoVaultState::Error,
                 Err(err) => {
                     warn!(error = ?err, "Failed to query vault state");

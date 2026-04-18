@@ -1,3 +1,8 @@
+use crate::{
+    db::models::EvmWalletAccess,
+    evm::policies::{SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit},
+    grpc::Convert,
+};
 use arbiter_proto::proto::{
     evm::{
         EtherTransferSettings as ProtoEtherTransferSettings, SharedSettings as ProtoSharedSettings,
@@ -7,14 +12,9 @@ use arbiter_proto::proto::{
     },
     user_agent::sdk_client::{WalletAccess, WalletAccessEntry as ProtoSdkClientWalletAccess},
 };
+
 use chrono::{DateTime, Utc};
 use prost_types::Timestamp as ProtoTimestamp;
-
-use crate::{
-    db::models::EvmWalletAccess,
-    evm::policies::{SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit},
-    grpc::Convert,
-};
 
 impl Convert for DateTime<Utc> {
     type Output = ProtoTimestamp;

@@ -1,16 +1,4 @@
-use std::collections::HashMap;
-
-use crate::db::schema::{
-    evm_basic_grant, evm_token_transfer_grant, evm_token_transfer_log,
-    evm_token_transfer_volume_limit,
-};
-use crate::evm::{
-    abi::IERC20::transferCall,
-    policies::{
-        Grant, Policy, SharedGrantSettings, SpecificGrant, SpecificMeaning, VolumeRateLimit,
-    },
-    utils,
-};
+use super::{DatabaseID, EvalContext, EvalViolation};
 use crate::{
     crypto::integrity::Integrable,
     db::models::{
@@ -18,20 +6,34 @@ use crate::{
         NewEvmTokenTransferGrant, NewEvmTokenTransferLog, NewEvmTokenTransferVolumeLimit,
         SqliteTimestamp,
     },
+    db::schema::{
+        evm_basic_grant, evm_token_transfer_grant, evm_token_transfer_log,
+        evm_token_transfer_volume_limit,
+    },
     evm::policies::CombinedSettings,
+    evm::{
+        abi::IERC20::transferCall,
+        policies::{
+            Grant, Policy, SharedGrantSettings, SpecificGrant, SpecificMeaning, VolumeRateLimit,
+        },
+        utils,
+    },
 };
+use arbiter_tokens_registry::evm::nonfungible::{self, TokenInfo};
+
 use alloy::{
     primitives::{Address, U256},
     sol_types::SolCall,
 };
-use arbiter_tokens_registry::evm::nonfungible::{self, TokenInfo};
 use chrono::{DateTime, Duration, Utc};
-use diesel::dsl::{auto_type, insert_into};
-use diesel::sqlite::Sqlite;
-use diesel::{ExpressionMethods, prelude::*};
+use diesel::{
+    ExpressionMethods,
+    dsl::{auto_type, insert_into},
+    prelude::*,
+    sqlite::Sqlite,
+};
 use diesel_async::{AsyncConnection, RunQueryDsl};
-
-use super::{DatabaseID, EvalContext, EvalViolation};
+use std::collections::HashMap;
 
 #[auto_type]
 fn grant_join() -> _ {

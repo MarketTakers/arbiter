@@ -46,6 +46,8 @@ class ServerInfo extends _$ServerInfo {
 
   Future<String> _fingerprint(List<int> caCert) async {
     final digest = await Sha256().hash(caCert);
-    return digest.bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+    return digest.bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
   }
 }

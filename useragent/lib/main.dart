@@ -1,10 +1,12 @@
 import 'package:arbiter/router.dart';
+import 'package:arbiter/src/rust/frb_generated.dart';
 import 'package:flutter/material.dart' hide Router;
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:sizer/sizer.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await RustLib.init();
   runApp(const ProviderScope(child: App()));
 }
 
@@ -33,3 +35,5 @@ class _AppState extends State<App> {
     );
   }
 }
+
+

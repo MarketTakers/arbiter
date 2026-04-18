@@ -85,7 +85,9 @@ class Connection {
     if (response.hasId()) {
       final completer = _pendingRequests.remove(response.id);
       if (completer == null) {
-        talker.warning('Received response for unknown request id ${response.id}');
+        talker.warning(
+          'Received response for unknown request id ${response.id}',
+        );
         return;
       }
       completer.complete(response);

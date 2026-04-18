@@ -1,24 +1,27 @@
-use alloy::primitives::{Address, Bytes, U256, address};
-use alloy::sol_types::SolCall;
+use super::{Settings, TokenTransfer};
+use crate::{
+    db::{
+        self, DatabaseConnection,
+        models::{EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, SqliteTimestamp},
+        schema::evm_basic_grant,
+    },
+    evm::{
+        abi::IERC20::transferCall,
+        policies::{
+            CombinedSettings, EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings,
+            VolumeRateLimit,
+        },
+        utils,
+    },
+};
+
+use alloy::{
+    primitives::{Address, Bytes, U256, address},
+    sol_types::SolCall,
+};
 use chrono::{Duration, Utc};
 use diesel::{SelectableHelper, insert_into};
 use diesel_async::RunQueryDsl;
-
-use crate::db::{
-    self, DatabaseConnection,
-    models::{EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, SqliteTimestamp},
-    schema::evm_basic_grant,
-};
-use crate::evm::{
-    abi::IERC20::transferCall,
-    policies::{
-        CombinedSettings, EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings,
-        VolumeRateLimit,
-    },
-    utils,
-};
-
-use super::{Settings, TokenTransfer};
 
 // DAI on Ethereum mainnet — present in the static token registry
 const CHAIN_ID: u64 = 1;
