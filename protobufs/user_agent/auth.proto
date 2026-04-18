@@ -2,21 +2,14 @@ syntax = "proto3";
 
 package arbiter.user_agent.auth;
 
-enum KeyType {
-  KEY_TYPE_UNSPECIFIED = 0;
-  KEY_TYPE_ED25519 = 1;
-  KEY_TYPE_ECDSA_SECP256K1 = 2;
-  KEY_TYPE_RSA = 3;
-}
-
 message AuthChallengeRequest {
   bytes pubkey = 1;
   optional string bootstrap_token = 2;
-  KeyType key_type = 3;
 }
 
 message AuthChallenge {
-  int32 nonce = 1;
+  uint64 timestamp_nanos = 1;
+  bytes random = 2;
 }
 
 message AuthChallengeSolution {

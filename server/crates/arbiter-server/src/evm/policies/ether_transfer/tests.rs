@@ -1,24 +1,25 @@
+use super::{EtherTransfer, Settings};
+use crate::{
+    db::{
+        self, DatabaseConnection,
+        models::{
+            EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp,
+        },
+        schema::{evm_basic_grant, evm_transaction_log},
+    },
+    evm::{
+        policies::{
+            CombinedSettings, EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings,
+            VolumeRateLimit,
+        },
+        utils,
+    },
+};
+
 use alloy::primitives::{Address, Bytes, U256, address};
 use chrono::{Duration, Utc};
 use diesel::{SelectableHelper, insert_into};
 use diesel_async::RunQueryDsl;
-
-use crate::db::{
-    self, DatabaseConnection,
-    models::{
-        EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp,
-    },
-    schema::{evm_basic_grant, evm_transaction_log},
-};
-use crate::evm::{
-    policies::{
-        CombinedSettings, EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings,
-        VolumeRateLimit,
-    },
-    utils,
-};
-
-use super::{EtherTransfer, Settings};
 
 const WALLET_ACCESS_ID: i32 = 1;
 const CHAIN_ID: u64 = 1;

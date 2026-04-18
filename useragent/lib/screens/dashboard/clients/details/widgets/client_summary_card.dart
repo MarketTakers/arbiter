@@ -12,30 +12,24 @@ class ClientSummaryCard extends StatelessWidget {
     return CreamFrame(
       padding: const EdgeInsets.all(20),
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              client.info.name,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(client.info.description),
-            const SizedBox(height: 16),
-            Wrap(
-              runSpacing: 8,
-              spacing: 16,
-              children: [
-                _Fact(label: 'Client ID', value: '${client.id}'),
-                _Fact(label: 'Version', value: client.info.version),
-                _Fact(
-                  label: 'Registered',
-                  value: _formatDate(client.createdAt),
-                ),
-                _Fact(label: 'Pubkey', value: _shortPubkey(client.pubkey)),
-              ],
-            ),
-          ],
-        ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(client.info.name, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          Text(client.info.description),
+          const SizedBox(height: 16),
+          Wrap(
+            runSpacing: 8,
+            spacing: 16,
+            children: [
+              _Fact(label: 'Client ID', value: '${client.id}'),
+              _Fact(label: 'Version', value: client.info.version),
+              _Fact(label: 'Registered', value: _formatDate(client.createdAt)),
+              _Fact(label: 'Pubkey', value: _shortPubkey(client.pubkey)),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

@@ -18,9 +18,7 @@ Future<List<ua_sdk.Entry>?> sdkClients(Ref ref) async {
   );
 
   if (!resp.hasSdkClient()) {
-    throw Exception(
-      'Expected SDK client response, got ${resp.whichPayload()}',
-    );
+    throw Exception('Expected SDK client response, got ${resp.whichPayload()}');
   }
   final sdkClientResponse = resp.sdkClient;
   if (!sdkClientResponse.hasList()) {

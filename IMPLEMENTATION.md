@@ -29,38 +29,23 @@ flowchart TD
     A([Client connects]) --> B[Receive AuthChallengeRequest]
     B --> C{pubkey in DB?}
 
-    C -- yes --> D[Read nonce\nIncrement nonce in DB]
-    D --> G
+    C -- yes --> G[Generate AuthChallenge]
 
     C -- no --> E[Ask all UserAgents:\nClientConnectionRequest]
     E --> F{First response}
     F -- denied --> Z([Reject connection])
     F -- approved --> F2[Cancel remaining\nUserAgent requests]
-    F2 --> F3[INSERT client\nnonce = 1]
-    F3 --> G[Send AuthChallenge\nwith nonce]
+    F2 --> F3[INSERT client]
+    F3 --> G
 
-    G --> H[Receive AuthChallengeSolution]
-    H --> I{Signature valid?}
-    I -- no --> Z
-    I -- yes --> J([Session started])
+    G --> H[Send AuthChallenge\ntimestamp + random bytes]
+    H --> I[Receive AuthChallengeSolution]
+    I --> K{Signature valid?}
+    K -- no --> Z
+    K -- yes --> J([Session started])
 ```
 
-### Known Issue: Concurrent Registration Race (TOCTOU)
-
-Two connections presenting the same previously-unknown public key can race through the approval flow simultaneously:
-
-1. Both check the DB → neither is registered.
-2. Both request approval from user agents → both receive approval.
-3. Both `INSERT` the client record → the second insert silently overwrites the first, resetting the nonce.
-
-This means the first connection's nonce is invalidated by the second, causing its challenge verification to fail. A fix requires either serialising new-client registration (e.g. an in-memory lock keyed on pubkey) or replacing the separate check + insert with an `INSERT OR IGNORE` / upsert guarded by a unique constraint on `public_key`.
-
-### Nonce Semantics
-
-The `program_client.nonce` column stores the **next usable nonce** — i.e. it is always one ahead of the nonce last issued in a challenge.
-
-- **New client:** inserted with `nonce = 1`; the first challenge is issued with `nonce = 0`.
-- **Existing client:** the current DB value is read and used as the challenge nonce, then immediately incremented within the same exclusive transaction, preventing replay.
+Auth challenges are generated from fresh random bytes plus a timestamp. They are signed as the canonical challenge payload and are not persisted in `program_client`.
 
 ---
 

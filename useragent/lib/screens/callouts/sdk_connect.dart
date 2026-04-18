@@ -28,8 +28,7 @@ class SdkConnectCallout extends StatelessWidget {
 
     final hasDescription =
         clientInfo.hasDescription() && clientInfo.description.isNotEmpty;
-    final hasVersion =
-        clientInfo.hasVersion() && clientInfo.version.isNotEmpty;
+    final hasVersion = clientInfo.hasVersion() && clientInfo.version.isNotEmpty;
     final showInfoCard = hasDescription || hasVersion;
 
     return CreamFrame(
@@ -74,10 +73,7 @@ class SdkConnectCallout extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: Palette.line),
               ),
-              padding: EdgeInsets.symmetric(
-                horizontal: 1.6.w,
-                vertical: 1.2.h,
-              ),
+              padding: EdgeInsets.symmetric(horizontal: 1.6.w, vertical: 1.2.h),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 spacing: 0.6.h,

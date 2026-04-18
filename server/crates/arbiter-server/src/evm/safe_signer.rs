@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
 use alloy::{
     consensus::SignableTransaction,
@@ -6,9 +6,9 @@ use alloy::{
     primitives::{Address, B256, ChainId, Signature},
     signers::{Error, Result, Signer, SignerSync, utils::secret_key_to_address},
 };
-use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use async_trait::async_trait;
 use k256::ecdsa::{self, RecoveryId, SigningKey, signature::hazmat::PrehashSigner};
+use std::sync::Mutex;
 
 /// An Ethereum signer that stores its secp256k1 secret key inside a
 /// hardware-protected [`MemSafe`] cell.
