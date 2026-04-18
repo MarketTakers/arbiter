@@ -155,7 +155,6 @@ diesel::table! {
 diesel::table! {
     program_client (id) {
         id -> Integer,
-        nonce -> Integer,
         public_key -> Binary,
         metadata_id -> Integer,
         created_at -> Integer,
@@ -189,9 +188,7 @@ diesel::table! {
 diesel::table! {
     useragent_client (id) {
         id -> Integer,
-        nonce -> Integer,
         public_key -> Binary,
-        key_type -> Integer,
         created_at -> Integer,
         updated_at -> Integer,
     }

@@ -1,35 +1,143 @@
 use arbiter_crypto::{
-    authn::{self, USERAGENT_CONTEXT, format_challenge},
+    authn::{self, AuthChallenge, USERAGENT_CONTEXT},
     safecell::{SafeCell, SafeCellHandle as _},
 };
 
-use arbiter_proto::transport::{Receiver, Sender};
+use arbiter_proto::transport::{Error as TransportError, Receiver, Sender};
 use arbiter_server::{
-    actors::{
-        GlobalActors,
-        bootstrap::GetToken,
-        keyholder::Bootstrap,
-        user_agent::{UserAgentConnection, UserAgentCredentials, auth},
-    },
+    actors::{GlobalActors, bootstrap::GetToken, vault::Bootstrap},
     crypto::integrity,
     db::{self, schema},
+    peers::user_agent::{self, Credentials, UserAgentConnection, auth, vault_gate},
 };
+use async_trait::async_trait;
 use diesel::{ExpressionMethods as _, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
 use ml_dsa::{KeyGen, MlDsa87, SigningKey, signature::Keypair as _};
+use tokio::sync::mpsc;
 
 use super::common::ChannelTransport;
 
 fn sign_useragent_challenge(
     key: &SigningKey<MlDsa87>,
-    nonce: i32,
-    pubkey_bytes: &[u8],
+    challenge: &AuthChallenge,
 ) -> authn::Signature {
-    let challenge = format_challenge(nonce, pubkey_bytes);
+    let challenge = challenge.format();
     key.signing_key()
         .sign_deterministic(&challenge, USERAGENT_CONTEXT)
         .unwrap()
         .into()
+}
+
+fn tamper_challenge(challenge: &AuthChallenge) -> AuthChallenge {
+    let mut challenge = challenge.clone();
+    challenge.nonce[0] ^= 1;
+    challenge
+}
+
+struct NullOobSender;
+
+#[async_trait]
+impl Sender<user_agent::OutOfBand> for NullOobSender {
+    async fn send(&mut self, _item: user_agent::OutOfBand) -> Result<(), TransportError> {
+        Ok(())
+    }
+}
+
+struct StartServerTransport {
+    auth_rx: mpsc::Receiver<auth::Inbound>,
+    auth_tx: mpsc::Sender<Result<auth::Outbound, auth::Error>>,
+    vault_rx: mpsc::Receiver<vault_gate::Inbound>,
+    vault_tx: mpsc::Sender<Result<vault_gate::Outbound, vault_gate::Error>>,
+}
+
+struct StartTestTransport {
+    auth_rx: mpsc::Receiver<Result<auth::Outbound, auth::Error>>,
+    auth_tx: mpsc::Sender<auth::Inbound>,
+}
+
+fn start_transport_pair() -> (StartServerTransport, StartTestTransport) {
+    let (auth_in_tx, auth_in_rx) = mpsc::channel(10);
+    let (auth_out_tx, auth_out_rx) = mpsc::channel(10);
+    let (_vault_in_tx, vault_in_rx) = mpsc::channel(10);
+    let (vault_out_tx, _vault_out_rx) = mpsc::channel(10);
+
+    (
+        StartServerTransport {
+            auth_rx: auth_in_rx,
+            auth_tx: auth_out_tx,
+            vault_rx: vault_in_rx,
+            vault_tx: vault_out_tx,
+        },
+        StartTestTransport {
+            auth_rx: auth_out_rx,
+            auth_tx: auth_in_tx,
+        },
+    )
+}
+
+#[async_trait]
+impl Receiver<auth::Inbound> for StartServerTransport {
+    async fn recv(&mut self) -> Option<auth::Inbound> {
+        self.auth_rx.recv().await
+    }
+}
+
+#[async_trait]
+impl Sender<Result<auth::Outbound, auth::Error>> for StartServerTransport {
+    async fn send(&mut self, item: Result<auth::Outbound, auth::Error>) -> Result<(), TransportError> {
+        self.auth_tx
+            .send(item)
+            .await
+            .map_err(|_| TransportError::ChannelClosed)
+    }
+}
+
+impl arbiter_proto::transport::Bi<auth::Inbound, Result<auth::Outbound, auth::Error>>
+    for StartServerTransport
+{
+}
+
+#[async_trait]
+impl Receiver<vault_gate::Inbound> for StartServerTransport {
+    async fn recv(&mut self) -> Option<vault_gate::Inbound> {
+        self.vault_rx.recv().await
+    }
+}
+
+#[async_trait]
+impl Sender<Result<vault_gate::Outbound, vault_gate::Error>> for StartServerTransport {
+    async fn send(
+        &mut self,
+        item: Result<vault_gate::Outbound, vault_gate::Error>,
+    ) -> Result<(), TransportError> {
+        self.vault_tx
+            .send(item)
+            .await
+            .map_err(|_| TransportError::ChannelClosed)
+    }
+}
+
+impl arbiter_proto::transport::Bi<vault_gate::Inbound, Result<vault_gate::Outbound, vault_gate::Error>>
+    for StartServerTransport
+{
+}
+
+#[async_trait]
+impl Receiver<Result<auth::Outbound, auth::Error>> for StartTestTransport {
+    async fn recv(&mut self) -> Option<Result<auth::Outbound, auth::Error>> {
+        self.auth_rx.recv().await
+    }
+}
+
+#[async_trait]
+impl Sender<auth::Inbound> for StartTestTransport {
+    async fn send(&mut self, item: auth::Inbound) -> Result<(), TransportError> {
+        self.auth_tx
+            .send(item)
+            .await
+            .map_err(|_| TransportError::ChannelClosed)
+    }
 }
 
 #[tokio::test]
@@ -38,7 +146,7 @@ pub async fn test_bootstrap_token_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
-        .key_holder
+        .vault
         .ask(Bootstrap {
             seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
         })
@@ -46,11 +154,11 @@ pub async fn test_bootstrap_token_auth() {
         .unwrap();
     let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
 
-    let (server_transport, mut test_transport) = ChannelTransport::new();
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
     let db_for_task = db.clone();
     let task = tokio::spawn(async move {
         let mut props = UserAgentConnection::new(db_for_task, actors);
-        auth::authenticate(&mut props, server_transport).await
+        auth::authenticate(&mut props, &mut server_transport).await
     });
 
     let new_key = MlDsa87::key_gen(&mut rand::rng());
@@ -65,11 +173,26 @@ pub async fn test_bootstrap_token_auth() {
     let response = test_transport
         .recv()
         .await
+        .expect("should receive challenge");
+    let challenge = match response {
+        Ok(auth::Outbound::AuthChallenge { challenge }) => challenge,
+        other => panic!("Expected AuthChallenge, got {other:?}"),
+    };
+
+    let signature = sign_useragent_challenge(&new_key, &challenge);
+
+    test_transport
+        .send(auth::Inbound::AuthChallengeSolution {
+            signature: signature.to_bytes(),
+        })
+        .await
+        .unwrap();
+
+    let response = test_transport
+        .recv()
+        .await
         .expect("should receive auth result");
-    match response {
-        Ok(auth::Outbound::AuthSuccess) => {}
-        other => panic!("Expected AuthSuccess, got {other:?}"),
-    }
+    assert!(matches!(response, Ok(auth::Outbound::AuthSuccess)));
 
     task.await.unwrap().unwrap();
 
@@ -88,11 +211,11 @@ pub async fn test_bootstrap_invalid_token_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
-    let (server_transport, mut test_transport) = ChannelTransport::new();
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
     let db_for_task = db.clone();
     let task = tokio::spawn(async move {
         let mut props = UserAgentConnection::new(db_for_task, actors);
-        auth::authenticate(&mut props, server_transport).await
+        auth::authenticate(&mut props, &mut server_transport).await
     });
 
     let new_key = MlDsa87::key_gen(&mut rand::rng());
@@ -100,6 +223,23 @@ pub async fn test_bootstrap_invalid_token_auth() {
         .send(auth::Inbound::AuthChallengeRequest {
             pubkey: new_key.verifying_key().into(),
             bootstrap_token: Some("invalid_token".to_string()),
+        })
+        .await
+        .unwrap();
+
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive challenge");
+    let challenge = match response {
+        Ok(auth::Outbound::AuthChallenge { challenge }) => challenge,
+        other => panic!("Expected AuthChallenge, got {other:?}"),
+    };
+
+    let signature = sign_useragent_challenge(&new_key, &challenge);
+    test_transport
+        .send(auth::Inbound::AuthChallengeSolution {
+            signature: signature.to_bytes(),
         })
         .await
         .unwrap();
@@ -124,7 +264,7 @@ pub async fn test_challenge_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
-        .key_holder
+        .vault
         .ask(Bootstrap {
             seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
         })
@@ -137,20 +277,17 @@ pub async fn test_challenge_auth() {
     {
         let mut conn = db.get().await.unwrap();
         let id: i32 = insert_into(schema::useragent_client::table)
-            .values((
-                schema::useragent_client::public_key.eq(pubkey_bytes.clone()),
-                schema::useragent_client::key_type.eq(1i32),
-            ))
+            .values((schema::useragent_client::public_key.eq(pubkey_bytes.clone()),))
             .returning(schema::useragent_client::id)
             .get_result(&mut conn)
             .await
             .unwrap();
         integrity::sign_entity(
             &mut conn,
-            &actors.key_holder,
-            &UserAgentCredentials {
+            &actors.vault,
+            &Credentials {
+                id,
                 pubkey: new_key.verifying_key().into(),
-                nonce: 1,
             },
             id,
         )
@@ -158,11 +295,11 @@ pub async fn test_challenge_auth() {
         .unwrap();
     }
 
-    let (server_transport, mut test_transport) = ChannelTransport::new();
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
     let db_for_task = db.clone();
     let task = tokio::spawn(async move {
         let mut props = UserAgentConnection::new(db_for_task, actors);
-        auth::authenticate(&mut props, server_transport).await
+        auth::authenticate(&mut props, &mut server_transport).await
     });
 
     test_transport
@@ -179,13 +316,13 @@ pub async fn test_challenge_auth() {
         .expect("should receive challenge");
     let challenge = match response {
         Ok(resp) => match resp {
-            auth::Outbound::AuthChallenge { nonce } => nonce,
+            auth::Outbound::AuthChallenge { challenge } => challenge,
             other => panic!("Expected AuthChallenge, got {other:?}"),
         },
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };
 
-    let signature = sign_useragent_challenge(&new_key, challenge, &pubkey_bytes);
+    let signature = sign_useragent_challenge(&new_key, &challenge);
 
     test_transport
         .send(auth::Inbound::AuthChallengeSolution {
@@ -213,7 +350,7 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
     actors
-        .key_holder
+        .vault
         .ask(Bootstrap {
             seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
         })
@@ -226,81 +363,17 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() 
     {
         let mut conn = db.get().await.unwrap();
         insert_into(schema::useragent_client::table)
-            .values((
-                schema::useragent_client::public_key.eq(pubkey_bytes.clone()),
-                schema::useragent_client::key_type.eq(1i32),
-            ))
+            .values((schema::useragent_client::public_key.eq(pubkey_bytes.clone()),))
             .execute(&mut conn)
             .await
             .unwrap();
     }
 
-    let (server_transport, mut test_transport) = ChannelTransport::new();
+    let (server_transport, mut test_transport) = start_transport_pair();
     let db_for_task = db.clone();
     let task = tokio::spawn(async move {
         let mut props = UserAgentConnection::new(db_for_task, actors);
-        auth::authenticate(&mut props, server_transport).await
-    });
-
-    test_transport
-        .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key().into(),
-            bootstrap_token: None,
-        })
-        .await
-        .unwrap();
-
-    assert!(matches!(
-        task.await.unwrap(),
-        Err(auth::Error::Internal { .. })
-    ));
-}
-
-#[tokio::test]
-#[test_log::test]
-pub async fn test_challenge_auth_rejects_invalid_signature() {
-    let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
-    actors
-        .key_holder
-        .ask(Bootstrap {
-            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
-        })
-        .await
-        .unwrap();
-
-    let new_key = MlDsa87::key_gen(&mut rand::rng());
-    let pubkey_bytes = new_key.verifying_key().encode().to_vec();
-
-    {
-        let mut conn = db.get().await.unwrap();
-        let id: i32 = insert_into(schema::useragent_client::table)
-            .values((
-                schema::useragent_client::public_key.eq(pubkey_bytes.clone()),
-                schema::useragent_client::key_type.eq(1i32),
-            ))
-            .returning(schema::useragent_client::id)
-            .get_result(&mut conn)
-            .await
-            .unwrap();
-        integrity::sign_entity(
-            &mut conn,
-            &actors.key_holder,
-            &UserAgentCredentials {
-                pubkey: new_key.verifying_key().into(),
-                nonce: 1,
-            },
-            id,
-        )
-        .await
-        .unwrap();
-    }
-
-    let (server_transport, mut test_transport) = ChannelTransport::new();
-    let db_for_task = db.clone();
-    let task = tokio::spawn(async move {
-        let mut props = UserAgentConnection::new(db_for_task, actors);
-        auth::authenticate(&mut props, server_transport).await
+        user_agent::start(&mut props, server_transport, Box::new(NullOobSender)).await
     });
 
     test_transport
@@ -317,13 +390,98 @@ pub async fn test_challenge_auth_rejects_invalid_signature() {
         .expect("should receive challenge");
     let challenge = match response {
         Ok(resp) => match resp {
-            auth::Outbound::AuthChallenge { nonce } => nonce,
+            auth::Outbound::AuthChallenge { challenge } => challenge,
             other => panic!("Expected AuthChallenge, got {other:?}"),
         },
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };
 
-    let signature = sign_useragent_challenge(&new_key, challenge + 1, &pubkey_bytes);
+    let signature = sign_useragent_challenge(&new_key, &challenge);
+
+    test_transport
+        .send(auth::Inbound::AuthChallengeSolution {
+            signature: signature.to_bytes(),
+        })
+        .await
+        .unwrap();
+
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive auth result");
+    assert!(matches!(response, Ok(auth::Outbound::AuthSuccess)));
+
+    assert!(matches!(
+        task.await.unwrap(),
+        Err(user_agent::Error::Internal(_))
+    ));
+}
+
+#[tokio::test]
+#[test_log::test]
+pub async fn test_challenge_auth_rejects_invalid_signature() {
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors
+        .vault
+        .ask(Bootstrap {
+            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
+        })
+        .await
+        .unwrap();
+
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let pubkey_bytes = new_key.verifying_key().encode().to_vec();
+
+    {
+        let mut conn = db.get().await.unwrap();
+        let id: i32 = insert_into(schema::useragent_client::table)
+            .values((schema::useragent_client::public_key.eq(pubkey_bytes.clone()),))
+            .returning(schema::useragent_client::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+        integrity::sign_entity(
+            &mut conn,
+            &actors.vault,
+            &Credentials {
+                id,
+                pubkey: new_key.verifying_key().into(),
+            },
+            id,
+        )
+        .await
+        .unwrap();
+    }
+
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
+    let db_for_task = db.clone();
+    let task = tokio::spawn(async move {
+        let mut props = UserAgentConnection::new(db_for_task, actors);
+        auth::authenticate(&mut props, &mut server_transport).await
+    });
+
+    test_transport
+        .send(auth::Inbound::AuthChallengeRequest {
+            pubkey: new_key.verifying_key().into(),
+            bootstrap_token: None,
+        })
+        .await
+        .unwrap();
+
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive challenge");
+    let challenge = match response {
+        Ok(resp) => match resp {
+            auth::Outbound::AuthChallenge { challenge } => challenge,
+            other => panic!("Expected AuthChallenge, got {other:?}"),
+        },
+        Err(err) => panic!("Expected Ok response, got Err({err:?})"),
+    };
+
+    let signature = sign_useragent_challenge(&new_key, &tamper_challenge(&challenge));
 
     test_transport
         .send(auth::Inbound::AuthChallengeSolution {

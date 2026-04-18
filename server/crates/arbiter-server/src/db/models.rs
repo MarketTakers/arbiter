@@ -195,7 +195,6 @@ pub struct ProgramClientMetadataHistory {
 #[diesel(table_name = schema::program_client, check_for_backend(Sqlite))]
 pub struct ProgramClient {
     pub id: i32,
-    pub nonce: i32,
     pub public_key: Vec<u8>,
     pub metadata_id: i32,
     pub created_at: SqliteTimestamp,
@@ -206,7 +205,6 @@ pub struct ProgramClient {
 #[diesel(table_name = schema::useragent_client, check_for_backend(Sqlite))]
 pub struct UseragentClient {
     pub id: i32,
-    pub nonce: i32,
     pub public_key: Vec<u8>,
     pub created_at: SqliteTimestamp,
     pub updated_at: SqliteTimestamp,

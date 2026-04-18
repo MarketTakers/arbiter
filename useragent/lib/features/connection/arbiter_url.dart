@@ -50,7 +50,9 @@ class ArbiterUrl {
     try {
       return base64Url.decode(base64Url.normalize(cert));
     } on FormatException catch (error) {
-      throw FormatException("Invalid base64 in 'cert' query parameter: ${error.message}");
+      throw FormatException(
+        "Invalid base64 in 'cert' query parameter: ${error.message}",
+      );
     }
   }
 }

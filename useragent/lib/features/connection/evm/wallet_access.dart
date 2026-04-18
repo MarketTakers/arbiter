@@ -8,9 +8,7 @@ Future<Set<int>> readClientWalletAccess(
   required int clientId,
 }) async {
   final response = await connection.ask(
-    UserAgentRequest(
-      sdkClient: ua_sdk.Request(listWalletAccess: Empty()),
-    ),
+    UserAgentRequest(sdkClient: ua_sdk.Request(listWalletAccess: Empty())),
   );
   if (!response.hasSdkClient()) {
     throw Exception(
@@ -33,9 +31,7 @@ Future<List<ua_sdk.WalletAccessEntry>> listAllWalletAccesses(
   Connection connection,
 ) async {
   final response = await connection.ask(
-    UserAgentRequest(
-      sdkClient: ua_sdk.Request(listWalletAccess: Empty()),
-    ),
+    UserAgentRequest(sdkClient: ua_sdk.Request(listWalletAccess: Empty())),
   );
   if (!response.hasSdkClient()) {
     throw Exception(
@@ -81,9 +77,7 @@ Future<void> writeClientWalletAccess(
       UserAgentRequest(
         sdkClient: ua_sdk.Request(
           revokeWalletAccess: ua_sdk.RevokeWalletAccess(
-            accesses: [
-              for (final walletId in toRevoke) walletId,
-            ],
+            accesses: [for (final walletId in toRevoke) walletId],
           ),
         ),
       ),
