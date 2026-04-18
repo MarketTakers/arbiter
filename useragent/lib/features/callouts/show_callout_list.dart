@@ -14,7 +14,8 @@ Future<void> showCalloutList(BuildContext context, WidgetRef ref) async {
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     barrierColor: Colors.transparent,
     transitionDuration: const Duration(milliseconds: 280),
-    pageBuilder: (_, animation, __) => _CalloutListOverlay(animation: animation),
+    pageBuilder: (_, animation, __) =>
+        _CalloutListOverlay(animation: animation),
   );
 
   if (selectedId != null && context.mounted) {
@@ -51,7 +52,9 @@ class _CalloutListOverlay extends ConsumerWidget {
               child: AnimatedBuilder(
                 animation: barrierAnim,
                 builder: (_, __) => ColoredBox(
-                  color: Colors.black.withValues(alpha: 0.35 * barrierAnim.value),
+                  color: Colors.black.withValues(
+                    alpha: 0.35 * barrierAnim.value,
+                  ),
                 ),
               ),
             ),

@@ -1,4 +1,3 @@
-
 import 'package:arbiter/proto/user_agent/sdk_client.pb.dart' as ua_sdk;
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
@@ -13,5 +12,4 @@ class ClientDetails extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     throw UnimplementedError();
   }
-
 }

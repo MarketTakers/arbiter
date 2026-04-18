@@ -23,17 +23,17 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::{
-    actors::user_agent::{
+    grpc::{
+        Convert, TryConvert,
+        common::inbound::{RawEvmAddress, RawEvmTransaction},
+    },
+    peers::user_agent::{
         UserAgentSession,
-        session::connection::{
+        session::handlers::{
             GrantMutationError, HandleEvmWalletCreate, HandleEvmWalletList, HandleGrantCreate,
             HandleGrantDelete, HandleGrantList, HandleSignTransaction,
             SignTransactionError as SessionSignTransactionError,
         },
-    },
-    grpc::{
-        Convert, TryConvert,
-        common::inbound::{RawEvmAddress, RawEvmTransaction},
     },
 };
 

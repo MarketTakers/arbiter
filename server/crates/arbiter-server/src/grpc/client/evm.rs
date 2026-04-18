@@ -16,11 +16,11 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::{
-    actors::client::session::{ClientSession, HandleSignTransaction, SignTransactionRpcError},
     grpc::{
         Convert, TryConvert,
         common::inbound::{RawEvmAddress, RawEvmTransaction},
     },
+    peers::client::session::{ClientSession, HandleSignTransaction, SignTransactionRpcError},
 };
 
 fn wrap_response(payload: EvmResponsePayload) -> ClientResponsePayload {

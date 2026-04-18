@@ -78,7 +78,7 @@ class DashboardRouter extends StatelessWidget {
 }
 
 class _CalloutBell extends ConsumerWidget {
-  const _CalloutBell({super.key});
+  const _CalloutBell();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

@@ -22,8 +22,8 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::{
-    actors::client::{self, ClientConnection, auth},
     grpc::request_tracker::RequestTracker,
+    peers::client::{self, ClientConnection, auth},
 };
 
 pub struct AuthTransportAdapter<'a> {
@@ -44,10 +44,14 @@ impl<'a> AuthTransportAdapter<'a> {
 
     fn response_to_proto(response: auth::Outbound) -> AuthResponsePayload {
         match response {
-            auth::Outbound::AuthChallenge { pubkey, nonce } => {
+            auth::Outbound::AuthChallenge {  challenge } => {
                 AuthResponsePayload::Challenge(ProtoAuthChallenge {
-                    pubkey: pubkey.to_bytes(),
-                    nonce,
+                    timestamp_nanos: challenge
+                        .timestamp
+                        .timestamp_nanos_opt()
+                        .expect("timestamp within range")
+                        as u64,
+                    random: challenge.nonce.to_vec(),
                 })
             }
             auth::Outbound::AuthSuccess => {

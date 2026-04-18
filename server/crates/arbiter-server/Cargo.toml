@@ -59,6 +59,7 @@ ml-dsa.workspace = true
 ed25519-dalek.workspace = true
 x25519-dalek.workspace = true
 k256.workspace = true
+kameo_actors.workspace = true
 
 [dev-dependencies]
 insta = "1.46.3"

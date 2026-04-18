@@ -1,7 +1,7 @@
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_proto::transport::{Bi, Error, Receiver, Sender};
 use arbiter_server::{
-    actors::keyholder::KeyHolder,
+    actors::{GlobalActors, vault::Vault},
     db::{self, schema},
 };
 
@@ -11,8 +11,10 @@ use diesel_async::RunQueryDsl;
 use tokio::sync::mpsc;
 
 #[allow(dead_code)]
-pub async fn bootstrapped_keyholder(db: &db::DatabasePool) -> KeyHolder {
-    let mut actor = KeyHolder::new(db.clone()).await.unwrap();
+pub async fn bootstrapped_vault(db: &db::DatabasePool) -> Vault {
+    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+        .await
+        .unwrap();
     actor
         .bootstrap(SafeCell::new(b"test-seal-key".to_vec()))
         .await

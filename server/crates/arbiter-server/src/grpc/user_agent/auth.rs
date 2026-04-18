@@ -18,13 +18,13 @@ use tonic::Status;
 use tracing::warn;
 
 use crate::{
-    actors::user_agent::{UserAgentConnection, auth},
     grpc::request_tracker::RequestTracker,
+    peers::user_agent::{Credentials, UserAgentConnection, auth},
 };
 
 pub struct AuthTransportAdapter<'a> {
-    bi: &'a mut GrpcBi<UserAgentRequest, UserAgentResponse>,
-    request_tracker: &'a mut RequestTracker,
+    pub(super) bi: &'a mut GrpcBi<UserAgentRequest, UserAgentResponse>,
+    pub(super) request_tracker: &'a mut RequestTracker,
 }
 
 impl<'a> AuthTransportAdapter<'a> {
@@ -38,18 +38,34 @@ impl<'a> AuthTransportAdapter<'a> {
         }
     }
 
-    async fn send_user_agent_response(
+    pub(super) fn bi_mut(&mut self) -> &mut GrpcBi<UserAgentRequest, UserAgentResponse> {
+        self.bi
+    }
+
+    pub(super) fn tracker_mut(&mut self) -> &mut RequestTracker {
+        self.request_tracker
+    }
+
+    pub(super) async fn send_response_payload(
         &mut self,
-        payload: AuthResponsePayload,
+        payload: UserAgentResponsePayload,
     ) -> Result<(), TransportError> {
         self.bi
             .send(Ok(UserAgentResponse {
                 id: Some(self.request_tracker.current_request_id()),
-                payload: Some(UserAgentResponsePayload::Auth(proto_auth::Response {
-                    payload: Some(payload),
-                })),
+                payload: Some(payload),
             }))
             .await
+    }
+
+    async fn send_user_agent_response(
+        &mut self,
+        payload: AuthResponsePayload,
+    ) -> Result<(), TransportError> {
+        self.send_response_payload(UserAgentResponsePayload::Auth(proto_auth::Response {
+            payload: Some(payload),
+        }))
+        .await
     }
 }
 
@@ -61,8 +77,15 @@ impl Sender<Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {
     ) -> Result<(), TransportError> {
         use auth::{Error, Outbound};
         let payload = match item {
-            Ok(Outbound::AuthChallenge { nonce }) => {
-                AuthResponsePayload::Challenge(ProtoAuthChallenge { nonce })
+            Ok(Outbound::AuthChallenge { challenge }) => {
+                AuthResponsePayload::Challenge(ProtoAuthChallenge {
+                    timestamp_nanos: challenge
+                        .timestamp
+                        .timestamp_nanos_opt()
+                        .expect("timestamp within range")
+                        as u64,
+                    random: challenge.nonce.to_vec(),
+                })
             }
             Ok(Outbound::AuthSuccess) => {
                 AuthResponsePayload::Result(ProtoAuthResult::Success.into())
@@ -140,7 +163,6 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
             AuthRequestPayload::ChallengeRequest(ProtoAuthChallengeRequest {
                 pubkey,
                 bootstrap_token,
-                key_type: _,
             }) => {
                 let Ok(pubkey) = authn::PublicKey::try_from(pubkey.as_slice()) else {
                     warn!(
@@ -168,7 +190,7 @@ pub async fn start(
     conn: &mut UserAgentConnection,
     bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
     request_tracker: &mut RequestTracker,
-) -> Result<authn::PublicKey, auth::Error> {
-    let transport = AuthTransportAdapter::new(bi, request_tracker);
-    auth::authenticate(conn, transport).await
+) -> Result<Credentials, auth::Error> {
+    let mut transport = AuthTransportAdapter::new(bi, request_tracker);
+    auth::authenticate(conn, &mut transport).await
 }
