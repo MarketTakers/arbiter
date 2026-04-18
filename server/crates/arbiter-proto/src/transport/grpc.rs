@@ -1,9 +1,9 @@
+use super::{Bi, Receiver, Sender};
+
 use async_trait::async_trait;
 use futures::StreamExt;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-
-use super::{Bi, Receiver, Sender};
 
 pub struct GrpcSender<Outbound> {
     tx: mpsc::Sender<Result<Outbound, tonic::Status>>,

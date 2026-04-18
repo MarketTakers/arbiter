@@ -195,9 +195,28 @@ const EvalViolation$json = {
       '9': 0,
       '10': 'invalidTransactionType'
     },
+    {
+      '1': 'chain_id_mismatch',
+      '3': 7,
+      '4': 1,
+      '5': 11,
+      '6': '.arbiter.shared.evm.EvalViolation.ChainIdMismatch',
+      '9': 0,
+      '10': 'chainIdMismatch'
+    },
   ],
+  '3': [EvalViolation_ChainIdMismatch$json],
   '8': [
     {'1': 'kind'},
+  ],
+};
+
+@$core.Deprecated('Use evalViolationDescriptor instead')
+const EvalViolation_ChainIdMismatch$json = {
+  '1': 'ChainIdMismatch',
+  '2': [
+    {'1': 'expected', '3': 1, '4': 1, '5': 4, '10': 'expected'},
+    {'1': 'actual', '3': 2, '4': 1, '5': 4, '10': 'actual'},
   ],
 };
 
@@ -211,7 +230,10 @@ final $typed_data.Uint8List evalViolationDescriptor = $convert.base64Decode(
     'YuRW1wdHlIAFIXdm9sdW1ldHJpY0xpbWl0RXhjZWVkZWQSOwoMaW52YWxpZF90aW1lGAUgASgL'
     'MhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5SABSC2ludmFsaWRUaW1lElIKGGludmFsaWRfdHJhbn'
     'NhY3Rpb25fdHlwZRgGIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eUgAUhZpbnZhbGlkVHJh'
-    'bnNhY3Rpb25UeXBlQgYKBGtpbmQ=');
+    'bnNhY3Rpb25UeXBlEl8KEWNoYWluX2lkX21pc21hdGNoGAcgASgLMjEuYXJiaXRlci5zaGFyZW'
+    'QuZXZtLkV2YWxWaW9sYXRpb24uQ2hhaW5JZE1pc21hdGNoSABSD2NoYWluSWRNaXNtYXRjaBpF'
+    'Cg9DaGFpbklkTWlzbWF0Y2gSGgoIZXhwZWN0ZWQYASABKARSCGV4cGVjdGVkEhYKBmFjdHVhbB'
+    'gCIAEoBFIGYWN0dWFsQgYKBGtpbmQ=');
 
 @$core.Deprecated('Use noMatchingGrantErrorDescriptor instead')
 const NoMatchingGrantError$json = {

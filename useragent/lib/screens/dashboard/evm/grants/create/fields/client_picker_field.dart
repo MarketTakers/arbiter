@@ -31,7 +31,9 @@ class ClientPickerField extends ConsumerWidget {
           ? null
           : (value) {
               ref.read(grantCreationProvider.notifier).setClientId(value);
-              FormBuilder.of(context)?.fields['walletAccessId']?.didChange(null);
+              FormBuilder.of(
+                context,
+              )?.fields['walletAccessId']?.didChange(null);
             },
     );
   }

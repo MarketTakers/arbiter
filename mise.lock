@@ -72,6 +72,10 @@ backend = "cargo:diesel_cli"
 default-features = "false"
 features = "sqlite,sqlite-bundled"
 
+[[tools."cargo:flutter_rust_bridge_codegen"]]
+version = "2.12.0"
+backend = "cargo:flutter_rust_bridge_codegen"
+
 [[tools.flutter]]
 version = "3.38.9-stable"
 backend = "asdf:flutter"

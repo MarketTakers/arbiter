@@ -9,9 +9,7 @@ Future<List<WalletEntry>> listEvmWallets(Connection connection) async {
     UserAgentRequest(evm: ua_evm.Request(walletList: Empty())),
   );
   if (!response.hasEvm()) {
-    throw Exception(
-      'Expected EVM response, got ${response.whichPayload()}',
-    );
+    throw Exception('Expected EVM response, got ${response.whichPayload()}');
   }
 
   final evmResponse = response.evm;
@@ -37,9 +35,7 @@ Future<void> createEvmWallet(Connection connection) async {
     UserAgentRequest(evm: ua_evm.Request(walletCreate: Empty())),
   );
   if (!response.hasEvm()) {
-    throw Exception(
-      'Expected EVM response, got ${response.whichPayload()}',
-    );
+    throw Exception('Expected EVM response, got ${response.whichPayload()}');
   }
 
   final evmResponse = response.evm;

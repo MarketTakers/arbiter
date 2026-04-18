@@ -1,10 +1,8 @@
+use crate::utils::{HASHABLE_TRAIT_PATH, HMAC_DIGEST_PATH};
+
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::quote;
-use syn::parse_quote;
-use syn::spanned::Spanned;
-use syn::{DataStruct, DeriveInput, Fields, Generics, Index};
-
-use crate::utils::{HASHABLE_TRAIT_PATH, HMAC_DIGEST_PATH};
+use syn::{DataStruct, DeriveInput, Fields, Generics, Index, parse_quote, spanned::Spanned};
 
 pub(crate) fn derive(input: &DeriveInput) -> TokenStream {
     match &input.data {

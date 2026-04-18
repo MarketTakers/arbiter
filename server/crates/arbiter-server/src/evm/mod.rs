@@ -1,17 +1,5 @@
-pub mod abi;
-pub mod safe_signer;
-
-use alloy::{
-    consensus::TxEip1559,
-    primitives::{TxKind, U256},
-};
-use chrono::Utc;
-use diesel::{ExpressionMethods as _, QueryDsl as _, QueryResult, insert_into, sqlite::Sqlite};
-use diesel_async::{AsyncConnection, RunQueryDsl};
-use kameo::actor::ActorRef;
-
 use crate::{
-    actors::keyholder::KeyHolder,
+    actors::vault::Vault,
     crypto::integrity,
     db::{
         self, DatabaseError,
@@ -26,6 +14,18 @@ use crate::{
         token_transfers::TokenTransfer,
     },
 };
+
+use alloy::{
+    consensus::TxEip1559,
+    primitives::{TxKind, U256},
+};
+use chrono::Utc;
+use diesel::{ExpressionMethods as _, QueryDsl as _, QueryResult, insert_into, sqlite::Sqlite};
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use kameo::actor::ActorRef;
+
+pub mod abi;
+pub mod safe_signer;
 
 pub mod policies;
 mod utils;
@@ -138,7 +138,7 @@ async fn check_shared_constraints(
 // Supporting only EIP-1559 transactions for now, but we can easily extend this to support legacy transactions if needed
 pub struct Engine {
     db: db::DatabasePool,
-    keyholder: ActorRef<KeyHolder>,
+    vault: ActorRef<Vault>,
 }
 
 impl Engine {
@@ -158,7 +158,7 @@ impl Engine {
             .map_err(DatabaseError::from)?
             .ok_or(PolicyError::NoMatchingGrant)?;
 
-        integrity::verify_entity(&mut conn, &self.keyholder, &grant.settings, grant.id).await?;
+        integrity::verify_entity(&mut conn, &self.vault, &grant.settings, grant.id).await?;
 
         let mut violations = check_shared_constraints(
             &context,
@@ -207,8 +207,8 @@ impl Engine {
 }
 
 impl Engine {
-    pub fn new(db: db::DatabasePool, keyholder: ActorRef<KeyHolder>) -> Self {
-        Self { db, keyholder }
+    pub fn new(db: db::DatabasePool, vault: ActorRef<Vault>) -> Self {
+        Self { db, vault }
     }
 
     pub async fn create_grant<P: Policy>(
@@ -219,7 +219,7 @@ impl Engine {
         P::Settings: Clone,
     {
         let mut conn = self.db.get().await?;
-        let keyholder = self.keyholder.clone();
+        let vault = self.vault.clone();
 
         let id = conn
             .transaction(|conn| {
@@ -258,7 +258,7 @@ impl Engine {
 
                     P::create_grant(&basic_grant, &full_grant.specific, conn).await?;
 
-                    integrity::sign_entity(conn, &keyholder, &full_grant, basic_grant.id)
+                    integrity::sign_entity(conn, &vault, &full_grant, basic_grant.id)
                         .await
                         .map_err(|_| diesel::result::Error::RollbackTransaction)?;
 
@@ -283,7 +283,7 @@ impl Engine {
 
         // Verify integrity of all grants before returning any results
         for grant in &all_grants {
-            integrity::verify_entity(conn, &self.keyholder, &grant.settings, grant.id).await?;
+            integrity::verify_entity(conn, &self.vault, &grant.settings, grant.id).await?;
         }
 
         Ok(all_grants.into_iter().map(|g| Grant {

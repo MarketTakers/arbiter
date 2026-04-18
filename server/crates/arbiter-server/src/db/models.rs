@@ -1,12 +1,12 @@
 #![allow(unused)]
 #![allow(clippy::all)]
-
 use crate::db::schema::{
     self, aead_encrypted, arbiter_settings, evm_basic_grant, evm_ether_transfer_grant,
     evm_ether_transfer_grant_target, evm_ether_transfer_limit, evm_token_transfer_grant,
     evm_token_transfer_log, evm_token_transfer_volume_limit, evm_transaction_log, evm_wallet,
     integrity_envelope, root_key_history, tls_history,
 };
+
 use chrono::{DateTime, Utc};
 use diesel::{prelude::*, sqlite::Sqlite};
 use restructed::Models;
@@ -195,7 +195,6 @@ pub struct ProgramClientMetadataHistory {
 #[diesel(table_name = schema::program_client, check_for_backend(Sqlite))]
 pub struct ProgramClient {
     pub id: i32,
-    pub nonce: i32,
     pub public_key: Vec<u8>,
     pub metadata_id: i32,
     pub created_at: SqliteTimestamp,
@@ -206,7 +205,6 @@ pub struct ProgramClient {
 #[diesel(table_name = schema::useragent_client, check_for_backend(Sqlite))]
 pub struct UseragentClient {
     pub id: i32,
-    pub nonce: i32,
     pub public_key: Vec<u8>,
     pub created_at: SqliteTimestamp,
     pub updated_at: SqliteTimestamp,

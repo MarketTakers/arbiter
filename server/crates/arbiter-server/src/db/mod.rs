@@ -5,7 +5,6 @@ use diesel_async::{
     sync_connection_wrapper::SyncConnectionWrapper,
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
-
 use thiserror::Error;
 use tracing::info;
 
