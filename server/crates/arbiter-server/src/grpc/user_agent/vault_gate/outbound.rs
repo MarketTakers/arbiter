@@ -1,3 +1,8 @@
+use crate::{
+    actors::vault::VaultState,
+    grpc::{Convert, TryConvert},
+    peers::user_agent::vault_gate::{self as vault_gate},
+};
 use arbiter_proto::proto::{
     shared::VaultState as ProtoVaultState,
     user_agent::{
@@ -13,14 +18,9 @@ use arbiter_proto::proto::{
         },
     },
 };
+
 use tonic::Status;
 use tracing::warn;
-
-use crate::{
-    actors::vault::VaultState,
-    grpc::{Convert, TryConvert},
-    peers::user_agent::vault_gate::{self as vault_gate},
-};
 
 fn wrap_vault_response(payload: VaultResponsePayload) -> UserAgentResponsePayload {
     UserAgentResponsePayload::Vault(proto_vault::Response {

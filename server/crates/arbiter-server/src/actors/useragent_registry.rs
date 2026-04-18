@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::ControlFlow};
+use crate::peers::user_agent::UserAgentSession;
 
 use kameo::{
     Actor,
@@ -7,9 +7,8 @@ use kameo::{
     messages,
     prelude::{ActorStopReason, Context, WeakActorRef},
 };
+use std::{collections::HashMap, ops::ControlFlow};
 use tracing::info;
-
-use crate::peers::user_agent::UserAgentSession;
 
 #[derive(Default)]
 pub struct UserAgentRegistry {
@@ -32,7 +31,11 @@ impl Actor for UserAgentRegistry {
         _: ActorStopReason,
     ) -> Result<ControlFlow<ActorStopReason>, Self::Error> {
         if self.connected.remove(&id).is_some() {
-            info!(?id, actor = "UserAgentRegistry", event = "useragent.disconnected");
+            info!(
+                ?id,
+                actor = "UserAgentRegistry",
+                event = "useragent.disconnected"
+            );
         }
         Ok(ControlFlow::Continue(()))
     }

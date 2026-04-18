@@ -1,21 +1,18 @@
-use arbiter_crypto::authn;
-
-use std::{borrow::Cow, collections::HashMap};
-
-use arbiter_proto::transport::Sender;
-use kameo::{Actor, actor::ActorRef, messages};
-use thiserror::Error;
-use tracing::error;
-
+use super::{OutOfBand, UserAgentConnection};
 use crate::{
     actors::{
         flow_coordinator::client_connect_approval::ClientApprovalController,
         useragent_registry::ConnectUseragent,
     },
-    peers::{client::ClientProfile, user_agent::Credentials},
+    peers::client::ClientProfile,
 };
+use arbiter_crypto::authn;
+use arbiter_proto::transport::Sender;
 
-use super::{OutOfBand, UserAgentConnection};
+use kameo::{Actor, actor::ActorRef, messages};
+use std::{borrow::Cow, collections::HashMap};
+use thiserror::Error;
+use tracing::error;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -53,7 +50,6 @@ pub struct PendingClientApproval {
 }
 
 pub struct UserAgentSession {
-    creds: Credentials,
     props: UserAgentConnection,
     sender: Box<dyn Sender<OutOfBand>>,
 
@@ -63,13 +59,8 @@ pub struct UserAgentSession {
 pub mod handlers;
 
 impl UserAgentSession {
-    pub(crate) fn new(
-        props: UserAgentConnection,
-        creds: Credentials,
-        sender: Box<dyn Sender<OutOfBand>>,
-    ) -> Self {
+    pub(crate) fn new(props: UserAgentConnection, sender: Box<dyn Sender<OutOfBand>>) -> Self {
         Self {
-            creds,
             props,
             sender,
             pending_client_approvals: Default::default(),

@@ -1,4 +1,10 @@
-use std::{collections::HashMap, ops::ControlFlow};
+use crate::{
+    actors::{
+        flow_coordinator::client_connect_approval::ClientApprovalController,
+        useragent_registry::{GetConnected, UserAgentRegistry},
+    },
+    peers::client::{ClientProfile, session::ClientSession},
+};
 
 use kameo::{
     Actor,
@@ -7,15 +13,8 @@ use kameo::{
     prelude::{ActorStopReason, Context, WeakActorRef},
     reply::DelegatedReply,
 };
+use std::{collections::HashMap, ops::ControlFlow};
 use tracing::info;
-
-use crate::{
-    actors::{
-        flow_coordinator::client_connect_approval::ClientApprovalController,
-        useragent_registry::{GetConnected, UserAgentRegistry},
-    },
-    peers::client::{ClientProfile, session::ClientSession},
-};
 
 pub mod client_connect_approval;
 

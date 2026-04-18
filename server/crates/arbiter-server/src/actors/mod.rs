@@ -1,23 +1,20 @@
-use kameo::actor::{ActorRef, Spawn};
-use kameo_actors::{DeliveryStrategy, message_bus::MessageBus};
-use thiserror::Error;
-
 use crate::{
     actors::{
-        bootstrap::Bootstrapper,
-        evm::EvmActor,
-        flow_coordinator::FlowCoordinator,
-        useragent_registry::UserAgentRegistry,
-        vault::Vault,
+        bootstrap::Bootstrapper, evm::EvmActor, flow_coordinator::FlowCoordinator,
+        useragent_registry::UserAgentRegistry, vault::Vault,
     },
     db,
 };
 
+use kameo::actor::{ActorRef, Spawn};
+use kameo_actors::{DeliveryStrategy, message_bus::MessageBus};
+use thiserror::Error;
+
 pub mod bootstrap;
 pub mod evm;
 pub mod flow_coordinator;
-pub mod vault;
 pub mod useragent_registry;
+pub mod vault;
 
 #[derive(Error, Debug)]
 pub enum SpawnError {

@@ -1,13 +1,13 @@
-use arbiter_proto::transport::{Bi, Error as TransportError, Receiver, Sender};
-use async_trait::async_trait;
-use tonic::Status;
-use tracing::warn;
-
 use super::auth::AuthTransportAdapter;
 use crate::{
     grpc::TryConvert,
     peers::user_agent::vault_gate::{self as vault_gate},
 };
+use arbiter_proto::transport::{Bi, Error as TransportError, Receiver, Sender};
+
+use async_trait::async_trait;
+use tonic::Status;
+use tracing::warn;
 
 mod inbound;
 mod outbound;

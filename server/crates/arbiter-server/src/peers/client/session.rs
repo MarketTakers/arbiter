@@ -1,8 +1,4 @@
-use kameo::{Actor, messages};
-use tracing::error;
-
-use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
-
+use super::ClientConnection;
 use crate::{
     actors::{
         GlobalActors,
@@ -14,7 +10,9 @@ use crate::{
     evm::VetError,
 };
 
-use super::ClientConnection;
+use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
+use kameo::{Actor, messages};
+use tracing::error;
 
 pub struct ClientSession {
     props: ClientConnection,

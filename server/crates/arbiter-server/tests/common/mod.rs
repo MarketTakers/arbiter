@@ -11,7 +11,7 @@ use diesel_async::RunQueryDsl;
 use tokio::sync::mpsc;
 
 #[allow(dead_code)]
-pub async fn bootstrapped_vault(db: &db::DatabasePool) -> Vault {
+pub(crate) async fn bootstrapped_vault(db: &db::DatabasePool) -> Vault {
     let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
         .await
         .unwrap();
@@ -23,7 +23,7 @@ pub async fn bootstrapped_vault(db: &db::DatabasePool) -> Vault {
 }
 
 #[allow(dead_code)]
-pub async fn root_key_history_id(db: &db::DatabasePool) -> i32 {
+pub(crate) async fn root_key_history_id(db: &db::DatabasePool) -> i32 {
     let mut conn = db.get().await.unwrap();
     let id = schema::arbiter_settings::table
         .select(schema::arbiter_settings::root_key_id)
@@ -34,14 +34,14 @@ pub async fn root_key_history_id(db: &db::DatabasePool) -> i32 {
 }
 
 #[allow(dead_code)]
-pub struct ChannelTransport<T, Y> {
+pub(crate) struct ChannelTransport<T, Y> {
     receiver: mpsc::Receiver<T>,
     sender: mpsc::Sender<Y>,
 }
 
 impl<T, Y> ChannelTransport<T, Y> {
     #[allow(dead_code)]
-    pub fn new() -> (Self, ChannelTransport<Y, T>) {
+    pub(crate) fn new() -> (Self, ChannelTransport<Y, T>) {
         let (tx1, rx1) = mpsc::channel(10);
         let (tx2, rx2) = mpsc::channel(10);
         (

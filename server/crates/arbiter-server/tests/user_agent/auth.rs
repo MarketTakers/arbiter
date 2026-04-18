@@ -1,8 +1,8 @@
+use super::common::ChannelTransport;
 use arbiter_crypto::{
     authn::{self, AuthChallenge, USERAGENT_CONTEXT},
     safecell::{SafeCell, SafeCellHandle as _},
 };
-
 use arbiter_proto::transport::{Error as TransportError, Receiver, Sender};
 use arbiter_server::{
     actors::{GlobalActors, bootstrap::GetToken, vault::Bootstrap},
@@ -10,13 +10,12 @@ use arbiter_server::{
     db::{self, schema},
     peers::user_agent::{self, Credentials, UserAgentConnection, auth, vault_gate},
 };
+
 use async_trait::async_trait;
 use diesel::{ExpressionMethods as _, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
 use ml_dsa::{KeyGen, MlDsa87, SigningKey, signature::Keypair as _};
 use tokio::sync::mpsc;
-
-use super::common::ChannelTransport;
 
 fn sign_useragent_challenge(
     key: &SigningKey<MlDsa87>,
@@ -85,7 +84,10 @@ impl Receiver<auth::Inbound> for StartServerTransport {
 
 #[async_trait]
 impl Sender<Result<auth::Outbound, auth::Error>> for StartServerTransport {
-    async fn send(&mut self, item: Result<auth::Outbound, auth::Error>) -> Result<(), TransportError> {
+    async fn send(
+        &mut self,
+        item: Result<auth::Outbound, auth::Error>,
+    ) -> Result<(), TransportError> {
         self.auth_tx
             .send(item)
             .await
@@ -118,8 +120,11 @@ impl Sender<Result<vault_gate::Outbound, vault_gate::Error>> for StartServerTran
     }
 }
 
-impl arbiter_proto::transport::Bi<vault_gate::Inbound, Result<vault_gate::Outbound, vault_gate::Error>>
-    for StartServerTransport
+impl
+    arbiter_proto::transport::Bi<
+        vault_gate::Inbound,
+        Result<vault_gate::Outbound, vault_gate::Error>,
+    > for StartServerTransport
 {
 }
 
@@ -142,7 +147,7 @@ impl Sender<auth::Inbound> for StartTestTransport {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_bootstrap_token_auth() {
+async fn test_bootstrap_token_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
@@ -207,7 +212,7 @@ pub async fn test_bootstrap_token_auth() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_bootstrap_invalid_token_auth() {
+async fn test_bootstrap_invalid_token_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
@@ -260,7 +265,7 @@ pub async fn test_bootstrap_invalid_token_auth() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_challenge_auth() {
+async fn test_challenge_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
@@ -345,7 +350,7 @@ pub async fn test_challenge_auth() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() {
+async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
 
@@ -419,7 +424,7 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() 
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_challenge_auth_rejects_invalid_signature() {
+async fn test_challenge_auth_rejects_invalid_signature() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors

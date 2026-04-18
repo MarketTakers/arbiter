@@ -1,3 +1,4 @@
+use crate::peers::{client::ClientConnection, user_agent::UserAgentConnection};
 use arbiter_proto::{
     proto::{
         client::{ClientRequest, ClientResponse},
@@ -5,13 +6,10 @@ use arbiter_proto::{
     },
     transport::grpc::GrpcBi,
 };
+
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, async_trait};
 use tracing::info;
-
-use crate::{
-    peers::{client::ClientConnection, user_agent::UserAgentConnection},
-};
 
 mod request_tracker;
 

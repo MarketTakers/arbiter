@@ -1,3 +1,7 @@
+use crate::{
+    actors::vault::VaultState,
+    peers::client::session::{ClientSession, Error, HandleQueryVaultState},
+};
 use arbiter_proto::proto::{
     client::{
         client_response::Payload as ClientResponsePayload,
@@ -8,14 +12,10 @@ use arbiter_proto::proto::{
     },
     shared::VaultState as ProtoVaultState,
 };
+
 use kameo::{actor::ActorRef, error::SendError};
 use tonic::Status;
 use tracing::warn;
-
-use crate::{
-    actors::vault::VaultState,
-    peers::client::session::{ClientSession, Error, HandleQueryVaultState},
-};
 
 pub(super) async fn dispatch(
     actor: &ActorRef<ClientSession>,

@@ -1,3 +1,17 @@
+use crate::{
+    crypto::{
+        KeyCell, derive_key,
+        encryption::v1::{self, Nonce},
+        integrity::v1::HmacSha256,
+    },
+    db::{
+        self,
+        models::{self, RootKeyHistory},
+        schema::{self},
+    },
+};
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
+
 use chrono::Utc;
 use diesel::{
     ExpressionMethods as _, OptionalExtension, QueryDsl, SelectableHelper,
@@ -9,18 +23,6 @@ use kameo::{Actor, Reply, actor::ActorRef, messages};
 use kameo_actors::message_bus::{MessageBus, Publish};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
-
-use crate::crypto::{
-    KeyCell, derive_key,
-    encryption::v1::{self, Nonce},
-    integrity::v1::HmacSha256,
-};
-use crate::db::{
-    self,
-    models::{self, RootKeyHistory},
-    schema::{self},
-};
-use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
 pub mod events {
 
@@ -213,7 +215,7 @@ impl Vault {
         });
 
         info!("Vault bootstrapped successfully");
-        self.events.tell(Publish(events::Bootstrapped)).await;
+        let _ = self.events.tell(Publish(events::Bootstrapped)).await;
 
         Ok(())
     }
@@ -269,7 +271,7 @@ impl Vault {
         });
 
         info!("Vault unsealed successfully");
-        self.events.tell(Publish(events::Unsealed)).await;
+        let _ = self.events.tell(Publish(events::Unsealed)).await;
 
         Ok(())
     }
@@ -399,7 +401,7 @@ impl Vault {
         self.state = State::Sealed {
             root_key_history_id: *root_key_history_id,
         };
-        self.events.tell(Publish(events::VaultResealed)).await;
+        let _ = self.events.tell(Publish(events::VaultResealed)).await;
         Ok(())
     }
 }

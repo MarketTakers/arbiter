@@ -1,12 +1,11 @@
-use std::sync::Arc;
-
-use thiserror::Error;
-
 use crate::{
     actors::GlobalActors,
     context::tls::TlsManager,
     db::{self},
 };
+
+use std::sync::Arc;
+use thiserror::Error;
 
 pub mod tls;
 

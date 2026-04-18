@@ -54,11 +54,9 @@
 //!   as a closed outbound channel.
 //! - [`Bi::recv`] returns `None` when the underlying transport closes.
 //! - Message translation is intentionally out of scope for this module.
-
-use std::marker::PhantomData;
-
 use async_trait::async_trait;
 use kameo::{error::Infallible, prelude::*};
+use std::marker::PhantomData;
 
 /// Errors returned by transport adapters implementing [`Bi`].
 #[derive(thiserror::Error, Debug)]

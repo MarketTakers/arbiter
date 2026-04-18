@@ -1,3 +1,7 @@
+use crate::{
+    storage::StorageError,
+    transport::{ClientTransport, next_request_id},
+};
 use arbiter_crypto::authn::{self, CLIENT_CONTEXT, SigningKey};
 use arbiter_proto::{
     ClientMetadata,
@@ -15,12 +19,8 @@ use arbiter_proto::{
         shared::ClientInfo as ProtoClientInfo,
     },
 };
-use chrono::DateTime;
 
-use crate::{
-    storage::StorageError,
-    transport::{ClientTransport, next_request_id},
-};
+use chrono::DateTime;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {

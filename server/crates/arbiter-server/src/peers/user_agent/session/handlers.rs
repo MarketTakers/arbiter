@@ -1,32 +1,21 @@
-
-use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
-use arbiter_crypto::{
-    authn,
-    safecell::SafeCellHandle as _,
-};
-use chacha20poly1305::aead::KeyInit;
-use diesel::{ExpressionMethods as _, QueryDsl as _, SelectableHelper};
-use diesel_async::{AsyncConnection, RunQueryDsl};
-use kameo::error::SendError;
-use kameo::messages;
-use kameo::prelude::Context;
-use tracing::error;
-
-use crate::actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer;
-use crate::actors::evm::{
+use super::{Error, UserAgentSession};
+use crate::{
+    actors::evm::{
         ClientSignTransaction, Generate, ListWallets, SignTransactionError as EvmSignError,
         UseragentCreateGrant, UseragentListGrants,
-    };
-use crate::db::models::{
-    EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
-};
-use crate::evm::policies::{Grant, SpecificGrant};
-use crate::{
+    },
+    actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer,
     actors::vault::VaultState,
+    db::models::{EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata},
+    evm::policies::{Grant, SpecificGrant},
 };
+use arbiter_crypto::authn;
 
-use super::{Error, UserAgentSession};
-
+use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
+use diesel::{ExpressionMethods as _, QueryDsl as _, SelectableHelper};
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use kameo::{error::SendError, messages, prelude::Context};
+use tracing::error;
 
 #[derive(Debug, Error)]
 pub enum SignTransactionError {

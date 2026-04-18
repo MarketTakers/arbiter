@@ -1,3 +1,10 @@
+use crate::{
+    grpc::{
+        Convert, TryConvert,
+        common::inbound::{RawEvmAddress, RawEvmTransaction},
+    },
+    peers::client::session::{ClientSession, HandleSignTransaction, SignTransactionRpcError},
+};
 use arbiter_proto::proto::{
     client::{
         client_response::Payload as ClientResponsePayload,
@@ -11,17 +18,10 @@ use arbiter_proto::proto::{
         evm_sign_transaction_response::Result as EvmSignTransactionResult,
     },
 };
+
 use kameo::actor::ActorRef;
 use tonic::Status;
 use tracing::warn;
-
-use crate::{
-    grpc::{
-        Convert, TryConvert,
-        common::inbound::{RawEvmAddress, RawEvmTransaction},
-    },
-    peers::client::session::{ClientSession, HandleSignTransaction, SignTransactionRpcError},
-};
 
 fn wrap_response(payload: EvmResponsePayload) -> ClientResponsePayload {
     ClientResponsePayload::Evm(proto_evm::Response {
