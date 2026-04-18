@@ -1,5 +1,6 @@
-pub use hmac::digest::Digest;
 use std::collections::HashSet;
+
+pub use hmac::digest::Digest;
 
 /// Deterministically hash a value by feeding its fields into the hasher in a consistent order.
 #[diagnostic::on_unimplemented(

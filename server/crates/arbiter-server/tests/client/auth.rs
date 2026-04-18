@@ -1,23 +1,22 @@
+use super::common::ChannelTransport;
 use arbiter_crypto::{
-    authn::{self, CLIENT_CONTEXT, format_challenge},
+    authn::{self, AuthChallenge, CLIENT_CONTEXT},
     safecell::{SafeCell, SafeCellHandle as _},
 };
-use arbiter_proto::ClientMetadata;
-use arbiter_proto::transport::{Receiver, Sender};
+use arbiter_proto::{
+    ClientMetadata,
+    transport::{Receiver, Sender},
+};
 use arbiter_server::{
-    actors::{
-        GlobalActors,
-        client::{ClientConnection, ClientCredentials, auth, connect_client},
-        keyholder::Bootstrap,
-    },
+    actors::{GlobalActors, vault::Bootstrap},
     crypto::integrity,
     db::{self, schema},
+    peers::client::{ClientConnection, ClientCredentials, auth, connect_client},
 };
+
 use diesel::{ExpressionMethods as _, NullableExpressionMethods as _, QueryDsl as _, insert_into};
 use diesel_async::RunQueryDsl;
 use ml_dsa::{KeyGen, MlDsa87, SigningKey, VerifyingKey, signature::Keypair};
-
-use super::common::ChannelTransport;
 
 fn metadata(name: &str, description: Option<&str>, version: Option<&str>) -> ClientMetadata {
     ClientMetadata {
@@ -62,10 +61,9 @@ async fn insert_registered_client(
 
     integrity::sign_entity(
         &mut conn,
-        &actors.key_holder,
+        &actors.vault,
         &ClientCredentials {
             pubkey: pubkey.into(),
-            nonce: 1,
         },
         client_id,
     )
@@ -73,12 +71,8 @@ async fn insert_registered_client(
     .unwrap();
 }
 
-fn sign_client_challenge(
-    key: &SigningKey<MlDsa87>,
-    nonce: i32,
-    pubkey: &authn::PublicKey,
-) -> authn::Signature {
-    let challenge = format_challenge(nonce, &pubkey.to_bytes());
+fn sign_client_challenge(key: &SigningKey<MlDsa87>, challenge: &AuthChallenge) -> authn::Signature {
+    let challenge = challenge.format();
     key.signing_key()
         .sign_deterministic(&challenge, CLIENT_CONTEXT)
         .unwrap()
@@ -93,10 +87,7 @@ async fn insert_bootstrap_sentinel_useragent(db: &db::DatabasePool) {
         .to_vec();
 
     insert_into(schema::useragent_client::table)
-        .values((
-            schema::useragent_client::public_key.eq(sentinel_key),
-            schema::useragent_client::key_type.eq(1i32),
-        ))
+        .values((schema::useragent_client::public_key.eq(sentinel_key),))
         .execute(&mut conn)
         .await
         .unwrap();
@@ -107,7 +98,7 @@ async fn spawn_test_actors(db: &db::DatabasePool) -> GlobalActors {
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
-        .key_holder
+        .vault
         .ask(Bootstrap {
             seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
         })
@@ -182,14 +173,14 @@ pub async fn challenge_auth() {
         .expect("should receive challenge");
     let challenge = match response {
         Ok(resp) => match resp {
-            auth::Outbound::AuthChallenge { pubkey, nonce } => (pubkey, nonce),
+            auth::Outbound::AuthChallenge { challenge } => challenge,
             other @ auth::Outbound::AuthSuccess => panic!("Expected AuthChallenge, got {other:?}"),
         },
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };
 
     // Sign the challenge and send solution
-    let signature = sign_client_challenge(&new_key, challenge.1, &challenge.0);
+    let signature = sign_client_challenge(&new_key, &challenge);
 
     test_transport
         .send(auth::Inbound::AuthChallengeSolution { signature })
@@ -243,11 +234,11 @@ pub async fn metadata_unchanged_does_not_append_history() {
         .unwrap();
 
     let response = test_transport.recv().await.unwrap().unwrap();
-    let (pubkey, nonce) = match response {
-        auth::Outbound::AuthChallenge { pubkey, nonce } => (pubkey, nonce),
+    let challenge = match response {
+        auth::Outbound::AuthChallenge { challenge } => challenge,
         auth::Outbound::AuthSuccess => panic!("Expected AuthChallenge, got AuthSuccess"),
     };
-    let signature = sign_client_challenge(&new_key, nonce, &pubkey);
+    let signature = sign_client_challenge(&new_key, &challenge);
     test_transport
         .send(auth::Inbound::AuthChallengeSolution { signature })
         .await
@@ -305,11 +296,11 @@ pub async fn metadata_change_appends_history_and_repoints_binding() {
         .unwrap();
 
     let response = test_transport.recv().await.unwrap().unwrap();
-    let (pubkey, nonce) = match response {
-        auth::Outbound::AuthChallenge { pubkey, nonce } => (pubkey, nonce),
+    let challenge = match response {
+        auth::Outbound::AuthChallenge { challenge } => challenge,
         auth::Outbound::AuthSuccess => panic!("Expected AuthChallenge, got AuthSuccess"),
     };
-    let signature = sign_client_challenge(&new_key, nonce, &pubkey);
+    let signature = sign_client_challenge(&new_key, &challenge);
     test_transport
         .send(auth::Inbound::AuthChallengeSolution { signature })
         .await
@@ -411,10 +402,7 @@ pub async fn challenge_auth_rejects_integrity_tag_mismatch() {
         .recv()
         .await
         .expect("should receive auth rejection");
-    assert!(matches!(
-        response,
-        Err(auth::ClientAuthError::IntegrityCheckFailed)
-    ));
+    assert!(matches!(response, Err(auth::Error::IntegrityCheckFailed)));
 
     task.await.unwrap();
 }

@@ -21,8 +21,6 @@ dependencies:
   mtcore:
     hosted: https://git.markettakers.org/api/packages/MarketTakers/pub/
     version: ^1.0.6
-  cryptography: ^2.9.0
-  crypto: ^3.0.6
   flutter_secure_storage: ^10.0.0
   cryptography_flutter: ^2.3.4
   riverpod_annotation: ^4.0.0
@@ -35,6 +33,9 @@ dependencies:
   json_annotation: ^4.9.0
   timeago: ^3.7.1
   flutter_form_builder: ^10.3.0+2
+  rust_lib_arbiter:
+    path: rust_builder
+  flutter_rust_bridge: 2.12.0
 
 dev_dependencies:
   flutter_test:
@@ -46,6 +47,8 @@ dev_dependencies:
   auto_route_generator: ^10.4.0
   freezed: ^3.2.3
   json_serializable: ^6.11.2
+  integration_test:
+    sdk: flutter
 
 flutter:
   uses-material-design: true

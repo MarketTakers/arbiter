@@ -1,2 +1,2 @@
-pub mod inbound;
-pub mod outbound;
+pub(super) mod inbound;
+pub(super) mod outbound;

@@ -6,31 +6,32 @@ resolver = "3"
 
 
 [workspace.dependencies]
-alloy = "1.7.3"
+alloy = "2.0.0"
 async-trait = "0.1.89"
 base64 = "0.22.1"
 chrono = { version = "0.4.44", features = ["serde"] }
 ed25519-dalek = { version = "3.0.0-pre.6", features = ["rand_core"] }
 futures = "0.3.32"
-hmac = "0.12.1"
 k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"] }
-kameo = { version = "0.20.0", git = "https://github.com/tqwewe/kameo" } # hold this until new patch version is released
+kameo = {git = "https://github.com/hdbg/kameo.git", rev = "805b417"}
+kameo_actors = {git = "https://github.com/hdbg/kameo.git", rev = "805b417"}
+hmac = "0.13.0"
 miette = { version = "7.6.0", features = ["fancy", "serde"] }
 ml-dsa = { version = "0.1.0-rc.8", features = ["zeroize"] }
 mutants = "0.0.4"
 prost = "0.14.3"
 prost-types = { version = "0.14.3", features = ["chrono"] }
-rand = "0.10.0"
+rand = "0.10.1"
 rcgen = { version = "0.14.7", features = [ "aws_lc_rs",  "pem", "x509-parser", "zeroize" ], default-features = false }
 rsa = { version = "0.9", features = ["sha2"] }
 rstest = "0.26.1"
-rustls = { version = "0.23.37", features = ["aws-lc-rs", "logging", "prefer-post-quantum", "std"], default-features = false }
+rustls = { version = "0.23.38", features = ["aws-lc-rs", "logging", "prefer-post-quantum", "std"], default-features = false }
 rustls-pki-types = "1.14.0"
-sha2 = "0.10"
+sha2 = "0.11"
 smlang = "0.8.0"
-spki = "0.7"
+spki = "0.8"
 thiserror = "2.0.18"
-tokio = { version = "1.50.0", features = ["full"] }
+tokio = { version = "1.52.1", features = ["full"] }
 tokio-stream = { version = "0.1.18", features = ["full"] }
 tonic = { version = "0.14.5", features = [ "deflate", "gzip", "tls-connect-info", "zstd" ] }
 tracing = "0.1.44"
@@ -64,7 +65,6 @@ unit_bindings = "warn"
 
 # missing_docs = "warn" # ENABLE BY THE FIRST MAJOR VERSION!!
 unnameable_types = "warn"
-variant_size_differences = "warn"
 
 [workspace.lints.clippy]
 derive_partial_eq_without_eq = "allow" 
@@ -98,7 +98,6 @@ doc_include_without_cfg = "warn"
 empty_drop = "warn"
 empty_enum_variants_with_brackets = "warn"
 empty_structs_with_brackets = "warn"
-error_impl_error = "warn"
 exit = "warn"
 filetype_is_file = "warn"
 float_arithmetic = "warn"
@@ -170,3 +169,5 @@ disallowed_methods = "deny"
 
 nursery = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
+
+type_repetition_in_bounds = "allow"   # sometimes, it's better for readability this way

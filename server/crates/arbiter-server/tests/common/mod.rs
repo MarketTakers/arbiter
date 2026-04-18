@@ -1,8 +1,11 @@
-#![allow(dead_code, reason = "Common test utilities that may not be used in every test")]
+#![allow(
+    dead_code,
+    reason = "Common test utilities that may not be used in every test"
+)]
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_proto::transport::{Bi, Error, Receiver, Sender};
 use arbiter_server::{
-    actors::keyholder::KeyHolder,
+    actors::{GlobalActors, vault::Vault},
     db::{self, schema},
 };
 
@@ -11,8 +14,10 @@ use diesel::QueryDsl;
 use diesel_async::RunQueryDsl;
 use tokio::sync::mpsc;
 
-pub async fn bootstrapped_keyholder(db: &db::DatabasePool) -> KeyHolder {
-    let mut actor = KeyHolder::new(db.clone()).await.unwrap();
+pub(crate) async fn bootstrapped_vault(db: &db::DatabasePool) -> Vault {
+    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+        .await
+        .unwrap();
     actor
         .bootstrap(SafeCell::new(b"test-seal-key".to_vec()))
         .await
@@ -20,7 +25,7 @@ pub async fn bootstrapped_keyholder(db: &db::DatabasePool) -> KeyHolder {
     actor
 }
 
-pub async fn root_key_history_id(db: &db::DatabasePool) -> i32 {
+pub(crate) async fn root_key_history_id(db: &db::DatabasePool) -> i32 {
     let mut conn = db.get().await.unwrap();
     let id = schema::arbiter_settings::table
         .select(schema::arbiter_settings::root_key_id)
@@ -30,13 +35,13 @@ pub async fn root_key_history_id(db: &db::DatabasePool) -> i32 {
     id.expect("root_key_id should be set after bootstrap")
 }
 
-pub struct ChannelTransport<T, Y> {
+pub(crate) struct ChannelTransport<T, Y> {
     receiver: mpsc::Receiver<T>,
     sender: mpsc::Sender<Y>,
 }
 
 impl<T, Y> ChannelTransport<T, Y> {
-    pub fn new() -> (Self, ChannelTransport<Y, T>) {
+    pub(crate) fn new() -> (Self, ChannelTransport<Y, T>) {
         let (tx1, rx1) = mpsc::channel(10);
         let (tx2, rx2) = mpsc::channel(10);
         (

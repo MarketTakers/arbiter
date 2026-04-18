@@ -1,13 +1,13 @@
+use crate::db::{self, DatabasePool, schema};
 use arbiter_proto::{BOOTSTRAP_PATH, home_path};
+
 use diesel::QueryDsl;
 use diesel_async::RunQueryDsl;
 use kameo::{Actor, messages};
-
 use rand::{RngExt, distr::Alphanumeric, make_rng, rngs::StdRng};
 use subtle::ConstantTimeEq as _;
 use thiserror::Error;
 
-use crate::db::{self, DatabasePool, schema};
 const TOKEN_LENGTH: usize = 64;
 
 pub async fn generate_token() -> Result<String, std::io::Error> {
@@ -27,7 +27,7 @@ pub async fn generate_token() -> Result<String, std::io::Error> {
 }
 
 #[derive(Error, Debug)]
-pub enum BootstrappError {
+pub enum Error {
     #[error("Database error: {0}")]
     Database(#[from] db::PoolError),
 
@@ -44,7 +44,7 @@ pub struct Bootstrapper {
 }
 
 impl Bootstrapper {
-    pub async fn new(db: &DatabasePool) -> Result<Self, BootstrappError> {
+    pub async fn new(db: &DatabasePool) -> Result<Self, Error> {
         let row_count: i64 = {
             let mut conn = db.get().await?;
 

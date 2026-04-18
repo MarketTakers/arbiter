@@ -36,8 +36,8 @@ class WalletAccessPickerField extends ConsumerWidget {
         helperText: state.selectedClientId == null
             ? 'Select a client first'
             : accesses.isEmpty
-                ? 'No wallet accesses for this client'
-                : null,
+            ? 'No wallet accesses for this client'
+            : null,
         border: const OutlineInputBorder(),
       ),
       items: [

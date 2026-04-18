@@ -14,31 +14,6 @@ import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
 
-class KeyType extends $pb.ProtobufEnum {
-  static const KeyType KEY_TYPE_UNSPECIFIED =
-      KeyType._(0, _omitEnumNames ? '' : 'KEY_TYPE_UNSPECIFIED');
-  static const KeyType KEY_TYPE_ED25519 =
-      KeyType._(1, _omitEnumNames ? '' : 'KEY_TYPE_ED25519');
-  static const KeyType KEY_TYPE_ECDSA_SECP256K1 =
-      KeyType._(2, _omitEnumNames ? '' : 'KEY_TYPE_ECDSA_SECP256K1');
-  static const KeyType KEY_TYPE_RSA =
-      KeyType._(3, _omitEnumNames ? '' : 'KEY_TYPE_RSA');
-
-  static const $core.List<KeyType> values = <KeyType>[
-    KEY_TYPE_UNSPECIFIED,
-    KEY_TYPE_ED25519,
-    KEY_TYPE_ECDSA_SECP256K1,
-    KEY_TYPE_RSA,
-  ];
-
-  static final $core.List<KeyType?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 3);
-  static KeyType? valueOf($core.int value) =>
-      value < 0 || value >= _byValue.length ? null : _byValue[value];
-
-  const KeyType._(super.value, super.name);
-}
-
 class AuthResult extends $pb.ProtobufEnum {
   static const AuthResult AUTH_RESULT_UNSPECIFIED =
       AuthResult._(0, _omitEnumNames ? '' : 'AUTH_RESULT_UNSPECIFIED');

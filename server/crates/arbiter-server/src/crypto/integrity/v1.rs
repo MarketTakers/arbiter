@@ -1,32 +1,29 @@
-use crate::actors::keyholder;
-use arbiter_crypto::hashing::Hashable;
-use hmac::Hmac;
-use sha2::Sha256;
-
-use diesel::{ExpressionMethods as _, QueryDsl, dsl::insert_into, sqlite::Sqlite};
-use diesel_async::{AsyncConnection, RunQueryDsl};
-use kameo::{actor::ActorRef, error::SendError};
-use sha2::Digest as _;
-
 use crate::{
-    actors::keyholder::{KeyHolder, SignIntegrity, VerifyIntegrity},
+    actors::vault::{self, GetState, SignIntegrity, Vault, VerifyIntegrity},
     db::{
         self,
         models::{IntegrityEnvelope, NewIntegrityEnvelope},
         schema::integrity_envelope,
     },
 };
+use arbiter_crypto::hashing::Hashable;
+
+use diesel::{ExpressionMethods as _, QueryDsl, dsl::insert_into, sqlite::Sqlite};
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use hmac::Hmac;
+use kameo::{actor::ActorRef, error::SendError};
+use sha2::{Digest as _, Sha256};
 
 #[derive(Debug, thiserror::Error)]
-pub enum IntegrityError {
+pub enum Error {
     #[error("Database error: {0}")]
     Database(#[from] db::DatabaseError),
 
-    #[error("KeyHolder error: {0}")]
-    Keyholder(#[from] keyholder::KeyHolderError),
+    #[error("Vault error: {0}")]
+    Vault(#[from] vault::Error),
 
-    #[error("KeyHolder mailbox error")]
-    KeyholderSend,
+    #[error("Vault mailbox error")]
+    VaultSend,
 
     #[error("Integrity envelope is missing for entity {entity_kind}")]
     MissingEnvelope { entity_kind: &'static str },
@@ -108,23 +105,24 @@ impl IntoId for &'_ [u8] {
 
 pub async fn sign_entity<E: Integrable>(
     conn: &mut impl AsyncConnection<Backend = Sqlite>,
-    keyholder: &ActorRef<KeyHolder>,
+    vault: &ActorRef<Vault>,
     entity: &E,
     entity_id: impl IntoId,
-) -> Result<(), IntegrityError> {
+) -> Result<(), Error> {
     let payload_hash = payload_hash(&entity);
 
     let entity_id = entity_id.into_id();
 
     let mac_input = build_mac_input(E::KIND, &entity_id, E::VERSION, &payload_hash);
 
-    let (key_version, mac) = keyholder
-        .ask(SignIntegrity { mac_input })
-        .await
-        .map_err(|err| match err {
-            SendError::HandlerError(inner) => IntegrityError::Keyholder(inner),
-            _ => IntegrityError::KeyholderSend,
-        })?;
+    let (key_version, mac) =
+        vault
+            .ask(SignIntegrity { mac_input })
+            .await
+            .map_err(|err| match err {
+                SendError::HandlerError(inner) => Error::Vault(inner),
+                _ => Error::VaultSend,
+            })?;
 
     insert_into(integrity_envelope::table)
         .values(NewIntegrityEnvelope {
@@ -153,10 +151,10 @@ pub async fn sign_entity<E: Integrable>(
 
 pub async fn verify_entity<E: Integrable>(
     conn: &mut impl AsyncConnection<Backend = Sqlite>,
-    keyholder: &ActorRef<KeyHolder>,
+    vault: &ActorRef<Vault>,
     entity: &E,
     entity_id: impl IntoId,
-) -> Result<AttestationStatus, IntegrityError> {
+) -> Result<AttestationStatus, Error> {
     let entity_id = entity_id.into_id();
     let envelope: IntegrityEnvelope = integrity_envelope::table
         .filter(integrity_envelope::entity_kind.eq(E::KIND))
@@ -164,14 +162,14 @@ pub async fn verify_entity<E: Integrable>(
         .first(conn)
         .await
         .map_err(|err| match err {
-            diesel::result::Error::NotFound => IntegrityError::MissingEnvelope {
+            diesel::result::Error::NotFound => Error::MissingEnvelope {
                 entity_kind: E::KIND,
             },
-            other => IntegrityError::Database(db::DatabaseError::from(other)),
+            other => Error::Database(db::DatabaseError::from(other)),
         })?;
 
     if envelope.payload_version != E::VERSION {
-        return Err(IntegrityError::PayloadVersionMismatch {
+        return Err(Error::PayloadVersionMismatch {
             entity_kind: E::KIND,
             expected: E::VERSION,
             found: envelope.payload_version,
@@ -181,7 +179,7 @@ pub async fn verify_entity<E: Integrable>(
     let payload_hash = payload_hash(&entity);
     let mac_input = build_mac_input(E::KIND, &entity_id, envelope.payload_version, &payload_hash);
 
-    let result = keyholder
+    let result = vault
         .ask(VerifyIntegrity {
             mac_input,
             expected_mac: envelope.mac,
@@ -191,14 +189,17 @@ pub async fn verify_entity<E: Integrable>(
 
     match result {
         Ok(true) => Ok(AttestationStatus::Attested),
-        Ok(false) => Err(IntegrityError::MacMismatch {
+        Ok(false) => Err(Error::MacMismatch {
             entity_kind: E::KIND,
         }),
-        Err(SendError::HandlerError(keyholder::KeyHolderError::NotBootstrapped)) => {
-            Ok(AttestationStatus::Unavailable)
-        }
-        Err(_) => Err(IntegrityError::KeyholderSend),
+        Err(SendError::HandlerError(vault::Error::Sealed)) => Ok(AttestationStatus::Unavailable),
+        Err(_) => Err(Error::VaultSend),
     }
+}
+
+pub async fn is_signing_available(vault: &ActorRef<Vault>) -> Result<bool, Error> {
+    let state = vault.ask(GetState).await.map_err(|_| Error::VaultSend)?;
+    Ok(matches!(state, vault::VaultState::Unsealed))
 }
 
 #[cfg(test)]
@@ -208,12 +209,15 @@ mod tests {
     use kameo::{actor::ActorRef, prelude::Spawn};
 
     use crate::{
-        actors::keyholder::{Bootstrap, KeyHolder},
+        actors::{
+            GlobalActors,
+            vault::{Bootstrap, Vault},
+        },
         db::{self, schema},
     };
     use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
-    use super::{Integrable, IntegrityError, sign_entity, verify_entity};
+    use super::{Error, Integrable, sign_entity, verify_entity};
     #[derive(Clone, arbiter_macros::Hashable)]
     struct DummyEntity {
         payload_version: i32,
@@ -223,8 +227,12 @@ mod tests {
         const KIND: &'static str = "dummy_entity";
     }
 
-    async fn bootstrapped_keyholder(db: &db::DatabasePool) -> ActorRef<KeyHolder> {
-        let actor = KeyHolder::spawn(KeyHolder::new(db.clone()).await.unwrap());
+    async fn bootstrapped_vault(db: &db::DatabasePool) -> ActorRef<Vault> {
+        let actor = Vault::spawn(
+            Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+                .await
+                .unwrap(),
+        );
         actor
             .ask(Bootstrap {
                 seal_key_raw: SafeCell::new(b"integrity-test-seal-key".to_vec()),
@@ -239,7 +247,7 @@ mod tests {
         const ENTITY_ID: &[u8] = b"entity-id-7";
 
         let db = db::create_test_pool().await;
-        let keyholder = bootstrapped_keyholder(&db).await;
+        let vault = bootstrapped_vault(&db).await;
         let mut conn = db.get().await.unwrap();
 
         let entity = DummyEntity {
@@ -247,7 +255,7 @@ mod tests {
             payload: b"payload-v1".to_vec(),
         };
 
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
+        sign_entity(&mut conn, &vault, &entity, ENTITY_ID)
             .await
             .unwrap();
 
@@ -260,7 +268,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(count, 1, "envelope row must be created exactly once");
-        verify_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
+        verify_entity(&mut conn, &vault, &entity, ENTITY_ID)
             .await
             .unwrap();
     }
@@ -270,7 +278,7 @@ mod tests {
         const ENTITY_ID: &[u8] = b"entity-id-11";
 
         let db = db::create_test_pool().await;
-        let keyholder = bootstrapped_keyholder(&db).await;
+        let vault = bootstrapped_vault(&db).await;
         let mut conn = db.get().await.unwrap();
 
         let entity = DummyEntity {
@@ -278,7 +286,7 @@ mod tests {
             payload: b"payload-v1".to_vec(),
         };
 
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
+        sign_entity(&mut conn, &vault, &entity, ENTITY_ID)
             .await
             .unwrap();
 
@@ -290,10 +298,10 @@ mod tests {
             .await
             .unwrap();
 
-        let err = verify_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
+        let err = verify_entity(&mut conn, &vault, &entity, ENTITY_ID)
             .await
             .unwrap_err();
-        assert!(matches!(err, IntegrityError::MacMismatch { .. }));
+        assert!(matches!(err, Error::MacMismatch { .. }));
     }
 
     #[tokio::test]
@@ -301,7 +309,7 @@ mod tests {
         const ENTITY_ID: &[u8] = b"entity-id-21";
 
         let db = db::create_test_pool().await;
-        let keyholder = bootstrapped_keyholder(&db).await;
+        let vault = bootstrapped_vault(&db).await;
         let mut conn = db.get().await.unwrap();
 
         let entity = DummyEntity {
@@ -309,7 +317,7 @@ mod tests {
             payload: b"payload-v1".to_vec(),
         };
 
-        sign_entity(&mut conn, &keyholder, &entity, ENTITY_ID)
+        sign_entity(&mut conn, &vault, &entity, ENTITY_ID)
             .await
             .unwrap();
 
@@ -318,9 +326,9 @@ mod tests {
             ..entity
         };
 
-        let err = verify_entity(&mut conn, &keyholder, &tampered, ENTITY_ID)
+        let err = verify_entity(&mut conn, &vault, &tampered, ENTITY_ID)
             .await
             .unwrap_err();
-        assert!(matches!(err, IntegrityError::MacMismatch { .. }));
+        assert!(matches!(err, Error::MacMismatch { .. }));
     }
 }

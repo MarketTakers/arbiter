@@ -1,4 +1,8 @@
-use arbiter_crypto::authn::{CLIENT_CONTEXT, SigningKey, format_challenge};
+use crate::{
+    storage::StorageError,
+    transport::{ClientTransport, next_request_id},
+};
+use arbiter_crypto::authn::{self, CLIENT_CONTEXT, SigningKey};
 use arbiter_proto::{
     ClientMetadata,
     proto::{
@@ -16,16 +20,14 @@ use arbiter_proto::{
     },
 };
 
-use crate::{
-    storage::StorageError,
-    transport::{ClientTransport, next_request_id},
-};
+use chrono::DateTime;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {
+    #[error("Server sent invalid auth challenge")]
+    InvalidChallenge,
     #[error("Client approval denied by User Agent")]
     ApprovalDenied,
-
     #[error("Auth challenge was not returned by server")]
     MissingAuthChallenge,
 
@@ -98,7 +100,15 @@ async fn send_auth_challenge_solution(
     key: &SigningKey,
     challenge: AuthChallenge,
 ) -> Result<(), AuthError> {
-    let challenge_payload = format_challenge(challenge.nonce, &challenge.pubkey);
+    let timestamp = DateTime::from_timestamp_nanos(challenge.timestamp_nanos as i64);
+    let challenge = authn::AuthChallenge {
+        nonce: *challenge
+            .random
+            .as_array()
+            .ok_or(AuthError::InvalidChallenge)?,
+        timestamp,
+    };
+    let challenge_payload: Vec<u8> = challenge.format();
     let signature = key
         .sign_message(&challenge_payload, CLIENT_CONTEXT)
         .map_err(|_| AuthError::UnexpectedAuthResponse)?

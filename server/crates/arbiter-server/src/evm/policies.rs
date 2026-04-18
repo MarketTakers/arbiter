@@ -1,4 +1,8 @@
-use std::fmt::Display;
+use crate::{
+    crypto::integrity::v1::Integrable,
+    db::models::{EvmBasicGrant, EvmWalletAccess},
+    evm::utils,
+};
 
 use alloy::primitives::{Address, Bytes, ChainId, U256};
 use chrono::{DateTime, Duration, Utc};
@@ -6,14 +10,8 @@ use diesel::{
     ExpressionMethods as _, QueryDsl, SelectableHelper, result::QueryResult, sqlite::Sqlite,
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
-
+use std::fmt::Display;
 use thiserror::Error;
-
-use crate::{
-    crypto::integrity::v1::Integrable,
-    db::models::{EvmBasicGrant, EvmWalletAccess},
-    evm::utils,
-};
 
 pub mod ether_transfer;
 pub mod token_transfers;

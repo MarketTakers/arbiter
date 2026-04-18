@@ -1,12 +1,11 @@
-use std::sync::Arc;
-
-use thiserror::Error;
-
 use crate::{
     actors::GlobalActors,
     context::tls::TlsManager,
     db::{self},
 };
+
+use std::sync::Arc;
+use thiserror::Error;
 
 pub mod tls;
 
@@ -25,7 +24,7 @@ pub enum InitError {
     Tls(#[from] tls::InitError),
 
     #[error("Actor spawn failed: {0}")]
-    ActorSpawn(#[from] crate::actors::GlobalActorsSpawnError),
+    ActorSpawn(#[from] crate::actors::SpawnError),
 
     #[error("I/O Error: {0}")]
     Io(#[from] std::io::Error),

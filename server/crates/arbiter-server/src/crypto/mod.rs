@@ -1,3 +1,6 @@
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
+use encryption::v1::{Nonce, Salt};
+
 use argon2::{Algorithm, Argon2};
 use chacha20poly1305::{
     AeadInPlace, Key, KeyInit as _, XChaCha20Poly1305, XNonce,
@@ -8,12 +11,8 @@ use rand::{
     rngs::{StdRng, SysRng},
 };
 
-use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
-
 pub mod encryption;
 pub mod integrity;
-
-use encryption::v1::{Nonce, Salt};
 
 pub struct KeyCell(pub SafeCell<Key>);
 impl From<SafeCell<Key>> for KeyCell {
@@ -131,7 +130,7 @@ mod tests {
     use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
     #[test]
-    pub fn encrypt_decrypt() {
+    fn encrypt_decrypt() {
         static PASSWORD: &[u8] = b"password";
         let password = SafeCell::new(PASSWORD.to_vec());
         let salt = generate_salt();

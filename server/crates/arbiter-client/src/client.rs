@@ -1,21 +1,20 @@
-use arbiter_crypto::authn::SigningKey;
-use arbiter_proto::{
-    ClientMetadata, proto::arbiter_service_client::ArbiterServiceClient, url::ArbiterUrl,
-};
-use std::sync::Arc;
-use tokio::sync::{Mutex, mpsc};
-use tokio_stream::wrappers::ReceiverStream;
-use tonic::transport::ClientTlsConfig;
-
+#[cfg(feature = "evm")]
+use crate::wallets::evm::ArbiterEvmWallet;
 use crate::{
     StorageError,
     auth::{AuthError, authenticate},
     storage::{FileSigningKeyStorage, SigningKeyStorage},
     transport::{BUFFER_LENGTH, ClientTransport},
 };
+use arbiter_crypto::authn::SigningKey;
+use arbiter_proto::{
+    ClientMetadata, proto::arbiter_service_client::ArbiterServiceClient, url::ArbiterUrl,
+};
 
-#[cfg(feature = "evm")]
-use crate::wallets::evm::ArbiterEvmWallet;
+use std::sync::Arc;
+use tokio::sync::{Mutex, mpsc};
+use tokio_stream::wrappers::ReceiverStream;
+use tonic::transport::ClientTlsConfig;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ArbiterClientError {

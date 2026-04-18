@@ -1,3 +1,14 @@
+use crate::{
+    db::models::NewEvmWalletAccess,
+    grpc::Convert,
+    peers::user_agent::{
+        OutOfBand, UserAgentSession,
+        session::handlers::{
+            HandleGrantEvmWalletAccess, HandleListWalletAccess, HandleNewClientApprove,
+            HandleRevokeEvmWalletAccess, HandleSdkClientList,
+        },
+    },
+};
 use arbiter_crypto::authn;
 use arbiter_proto::proto::{
     shared::ClientInfo as ProtoClientMetadata,
@@ -16,21 +27,10 @@ use arbiter_proto::proto::{
         user_agent_response::Payload as UserAgentResponsePayload,
     },
 };
+
 use kameo::actor::ActorRef;
 use tonic::Status;
 use tracing::{info, warn};
-
-use crate::{
-    actors::user_agent::{
-        OutOfBand, UserAgentSession,
-        session::connection::{
-            HandleGrantEvmWalletAccess, HandleListWalletAccess, HandleNewClientApprove,
-            HandleRevokeEvmWalletAccess, HandleSdkClientList,
-        },
-    },
-    db::models::NewEvmWalletAccess,
-    grpc::Convert,
-};
 
 const fn wrap_sdk_client_response(payload: SdkClientResponsePayload) -> UserAgentResponsePayload {
     UserAgentResponsePayload::SdkClient(proto_sdk_client::Response {
