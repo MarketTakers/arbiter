@@ -22,11 +22,13 @@ Arbiter distinguishes two kinds of peers:
 All peers authenticate via public-key cryptography using a challenge-response protocol:
 
 1. The peer sends its public key and requests a challenge.
-2. The server looks up the key in its database. If found, it increments the nonce and returns a challenge (replay-attack protection).
-3. The peer signs the challenge with its private key and sends the signature back.
+2. The server looks up the key in its database. If found, it generates a fresh challenge from random bytes plus the current timestamp.
+3. The peer signs the canonical challenge payload with its private key and sends the signature back.
 4. The server verifies the signature:
    - **Pass:** The connection is considered authenticated.
    - **Fail:** The server closes the connection.
+
+Authentication challenges are per-connection, ephemeral values. They are not persisted in the peer tables, and peer records store no challenge state.
 
 ### 2.2 User Agent Bootstrap
 

@@ -45,7 +45,13 @@ flowchart TD
     K -- yes --> J([Session started])
 ```
 
-Auth challenges are generated from fresh random bytes plus a timestamp. They are signed as the canonical challenge payload and are not persisted in `program_client`.
+Auth challenges are generated from fresh random bytes plus a nanosecond timestamp. The server keeps the issued challenge only in the in-flight authentication state for that connection, then verifies the signature against the same canonical challenge payload.
+
+The authentication schema stores peer identity, not replay counters:
+
+- `program_client` stores the SDK client's public key, metadata binding, and timestamps.
+- `useragent_client` stores the User Agent public key and timestamps.
+- Neither table stores an authentication nonce, and challenge generation does not update either table.
 
 ---
 
