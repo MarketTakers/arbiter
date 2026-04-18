@@ -11,6 +11,13 @@ pub static USERAGENT_CONTEXT: &[u8] = b"arbiter_user_agent";
 
 const NONCE_SIZE: usize = 32;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("invalid length: expected {expected} bytes, got {actual} bytes")]
+pub struct InvalidLength {
+    pub expected: usize,
+    pub actual: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct AuthChallenge {
     pub nonce: [u8; NONCE_SIZE],
@@ -43,8 +50,11 @@ impl AuthChallenge {
         }
     }
 
-    pub fn from_parts(nonce: &[u8], timestamp: i64) -> Result<Self, ()> {
-        let random_nonce = nonce.as_array().ok_or(())?;
+    pub fn from_parts(nonce: &[u8], timestamp: i64) -> Result<Self, InvalidLength> {
+        let random_nonce = nonce.as_array().ok_or(InvalidLength {
+            expected: NONCE_SIZE,
+            actual: nonce.len(),
+        })?;
         Ok(AuthChallenge {
             nonce: *random_nonce,
             timestamp: DateTime::from_timestamp_nanos(timestamp),

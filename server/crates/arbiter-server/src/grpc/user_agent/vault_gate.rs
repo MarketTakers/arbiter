@@ -15,37 +15,35 @@ mod outbound;
 #[async_trait]
 impl Receiver<vault_gate::Inbound> for AuthTransportAdapter<'_> {
     async fn recv(&mut self) -> Option<vault_gate::Inbound> {
-        loop {
-            let request = match self.bi_mut().recv().await? {
-                Ok(request) => request,
-                Err(error) => {
-                    warn!(
-                        ?error,
-                        "Failed to receive user agent request during vault gate"
-                    );
-                    return None;
-                }
-            };
-
-            if let Err(err) = self.tracker_mut().request(request.id) {
-                let _ = self.bi_mut().send(Err(err)).await;
+        let request = match self.bi_mut().recv().await? {
+            Ok(request) => request,
+            Err(error) => {
+                warn!(
+                    ?error,
+                    "Failed to receive user agent request during vault gate"
+                );
                 return None;
             }
+        };
 
-            let Some(payload) = request.payload else {
-                let _ = self
-                    .bi_mut()
-                    .send(Err(Status::invalid_argument("Missing request payload")))
-                    .await;
-                return None;
-            };
+        if let Err(err) = self.tracker_mut().request(request.id) {
+            let _ = self.bi_mut().send(Err(err)).await;
+            return None;
+        }
 
-            match payload.try_convert() {
-                Ok(inbound) => return Some(inbound),
-                Err(status) => {
-                    let _ = self.bi_mut().send(Err(status)).await;
-                    return None;
-                }
+        let Some(payload) = request.payload else {
+            let _ = self
+                .bi_mut()
+                .send(Err(Status::invalid_argument("Missing request payload")))
+                .await;
+            return None;
+        };
+
+        match payload.try_convert() {
+            Ok(inbound) => Some(inbound),
+            Err(status) => {
+                let _ = self.bi_mut().send(Err(status)).await;
+                None
             }
         }
     }
