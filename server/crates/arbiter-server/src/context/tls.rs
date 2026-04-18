@@ -1,17 +1,3 @@
-use std::{net::Ipv4Addr, string::FromUtf8Error};
-
-use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper as _};
-use diesel_async::{AsyncConnection, RunQueryDsl};
-
-use pem::Pem;
-use rcgen::{
-    BasicConstraints, Certificate, CertificateParams, CertifiedIssuer, DistinguishedName, DnType,
-    IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType,
-};
-use rustls::pki_types::pem::PemObject;
-use thiserror::Error;
-use tonic::transport::CertificateDer;
-
 use crate::db::{
     self,
     models::{NewTlsHistory, TlsHistory},
@@ -20,6 +6,18 @@ use crate::db::{
         tls_history::{self},
     },
 };
+
+use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper as _};
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use pem::Pem;
+use rcgen::{
+    BasicConstraints, Certificate, CertificateParams, CertifiedIssuer, DistinguishedName, DnType,
+    IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType,
+};
+use rustls::pki_types::pem::PemObject;
+use std::{net::Ipv4Addr, string::FromUtf8Error};
+use thiserror::Error;
+use tonic::transport::CertificateDer;
 
 const ENCODE_CONFIG: pem::EncodeConfig = {
     let line_ending = if cfg!(target_family = "windows") {

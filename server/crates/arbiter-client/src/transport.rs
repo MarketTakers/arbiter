@@ -1,4 +1,5 @@
 use arbiter_proto::proto::client::{ClientRequest, ClientResponse};
+
 use std::sync::atomic::{AtomicI32, Ordering};
 use tokio::sync::mpsc;
 
@@ -24,10 +25,7 @@ pub struct ClientTransport {
 }
 
 impl ClientTransport {
-    pub(crate) async fn send(
-        &mut self,
-        request: ClientRequest,
-    ) -> Result<(), ClientSignError> {
+    pub(crate) async fn send(&mut self, request: ClientRequest) -> Result<(), ClientSignError> {
         self.sender
             .send(request)
             .await

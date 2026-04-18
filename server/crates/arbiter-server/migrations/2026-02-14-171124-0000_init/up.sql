@@ -45,13 +45,11 @@ insert into arbiter_settings (id) values (1) on conflict do nothing;
 
 create table if not exists useragent_client (
     id integer not null primary key,
-    nonce integer not null default(1), -- used for auth challenge
     public_key blob not null,
-    key_type integer not null default(1),
     created_at integer not null default(unixepoch ('now')),
     updated_at integer not null default(unixepoch ('now'))
 ) STRICT;
-create unique index if not exists uniq_useragent_client_public_key on useragent_client (public_key, key_type);
+create unique index if not exists uniq_useragent_client_public_key on useragent_client (public_key);
 
 create table if not exists client_metadata (
     id integer not null primary key,
@@ -73,7 +71,6 @@ create unique index if not exists uniq_metadata_binding_client on client_metadat
 
 create table if not exists program_client (
     id integer not null primary key,
-    nonce integer not null default(1), -- used for auth challenge
     public_key blob not null,
     metadata_id integer not null references client_metadata (id) on delete cascade,
     created_at integer not null default(unixepoch ('now')),

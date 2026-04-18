@@ -1,3 +1,17 @@
+use crate::{
+    grpc::{
+        Convert, TryConvert,
+        common::inbound::{RawEvmAddress, RawEvmTransaction},
+    },
+    peers::user_agent::{
+        UserAgentSession,
+        session::handlers::{
+            GrantMutationError, HandleEvmWalletCreate, HandleEvmWalletList, HandleGrantCreate,
+            HandleGrantDelete, HandleGrantList, HandleSignTransaction,
+            SignTransactionError as SessionSignTransactionError,
+        },
+    },
+};
 use arbiter_proto::proto::{
     evm::{
         EvmError as ProtoEvmError, EvmGrantCreateRequest, EvmGrantCreateResponse,
@@ -18,24 +32,10 @@ use arbiter_proto::proto::{
         user_agent_response::Payload as UserAgentResponsePayload,
     },
 };
+
 use kameo::actor::ActorRef;
 use tonic::Status;
 use tracing::warn;
-
-use crate::{
-    actors::user_agent::{
-        UserAgentSession,
-        session::connection::{
-            GrantMutationError, HandleEvmWalletCreate, HandleEvmWalletList, HandleGrantCreate,
-            HandleGrantDelete, HandleGrantList, HandleSignTransaction,
-            SignTransactionError as SessionSignTransactionError,
-        },
-    },
-    grpc::{
-        Convert, TryConvert,
-        common::inbound::{RawEvmAddress, RawEvmTransaction},
-    },
-};
 
 const fn wrap_evm_response(payload: EvmResponsePayload) -> UserAgentResponsePayload {
     UserAgentResponsePayload::Evm(proto_evm::Response {

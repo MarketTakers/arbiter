@@ -66,7 +66,7 @@ cargo insta review
 The server is actor-based using the **kameo** crate. All long-lived state lives in `GlobalActors`:
 
 - **`Bootstrapper`** — Manages the one-time bootstrap token written to `~/.arbiter/bootstrap_token` on first run.
-- **`KeyHolder`** — Holds the encrypted root key and manages the Sealed/Unsealed vault state machine. On unseal, decrypts the root key into a `memsafe` hardened memory cell.
+- **`Vault`** — Holds the encrypted root key and manages the Sealed/Unsealed vault state machine. On unseal, decrypts the root key into a `memsafe` hardened memory cell.
 - **`FlowCoordinator`** — Coordinates cross-connection flow between user agents and SDK clients.
 - **`EvmActor`** — Handles EVM transaction policy enforcement and signing.
 

@@ -1,5 +1,7 @@
-use tokio::sync::mpsc;
-
+use crate::{
+    grpc::request_tracker::RequestTracker,
+    peers::user_agent::{OutOfBand, UserAgentConnection, UserAgentSession},
+};
 use arbiter_proto::{
     proto::user_agent::{
         UserAgentRequest, UserAgentResponse,
@@ -8,15 +10,12 @@ use arbiter_proto::{
     },
     transport::{Error as TransportError, Receiver, Sender, grpc::GrpcBi},
 };
+
 use async_trait::async_trait;
-use kameo::actor::{ActorRef, Spawn as _};
+use kameo::actor::ActorRef;
+use tokio::sync::mpsc;
 use tonic::Status;
 use tracing::{error, info, warn};
-
-use crate::{
-    actors::user_agent::{OutOfBand, UserAgentConnection, UserAgentSession},
-    grpc::request_tracker::RequestTracker,
-};
 
 mod auth;
 mod evm;
@@ -24,6 +23,7 @@ mod inbound;
 mod outbound;
 mod sdk_client;
 mod vault;
+mod vault_gate;
 
 pub struct OutOfBandAdapter(mpsc::Sender<OutOfBand>);
 
@@ -124,21 +124,22 @@ pub async fn start(
 ) {
     let mut request_tracker = RequestTracker::default();
 
-    let pubkey = match auth::start(&mut conn, &mut bi, &mut request_tracker).await {
-        Ok(pubkey) => pubkey,
-        Err(e) => {
-            warn!(error = ?e, "Authentication failed");
-            return;
-        }
-    };
-
     let (oob_sender, oob_receiver) = mpsc::channel(16);
     let oob_adapter = OutOfBandAdapter(oob_sender);
 
-    let actor = UserAgentSession::spawn(UserAgentSession::new(conn, Box::new(oob_adapter)));
-    let actor_for_cleanup = actor.clone();
+    let actor = {
+        let transport = auth::AuthTransportAdapter::new(&mut bi, &mut request_tracker);
+        match crate::peers::user_agent::start(&mut conn, transport, Box::new(oob_adapter)).await {
+            Ok(actor) => actor,
+            Err(e) => {
+                warn!(error = ?e, "User agent connection failed");
+                return;
+            }
+        }
+    };
 
-    info!(?pubkey, "User authenticated successfully");
-    dispatch_loop(bi, actor, oob_receiver, request_tracker).await;
-    actor_for_cleanup.kill();
+    info!("User agent session established");
+
+    dispatch_loop(bi, actor.clone(), oob_receiver, request_tracker).await;
+    actor.kill();
 }

@@ -9,6 +9,8 @@ PODS:
   - FlutterMacOS (1.0.0)
   - rive_native (0.0.1):
     - FlutterMacOS
+  - rust_lib_arbiter (0.0.1):
+    - FlutterMacOS
   - share_plus (0.0.1):
     - FlutterMacOS
 
@@ -18,6 +20,7 @@ DEPENDENCIES:
   - flutter_secure_storage_darwin (from `Flutter/ephemeral/.symlinks/plugins/flutter_secure_storage_darwin/darwin`)
   - FlutterMacOS (from `Flutter/ephemeral`)
   - rive_native (from `Flutter/ephemeral/.symlinks/plugins/rive_native/macos`)
+  - rust_lib_arbiter (from `Flutter/ephemeral/.symlinks/plugins/rust_lib_arbiter/macos`)
   - share_plus (from `Flutter/ephemeral/.symlinks/plugins/share_plus/macos`)
 
 EXTERNAL SOURCES:
@@ -31,6 +34,8 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral
   rive_native:
     :path: Flutter/ephemeral/.symlinks/plugins/rive_native/macos
+  rust_lib_arbiter:
+    :path: Flutter/ephemeral/.symlinks/plugins/rust_lib_arbiter/macos
   share_plus:
     :path: Flutter/ephemeral/.symlinks/plugins/share_plus/macos
 
@@ -40,6 +45,7 @@ SPEC CHECKSUMS:
   flutter_secure_storage_darwin: acdb3f316ed05a3e68f856e0353b133eec373a23
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
   rive_native: 1c53d33e44c2b54424810effea4590671dd220c7
+  rust_lib_arbiter: 78dcf27cf17e741c6f4f0b12b64a40980746698a
   share_plus: 510bf0af1a42cd602274b4629920c9649c52f4cc
 
 PODFILE CHECKSUM: 224cb1c0d6f5312abfc2477bcb5c7f1fca2574fb

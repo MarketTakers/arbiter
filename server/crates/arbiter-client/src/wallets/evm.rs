@@ -1,13 +1,4 @@
-use alloy::{
-    consensus::SignableTransaction,
-    network::TxSigner,
-    primitives::{Address, B256, ChainId, Signature},
-    signers::{Error, Result, Signer},
-};
-use async_trait::async_trait;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-
+use crate::transport::{ClientTransport, next_request_id};
 use arbiter_proto::proto::{
     client::{
         ClientRequest,
@@ -25,7 +16,15 @@ use arbiter_proto::proto::{
     shared::evm::TransactionEvalError,
 };
 
-use crate::transport::{ClientTransport, next_request_id};
+use alloy::{
+    consensus::SignableTransaction,
+    network::TxSigner,
+    primitives::{Address, B256, ChainId, Signature},
+    signers::{Error, Result, Signer},
+};
+use async_trait::async_trait;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// A typed error payload returned by [`ArbiterEvmWallet`] transaction signing.
 ///

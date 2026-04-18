@@ -1,29 +1,31 @@
-use std::collections::HashMap;
-use std::fmt::Display;
-
-use alloy::primitives::{Address, U256};
-use chrono::{DateTime, Duration, Utc};
-use diesel::dsl::{auto_type, insert_into};
-use diesel::prelude::*;
-use diesel::sqlite::Sqlite;
-use diesel_async::{AsyncConnection, RunQueryDsl};
-
-use crate::crypto::integrity::v1::Integrable;
-use crate::db::models::{
-    EvmBasicGrant, EvmEtherTransferGrant, EvmEtherTransferGrantTarget, EvmEtherTransferLimit,
-    NewEvmEtherTransferLimit, SqliteTimestamp,
-};
-use crate::db::schema::{evm_basic_grant, evm_ether_transfer_limit, evm_transaction_log};
-use crate::evm::policies::{
-    CombinedSettings, Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning, VolumeRateLimit,
-};
+use super::{DatabaseID, EvalContext, EvalViolation};
 use crate::{
+    crypto::integrity::v1::Integrable,
+    db::models::{
+        EvmBasicGrant, EvmEtherTransferGrant, EvmEtherTransferGrantTarget, EvmEtherTransferLimit,
+        NewEvmEtherTransferLimit, SqliteTimestamp,
+    },
+    db::schema::{evm_basic_grant, evm_ether_transfer_limit, evm_transaction_log},
     db::{
         models::{NewEvmEtherTransferGrant, NewEvmEtherTransferGrantTarget},
         schema::{evm_ether_transfer_grant, evm_ether_transfer_grant_target},
     },
+    evm::policies::{
+        CombinedSettings, Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning,
+        VolumeRateLimit,
+    },
     evm::{policies::Policy, utils},
 };
+
+use alloy::primitives::{Address, U256};
+use chrono::{DateTime, Duration, Utc};
+use diesel::{
+    dsl::{auto_type, insert_into},
+    prelude::*,
+    sqlite::Sqlite,
+};
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use std::{collections::HashMap, fmt::Display};
 
 #[auto_type]
 fn grant_join() -> _ {
@@ -31,8 +33,6 @@ fn grant_join() -> _ {
         evm_basic_grant::table.on(evm_ether_transfer_grant::basic_grant_id.eq(evm_basic_grant::id)),
     )
 }
-
-use super::{DatabaseID, EvalContext, EvalViolation};
 
 // Plain ether transfer
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

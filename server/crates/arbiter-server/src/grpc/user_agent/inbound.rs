@@ -1,26 +1,26 @@
-use alloy::primitives::{Address, U256};
-use arbiter_proto::proto::evm::{
-    EtherTransferSettings as ProtoEtherTransferSettings, SharedSettings as ProtoSharedSettings,
-    SpecificGrant as ProtoSpecificGrant, TokenTransferSettings as ProtoTokenTransferSettings,
-    TransactionRateLimit as ProtoTransactionRateLimit, VolumeRateLimit as ProtoVolumeRateLimit,
-    specific_grant::Grant as ProtoSpecificGrantType,
-};
-use arbiter_proto::proto::user_agent::sdk_client::{
-    WalletAccess, WalletAccessEntry as SdkClientWalletAccess,
-};
-use chrono::{DateTime, TimeZone, Utc};
-use prost_types::Timestamp as ProtoTimestamp;
-use tonic::Status;
-
-use crate::db::models::{CoreEvmWalletAccess, NewEvmWalletAccess};
-use crate::grpc::Convert;
 use crate::{
+    db::models::{CoreEvmWalletAccess, NewEvmWalletAccess},
     evm::policies::{
         SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit, ether_transfer,
         token_transfers,
     },
+    grpc::Convert,
     grpc::TryConvert,
 };
+use arbiter_proto::{
+    proto::evm::{
+        EtherTransferSettings as ProtoEtherTransferSettings, SharedSettings as ProtoSharedSettings,
+        SpecificGrant as ProtoSpecificGrant, TokenTransferSettings as ProtoTokenTransferSettings,
+        TransactionRateLimit as ProtoTransactionRateLimit, VolumeRateLimit as ProtoVolumeRateLimit,
+        specific_grant::Grant as ProtoSpecificGrantType,
+    },
+    proto::user_agent::sdk_client::{WalletAccess, WalletAccessEntry as SdkClientWalletAccess},
+};
+
+use alloy::primitives::{Address, U256};
+use chrono::{DateTime, TimeZone, Utc};
+use prost_types::Timestamp as ProtoTimestamp;
+use tonic::Status;
 
 fn address_from_bytes(bytes: &[u8]) -> Result<Address, Status> {
     if bytes.len() != 20 {

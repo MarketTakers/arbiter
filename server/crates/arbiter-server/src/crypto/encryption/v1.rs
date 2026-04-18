@@ -1,5 +1,4 @@
 use argon2::password_hash::Salt as ArgonSalt;
-
 use rand::{
     Rng as _, SeedableRng,
     rngs::{StdRng, SysRng},
@@ -60,7 +59,7 @@ mod tests {
     use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
     #[test]
-    pub fn derive_seal_key_deterministic() {
+    fn derive_seal_key_deterministic() {
         static PASSWORD: &[u8] = b"password";
         let password = SafeCell::new(PASSWORD.to_vec());
         let password2 = SafeCell::new(PASSWORD.to_vec());
@@ -76,7 +75,7 @@ mod tests {
     }
 
     #[test]
-    pub fn successful_derive() {
+    fn successful_derive() {
         static PASSWORD: &[u8] = b"password";
         let password = SafeCell::new(PASSWORD.to_vec());
         let salt = generate_salt();

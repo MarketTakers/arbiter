@@ -7,6 +7,7 @@ import 'package:arbiter/features/identity/pk_manager.dart';
 import 'package:arbiter/proto/arbiter.pbgrpc.dart';
 import 'package:arbiter/proto/user_agent/auth.pb.dart' as ua_auth;
 import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/src/rust/api.dart';
 import 'package:grpc/grpc.dart';
 import 'package:mtcore/markettakers.dart';
 
@@ -61,11 +62,6 @@ Future<Connection> connectAndAuthorize(
     final req = ua_auth.AuthChallengeRequest(
       pubkey: pubkey,
       bootstrapToken: bootstrapToken,
-      keyType: switch (key.alg) {
-        KeyAlgorithm.rsa => ua_auth.KeyType.KEY_TYPE_RSA,
-        KeyAlgorithm.ecdsa => ua_auth.KeyType.KEY_TYPE_ECDSA_SECP256K1,
-        KeyAlgorithm.ed25519 => ua_auth.KeyType.KEY_TYPE_ED25519,
-      },
     );
     final response = await connection.ask(
       UserAgentRequest(auth: ua_auth.Request(challengeRequest: req)),
@@ -97,7 +93,10 @@ Future<Connection> connectAndAuthorize(
       );
     }
 
-    final challenge = _formatChallenge(authResponse.challenge, pubkey);
+    final challenge = await formatChallenge(
+      random: authResponse.challenge.random,
+      timestamp: authResponse.challenge.timestampNanos.toInt(),
+    );
     talker.info(
       'Received auth challenge, signing with key ${base64Encode(pubkey)}',
     );
@@ -106,7 +105,9 @@ Future<Connection> connectAndAuthorize(
     final solutionResponse = await connection.ask(
       UserAgentRequest(
         auth: ua_auth.Request(
-          challengeSolution: ua_auth.AuthChallengeSolution(signature: signature),
+          challengeSolution: ua_auth.AuthChallengeSolution(
+            signature: signature,
+          ),
         ),
       ),
     );
@@ -166,10 +167,4 @@ Future<Connection> _connect(StoredServerInfo serverInfo) async {
   final rx = client.userAgent(tx.stream);
 
   return Connection(channel: channel, tx: tx, rx: rx);
-}
-
-List<int> _formatChallenge(ua_auth.AuthChallenge challenge, List<int> pubkey) {
-  final encodedPubkey = base64Encode(pubkey);
-  final payload = "${challenge.nonce}:$encodedPubkey";
-  return utf8.encode(payload);
 }
