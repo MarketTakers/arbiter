@@ -1,5 +1,6 @@
 import 'package:arbiter/features/connection/connection.dart';
-import 'package:arbiter/proto/user_agent/vault/bootstrap.pb.dart' as ua_bootstrap;
+import 'package:arbiter/proto/user_agent/vault/bootstrap.pb.dart'
+    as ua_bootstrap;
 import 'package:arbiter/proto/user_agent/vault/unseal.pb.dart' as ua_unseal;
 import 'package:arbiter/proto/user_agent/vault/vault.pb.dart' as ua_vault;
 import 'package:arbiter/proto/user_agent.pb.dart';
@@ -27,9 +28,7 @@ Future<ua_bootstrap.BootstrapResult> bootstrapVault(
     ),
   );
   if (!response.hasVault()) {
-    throw Exception(
-      'Expected vault response, got ${response.whichPayload()}',
-    );
+    throw Exception('Expected vault response, got ${response.whichPayload()}');
   }
 
   final vaultResponse = response.vault;

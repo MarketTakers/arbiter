@@ -50,7 +50,9 @@ class _BottomPopupRoute extends StatelessWidget {
           Positioned.fill(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: barrierDismissible ? () => Navigator.of(context).pop() : null,
+              onTap: barrierDismissible
+                  ? () => Navigator.of(context).pop()
+                  : null,
               child: AnimatedBuilder(
                 animation: barrierAnimation,
                 builder: (context, child) {
@@ -71,11 +73,10 @@ class _BottomPopupRoute extends StatelessWidget {
                 child: FadeTransition(
                   opacity: popupAnimation,
                   child: SlideTransition(
-                    position:
-                        Tween<Offset>(
-                          begin: const Offset(0, 0.08),
-                          end: Offset.zero,
-                        ).animate(popupAnimation),
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.08),
+                      end: Offset.zero,
+                    ).animate(popupAnimation),
                     child: GestureDetector(
                       onTap: () {},
                       child: Builder(builder: builder),

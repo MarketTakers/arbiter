@@ -1,5 +1,6 @@
 use arbiter_crypto::authn::SigningKey;
 use arbiter_proto::home_path;
+
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]

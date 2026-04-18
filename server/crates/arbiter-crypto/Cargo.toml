@@ -6,10 +6,10 @@ edition = "2024"
 [dependencies]
 ml-dsa = {workspace = true, optional = true }
 rand = {workspace = true, optional = true}
-base64 = {workspace = true, optional = true }
 memsafe = {version = "0.4.0", optional = true}
 hmac.workspace = true
 alloy.workspace = true
+x-wing = { version = "0.1.0-rc.0", features = ["zeroize"] }
 chrono.workspace = true
 
 [lints]
@@ -17,5 +17,5 @@ workspace = true
 
 [features]
 default = ["authn", "safecell"]
-authn = ["dep:ml-dsa", "dep:rand", "dep:base64"]
+authn = ["dep:ml-dsa", "dep:rand"]
 safecell = ["dep:memsafe"]

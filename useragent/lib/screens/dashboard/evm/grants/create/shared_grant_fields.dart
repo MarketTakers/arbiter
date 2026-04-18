@@ -19,4 +19,3 @@ class AuthorizationFields extends StatelessWidget {
     );
   }
 }
-

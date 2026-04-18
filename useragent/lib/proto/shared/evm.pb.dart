@@ -414,6 +414,79 @@ class GasLimitExceededViolation extends $pb.GeneratedMessage {
   void clearMaxPriorityFeePerGas() => $_clearField(2);
 }
 
+class EvalViolation_ChainIdMismatch extends $pb.GeneratedMessage {
+  factory EvalViolation_ChainIdMismatch({
+    $fixnum.Int64? expected,
+    $fixnum.Int64? actual,
+  }) {
+    final result = create();
+    if (expected != null) result.expected = expected;
+    if (actual != null) result.actual = actual;
+    return result;
+  }
+
+  EvalViolation_ChainIdMismatch._();
+
+  factory EvalViolation_ChainIdMismatch.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory EvalViolation_ChainIdMismatch.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'EvalViolation.ChainIdMismatch',
+      package:
+          const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.shared.evm'),
+      createEmptyInstance: create)
+    ..a<$fixnum.Int64>(
+        1, _omitFieldNames ? '' : 'expected', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..a<$fixnum.Int64>(2, _omitFieldNames ? '' : 'actual', $pb.PbFieldType.OU6,
+        defaultOrMaker: $fixnum.Int64.ZERO)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EvalViolation_ChainIdMismatch clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EvalViolation_ChainIdMismatch copyWith(
+          void Function(EvalViolation_ChainIdMismatch) updates) =>
+      super.copyWith(
+              (message) => updates(message as EvalViolation_ChainIdMismatch))
+          as EvalViolation_ChainIdMismatch;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EvalViolation_ChainIdMismatch create() =>
+      EvalViolation_ChainIdMismatch._();
+  @$core.override
+  EvalViolation_ChainIdMismatch createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static EvalViolation_ChainIdMismatch getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<EvalViolation_ChainIdMismatch>(create);
+  static EvalViolation_ChainIdMismatch? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $fixnum.Int64 get expected => $_getI64(0);
+  @$pb.TagNumber(1)
+  set expected($fixnum.Int64 value) => $_setInt64(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasExpected() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearExpected() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $fixnum.Int64 get actual => $_getI64(1);
+  @$pb.TagNumber(2)
+  set actual($fixnum.Int64 value) => $_setInt64(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasActual() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearActual() => $_clearField(2);
+}
+
 enum EvalViolation_Kind {
   invalidTarget,
   gasLimitExceeded,
@@ -421,6 +494,7 @@ enum EvalViolation_Kind {
   volumetricLimitExceeded,
   invalidTime,
   invalidTransactionType,
+  chainIdMismatch,
   notSet
 }
 
@@ -432,6 +506,7 @@ class EvalViolation extends $pb.GeneratedMessage {
     $0.Empty? volumetricLimitExceeded,
     $0.Empty? invalidTime,
     $0.Empty? invalidTransactionType,
+    EvalViolation_ChainIdMismatch? chainIdMismatch,
   }) {
     final result = create();
     if (invalidTarget != null) result.invalidTarget = invalidTarget;
@@ -442,6 +517,7 @@ class EvalViolation extends $pb.GeneratedMessage {
     if (invalidTime != null) result.invalidTime = invalidTime;
     if (invalidTransactionType != null)
       result.invalidTransactionType = invalidTransactionType;
+    if (chainIdMismatch != null) result.chainIdMismatch = chainIdMismatch;
     return result;
   }
 
@@ -462,6 +538,7 @@ class EvalViolation extends $pb.GeneratedMessage {
     4: EvalViolation_Kind.volumetricLimitExceeded,
     5: EvalViolation_Kind.invalidTime,
     6: EvalViolation_Kind.invalidTransactionType,
+    7: EvalViolation_Kind.chainIdMismatch,
     0: EvalViolation_Kind.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -469,7 +546,7 @@ class EvalViolation extends $pb.GeneratedMessage {
       package:
           const $pb.PackageName(_omitMessageNames ? '' : 'arbiter.shared.evm'),
       createEmptyInstance: create)
-    ..oo(0, [1, 2, 3, 4, 5, 6])
+    ..oo(0, [1, 2, 3, 4, 5, 6, 7])
     ..a<$core.List<$core.int>>(
         1, _omitFieldNames ? '' : 'invalidTarget', $pb.PbFieldType.OY)
     ..aOM<GasLimitExceededViolation>(
@@ -483,6 +560,9 @@ class EvalViolation extends $pb.GeneratedMessage {
         subBuilder: $0.Empty.create)
     ..aOM<$0.Empty>(6, _omitFieldNames ? '' : 'invalidTransactionType',
         subBuilder: $0.Empty.create)
+    ..aOM<EvalViolation_ChainIdMismatch>(
+        7, _omitFieldNames ? '' : 'chainIdMismatch',
+        subBuilder: EvalViolation_ChainIdMismatch.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -510,6 +590,7 @@ class EvalViolation extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   @$pb.TagNumber(5)
   @$pb.TagNumber(6)
+  @$pb.TagNumber(7)
   EvalViolation_Kind whichKind() => _EvalViolation_KindByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(1)
   @$pb.TagNumber(2)
@@ -517,6 +598,7 @@ class EvalViolation extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   @$pb.TagNumber(5)
   @$pb.TagNumber(6)
+  @$pb.TagNumber(7)
   void clearKind() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -582,6 +664,18 @@ class EvalViolation extends $pb.GeneratedMessage {
   void clearInvalidTransactionType() => $_clearField(6);
   @$pb.TagNumber(6)
   $0.Empty ensureInvalidTransactionType() => $_ensure(5);
+
+  @$pb.TagNumber(7)
+  EvalViolation_ChainIdMismatch get chainIdMismatch => $_getN(6);
+  @$pb.TagNumber(7)
+  set chainIdMismatch(EvalViolation_ChainIdMismatch value) =>
+      $_setField(7, value);
+  @$pb.TagNumber(7)
+  $core.bool hasChainIdMismatch() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearChainIdMismatch() => $_clearField(7);
+  @$pb.TagNumber(7)
+  EvalViolation_ChainIdMismatch ensureChainIdMismatch() => $_ensure(6);
 }
 
 /// Transaction was classified but no grant covers it

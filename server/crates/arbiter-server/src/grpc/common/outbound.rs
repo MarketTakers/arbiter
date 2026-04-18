@@ -1,4 +1,10 @@
-use alloy::primitives::U256;
+use crate::{
+    evm::{
+        PolicyError, VetError,
+        policies::{EvalViolation, SpecificMeaning},
+    },
+    grpc::Convert,
+};
 use arbiter_proto::proto::{
     evm::{
         EvmError as ProtoEvmError,
@@ -14,13 +20,7 @@ use arbiter_proto::proto::{
     },
 };
 
-use crate::{
-    evm::{
-        PolicyError, VetError,
-        policies::{EvalViolation, SpecificMeaning},
-    },
-    grpc::Convert,
-};
+use alloy::primitives::U256;
 
 fn u256_to_proto_bytes(value: U256) -> Vec<u8> {
     value.to_be_bytes::<32>().to_vec()

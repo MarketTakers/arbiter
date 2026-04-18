@@ -1,7 +1,7 @@
-use std::io::{self, Write};
-
 use arbiter_client::ArbiterClient;
 use arbiter_proto::{ClientMetadata, url::ArbiterUrl};
+
+use std::io::{self, Write};
 
 #[tokio::main]
 async fn main() {

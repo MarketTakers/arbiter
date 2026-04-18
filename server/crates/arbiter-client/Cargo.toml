@@ -24,3 +24,4 @@ http = "1.4.0"
 rustls-webpki = { version = "0.103.12", features = ["aws-lc-rs"] }
 async-trait.workspace = true
 rand.workspace = true
+chrono.workspace = true

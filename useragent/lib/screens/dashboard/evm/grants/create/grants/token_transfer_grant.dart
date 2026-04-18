@@ -13,7 +13,11 @@ import 'package:sizer/sizer.dart';
 part 'token_transfer_grant.g.dart';
 
 class VolumeLimitEntry {
-  VolumeLimitEntry({required this.id, this.amount = '', this.windowSeconds = ''});
+  VolumeLimitEntry({
+    required this.id,
+    this.amount = '',
+    this.windowSeconds = '',
+  });
 
   final int id;
   final String amount;
@@ -26,7 +30,6 @@ class VolumeLimitEntry {
         windowSeconds: windowSeconds ?? this.windowSeconds,
       );
 }
-
 
 @riverpod
 class TokenGrantLimits extends _$TokenGrantLimits {
@@ -47,7 +50,6 @@ class TokenGrantLimits extends _$TokenGrantLimits {
   void remove(int index) => state = [...state]..removeAt(index);
 }
 
-
 class TokenTransferGrantHandler implements GrantFormHandler {
   const TokenTransferGrantHandler();
 
@@ -65,11 +67,16 @@ class TokenTransferGrantHandler implements GrantFormHandler {
 
     return SpecificGrant(
       tokenTransfer: TokenTransferSettings(
-        tokenContract:
-            parseHexAddress(formValues['tokenContract'] as String? ?? ''),
+        tokenContract: parseHexAddress(
+          formValues['tokenContract'] as String? ?? '',
+        ),
         target: targetText.trim().isEmpty ? null : parseHexAddress(targetText),
         volumeLimits: limits
-            .where((e) => e.amount.trim().isNotEmpty && e.windowSeconds.trim().isNotEmpty)
+            .where(
+              (e) =>
+                  e.amount.trim().isNotEmpty &&
+                  e.windowSeconds.trim().isNotEmpty,
+            )
             .map(
               (e) => VolumeRateLimit(
                 maxVolume: parseBigIntBytes(e.amount),
@@ -153,9 +160,9 @@ class _TokenVolumeLimitsField extends StatelessWidget {
             Expanded(
               child: Text(
                 'Token volume limits',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
             ),
             TextButton.icon(
@@ -196,7 +203,9 @@ class _TokenVolumeLimitRow extends HookWidget {
   @override
   Widget build(BuildContext context) {
     final amountController = useTextEditingController(text: value.amount);
-    final windowController = useTextEditingController(text: value.windowSeconds);
+    final windowController = useTextEditingController(
+      text: value.windowSeconds,
+    );
 
     return Row(
       children: [
@@ -214,8 +223,7 @@ class _TokenVolumeLimitRow extends HookWidget {
         Expanded(
           child: TextField(
             controller: windowController,
-            onChanged: (next) =>
-                onChanged(value.copyWith(windowSeconds: next)),
+            onChanged: (next) => onChanged(value.copyWith(windowSeconds: next)),
             decoration: const InputDecoration(
               labelText: 'Window (seconds)',
               border: OutlineInputBorder(),

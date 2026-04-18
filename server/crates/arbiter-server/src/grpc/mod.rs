@@ -1,3 +1,4 @@
+use crate::peers::{client::ClientConnection, user_agent::UserAgentConnection};
 use arbiter_proto::{
     proto::{
         client::{ClientRequest, ClientResponse},
@@ -5,14 +6,10 @@ use arbiter_proto::{
     },
     transport::grpc::GrpcBi,
 };
+
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, async_trait};
 use tracing::info;
-
-use crate::{
-    actors::{client::ClientConnection, user_agent::UserAgentConnection},
-    grpc::user_agent::start,
-};
 
 mod request_tracker;
 
@@ -63,7 +60,7 @@ impl arbiter_proto::proto::arbiter_service_server::ArbiterService for super::Ser
 
         let (bi, rx) = GrpcBi::from_bi_stream(req_stream);
 
-        tokio::spawn(start(
+        tokio::spawn(user_agent::start(
             UserAgentConnection {
                 db: self.context.db.clone(),
                 actors: self.context.actors.clone(),
