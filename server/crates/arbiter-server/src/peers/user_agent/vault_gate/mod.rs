@@ -1,14 +1,3 @@
-use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
-use chacha20poly1305::{AeadInPlace, KeyInit as _, XChaCha20Poly1305, XNonce};
-use kameo::{Actor, error::SendError, messages, prelude::Message};
-use kameo_actors::message_bus::Register;
-use tokio::sync::oneshot;
-use tracing::{error, info};
-use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
-
-pub mod state;
-use state::*;
-
 use super::Credentials;
 use crate::{
     actors::{
@@ -18,6 +7,17 @@ use crate::{
     crypto::integrity::{self},
     db::DatabasePool,
 };
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
+use state::*;
+
+use chacha20poly1305::{AeadInPlace, KeyInit as _, XChaCha20Poly1305, XNonce};
+use kameo::{Actor, error::SendError, messages, prelude::Message};
+use kameo_actors::message_bus::Register;
+use tokio::sync::oneshot;
+use tracing::{error, info};
+use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
+
+pub mod state;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

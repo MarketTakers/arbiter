@@ -1,17 +1,4 @@
-use arbiter_crypto::authn::{self, AuthChallenge, CLIENT_CONTEXT};
-use arbiter_proto::{
-    ClientMetadata,
-    transport::{Bi, expect_message},
-};
-use chrono::Utc;
-use diesel::{
-    ExpressionMethods as _, OptionalExtension as _, QueryDsl as _, SelectableHelper as _,
-    dsl::insert_into, update,
-};
-use diesel_async::RunQueryDsl as _;
-use kameo::{actor::ActorRef, error::SendError};
-use tracing::error;
-
+use super::{ClientConnection, ClientCredentials, ClientProfile};
 use crate::{
     actors::{
         GlobalActors,
@@ -25,8 +12,20 @@ use crate::{
         schema::program_client,
     },
 };
+use arbiter_crypto::authn::{self, AuthChallenge, CLIENT_CONTEXT};
+use arbiter_proto::{
+    ClientMetadata,
+    transport::{Bi, expect_message},
+};
 
-use super::{ClientConnection, ClientCredentials, ClientProfile};
+use chrono::Utc;
+use diesel::{
+    ExpressionMethods as _, OptionalExtension as _, QueryDsl as _, SelectableHelper as _,
+    dsl::insert_into, update,
+};
+use diesel_async::RunQueryDsl as _;
+use kameo::{actor::ActorRef, error::SendError};
+use tracing::error;
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum Error {

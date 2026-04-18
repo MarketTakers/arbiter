@@ -82,7 +82,7 @@ async fn client_dh_encrypt(
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_unseal_success() {
+async fn test_unseal_success() {
     let seal_key = b"test-seal-key";
     let (_db, gate, _promotion_rx) = setup_sealed_gate(seal_key).await;
 
@@ -94,7 +94,7 @@ pub async fn test_unseal_success() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_unseal_wrong_seal_key() {
+async fn test_unseal_wrong_seal_key() {
     let (_db, gate, _promotion_rx) = setup_sealed_gate(b"correct-key").await;
 
     let encrypted_key = client_dh_encrypt(&gate, b"wrong-key").await;
@@ -110,7 +110,7 @@ pub async fn test_unseal_wrong_seal_key() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_unseal_corrupted_ciphertext() {
+async fn test_unseal_corrupted_ciphertext() {
     let (_db, gate, _promotion_rx) = setup_sealed_gate(b"test-key").await;
 
     let client_secret = EphemeralSecret::random();
@@ -140,7 +140,7 @@ pub async fn test_unseal_corrupted_ciphertext() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_unseal_retry_after_invalid_key() {
+async fn test_unseal_retry_after_invalid_key() {
     let seal_key = b"real-seal-key";
     let (_db, gate, _promotion_rx) = setup_sealed_gate(seal_key).await;
 

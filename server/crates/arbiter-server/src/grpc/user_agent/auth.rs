@@ -1,3 +1,4 @@
+use crate::{grpc::request_tracker::RequestTracker, peers::user_agent::auth};
 use arbiter_crypto::authn;
 use arbiter_proto::{
     proto::user_agent::{
@@ -13,22 +14,18 @@ use arbiter_proto::{
     },
     transport::{Bi, Error as TransportError, Receiver, Sender, grpc::GrpcBi},
 };
+
 use async_trait::async_trait;
 use tonic::Status;
 use tracing::warn;
 
-use crate::{
-    grpc::request_tracker::RequestTracker,
-    peers::user_agent::{Credentials, UserAgentConnection, auth},
-};
-
-pub struct AuthTransportAdapter<'a> {
+pub(super) struct AuthTransportAdapter<'a> {
     pub(super) bi: &'a mut GrpcBi<UserAgentRequest, UserAgentResponse>,
     pub(super) request_tracker: &'a mut RequestTracker,
 }
 
 impl<'a> AuthTransportAdapter<'a> {
-    pub fn new(
+    pub(super) fn new(
         bi: &'a mut GrpcBi<UserAgentRequest, UserAgentResponse>,
         request_tracker: &'a mut RequestTracker,
     ) -> Self {
@@ -185,12 +182,3 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
 }
 
 impl Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {}
-
-pub async fn start(
-    conn: &mut UserAgentConnection,
-    bi: &mut GrpcBi<UserAgentRequest, UserAgentResponse>,
-    request_tracker: &mut RequestTracker,
-) -> Result<Credentials, auth::Error> {
-    let mut transport = AuthTransportAdapter::new(bi, request_tracker);
-    auth::authenticate(conn, &mut transport).await
-}

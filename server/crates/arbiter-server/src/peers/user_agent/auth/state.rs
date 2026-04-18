@@ -1,30 +1,32 @@
-use super::super::{Credentials, UserAgentConnection};
-use arbiter_crypto::authn::{self, AuthChallenge, USERAGENT_CONTEXT};
-use arbiter_proto::transport::Bi;
-use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl};
-use diesel_async::RunQueryDsl;
-use tracing::error;
-
-use super::Error;
+use super::{
+    super::{Credentials, UserAgentConnection},
+    Error,
+};
 use crate::{
     actors::bootstrap::ConsumeToken,
     db::{DatabasePool, schema::useragent_client},
     peers::user_agent::auth::Outbound,
 };
+use arbiter_crypto::authn::{self, AuthChallenge, USERAGENT_CONTEXT};
+use arbiter_proto::transport::Bi;
 
-pub struct ChallengeRequest {
-    pub pubkey: authn::PublicKey,
-    pub bootstrap_token: Option<String>,
+use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl};
+use diesel_async::RunQueryDsl;
+use tracing::error;
+
+pub(super) struct ChallengeRequest {
+    pub(super) pubkey: authn::PublicKey,
+    pub(super) bootstrap_token: Option<String>,
 }
 
-pub struct ChallengeContext {
-    pub challenge: AuthChallenge,
-    pub pubkey: authn::PublicKey,
-    pub bootstrap_token: Option<String>,
+pub(super) struct ChallengeContext {
+    pub(super) challenge: AuthChallenge,
+    pub(super) pubkey: authn::PublicKey,
+    pub(super) bootstrap_token: Option<String>,
 }
 
-pub struct ChallengeSolution {
-    pub solution: Vec<u8>,
+pub(super) struct ChallengeSolution {
+    pub(super) solution: Vec<u8>,
 }
 
 smlang::statemachine!(
@@ -74,13 +76,13 @@ async fn register_key(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<i3
     Ok(id)
 }
 
-pub struct AuthContext<'a, T: ?Sized> {
+pub(super) struct AuthContext<'a, T: ?Sized> {
     pub(super) conn: &'a mut UserAgentConnection,
     pub(super) transport: &'a mut T,
 }
 
 impl<'a, T: ?Sized> AuthContext<'a, T> {
-    pub fn new(conn: &'a mut UserAgentConnection, transport: &'a mut T) -> Self {
+    pub(super) fn new(conn: &'a mut UserAgentConnection, transport: &'a mut T) -> Self {
         Self { conn, transport }
     }
 }

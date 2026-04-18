@@ -1,12 +1,3 @@
-use arbiter_crypto::hashing::Hashable;
-use hmac::Hmac;
-use sha2::Sha256;
-
-use diesel::{ExpressionMethods as _, QueryDsl, dsl::insert_into, sqlite::Sqlite};
-use diesel_async::{AsyncConnection, RunQueryDsl};
-use kameo::{actor::ActorRef, error::SendError};
-use sha2::Digest as _;
-
 use crate::{
     actors::vault::{self, GetState, SignIntegrity, Vault, VerifyIntegrity},
     db::{
@@ -15,6 +6,13 @@ use crate::{
         schema::integrity_envelope,
     },
 };
+use arbiter_crypto::hashing::Hashable;
+
+use diesel::{ExpressionMethods as _, QueryDsl, dsl::insert_into, sqlite::Sqlite};
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use hmac::Hmac;
+use kameo::{actor::ActorRef, error::SendError};
+use sha2::{Digest as _, Sha256};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

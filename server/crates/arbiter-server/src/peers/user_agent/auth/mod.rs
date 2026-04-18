@@ -1,12 +1,11 @@
+use super::{Credentials, UserAgentConnection};
 use arbiter_crypto::authn::{self, AuthChallenge};
 use arbiter_proto::transport::Bi;
+
+use state::*;
 use tracing::error;
 
 mod state;
-use state::*;
-
-use super::Credentials;
-use super::UserAgentConnection;
 
 #[derive(Debug, Clone)]
 pub enum Inbound {

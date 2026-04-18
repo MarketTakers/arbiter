@@ -1,3 +1,9 @@
+use crate::{
+    grpc::{Convert, TryConvert},
+    peers::user_agent::vault_gate::{
+        self as vault_gate, HandleBootstrapEncryptedKey, HandleHandshake, HandleUnsealEncryptedKey,
+    },
+};
 use arbiter_proto::proto::user_agent::{
     user_agent_request::Payload as UserAgentRequestPayload,
     vault::{
@@ -7,14 +13,8 @@ use arbiter_proto::proto::user_agent::{
         unseal::{self as proto_unseal, request::Payload as UnsealRequestPayload},
     },
 };
-use tonic::Status;
 
-use crate::{
-    grpc::{Convert, TryConvert},
-    peers::user_agent::vault_gate::{
-        self as vault_gate, HandleBootstrapEncryptedKey, HandleHandshake, HandleUnsealEncryptedKey,
-    },
-};
+use tonic::Status;
 
 impl TryConvert for UserAgentRequestPayload {
     type Output = vault_gate::Inbound;

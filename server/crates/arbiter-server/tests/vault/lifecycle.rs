@@ -1,3 +1,4 @@
+use crate::common;
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
     actors::{
@@ -10,8 +11,6 @@ use arbiter_server::{
 
 use diesel::{QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
-
-use crate::common;
 
 #[tokio::test]
 #[test_log::test]

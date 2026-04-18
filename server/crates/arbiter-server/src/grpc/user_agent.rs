@@ -1,5 +1,7 @@
-use tokio::sync::mpsc;
-
+use crate::{
+    grpc::request_tracker::RequestTracker,
+    peers::user_agent::{OutOfBand, UserAgentConnection, UserAgentSession},
+};
 use arbiter_proto::{
     proto::user_agent::{
         UserAgentRequest, UserAgentResponse,
@@ -8,15 +10,12 @@ use arbiter_proto::{
     },
     transport::{Error as TransportError, Receiver, Sender, grpc::GrpcBi},
 };
+
 use async_trait::async_trait;
 use kameo::actor::ActorRef;
+use tokio::sync::mpsc;
 use tonic::Status;
 use tracing::{error, info, warn};
-
-use crate::{
-    grpc::request_tracker::RequestTracker,
-    peers::user_agent::{OutOfBand, UserAgentConnection, UserAgentSession},
-};
 
 mod auth;
 mod evm;
@@ -144,4 +143,3 @@ pub async fn start(
     dispatch_loop(bi, actor.clone(), oob_receiver, request_tracker).await;
     actor.kill();
 }
-

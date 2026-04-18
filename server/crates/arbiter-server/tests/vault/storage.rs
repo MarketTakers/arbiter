@@ -1,5 +1,4 @@
-use std::collections::HashSet;
-
+use crate::common;
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
     actors::vault::Error,
@@ -9,8 +8,7 @@ use arbiter_server::{
 
 use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper, dsl::update};
 use diesel_async::RunQueryDsl;
-
-use crate::common;
+use std::collections::HashSet;
 
 #[tokio::test]
 #[test_log::test]

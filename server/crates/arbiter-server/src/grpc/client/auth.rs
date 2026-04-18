@@ -1,3 +1,7 @@
+use crate::{
+    grpc::request_tracker::RequestTracker,
+    peers::client::{self, ClientConnection, auth},
+};
 use arbiter_crypto::authn;
 use arbiter_proto::{
     ClientMetadata,
@@ -17,22 +21,18 @@ use arbiter_proto::{
     },
     transport::{Bi, Error as TransportError, Receiver, Sender, grpc::GrpcBi},
 };
+
 use async_trait::async_trait;
 use tonic::Status;
 use tracing::warn;
 
-use crate::{
-    grpc::request_tracker::RequestTracker,
-    peers::client::{self, ClientConnection, auth},
-};
-
-pub struct AuthTransportAdapter<'a> {
+pub(super) struct AuthTransportAdapter<'a> {
     bi: &'a mut GrpcBi<ClientRequest, ClientResponse>,
     request_tracker: &'a mut RequestTracker,
 }
 
 impl<'a> AuthTransportAdapter<'a> {
-    pub fn new(
+    pub(super) fn new(
         bi: &'a mut GrpcBi<ClientRequest, ClientResponse>,
         request_tracker: &'a mut RequestTracker,
     ) -> Self {
@@ -44,7 +44,7 @@ impl<'a> AuthTransportAdapter<'a> {
 
     fn response_to_proto(response: auth::Outbound) -> AuthResponsePayload {
         match response {
-            auth::Outbound::AuthChallenge {  challenge } => {
+            auth::Outbound::AuthChallenge { challenge } => {
                 AuthResponsePayload::Challenge(ProtoAuthChallenge {
                     timestamp_nanos: challenge
                         .timestamp
@@ -197,7 +197,7 @@ fn client_metadata_from_proto(metadata: ProtoClientInfo) -> ClientMetadata {
     }
 }
 
-pub async fn start(
+pub(super) async fn start(
     conn: &mut ClientConnection,
     bi: &mut GrpcBi<ClientRequest, ClientResponse>,
     request_tracker: &mut RequestTracker,

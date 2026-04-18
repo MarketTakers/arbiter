@@ -1,20 +1,22 @@
+use super::common::ChannelTransport;
 use arbiter_crypto::{
     authn::{self, AuthChallenge, CLIENT_CONTEXT},
     safecell::{SafeCell, SafeCellHandle as _},
 };
-use arbiter_proto::ClientMetadata;
-use arbiter_proto::transport::{Receiver, Sender};
+use arbiter_proto::{
+    ClientMetadata,
+    transport::{Receiver, Sender},
+};
 use arbiter_server::{
     actors::{GlobalActors, vault::Bootstrap},
     crypto::integrity,
     db::{self, schema},
     peers::client::{ClientConnection, ClientCredentials, auth, connect_client},
 };
+
 use diesel::{ExpressionMethods as _, NullableExpressionMethods as _, QueryDsl as _, insert_into};
 use diesel_async::RunQueryDsl;
 use ml_dsa::{KeyGen, MlDsa87, SigningKey, VerifyingKey, signature::Keypair as _};
-
-use super::common::ChannelTransport;
 
 fn metadata(name: &str, description: Option<&str>, version: Option<&str>) -> ClientMetadata {
     ClientMetadata {
@@ -103,7 +105,7 @@ async fn spawn_test_actors(db: &db::DatabasePool) -> GlobalActors {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_unregistered_pubkey_rejected() {
+async fn test_unregistered_pubkey_rejected() {
     let db = db::create_test_pool().await;
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
@@ -130,7 +132,7 @@ pub async fn test_unregistered_pubkey_rejected() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_challenge_auth() {
+async fn test_challenge_auth() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
 
@@ -197,7 +199,7 @@ pub async fn test_challenge_auth() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_metadata_unchanged_does_not_append_history() {
+async fn test_metadata_unchanged_does_not_append_history() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
     let new_key = MlDsa87::key_gen(&mut rand::rng());
@@ -254,7 +256,7 @@ pub async fn test_metadata_unchanged_does_not_append_history() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_metadata_change_appends_history_and_repoints_binding() {
+async fn test_metadata_change_appends_history_and_repoints_binding() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
     let new_key = MlDsa87::key_gen(&mut rand::rng());
@@ -341,7 +343,7 @@ pub async fn test_metadata_change_appends_history_and_repoints_binding() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_challenge_auth_rejects_integrity_tag_mismatch() {
+async fn test_challenge_auth_rejects_integrity_tag_mismatch() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
 

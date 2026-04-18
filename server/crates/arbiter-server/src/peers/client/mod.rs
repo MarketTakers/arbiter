@@ -1,12 +1,12 @@
-use arbiter_crypto::authn;
-use arbiter_macros::Hashable;
-use arbiter_proto::{ClientMetadata, transport::Bi};
-use kameo::actor::Spawn;
-use tracing::{error, info};
-
 use crate::{
     actors::GlobalActors, crypto::integrity::Integrable, db, peers::client::session::ClientSession,
 };
+use arbiter_crypto::authn;
+use arbiter_macros::Hashable;
+use arbiter_proto::{ClientMetadata, transport::Bi};
+
+use kameo::actor::Spawn;
+use tracing::{error, info};
 
 #[derive(Debug, Clone)]
 pub struct ClientProfile {

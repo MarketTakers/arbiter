@@ -1,7 +1,7 @@
-pub struct ToPath(pub &'static str);
+pub(crate) struct ToPath(pub(crate) &'static str);
 
 impl ToPath {
-    pub fn to_path(&self) -> syn::Path {
+    pub(crate) fn to_path(&self) -> syn::Path {
         syn::parse_str(self.0).expect("Invalid path")
     }
 }
@@ -15,5 +15,5 @@ macro_rules! ensure_path {
     }};
 }
 
-pub const HASHABLE_TRAIT_PATH: ToPath = ensure_path!(::arbiter_crypto::hashing::Hashable);
-pub const HMAC_DIGEST_PATH: ToPath = ensure_path!(::arbiter_crypto::hashing::Digest);
+pub(crate) const HASHABLE_TRAIT_PATH: ToPath = ensure_path!(::arbiter_crypto::hashing::Hashable);
+pub(crate) const HMAC_DIGEST_PATH: ToPath = ensure_path!(::arbiter_crypto::hashing::Digest);

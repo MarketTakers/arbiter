@@ -1,11 +1,3 @@
-use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
-use diesel::{
-    ExpressionMethods, OptionalExtension as _, QueryDsl, SelectableHelper as _, dsl::insert_into,
-};
-use diesel_async::RunQueryDsl;
-use kameo::{Actor, actor::ActorRef, messages};
-use rand::{SeedableRng, rng, rngs::StdRng};
-
 use crate::{
     actors::vault::{CreateNew, Decrypt, Vault},
     crypto::integrity,
@@ -23,6 +15,14 @@ use crate::{
     },
 };
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
+
+use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
+use diesel::{
+    ExpressionMethods, OptionalExtension as _, QueryDsl, SelectableHelper as _, dsl::insert_into,
+};
+use diesel_async::RunQueryDsl;
+use kameo::{Actor, actor::ActorRef, messages};
+use rand::{SeedableRng, rng, rngs::StdRng};
 
 pub use crate::evm::safe_signer;
 

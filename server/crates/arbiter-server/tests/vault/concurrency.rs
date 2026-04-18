@@ -1,5 +1,4 @@
-use std::collections::{HashMap, HashSet};
-
+use crate::common;
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
     actors::{
@@ -12,9 +11,8 @@ use arbiter_server::{
 use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper, dsl::sql_query};
 use diesel_async::RunQueryDsl;
 use kameo::actor::{ActorRef, Spawn as _};
+use std::collections::{HashMap, HashSet};
 use tokio::task::JoinSet;
-
-use crate::common;
 
 async fn write_concurrently(
     actor: ActorRef<Vault>,

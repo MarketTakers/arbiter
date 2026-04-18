@@ -8,15 +8,16 @@ use crate::{
     peers::client::ClientProfile,
 };
 use arbiter_crypto::authn;
-
 use arbiter_macros::Hashable;
 use arbiter_proto::transport::{Bi, Sender};
-pub use auth::authenticate;
+use vault_gate::VaultGate;
+
 use kameo::actor::{ActorRef, Spawn as _};
-pub use session::UserAgentSession;
 use tokio::sync::oneshot;
 use tracing::{error, warn};
-use vault_gate::VaultGate;
+
+pub use auth::authenticate;
+pub use session::UserAgentSession;
 
 pub mod auth;
 pub mod session;
@@ -179,7 +180,6 @@ where
 
     Ok(UserAgentSession::spawn(UserAgentSession::new(
         props.clone(),
-        creds,
         oob_sender,
     )))
 }

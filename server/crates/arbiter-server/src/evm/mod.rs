@@ -1,15 +1,3 @@
-pub mod abi;
-pub mod safe_signer;
-
-use alloy::{
-    consensus::TxEip1559,
-    primitives::{TxKind, U256},
-};
-use chrono::Utc;
-use diesel::{ExpressionMethods as _, QueryDsl as _, QueryResult, insert_into, sqlite::Sqlite};
-use diesel_async::{AsyncConnection, RunQueryDsl};
-use kameo::actor::ActorRef;
-
 use crate::{
     actors::vault::Vault,
     crypto::integrity,
@@ -26,6 +14,18 @@ use crate::{
         token_transfers::TokenTransfer,
     },
 };
+
+use alloy::{
+    consensus::TxEip1559,
+    primitives::{TxKind, U256},
+};
+use chrono::Utc;
+use diesel::{ExpressionMethods as _, QueryDsl as _, QueryResult, insert_into, sqlite::Sqlite};
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use kameo::actor::ActorRef;
+
+pub mod abi;
+pub mod safe_signer;
 
 pub mod policies;
 mod utils;
