@@ -132,7 +132,7 @@ impl VaultGate {
         let secret = ephemeral_secret.diffie_hellman(&client_pubkey);
 
         self.state = State::ReadyForExchange {
-            server_key: public_key.clone(),
+            server_key: public_key,
             secret,
         };
 
@@ -179,7 +179,7 @@ impl VaultGate {
             }
             Err(err) => {
                 error!(?err, "Failed to send unseal request to vault");
-                Err(Error::internal("Vault actor error").into())
+                Err(Error::internal("Vault actor error"))
             }
         }
     }

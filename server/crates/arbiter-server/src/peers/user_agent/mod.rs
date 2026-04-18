@@ -81,7 +81,7 @@ async fn verify_integrity(
         .get()
         .await
         .map_err(|_| Error::Internal("DB unavailable".into()))?;
-    match integrity::verify_entity(&mut conn, &vault, credentials, credentials.id).await {
+    match integrity::verify_entity(&mut conn, vault, credentials, credentials.id).await {
         Ok(AttestationStatus::Attested) => Ok(()),
         Ok(AttestationStatus::Unavailable) => {
             Err(Error::Internal("Vault sealed during promotion".into()))
