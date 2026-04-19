@@ -27,17 +27,12 @@ tokio.workspace = true
 rustls.workspace = true
 smlang.workspace = true
 thiserror.workspace = true
-fatality = "0.1.1"
 diesel_migrations = { version = "2.3.1", features = ["sqlite"] }
 async-trait.workspace = true
-secrecy = "0.10.3"
-futures.workspace = true
 tokio-stream.workspace = true
-dashmap = "6.1.0"
 rand.workspace = true
 rcgen.workspace = true
 chrono.workspace = true
-zeroize = { version = "1.8.2", features = ["std", "simd"] }
 kameo.workspace = true
 chacha20poly1305 = { version = "0.10.1", features = ["std"] }
 argon2 = { version = "0.5.3", features = ["zeroize"] }
@@ -46,23 +41,21 @@ strum = { version = "0.28.0", features = ["derive"] }
 pem = "3.0.6"
 sha2.workspace = true
 hmac.workspace = true
-spki.workspace = true
 alloy.workspace = true
 prost-types.workspace = true
-prost.workspace = true
 arbiter-tokens-registry.path = "../arbiter-tokens-registry"
 anyhow = "1.0.102"
-serde_with = "3.18.0"
 mutants.workspace = true
 subtle = "2.6.1"
-ml-dsa.workspace = true
-ed25519-dalek.workspace = true
 x25519-dalek.workspace = true
 k256.workspace = true
 kameo_actors.workspace = true
 
 [dev-dependencies]
-insta = "1.47.2"
 proptest = "1.11.0"
 rstest.workspace = true
 test-log = { version = "0.2", default-features = false, features = ["trace"] }
+ml-dsa.workspace = true
+
+[lib]
+doctest = false

@@ -20,3 +20,6 @@ workspace = true
 default = ["authn", "safecell"]
 authn = ["dep:ml-dsa", "dep:rand"]
 safecell = ["dep:memsafe"]
+
+[lib]
+doctest = false

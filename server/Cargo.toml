@@ -10,7 +10,6 @@ alloy = "2.0.0"
 async-trait = "0.1.89"
 base64 = "0.22.1"
 chrono = { version = "0.4.44", features = ["serde"] }
-ed25519-dalek = { version = "3.0.0-pre.6", features = ["rand_core"] }
 futures = "0.3.32"
 k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"] }
 kameo = {git = "https://github.com/hdbg/kameo.git", rev = "805b417"}
@@ -23,13 +22,11 @@ prost = "0.14.3"
 prost-types = { version = "0.14.3", features = ["chrono"] }
 rand = "0.10.1"
 rcgen = { version = "0.14.7", features = [ "aws_lc_rs",  "pem", "x509-parser", "zeroize" ], default-features = false }
-rsa = { version = "0.9", features = ["sha2"] }
 rstest = "0.26.1"
 rustls = { version = "0.23.38", features = ["aws-lc-rs", "logging", "prefer-post-quantum", "std"], default-features = false }
 rustls-pki-types = "1.14.0"
 sha2 = "0.11"
 smlang = "0.8.0"
-spki = "0.8"
 thiserror = "2.0.18"
 tokio = { version = "1.52.1", features = ["full"] }
 tokio-stream = { version = "0.1.18", features = ["full"] }
