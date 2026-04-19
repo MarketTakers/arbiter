@@ -26,13 +26,13 @@ use chrono::DateTime;
 pub enum AuthError {
     #[error("Server sent invalid auth challenge")]
     InvalidChallenge,
-    #[error("Client approval denied by User Agent")]
+    #[error("Client approval denied by Operator")]
     ApprovalDenied,
     #[error("Auth challenge was not returned by server")]
     MissingAuthChallenge,
 
-    #[error("No User Agents online to approve client")]
-    NoUserAgentsOnline,
+    #[error("No Operators online to approve client")]
+    NoOperatorsOnline,
 
     #[error("Signing key storage error")]
     Storage(#[from] StorageError),
@@ -44,7 +44,7 @@ pub enum AuthError {
 fn map_auth_result(code: i32) -> AuthError {
     match AuthResult::try_from(code).unwrap_or(AuthResult::Unspecified) {
         AuthResult::ApprovalDenied => AuthError::ApprovalDenied,
-        AuthResult::NoUserAgentsOnline => AuthError::NoUserAgentsOnline,
+        AuthResult::NoOperatorsOnline => AuthError::NoOperatorsOnline,
         AuthResult::Unspecified
         | AuthResult::Success
         | AuthResult::InvalidKey

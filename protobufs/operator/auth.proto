@@ -1,12 +1,10 @@
 syntax = "proto3";
 
-package arbiter.client.auth;
-
-import "shared/client.proto";
+package arbiter.operator.auth;
 
 message AuthChallengeRequest {
   bytes pubkey = 1;
-  arbiter.shared.ClientInfo client_info = 2;
+  optional string bootstrap_token = 2;
 }
 
 message AuthChallenge {
@@ -23,8 +21,8 @@ enum AuthResult {
   AUTH_RESULT_SUCCESS = 1;
   AUTH_RESULT_INVALID_KEY = 2;
   AUTH_RESULT_INVALID_SIGNATURE = 3;
-  AUTH_RESULT_APPROVAL_DENIED = 4;
-  AUTH_RESULT_NO_OPERATORS_ONLINE = 5;
+  AUTH_RESULT_BOOTSTRAP_REQUIRED = 4;
+  AUTH_RESULT_TOKEN_INVALID = 5;
   AUTH_RESULT_INTERNAL = 6;
 }
 

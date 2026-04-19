@@ -48,7 +48,7 @@ impl Bootstrapper {
         let row_count: i64 = {
             let mut conn = db.get().await?;
 
-            schema::useragent_client::table
+            schema::operator_client::table
                 .count()
                 .get_result(&mut conn)
                 .await?

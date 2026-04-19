@@ -14,24 +14,24 @@
 
 | File | Action | Responsibility |
 |---|---|---|
-| `useragent/lib/theme/palette.dart` | Modify | Add `Palette.token` (indigo accent for token-transfer cards) |
-| `useragent/lib/features/connection/evm/wallet_access.dart` | Modify | Add `listAllWalletAccesses()` function |
-| `useragent/lib/providers/sdk_clients/wallet_access_list.dart` | Create | `WalletAccessListProvider` — fetches full wallet access list with IDs |
-| `useragent/lib/screens/dashboard/evm/grants/widgets/grant_card.dart` | Create | `GrantCard` widget — watches enrichment providers + revoke mutation; one card per grant |
-| `useragent/lib/screens/dashboard/evm/grants/grants.dart` | Create | `EvmGrantsScreen` — watches `evmGrantsProvider`; handles loading/error/empty/data states; renders `GrantCard` list |
-| `useragent/lib/router.dart` | Modify | Register `EvmGrantsRoute` in dashboard children |
-| `useragent/lib/screens/dashboard.dart` | Modify | Add Grants entry to `routes` list and `NavigationDestination` list |
+| `operator/lib/theme/palette.dart` | Modify | Add `Palette.token` (indigo accent for token-transfer cards) |
+| `operator/lib/features/connection/evm/wallet_access.dart` | Modify | Add `listAllWalletAccesses()` function |
+| `operator/lib/providers/sdk_clients/wallet_access_list.dart` | Create | `WalletAccessListProvider` — fetches full wallet access list with IDs |
+| `operator/lib/screens/dashboard/evm/grants/widgets/grant_card.dart` | Create | `GrantCard` widget — watches enrichment providers + revoke mutation; one card per grant |
+| `operator/lib/screens/dashboard/evm/grants/grants.dart` | Create | `EvmGrantsScreen` — watches `evmGrantsProvider`; handles loading/error/empty/data states; renders `GrantCard` list |
+| `operator/lib/router.dart` | Modify | Register `EvmGrantsRoute` in dashboard children |
+| `operator/lib/screens/dashboard.dart` | Modify | Add Grants entry to `routes` list and `NavigationDestination` list |
 
 ---
 
 ## Task 1: Add `Palette.token`
 
 **Files:**
-- Modify: `useragent/lib/theme/palette.dart`
+- Modify: `operator/lib/theme/palette.dart`
 
 - [ ] **Step 1: Add the color**
 
-Replace the contents of `useragent/lib/theme/palette.dart` with:
+Replace the contents of `operator/lib/theme/palette.dart` with:
 
 ```dart
 import 'package:flutter/material.dart';
@@ -48,7 +48,7 @@ class Palette {
 - [ ] **Step 2: Verify**
 
 ```sh
-cd useragent && flutter analyze lib/theme/palette.dart
+cd operator && flutter analyze lib/theme/palette.dart
 ```
 
 Expected: no issues.
@@ -65,20 +65,20 @@ jj new
 ## Task 2: Add `listAllWalletAccesses` feature function
 
 **Files:**
-- Modify: `useragent/lib/features/connection/evm/wallet_access.dart`
+- Modify: `operator/lib/features/connection/evm/wallet_access.dart`
 
 `readClientWalletAccess` (existing) filters the list to one client's wallet IDs and returns `Set<int>`. This new function returns the complete unfiltered list with row IDs so the grant cards can resolve wallet_access_id → wallet + client.
 
 - [ ] **Step 1: Append function**
 
-Add at the bottom of `useragent/lib/features/connection/evm/wallet_access.dart`:
+Add at the bottom of `operator/lib/features/connection/evm/wallet_access.dart`:
 
 ```dart
 Future<List<SdkClientWalletAccess>> listAllWalletAccesses(
   Connection connection,
 ) async {
   final response = await connection.ask(
-    UserAgentRequest(listWalletAccess: Empty()),
+    OperatorRequest(listWalletAccess: Empty()),
   );
   if (!response.hasListWalletAccessResponse()) {
     throw Exception(
@@ -97,7 +97,7 @@ Each returned `SdkClientWalletAccess` has:
 - [ ] **Step 2: Verify**
 
 ```sh
-cd useragent && flutter analyze lib/features/connection/evm/wallet_access.dart
+cd operator && flutter analyze lib/features/connection/evm/wallet_access.dart
 ```
 
 Expected: no issues.
@@ -114,18 +114,18 @@ jj new
 ## Task 3: Create `WalletAccessListProvider`
 
 **Files:**
-- Create: `useragent/lib/providers/sdk_clients/wallet_access_list.dart`
-- Generated: `useragent/lib/providers/sdk_clients/wallet_access_list.g.dart`
+- Create: `operator/lib/providers/sdk_clients/wallet_access_list.dart`
+- Generated: `operator/lib/providers/sdk_clients/wallet_access_list.g.dart`
 
 Mirrors the structure of `EvmGrants` in `providers/evm/evm_grants.dart` — class-based `@riverpod` with a `refresh()` method.
 
 - [ ] **Step 1: Write the provider**
 
-Create `useragent/lib/providers/sdk_clients/wallet_access_list.dart`:
+Create `operator/lib/providers/sdk_clients/wallet_access_list.dart`:
 
 ```dart
 import 'package:arbiter/features/connection/evm/wallet_access.dart';
-import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/proto/operator.pb.dart';
 import 'package:arbiter/providers/connection/connection_manager.dart';
 import 'package:mtcore/markettakers.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -165,15 +165,15 @@ class WalletAccessList extends _$WalletAccessList {
 - [ ] **Step 2: Run code generation**
 
 ```sh
-cd useragent && dart run build_runner build --delete-conflicting-outputs
+cd operator && dart run build_runner build --delete-conflicting-outputs
 ```
 
-Expected: `useragent/lib/providers/sdk_clients/wallet_access_list.g.dart` created. No errors.
+Expected: `operator/lib/providers/sdk_clients/wallet_access_list.g.dart` created. No errors.
 
 - [ ] **Step 3: Verify**
 
 ```sh
-cd useragent && flutter analyze lib/providers/sdk_clients/
+cd operator && flutter analyze lib/providers/sdk_clients/
 ```
 
 Expected: no issues.
@@ -190,26 +190,26 @@ jj new
 ## Task 4: Create `GrantCard` widget
 
 **Files:**
-- Create: `useragent/lib/screens/dashboard/evm/grants/widgets/grant_card.dart`
+- Create: `operator/lib/screens/dashboard/evm/grants/widgets/grant_card.dart`
 
 This widget owns all per-card logic: enrichment lookups, revoke action, and rebuild scope. The screen only passes it a `GrantEntry` — the card fetches everything else itself.
 
 **Key types:**
 - `GrantEntry` (from `proto/evm.pb.dart`): `.id`, `.shared.walletAccessId`, `.shared.chainId`, `.specific.whichGrant()`
 - `SpecificGrant_Grant.etherTransfer` / `.tokenTransfer` — enum values for the oneof
-- `SdkClientWalletAccess` (from `proto/user_agent.pb.dart`): `.id`, `.access.walletId`, `.access.sdkClientId`
+- `SdkClientWalletAccess` (from `proto/operator.pb.dart`): `.id`, `.access.walletId`, `.access.sdkClientId`
 - `WalletEntry` (from `proto/evm.pb.dart`): `.id`, `.address` (List<int>)
-- `SdkClientEntry` (from `proto/user_agent.pb.dart`): `.id`, `.info.name`
+- `SdkClientEntry` (from `proto/operator.pb.dart`): `.id`, `.info.name`
 - `revokeEvmGrantMutation` — `Mutation<void>` (global; all revoke buttons disable together while any revoke is in flight)
 - `executeRevokeEvmGrant(ref, grantId: int)` — `Future<void>`
 
 - [ ] **Step 1: Write the widget**
 
-Create `useragent/lib/screens/dashboard/evm/grants/widgets/grant_card.dart`:
+Create `operator/lib/screens/dashboard/evm/grants/widgets/grant_card.dart`:
 
 ```dart
 import 'package:arbiter/proto/evm.pb.dart';
-import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/proto/operator.pb.dart';
 import 'package:arbiter/providers/evm/evm.dart';
 import 'package:arbiter/providers/evm/evm_grants.dart';
 import 'package:arbiter/providers/sdk_clients/list.dart';
@@ -438,7 +438,7 @@ class GrantCard extends ConsumerWidget {
 - [ ] **Step 2: Verify**
 
 ```sh
-cd useragent && flutter analyze lib/screens/dashboard/evm/grants/widgets/grant_card.dart
+cd operator && flutter analyze lib/screens/dashboard/evm/grants/widgets/grant_card.dart
 ```
 
 Expected: no issues.
@@ -455,13 +455,13 @@ jj new
 ## Task 5: Create `EvmGrantsScreen`
 
 **Files:**
-- Create: `useragent/lib/screens/dashboard/evm/grants/grants.dart`
+- Create: `operator/lib/screens/dashboard/evm/grants/grants.dart`
 
 The screen watches only `evmGrantsProvider` for top-level state (loading / error / no connection / empty / data). When there is data it renders a list of `GrantCard` widgets — each card manages its own enrichment subscriptions.
 
 - [ ] **Step 1: Write the screen**
 
-Create `useragent/lib/screens/dashboard/evm/grants/grants.dart`:
+Create `operator/lib/screens/dashboard/evm/grants/grants.dart`:
 
 ```dart
 import 'package:arbiter/proto/evm.pb.dart';
@@ -702,7 +702,7 @@ class EvmGrantsScreen extends ConsumerWidget {
 - [ ] **Step 2: Verify**
 
 ```sh
-cd useragent && flutter analyze lib/screens/dashboard/evm/grants/
+cd operator && flutter analyze lib/screens/dashboard/evm/grants/
 ```
 
 Expected: no issues.
@@ -719,13 +719,13 @@ jj new
 ## Task 6: Wire router and dashboard tab
 
 **Files:**
-- Modify: `useragent/lib/router.dart`
-- Modify: `useragent/lib/screens/dashboard.dart`
-- Regenerated: `useragent/lib/router.gr.dart`
+- Modify: `operator/lib/router.dart`
+- Modify: `operator/lib/screens/dashboard.dart`
+- Regenerated: `operator/lib/router.gr.dart`
 
 - [ ] **Step 1: Add route to `router.dart`**
 
-Replace the contents of `useragent/lib/router.dart` with:
+Replace the contents of `operator/lib/router.dart` with:
 
 ```dart
 import 'package:auto_route/auto_route.dart';
@@ -759,7 +759,7 @@ class Router extends RootStackRouter {
 
 - [ ] **Step 2: Update `dashboard.dart`**
 
-In `useragent/lib/screens/dashboard.dart`, replace the `routes` constant:
+In `operator/lib/screens/dashboard.dart`, replace the `routes` constant:
 
 ```dart
 final routes = [
@@ -800,7 +800,7 @@ destinations: const [
 - [ ] **Step 3: Regenerate router**
 
 ```sh
-cd useragent && dart run build_runner build --delete-conflicting-outputs
+cd operator && dart run build_runner build --delete-conflicting-outputs
 ```
 
 Expected: `lib/router.gr.dart` updated, `EvmGrantsRoute` now available, no errors.
@@ -808,7 +808,7 @@ Expected: `lib/router.gr.dart` updated, `EvmGrantsRoute` now available, no error
 - [ ] **Step 4: Full project verify**
 
 ```sh
-cd useragent && flutter analyze
+cd operator && flutter analyze
 ```
 
 Expected: no issues.

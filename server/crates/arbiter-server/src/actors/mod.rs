@@ -1,7 +1,7 @@
 use crate::{
     actors::{
         bootstrap::Bootstrapper, evm::EvmActor, flow_coordinator::FlowCoordinator,
-        useragent_registry::UserAgentRegistry, vault::Vault,
+        operator_registry::OperatorRegistry, vault::Vault,
     },
     db,
 };
@@ -13,7 +13,7 @@ use thiserror::Error;
 pub mod bootstrap;
 pub mod evm;
 pub mod flow_coordinator;
-pub mod useragent_registry;
+pub mod operator_registry;
 pub mod vault;
 
 #[derive(Error, Debug)]
@@ -31,7 +31,7 @@ pub struct GlobalActors {
     pub vault: ActorRef<Vault>,
     pub bootstrapper: ActorRef<Bootstrapper>,
     pub flow_coordinator: ActorRef<FlowCoordinator>,
-    pub useragent_registry: ActorRef<UserAgentRegistry>,
+    pub operator_registry: ActorRef<OperatorRegistry>,
     pub evm: ActorRef<EvmActor>,
     pub events: ActorRef<MessageBus>,
 }
@@ -44,15 +44,15 @@ impl GlobalActors {
     pub async fn spawn(db: db::DatabasePool) -> Result<Self, SpawnError> {
         let message_bus = Self::spawn_message_bus();
         let key_holder = Vault::spawn(Vault::new(db.clone(), message_bus.clone()).await?);
-        let useragent_registry = UserAgentRegistry::spawn(UserAgentRegistry::default());
+        let operator_registry = OperatorRegistry::spawn(OperatorRegistry::default());
         Ok(Self {
             bootstrapper: Bootstrapper::spawn(Bootstrapper::new(&db).await?),
             evm: EvmActor::spawn(EvmActor::new(key_holder.clone(), db)),
             vault: key_holder,
             flow_coordinator: FlowCoordinator::spawn(FlowCoordinator::new(
-                useragent_registry.clone(),
+                operator_registry.clone(),
             )),
-            useragent_registry,
+            operator_registry,
             events: message_bus,
         })
     }

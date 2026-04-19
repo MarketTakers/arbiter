@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package arbiter.operator.sdk_client;
+
+import "shared/client.proto";
+import "google/protobuf/empty.proto";
+
+enum Error {
+  ERROR_UNSPECIFIED = 0;
+  ERROR_ALREADY_EXISTS = 1;
+  ERROR_NOT_FOUND = 2;
+  ERROR_HAS_RELATED_DATA = 3; // hard-delete blocked by FK (client has grants or transaction logs)
+  ERROR_INTERNAL = 4;
+}
+
+message RevokeRequest {
+  int32 client_id = 1;
+}
+
+message Entry {
+  int32 id = 1;
+  bytes pubkey = 2;
+  arbiter.shared.ClientInfo info = 3;
+  int32 created_at = 4;
+}
+
+message List {
+  repeated Entry clients = 1;
+}
+
+message RevokeResponse {
+  oneof result {
+    google.protobuf.Empty ok = 1;
+    Error error = 2;
+  }
+}
+
+message ListResponse {
+  oneof result {
+    List clients = 1;
+    Error error = 2;
+  }
+}
+
+message ConnectionRequest {
+  bytes pubkey = 1;
+  arbiter.shared.ClientInfo info = 2;
+}
+
+message ConnectionResponse {
+  bool approved = 1;
+  bytes pubkey = 2;
+}
+
+message ConnectionCancel {
+  bytes pubkey = 1;
+}
+
+message WalletAccess {
+  int32 wallet_id = 1;
+  int32 sdk_client_id = 2;
+}
+
+message WalletAccessEntry {
+  int32 id = 1;
+  WalletAccess access = 2;
+}
+
+message GrantWalletAccess {
+  repeated WalletAccess accesses = 1;
+}
+
+message RevokeWalletAccess {
+  repeated int32 accesses = 1;
+}
+
+message ListWalletAccessResponse {
+  repeated WalletAccessEntry accesses = 1;
+}
+
+message Request {
+  oneof payload {
+    ConnectionResponse connection_response = 1;
+    RevokeRequest revoke = 2;
+    google.protobuf.Empty list = 3;
+    GrantWalletAccess grant_wallet_access = 4;
+    RevokeWalletAccess revoke_wallet_access = 5;
+    google.protobuf.Empty list_wallet_access = 6;
+  }
+}
+
+message Response {
+  oneof payload {
+    ConnectionRequest connection_request = 1;
+    ConnectionCancel connection_cancel = 2;
+    RevokeResponse revoke = 3;
+    ListResponse list = 4;
+    ListWalletAccessResponse list_wallet_access = 5;
+  }
+}

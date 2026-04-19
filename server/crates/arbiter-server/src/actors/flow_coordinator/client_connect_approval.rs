@@ -2,7 +2,7 @@ use crate::{
     actors::flow_coordinator::ApprovalError,
     peers::{
         client::ClientProfile,
-        user_agent::{UserAgentSession, session::BeginNewClientApproval},
+        operator::{OperatorSession, session::BeginNewClientApproval},
     },
 };
 
@@ -15,12 +15,12 @@ use std::ops::ControlFlow;
 
 pub struct Args {
     pub client: ClientProfile,
-    pub user_agents: Vec<ActorRef<UserAgentSession>>,
+    pub operators: Vec<ActorRef<OperatorSession>>,
     pub reply: ReplySender<Result<bool, ApprovalError>>,
 }
 
 pub struct ClientApprovalController {
-    /// Number of UAs that have not yet responded (approval or denial) or died.
+    /// Number of operators that have not yet responded (approval or denial) or died.
     pending: usize,
     /// Number of approvals received so far.
     approved: usize,
@@ -42,21 +42,21 @@ impl Actor for ClientApprovalController {
     async fn on_start(
         Args {
             client,
-            user_agents,
+            operators,
             reply,
         }: Self::Args,
         actor_ref: ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
         let this = Self {
-            pending: user_agents.len(),
+            pending: operators.len(),
             approved: 0,
             reply: Some(reply),
         };
 
-        for user_agent in user_agents {
-            actor_ref.link(&user_agent).await;
+        for operator in operators {
+            actor_ref.link(&operator).await;
 
-            let _ = user_agent
+            let _ = operator
                 .tell(BeginNewClientApproval {
                     client: client.clone(),
                     controller: actor_ref.clone(),
@@ -73,10 +73,10 @@ impl Actor for ClientApprovalController {
         _: ActorId,
         _: ActorStopReason,
     ) -> Result<ControlFlow<ActorStopReason>, Self::Error> {
-        // A linked UA died before responding — counts as a non-approval.
+        // A linked operator died before responding — counts as a non-approval.
         self.pending = self.pending.saturating_sub(1);
         if self.pending == 0 {
-            // At least one UA didn't approve: deny.
+            // At least one operator didn't approve: deny.
             self.send_reply(Ok(false));
             return Ok(ControlFlow::Break(ActorStopReason::Normal));
         }
@@ -99,7 +99,7 @@ impl ClientApprovalController {
         self.pending = self.pending.saturating_sub(1);
 
         if self.pending == 0 {
-            // Every connected UA approved.
+            // Every connected operator approved.
             self.send_reply(Ok(true));
             ctx.stop();
         }

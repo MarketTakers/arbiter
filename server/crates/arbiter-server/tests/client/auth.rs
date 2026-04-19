@@ -79,22 +79,22 @@ fn sign_client_challenge(key: &SigningKey<MlDsa87>, challenge: &AuthChallenge) -
         .into()
 }
 
-async fn insert_bootstrap_sentinel_useragent(db: &db::DatabasePool) {
+async fn insert_bootstrap_sentinel_operator(db: &db::DatabasePool) {
     let mut conn = db.get().await.unwrap();
     let sentinel_key = verifying_key(&MlDsa87::key_gen(&mut rand::rng()))
         .encode()
         .0
         .to_vec();
 
-    insert_into(schema::useragent_client::table)
-        .values((schema::useragent_client::public_key.eq(sentinel_key),))
+    insert_into(schema::operator_client::table)
+        .values((schema::operator_client::public_key.eq(sentinel_key),))
         .execute(&mut conn)
         .await
         .unwrap();
 }
 
 async fn spawn_test_actors(db: &db::DatabasePool) -> GlobalActors {
-    insert_bootstrap_sentinel_useragent(db).await;
+    insert_bootstrap_sentinel_operator(db).await;
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors

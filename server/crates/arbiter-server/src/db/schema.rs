@@ -186,7 +186,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    useragent_client (id) {
+    operator_client (id) {
         id -> Integer,
         public_key -> Binary,
         created_at -> Integer,
@@ -233,5 +233,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     program_client,
     root_key_history,
     tls_history,
-    useragent_client,
+    operator_client,
 );

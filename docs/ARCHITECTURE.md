@@ -9,7 +9,7 @@ Arbiter is a permissioned signing service for cryptocurrency wallets. It runs as
 
 Arbiter distinguishes two kinds of peers:
 
-- **User Agent** — A client application used by the owner to manage the vault (create wallets, approve SDK clients, configure policies).
+- **Operator** — A client application used by the owner to manage the vault (create wallets, approve SDK clients, configure policies).
 - **SDK Client** — A consumer of signing capabilities, typically an automation tool. In the future, this could include a browser-based wallet.
 - **Recovery Operator** — A dormant recovery participant with narrowly scoped authority used only for custody recovery and operator replacement.
 
@@ -30,24 +30,24 @@ All peers authenticate via public-key cryptography using a challenge-response pr
 
 Authentication challenges are per-connection, ephemeral values. They are not persisted in the peer tables, and peer records store no challenge state.
 
-### 2.2 User Agent Bootstrap
+### 2.2 Operator Bootstrap
 
-On first run — when no User Agents are registered — the server generates a one-time bootstrap token. It is made available in two ways:
+On first run — when no Operators are registered — the server generates a one-time bootstrap token. It is made available in two ways:
 
-- **Local setup:** Written to `~/.arbiter/bootstrap_token` for automatic discovery by a co-located User Agent.
+- **Local setup:** Written to `~/.arbiter/bootstrap_token` for automatic discovery by a co-located Operator.
 - **Remote setup:** Printed to the server's console output.
 
-The first User Agent must present this token alongside the standard challenge-response to complete registration.
+The first Operator must present this token alongside the standard challenge-response to complete registration.
 
 ### 2.3 SDK Client Registration
 
-There is no bootstrap mechanism for SDK clients. They must be explicitly approved by an already-registered User Agent.
+There is no bootstrap mechanism for SDK clients. They must be explicitly approved by an already-registered Operator.
 
 ---
 
 ## 3. Multi-Operator Governance
 
-When more than one User Agent is registered, the vault is treated as having multiple operators. In that mode, sensitive actions are governed by voting rather than by a single operator decision.
+When more than one Operator is registered, the vault is treated as having multiple operators. In that mode, sensitive actions are governed by voting rather than by a single operator decision.
 
 ### 3.1 Voting Rules
 
@@ -165,13 +165,13 @@ In both cases, committee formation is a coordinated process. Arbiter does not al
 
 When an unbootstrapped vault is initialized as a multi-operator vault, the setup proceeds as follows:
 
-1. An operator connects to the unbootstrapped vault using a User Agent and the bootstrap token.
+1. An operator connects to the unbootstrapped vault using an Operator and the bootstrap token.
 2. During bootstrap setup, that operator declares:
    - the total number of ordinary operators
    - the total number of Recovery Operators
 3. The vault enters **multi-bootstrap mode**.
 4. While in multi-bootstrap mode:
-   - every ordinary operator must connect with a User Agent using the bootstrap token
+   - every ordinary operator must connect with an Operator using the bootstrap token
    - every Recovery Operator must also connect using the bootstrap token
    - each participant is registered individually
    - each participant's share is created and protected with that participant's credentials
@@ -193,8 +193,8 @@ The server proves its identity using TLS with a self-signed certificate. The TLS
 
 Peers verify the server by its **public key fingerprint**:
 
-- **User Agent (local):** Receives the fingerprint automatically through the bootstrap token.
-- **User Agent (remote) / SDK Client:** Must receive the fingerprint out-of-band.
+- **Operator (local):** Receives the fingerprint automatically through the bootstrap token.
+- **Operator (remote) / SDK Client:** Must receive the fingerprint out-of-band.
 
 > A streamlined setup mechanism using a single connection string is planned but not yet implemented.
 
@@ -231,11 +231,11 @@ On boot, the root key is encrypted and the server cannot perform any signing ope
 
 ### 6.2 Unseal Flow
 
-To transition to the **Unsealed** state, a User Agent must provide the password:
+To transition to the **Unsealed** state, an Operator must provide the password:
 
-1. The User Agent initiates an unseal request.
+1. The Operator initiates an unseal request.
 2. The server generates a one-time key pair and returns the public key.
-3. The User Agent encrypts the user's password with this one-time public key and sends the ciphertext to the server.
+3. The Operator encrypts the user's password with this one-time public key and sends the ciphertext to the server.
 4. The server decrypts and verifies the password:
    - **Success:** The root key is decrypted and placed into a hardened memory cell. The server transitions to `Unsealed`. Any entries pending encryption scheme migration are re-encrypted.
    - **Failure:** The server returns an error indicating the password is incorrect.
@@ -257,7 +257,7 @@ See [IMPLEMENTATION.md](IMPLEMENTATION.md) for the current and planned memory pr
 ### 7.1 Fundamental Rules
 
 - SDK clients have **no access by default**.
-- Access is granted **explicitly** by a User Agent.
+- Access is granted **explicitly** by an Operator.
 - Grants are scoped to **specific wallets** and governed by **policies**.
 
 Each blockchain requires its own policy system due to differences in static transaction analysis. Currently, only EVM is supported; Solana support is planned.
@@ -277,19 +277,19 @@ sequenceDiagram
     autonumber
     actor SDK as SDK Client
     participant Server
-    participant UA as User Agent
+    participant operator as Operator
 
     SDK->>Server: SignTransactionRequest
     Server->>Server: Resolve wallet and wallet visibility
     alt Visibility approval required
-        Server->>UA: Ask for wallet visibility approval
-        UA-->>Server: Vote result
+        Server->>operator: Ask for wallet visibility approval
+        operator-->>Server: Vote result
     end
     Server->>Server: Evaluate transaction
     Server->>Server: Load grant and limits context
     alt Grant approval required
-        Server->>UA: Ask for execution / grant approval
-        UA-->>Server: Vote result
+        Server->>operator: Ask for execution / grant approval
+        operator-->>Server: Vote result
         opt Create persistent grant
             Server->>Server: Create and store grant
         end

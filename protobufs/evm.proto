@@ -75,7 +75,7 @@ message SpecificGrant {
   }
 }
 
-// --- UserAgent grant management ---
+// --- Operator grant management ---
 message EvmGrantCreateRequest {
   SharedSettings shared = 1;
   SpecificGrant specific = 2;

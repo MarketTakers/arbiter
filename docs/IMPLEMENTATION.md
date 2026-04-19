@@ -8,10 +8,10 @@ This document covers concrete technology choices and dependencies. For the archi
 
 ### Authentication Result Semantics
 
-Authentication no longer uses an implicit success-only response shape. Both `client` and `user-agent` return explicit auth status enums over the wire.
+Authentication no longer uses an implicit success-only response shape. Both `client` and `operator` return explicit auth status enums over the wire.
 
-- **Client:** `AuthResult` may return `SUCCESS`, `INVALID_KEY`, `INVALID_SIGNATURE`, `APPROVAL_DENIED`, `NO_USER_AGENTS_ONLINE`, or `INTERNAL`
-- **User-agent:** `AuthResult` may return `SUCCESS`, `INVALID_KEY`, `INVALID_SIGNATURE`, `BOOTSTRAP_REQUIRED`, `TOKEN_INVALID`, or `INTERNAL`
+- **Client:** `AuthResult` may return `SUCCESS`, `INVALID_KEY`, `INVALID_SIGNATURE`, `APPROVAL_DENIED`, `NO_OPERATORS_ONLINE`, or `INTERNAL`
+- **Operator:** `AuthResult` may return `SUCCESS`, `INVALID_KEY`, `INVALID_SIGNATURE`, `BOOTSTRAP_REQUIRED`, `TOKEN_INVALID`, or `INTERNAL`
 
 This makes transport-level failures and actor/domain-level auth failures distinct:
 
@@ -22,7 +22,7 @@ Clients are expected to handle these status codes directly and present the concr
 
 ### New Client Approval
 
-When a client whose public key is not yet in the database connects, all connected user agents are asked to approve the connection. The first agent to respond determines the outcome; remaining requests are cancelled via a watch channel.
+When a client whose public key is not yet in the database connects, all connected operators are asked to approve the connection. The first operator to respond determines the outcome; remaining requests are cancelled via a watch channel.
 
 ```mermaid
 flowchart TD
@@ -31,10 +31,10 @@ flowchart TD
 
     C -- yes --> G[Generate AuthChallenge]
 
-    C -- no --> E[Ask all UserAgents:\nClientConnectionRequest]
+    C -- no --> E[Ask all Operators:\nClientConnectionRequest]
     E --> F{First response}
     F -- denied --> Z([Reject connection])
-    F -- approved --> F2[Cancel remaining\nUserAgent requests]
+    F -- approved --> F2[Cancel remaining\nOperator requests]
     F2 --> F3[INSERT client]
     F3 --> G
 
@@ -50,7 +50,7 @@ Auth challenges are generated from fresh random bytes plus a nanosecond timestam
 The authentication schema stores peer identity, not replay counters:
 
 - `program_client` stores the SDK client's public key, metadata binding, and timestamps.
-- `useragent_client` stores the User Agent public key and timestamps.
+- `operator_client` stores the Operator public key and timestamps.
 - Neither table stores an authentication nonce, and challenge generation does not update either table.
 
 ---
@@ -62,7 +62,7 @@ The authentication schema stores peer identity, not replay counters:
 
 ### User-Agent Authentication
 
-User-agent authentication supports multiple signature schemes because platform-provided "hardware-bound" keys do not expose a uniform algorithm across operating systems and hardware.
+Operator authentication supports multiple signature schemes because platform-provided "hardware-bound" keys do not expose a uniform algorithm across operating systems and hardware.
 
 - **Supported schemes:** ML-DSA
 - **Why:** Secure Enclave (MacOS) support them natively, on other platforms we could emulate while they roll-out
@@ -86,7 +86,7 @@ User-agent authentication supports multiple signature schemes because platform-p
 
 ### Request Multiplexing
 
-Both `client` and `user-agent` connections support multiple in-flight requests over one gRPC bidi stream.
+Both `client` and `operator` connections support multiple in-flight requests over one gRPC bidi stream.
 
 - Every request carries a monotonically increasing request ID
 - Every normal response echoes the request ID it corresponds to
@@ -141,7 +141,7 @@ flowchart TD
     L -- Yes --> M[Check grant limits]
     L -- No --> N[Start execution or grant voting flow]
 
-    N --> O{User-agent decision}
+    N --> O{Operator decision}
     O -- Reject --> Z4[Return no matching grant error]
     O -- Allow once --> M
     O -- Create grant --> P[Create grant with user-selected limits]

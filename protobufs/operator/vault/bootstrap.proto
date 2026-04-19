@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package arbiter.operator.vault.bootstrap;
+
+message BootstrapEncryptedKey {
+  bytes nonce = 1;
+  bytes ciphertext = 2;
+  bytes associated_data = 3;
+}
+
+enum BootstrapResult {
+  BOOTSTRAP_RESULT_UNSPECIFIED = 0;
+  BOOTSTRAP_RESULT_SUCCESS = 1;
+  BOOTSTRAP_RESULT_ALREADY_BOOTSTRAPPED = 2;
+  BOOTSTRAP_RESULT_INVALID_KEY = 3;
+}
+
+message Request {
+  BootstrapEncryptedKey encrypted_key = 2;
+}
+
+message Response {
+  BootstrapResult result = 1;
+}

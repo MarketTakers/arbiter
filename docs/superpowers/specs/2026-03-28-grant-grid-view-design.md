@@ -4,7 +4,7 @@
 
 ## Overview
 
-Add a "Grants" dashboard tab to the Flutter user-agent app that displays all EVM grants as a card-based grid. Each card shows a compact summary (type, chain, wallet address, client name) with a revoke action. The tab integrates into the existing `AdaptiveScaffold` navigation alongside Wallets, Clients, and About.
+Add a "Grants" dashboard tab to the Flutter operator app that displays all EVM grants as a card-based grid. Each card shows a compact summary (type, chain, wallet address, client name) with a revoke action. The tab integrates into the existing `AdaptiveScaffold` navigation alongside Wallets, Clients, and About.
 
 ## Scope
 
@@ -23,7 +23,7 @@ Add a "Grants" dashboard tab to the Flutter user-agent app that displays all EVM
 
 ### `walletAccessListProvider`
 
-**File:** `useragent/lib/providers/sdk_clients/wallet_access_list.dart`
+**File:** `operator/lib/providers/sdk_clients/wallet_access_list.dart`
 
 - `@riverpod` class, watches `connectionManagerProvider.future`
 - Returns `List<SdkClientWalletAccess>?` (null when not connected)
@@ -85,7 +85,7 @@ NavigationDestination(
 
 ## Screen: `EvmGrantsScreen`
 
-**File:** `useragent/lib/screens/dashboard/evm/grants/grants.dart`
+**File:** `operator/lib/screens/dashboard/evm/grants/grants.dart`
 
 ```
 Scaffold

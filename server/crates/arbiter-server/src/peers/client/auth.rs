@@ -54,7 +54,7 @@ impl From<diesel::result::Error> for Error {
 pub enum ApproveError {
     #[error("Internal error")]
     Internal,
-    #[error("Client connection denied by user agents")]
+    #[error("Client connection denied by operators")]
     Denied,
     #[error("Upstream error: {0}")]
     Upstream(flow_coordinator::ApprovalError),

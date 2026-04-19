@@ -7,7 +7,7 @@ use ml_dsa::{
 use rand::RngExt;
 
 pub static CLIENT_CONTEXT: &[u8] = b"arbiter_client";
-pub static USERAGENT_CONTEXT: &[u8] = b"arbiter_user_agent";
+pub static OPERATOR_CONTEXT: &[u8] = b"arbiter_operator";
 
 const NONCE_SIZE: usize = 32;
 
@@ -192,7 +192,7 @@ mod tests {
 
     use crate::authn::AuthChallenge;
 
-    use super::{CLIENT_CONTEXT, PublicKey, Signature, SigningKey, USERAGENT_CONTEXT};
+    use super::{CLIENT_CONTEXT, PublicKey, Signature, SigningKey, OPERATOR_CONTEXT};
 
     #[test]
     fn public_key_round_trip_decodes() {
@@ -227,7 +227,7 @@ mod tests {
             .expect("signature should be created");
 
         assert!(public_key.verify(&challenge, CLIENT_CONTEXT, &signature));
-        assert!(!public_key.verify(&challenge, USERAGENT_CONTEXT, &signature));
+        assert!(!public_key.verify(&challenge, OPERATOR_CONTEXT, &signature));
     }
 
     #[test]

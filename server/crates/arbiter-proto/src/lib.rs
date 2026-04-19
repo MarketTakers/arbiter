@@ -12,30 +12,30 @@ pub mod proto {
         }
     }
 
-    pub mod user_agent {
-        tonic::include_proto!("arbiter.user_agent");
+    pub mod operator {
+        tonic::include_proto!("arbiter.operator");
 
         pub mod auth {
-            tonic::include_proto!("arbiter.user_agent.auth");
+            tonic::include_proto!("arbiter.operator.auth");
         }
 
         pub mod evm {
-            tonic::include_proto!("arbiter.user_agent.evm");
+            tonic::include_proto!("arbiter.operator.evm");
         }
 
         pub mod sdk_client {
-            tonic::include_proto!("arbiter.user_agent.sdk_client");
+            tonic::include_proto!("arbiter.operator.sdk_client");
         }
 
         pub mod vault {
-            tonic::include_proto!("arbiter.user_agent.vault");
+            tonic::include_proto!("arbiter.operator.vault");
 
             pub mod bootstrap {
-                tonic::include_proto!("arbiter.user_agent.vault.bootstrap");
+                tonic::include_proto!("arbiter.operator.vault.bootstrap");
             }
 
             pub mod unseal {
-                tonic::include_proto!("arbiter.user_agent.vault.unseal");
+                tonic::include_proto!("arbiter.operator.vault.unseal");
             }
         }
     }
