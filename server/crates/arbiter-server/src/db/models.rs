@@ -248,8 +248,8 @@ pub struct ProgramClient {
 }
 
 #[derive(Queryable, Debug)]
-#[diesel(table_name = schema::useragent_client, check_for_backend(Sqlite))]
-pub struct UseragentClient {
+#[diesel(table_name = schema::operator_client, check_for_backend(Sqlite))]
+pub struct OperatorClient {
     pub id: i32,
     pub public_key: Vec<u8>,
     pub created_at: SqliteTimestamp,

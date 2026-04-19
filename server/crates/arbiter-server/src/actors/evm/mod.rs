@@ -134,7 +134,7 @@ impl EvmActor {
 #[messages]
 impl EvmActor {
     #[message]
-    pub async fn useragent_create_grant(
+    pub async fn operator_create_grant(
         &mut self,
         basic: SharedGrantSettings,
         grant: SpecificGrant,
@@ -161,7 +161,7 @@ impl EvmActor {
 
     #[message]
     #[expect(clippy::unused_async, reason = "reserved for impl")]
-    pub async fn useragent_delete_grant(&mut self, _grant_id: i32) -> Result<(), Error> {
+    pub async fn operator_delete_grant(&mut self, _grant_id: i32) -> Result<(), Error> {
         // let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
         // let vault = self.vault.clone();
 
@@ -186,7 +186,7 @@ impl EvmActor {
     }
 
     #[message]
-    pub async fn useragent_list_grants(&mut self) -> Result<Vec<Grant<SpecificGrant>>, Error> {
+    pub async fn operator_list_grants(&mut self) -> Result<Vec<Grant<SpecificGrant>>, Error> {
         match self.engine.list_all_grants().await {
             Ok(grants) => Ok(grants),
             Err(ListError::Database(db_err)) => Err(Error::Database(db_err)),

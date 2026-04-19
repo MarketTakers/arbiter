@@ -176,8 +176,8 @@ impl Convert for auth::Error {
                 InvalidChallengeSolution => ProtoAuthResult::InvalidSignature,
                 ApproveError(auth::ApproveError::Denied) => ProtoAuthResult::ApprovalDenied,
                 ApproveError(auth::ApproveError::Upstream(
-                    crate::actors::flow_coordinator::ApprovalError::NoUserAgentsConnected,
-                )) => ProtoAuthResult::NoUserAgentsOnline,
+                    crate::actors::flow_coordinator::ApprovalError::NoOperatorsConnected,
+                )) => ProtoAuthResult::NoOperatorsOnline,
                 ApproveError(auth::ApproveError::Internal)
                 | DatabasePoolUnavailable
                 | DatabaseOperationFailed

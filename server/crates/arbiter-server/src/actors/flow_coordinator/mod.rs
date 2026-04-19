@@ -1,7 +1,7 @@
 use crate::{
     actors::{
         flow_coordinator::client_connect_approval::ClientApprovalController,
-        useragent_registry::{GetConnected, UserAgentRegistry},
+        operator_registry::{GetConnected, OperatorRegistry},
     },
     peers::client::{ClientProfile, session::ClientSession},
 };
@@ -20,14 +20,14 @@ pub mod client_connect_approval;
 
 pub struct FlowCoordinator {
     pub clients: HashMap<ActorId, ActorRef<ClientSession>>,
-    useragent_registry: ActorRef<UserAgentRegistry>,
+    operator_registry: ActorRef<OperatorRegistry>,
 }
 
 impl FlowCoordinator {
-    pub fn new(useragent_registry: ActorRef<UserAgentRegistry>) -> Self {
+    pub fn new(operator_registry: ActorRef<OperatorRegistry>) -> Self {
         Self {
             clients: HashMap::default(),
-            useragent_registry,
+            operator_registry,
         }
     }
 }
@@ -66,8 +66,8 @@ impl Actor for FlowCoordinator {
 
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq, Hash)]
 pub enum ApprovalError {
-    #[error("No user agents connected")]
-    NoUserAgentsConnected,
+    #[error("No operators connected")]
+    NoOperatorsConnected,
 }
 
 #[messages]
@@ -93,19 +93,19 @@ impl FlowCoordinator {
             unreachable!("Expected `request_client_approval` to have callback channel");
         };
 
-        let Ok(refs) = self.useragent_registry.ask(GetConnected).await else {
-            reply_sender.send(Err(ApprovalError::NoUserAgentsConnected));
+        let Ok(refs) = self.operator_registry.ask(GetConnected).await else {
+            reply_sender.send(Err(ApprovalError::NoOperatorsConnected));
             return reply;
         };
 
         if refs.is_empty() {
-            reply_sender.send(Err(ApprovalError::NoUserAgentsConnected));
+            reply_sender.send(Err(ApprovalError::NoOperatorsConnected));
             return reply;
         }
 
         ClientApprovalController::spawn(client_connect_approval::Args {
             client,
-            user_agents: refs,
+            operators: refs,
             reply: reply_sender,
         });
 

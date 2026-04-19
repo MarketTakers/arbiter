@@ -6,7 +6,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 Arbiter is a **permissioned signing service** for cryptocurrency wallets. It consists of:
 - **`server/`** — Rust gRPC daemon that holds encrypted keys and enforces policies
-- **`useragent/`** — Flutter desktop app (macOS/Windows) with a Rust backend via Rinf
+- **`operator/`** — Flutter desktop app (macOS/Windows) with a Rust backend via Rinf
 - **`protobufs/`** — Protocol Buffer definitions shared between server and client
 
 The vault never exposes key material; it only produces signatures when requests satisfy configured policies.
@@ -28,7 +28,7 @@ Key versions: Rust 1.93.0 (with clippy), Flutter 3.38.9-stable, protoc 29.6, die
 |---|---|
 | `arbiter-proto` | Generated gRPC stubs + protobuf types; compiled from `protobufs/*.proto` via `tonic-prost-build` |
 | `arbiter-server` | Main daemon — actors, DB, EVM policy engine, gRPC service implementation |
-| `arbiter-useragent` | Rust client library for the user agent side of the gRPC protocol |
+| `arbiter-operator` | Rust client library for the operator side of the gRPC protocol |
 | `arbiter-client` | Rust client library for SDK clients |
 
 ### Common Commands
@@ -67,10 +67,10 @@ The server is actor-based using the **kameo** crate. All long-lived state lives 
 
 - **`Bootstrapper`** — Manages the one-time bootstrap token written to `~/.arbiter/bootstrap_token` on first run.
 - **`Vault`** — Holds the encrypted root key and manages the Sealed/Unsealed vault state machine. On unseal, decrypts the root key into a `memsafe` hardened memory cell.
-- **`FlowCoordinator`** — Coordinates cross-connection flow between user agents and SDK clients.
+- **`FlowCoordinator`** — Coordinates cross-connection flow between operators and SDK clients.
 - **`EvmActor`** — Handles EVM transaction policy enforcement and signing.
 
-Per-connection actors live under `actors/user_agent/` and `actors/client/`, each with `auth` (challenge-response authentication) and `session` (post-auth operations) sub-modules.
+Per-connection actors live under `actors/operator/` and `actors/client/`, each with `auth` (challenge-response authentication) and `session` (post-auth operations) sub-modules.
 
 **Database:** SQLite via `diesel-async` + `bb8` connection pool. Schema managed by embedded Diesel migrations in `crates/arbiter-server/migrations/`. DB file lives at `~/.arbiter/arbiter.sqlite`. Tests use a temp-file DB via `db::create_test_pool()`.
 
@@ -121,20 +121,20 @@ pub fn verify(&self, nonce: i32, context: &[u8], signature: &Signature) -> bool 
 
 This forces callers to either use the return value or explicitly ignore it with `let _ = ...;`, preventing silent failures.
 
-## User Agent (Flutter + Rinf at `useragent/`)
+## Operator (Flutter + Rinf at `operator/`)
 
-The Flutter app uses [Rinf](https://rinf.cunarist.org) to call Rust code. The Rust logic lives in `useragent/native/hub/` as a separate crate that uses `arbiter-useragent` for the gRPC client.
+The Flutter app uses [Rinf](https://rinf.cunarist.org) to call Rust code. The Rust logic lives in `operator/native/hub/` as a separate crate that uses `arbiter-operator` for the gRPC client.
 
-Communication between Dart and Rust uses typed **signals** defined in `useragent/native/hub/src/signals/`. After modifying signal structs, regenerate Dart bindings:
+Communication between Dart and Rust uses typed **signals** defined in `operator/native/hub/src/signals/`. After modifying signal structs, regenerate Dart bindings:
 
 ```sh
-cd useragent && rinf gen
+cd operator && rinf gen
 ```
 
 ### Common Commands
 
 ```sh
-cd useragent
+cd operator
 
 # Run the app (macOS or Windows)
 flutter run
@@ -146,4 +146,4 @@ rinf gen
 flutter analyze
 ```
 
-The Rinf Rust entry point is `useragent/native/hub/src/lib.rs`. It spawns actors defined in `useragent/native/hub/src/actors/` which handle Dart↔server communication via signals.
+The Rinf Rust entry point is `operator/native/hub/src/lib.rs`. It spawns actors defined in `operator/native/hub/src/actors/` which handle Dart↔server communication via signals.
