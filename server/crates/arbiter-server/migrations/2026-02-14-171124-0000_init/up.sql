@@ -43,13 +43,24 @@ create table if not exists arbiter_settings (
 insert into arbiter_settings (id) values (1) on conflict do nothing;
 -- ensure singleton row exists
 
-create table if not exists operator_client (
+create table if not exists operator_identity (
     id integer not null primary key,
     public_key blob not null,
     created_at integer not null default(unixepoch ('now')),
     updated_at integer not null default(unixepoch ('now'))
 ) STRICT;
-create unique index if not exists uniq_operator_client_public_key on operator_client (public_key);
+create unique index if not exists uniq_operator_identity_public_key on operator_identity (public_key);
+
+create table if not exists operator (
+    id integer primary key references operator_identity(id) on delete restrict, -- same id as operator_identity
+
+    share blob not null,
+    share_nonce blob not null,
+
+    created_at integer not null default(unixepoch ('now')),
+    updated_at integer not null default(unixepoch ('now'))
+
+) STRICT;
 
 create table if not exists client_metadata (
     id integer not null primary key,

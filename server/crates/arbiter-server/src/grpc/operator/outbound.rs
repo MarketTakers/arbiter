@@ -103,7 +103,7 @@ impl Convert for EvmWalletAccess {
         Self::Output {
             id: self.id,
             access: Some(WalletAccess {
-                wallet_id: self.wallet_id,
+                wallet_id: self.wallet_id.to_raw(),
                 sdk_client_id: self.client_id,
             }),
         }

@@ -6,7 +6,7 @@ use crate::{
     },
     db::{
         self,
-        models::{self, RootKeyHistory},
+        models::{self, RootKeyHistory, RootKeyHistoryId},
         schema::{self},
     },
 };
@@ -25,7 +25,6 @@ use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
 
 pub mod events {
-
     #[derive(Clone, Copy)]
     pub struct Bootstrapped;
 
@@ -64,7 +63,7 @@ pub enum Error {
 }
 
 struct Unsealed {
-    root_key_history_id: i32,
+    root_key_history_id: RootKeyHistoryId,
     root_key: KeyCell,
 }
 
@@ -73,8 +72,9 @@ struct Unsealed {
 enum State {
     #[default]
     Unbootstrapped,
+
     Sealed {
-        root_key_history_id: i32,
+        root_key_history_id: RootKeyHistoryId,
     },
     Unsealed(Unsealed),
 }
@@ -115,7 +115,10 @@ impl Vault {
 
     // Exclusive transaction to avoid race condtions if multiple vaults write
     // additional layer of protection against nonce-reuse
-    async fn get_new_nonce(pool: &db::DatabasePool, root_key_id: i32) -> Result<Nonce, Error> {
+    async fn get_new_nonce(
+        pool: &db::DatabasePool,
+        root_key_id: RootKeyHistoryId,
+    ) -> Result<Nonce, Error> {
         let mut conn = pool.get().await?;
 
         let nonce = conn
@@ -128,7 +131,7 @@ impl Vault {
 
                 let mut nonce = Nonce::try_from(current_nonce.as_slice()).map_err(|()| {
                     error!(
-                        "Broken database: invalid nonce for root key history id={}",
+                        "Broken database: invalid nonce for root key history id={:#?}",
                         root_key_id
                     );
                     Error::BrokenDatabase
@@ -184,7 +187,7 @@ impl Vault {
         let data_encryption_nonce_bytes = data_encryption_nonce.to_vec();
         let root_key_history_id = conn
             .transaction(async |conn| {
-                let root_key_history_id: i32 = insert_into(schema::root_key_history::table)
+                let root_key_history_id = insert_into(schema::root_key_history::table)
                     .values(&models::NewRootKeyHistory {
                         ciphertext: root_key_ciphertext.clone(),
                         tag: v1::ROOT_KEY_TAG.to_vec(),
@@ -202,7 +205,9 @@ impl Vault {
                     .execute(&mut *conn)
                     .await?;
 
-                Result::<_, diesel::result::Error>::Ok(root_key_history_id)
+                Result::<_, diesel::result::Error>::Ok(RootKeyHistoryId::from_raw(
+                    root_key_history_id,
+                ))
             })
             .await?;
 
@@ -340,7 +345,10 @@ impl Vault {
     }
 
     #[message]
-    pub fn sign_integrity(&mut self, mac_input: Vec<u8>) -> Result<(i32, Vec<u8>), Error> {
+    pub fn sign_integrity(
+        &mut self,
+        mac_input: Vec<u8>,
+    ) -> Result<(RootKeyHistoryId, Vec<u8>), Error> {
         let Unsealed {
             root_key,
             root_key_history_id,
@@ -352,7 +360,7 @@ impl Vault {
                 Ok(v) => v,
                 Err(_) => unreachable!("HMAC accepts keys of any size"),
             });
-        hmac.update(&root_key_history_id.to_be_bytes());
+        hmac.update(&root_key_history_id.to_raw().to_be_bytes());
         hmac.update(&mac_input);
 
         let mac = hmac.finalize().into_bytes().to_vec();
@@ -364,7 +372,7 @@ impl Vault {
         &mut self,
         mac_input: Vec<u8>,
         expected_mac: Vec<u8>,
-        key_version: i32,
+        key_version: RootKeyHistoryId,
     ) -> Result<bool, Error> {
         let Unsealed {
             root_key,
@@ -381,7 +389,7 @@ impl Vault {
                 Ok(v) => v,
                 Err(_) => unreachable!("HMAC accepts keys of any size"),
             });
-        hmac.update(&key_version.to_be_bytes());
+        hmac.update(&key_version.to_raw().to_be_bytes());
         hmac.update(&mac_input);
 
         Ok(hmac.verify_slice(&expected_mac).is_ok())
@@ -405,6 +413,7 @@ impl Vault {
 #[cfg(test)]
 mod tests {
     use crate::actors::GlobalActors;
+    use crate::db::models::RootKeyHistory;
     use arbiter_crypto::safecell::SafeCellHandle as _;
 
     use super::*;
@@ -440,8 +449,8 @@ mod tests {
         assert!(n2.to_vec() > n1.to_vec(), "nonce must increase");
 
         let mut conn = db.get().await.unwrap();
-        let root_row: models::RootKeyHistory = schema::root_key_history::table
-            .select(models::RootKeyHistory::as_select())
+        let root_row: RootKeyHistory = schema::root_key_history::table
+            .select(RootKeyHistory::as_select())
             .first(&mut conn)
             .await
             .unwrap();

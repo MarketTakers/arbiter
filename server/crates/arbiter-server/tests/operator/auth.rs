@@ -206,8 +206,8 @@ pub async fn bootstrap_token_auth() {
     task.await.unwrap().unwrap();
 
     let mut conn = db.get().await.unwrap();
-    let stored_pubkey: Vec<u8> = schema::operator_client::table
-        .select(schema::operator_client::public_key)
+    let stored_pubkey: Vec<u8> = schema::operator_identity::table
+        .select(schema::operator_identity::public_key)
         .first::<Vec<u8>>(&mut conn)
         .await
         .unwrap();
@@ -259,7 +259,7 @@ pub async fn bootstrap_invalid_token_auth() {
     ));
 
     let mut conn = db.get().await.unwrap();
-    let count: i64 = schema::operator_client::table
+    let count: i64 = schema::operator_identity::table
         .count()
         .get_result::<i64>(&mut conn)
         .await
@@ -285,9 +285,9 @@ pub async fn challenge_auth() {
 
     {
         let mut conn = db.get().await.unwrap();
-        let id: i32 = insert_into(schema::operator_client::table)
-            .values((schema::operator_client::public_key.eq(pubkey_bytes.clone()),))
-            .returning(schema::operator_client::id)
+        let id: i32 = insert_into(schema::operator_identity::table)
+            .values((schema::operator_identity::public_key.eq(pubkey_bytes.clone()),))
+            .returning(schema::operator_identity::id)
             .get_result(&mut conn)
             .await
             .unwrap();
@@ -371,8 +371,8 @@ pub async fn challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() {
 
     {
         let mut conn = db.get().await.unwrap();
-        insert_into(schema::operator_client::table)
-            .values((schema::operator_client::public_key.eq(pubkey_bytes.clone()),))
+        insert_into(schema::operator_identity::table)
+            .values((schema::operator_identity::public_key.eq(pubkey_bytes.clone()),))
             .execute(&mut conn)
             .await
             .unwrap();
@@ -444,9 +444,9 @@ pub async fn challenge_auth_rejects_invalid_signature() {
 
     {
         let mut conn = db.get().await.unwrap();
-        let id: i32 = insert_into(schema::operator_client::table)
-            .values((schema::operator_client::public_key.eq(pubkey_bytes.clone()),))
-            .returning(schema::operator_client::id)
+        let id: i32 = insert_into(schema::operator_identity::table)
+            .values((schema::operator_identity::public_key.eq(pubkey_bytes.clone()),))
+            .returning(schema::operator_identity::id)
             .get_result(&mut conn)
             .await
             .unwrap();

@@ -2,7 +2,7 @@ use crate::{
     db::models::NewEvmWalletAccess,
     grpc::Convert,
     peers::operator::{
-        OutOfBand, OperatorSession,
+        OperatorSession, OutOfBand,
         session::handlers::{
             HandleGrantEvmWalletAccess, HandleListWalletAccess, HandleNewClientApprove,
             HandleRevokeEvmWalletAccess, HandleSdkClientList,
@@ -11,8 +11,8 @@ use crate::{
 };
 use arbiter_crypto::authn;
 use arbiter_proto::proto::{
-    shared::ClientInfo as ProtoClientMetadata,
     operator::{
+        operator_response::Payload as OperatorResponsePayload,
         sdk_client::{
             self as proto_sdk_client, ConnectionCancel as ProtoSdkClientConnectionCancel,
             ConnectionRequest as ProtoSdkClientConnectionRequest,
@@ -24,8 +24,8 @@ use arbiter_proto::proto::{
             request::Payload as SdkClientRequestPayload,
             response::Payload as SdkClientResponsePayload,
         },
-        operator_response::Payload as OperatorResponsePayload,
     },
+    shared::ClientInfo as ProtoClientMetadata,
 };
 
 use kameo::actor::ActorRef;
@@ -115,7 +115,7 @@ async fn handle_list(
             clients: clients
                 .into_iter()
                 .map(|(client, metadata)| ProtoSdkClientEntry {
-                    id: client.id,
+                    id: client.id.to_raw(),
                     pubkey: client.public_key.clone(),
                     info: Some(ProtoClientMetadata {
                         name: metadata.name,

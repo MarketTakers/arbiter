@@ -3,7 +3,7 @@ use crate::{
     crypto::integrity,
     db::{
         DatabaseError, DatabasePool,
-        models::{self},
+        models::{self, EvmWalletId},
         schema,
     },
     evm::{
@@ -116,7 +116,7 @@ impl EvmActor {
     }
 
     #[message]
-    pub async fn list_wallets(&self) -> Result<Vec<(i32, Address)>, Error> {
+    pub async fn list_wallets(&self) -> Result<Vec<(EvmWalletId, Address)>, Error> {
         let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
         let rows: Vec<models::EvmWallet> = schema::evm_wallet::table
             .select(models::EvmWallet::as_select())

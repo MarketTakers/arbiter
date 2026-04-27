@@ -1,12 +1,16 @@
 use super::{Error, OperatorSession};
 use crate::{
-    actors::evm::{
-        ClientSignTransaction, Generate, ListWallets, OperatorCreateGrant, OperatorListGrants,
-        SignTransactionError as EvmSignError,
+    actors::{
+        evm::{
+            ClientSignTransaction, Generate, ListWallets, OperatorCreateGrant, OperatorListGrants,
+            SignTransactionError as EvmSignError,
+        },
+        flow_coordinator::client_connect_approval::ClientApprovalAnswer,
+        vault::VaultState,
     },
-    actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer,
-    actors::vault::VaultState,
-    db::models::{EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata},
+    db::models::{
+        EvmWalletAccess, EvmWalletId, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata,
+    },
     evm::policies::{Grant, SpecificGrant},
 };
 use arbiter_crypto::authn;
@@ -70,7 +74,9 @@ impl OperatorSession {
     }
 
     #[message]
-    pub(crate) async fn handle_evm_wallet_list(&mut self) -> Result<Vec<(i32, Address)>, Error> {
+    pub(crate) async fn handle_evm_wallet_list(
+        &mut self,
+    ) -> Result<Vec<(EvmWalletId, Address)>, Error> {
         match self.props.actors.evm.ask(ListWallets {}).await {
             Ok(wallets) => Ok(wallets),
             Err(err) => {

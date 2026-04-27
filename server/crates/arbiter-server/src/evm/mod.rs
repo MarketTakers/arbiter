@@ -359,7 +359,8 @@ mod tests {
     use crate::db::{
         self, DatabaseConnection,
         models::{
-            EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp,
+            EvmBasicGrant, EvmWalletAccess, EvmWalletId, NewEvmBasicGrant, NewEvmTransactionLog,
+            SqliteTimestamp,
         },
         schema::{evm_basic_grant, evm_transaction_log},
     };
@@ -377,7 +378,7 @@ mod tests {
         EvalContext {
             target: EvmWalletAccess {
                 id: WALLET_ACCESS_ID,
-                wallet_id: 10,
+                wallet_id: EvmWalletId::from_raw(5),
                 client_id: 20,
                 created_at: SqliteTimestamp(Utc::now()),
             },

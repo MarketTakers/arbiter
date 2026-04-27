@@ -90,7 +90,7 @@ async fn handle_wallet_list(
                 .into_iter()
                 .map(|(id, address)| WalletEntry {
                     address: address.to_vec(),
-                    id,
+                    id: id.to_raw(),
                 })
                 .collect(),
         }),

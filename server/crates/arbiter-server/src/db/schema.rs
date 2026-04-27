@@ -153,6 +153,25 @@ diesel::table! {
 }
 
 diesel::table! {
+    operator (id) {
+        id -> Nullable<Integer>,
+        share -> Binary,
+        share_nonce -> Binary,
+        created_at -> Integer,
+        updated_at -> Integer,
+    }
+}
+
+diesel::table! {
+    operator_identity (id) {
+        id -> Integer,
+        public_key -> Binary,
+        created_at -> Integer,
+        updated_at -> Integer,
+    }
+}
+
+diesel::table! {
     program_client (id) {
         id -> Integer,
         public_key -> Binary,
@@ -185,15 +204,6 @@ diesel::table! {
     }
 }
 
-diesel::table! {
-    operator_client (id) {
-        id -> Integer,
-        public_key -> Binary,
-        created_at -> Integer,
-        updated_at -> Integer,
-    }
-}
-
 diesel::joinable!(aead_encrypted -> root_key_history (associated_root_key_id));
 diesel::joinable!(arbiter_settings -> root_key_history (root_key_id));
 diesel::joinable!(arbiter_settings -> tls_history (tls_id));
@@ -212,6 +222,7 @@ diesel::joinable!(evm_transaction_log -> evm_wallet_access (wallet_access_id));
 diesel::joinable!(evm_wallet -> aead_encrypted (aead_encrypted_id));
 diesel::joinable!(evm_wallet_access -> evm_wallet (wallet_id));
 diesel::joinable!(evm_wallet_access -> program_client (client_id));
+diesel::joinable!(operator -> operator_identity (id));
 diesel::joinable!(program_client -> client_metadata (metadata_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
@@ -230,8 +241,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     evm_wallet,
     evm_wallet_access,
     integrity_envelope,
+    operator,
+    operator_identity,
     program_client,
     root_key_history,
     tls_history,
-    operator_client,
 );

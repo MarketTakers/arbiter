@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     actors::bootstrap::ConsumeToken,
-    db::{DatabasePool, schema::operator_client},
+    db::{DatabasePool, schema::operator_identity},
     peers::operator::auth::Outbound,
 };
 use arbiter_crypto::authn::{self, AuthChallenge, OPERATOR_CONTEXT};
@@ -44,9 +44,9 @@ async fn get_client_id(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<O
         Error::internal("Database unavailable")
     })?;
 
-    operator_client::table
-        .filter(operator_client::public_key.eq(pubkey.to_bytes()))
-        .select(operator_client::id)
+    operator_identity::table
+        .filter(operator_identity::public_key.eq(pubkey.to_bytes()))
+        .select(operator_identity::id)
         .first::<i32>(&mut conn)
         .await
         .optional()
@@ -63,9 +63,9 @@ async fn register_key(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<i3
         Error::internal("Database unavailable")
     })?;
 
-    let id: i32 = diesel::insert_into(operator_client::table)
-        .values((operator_client::public_key.eq(pubkey_bytes),))
-        .returning(operator_client::id)
+    let id: i32 = diesel::insert_into(operator_identity::table)
+        .values((operator_identity::public_key.eq(pubkey_bytes),))
+        .returning(operator_identity::id)
         .get_result(&mut conn)
         .await
         .map_err(|e| {

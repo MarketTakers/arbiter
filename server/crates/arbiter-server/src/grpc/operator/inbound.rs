@@ -1,11 +1,10 @@
 use crate::{
-    db::models::{CoreEvmWalletAccess, NewEvmWalletAccess},
+    db::models::{CoreEvmWalletAccess, EvmWalletId, NewEvmWalletAccess},
     evm::policies::{
         SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit, ether_transfer,
         token_transfers,
     },
-    grpc::Convert,
-    grpc::TryConvert,
+    grpc::{Convert, TryConvert},
 };
 use arbiter_proto::{
     proto::evm::{
@@ -150,7 +149,7 @@ impl Convert for WalletAccess {
 
     fn convert(self) -> Self::Output {
         NewEvmWalletAccess {
-            wallet_id: self.wallet_id,
+            wallet_id: EvmWalletId::from_raw(self.wallet_id),
             client_id: self.sdk_client_id,
         }
     }
@@ -165,7 +164,7 @@ impl TryConvert for SdkClientWalletAccess {
             return Err(Status::invalid_argument("Missing wallet access entry"));
         };
         Ok(CoreEvmWalletAccess {
-            wallet_id: access.wallet_id,
+            wallet_id: EvmWalletId::from_raw(access.wallet_id),
             client_id: access.sdk_client_id,
             id: self.id,
         })

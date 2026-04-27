@@ -3,7 +3,8 @@ use crate::{
     db::{
         self, DatabaseConnection,
         models::{
-            EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp,
+            EvmBasicGrant, EvmWalletAccess, EvmWalletId, NewEvmBasicGrant, NewEvmTransactionLog,
+            SqliteTimestamp,
         },
         schema::{evm_basic_grant, evm_transaction_log},
     },
@@ -31,7 +32,7 @@ fn ctx(to: Address, value: U256) -> EvalContext {
     EvalContext {
         target: EvmWalletAccess {
             id: WALLET_ACCESS_ID,
-            wallet_id: 10,
+            wallet_id: EvmWalletId::from_raw(10),
             client_id: 20,
             created_at: SqliteTimestamp(Utc::now()),
         },

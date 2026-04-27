@@ -86,8 +86,8 @@ async fn insert_bootstrap_sentinel_operator(db: &db::DatabasePool) {
         .0
         .to_vec();
 
-    insert_into(schema::operator_client::table)
-        .values((schema::operator_client::public_key.eq(sentinel_key),))
+    insert_into(schema::operator_identity::table)
+        .values((schema::operator_identity::public_key.eq(sentinel_key),))
         .execute(&mut conn)
         .await
         .unwrap();

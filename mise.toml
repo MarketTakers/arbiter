@@ -22,3 +22,5 @@ run = '''
 dart pub global activate protoc_plugin && \
 protoc --dart_out=grpc:useragent/lib/proto --proto_path=protobufs/ $(find protobufs -name '*.proto' | sort)
 '''
+
+[tasks.generate_schema]

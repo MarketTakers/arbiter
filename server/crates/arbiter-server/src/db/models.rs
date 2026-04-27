@@ -79,10 +79,41 @@ pub mod types {
         }
     }
 
-    #[derive(Debug, FromSqlRow, AsExpression, Clone)]
-    #[diesel(sql_type = Integer)]
-    #[repr(transparent)] // hint compiler to optimize the wrapper struct away
-    pub struct ChainId(pub i32);
+    macro_rules! declare_id {
+        ($name:ident) => {
+            #[derive(Debug, FromSqlRow, AsExpression, Clone, Hash, Copy, PartialEq, Eq)]
+            #[diesel(sql_type = Integer)]
+            #[repr(transparent)] // hint compiler to optimize the wrapper struct away
+            pub struct $name(i32);
+
+            impl $name {
+                pub const fn to_raw(self) -> i32 {
+                    self.0
+                }
+                pub const fn from_raw(raw: i32) -> Self {
+                    Self(raw)
+                }
+            }
+
+            impl FromSql<Integer, Sqlite> for $name {
+                fn from_sql(
+                    bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
+                ) -> diesel::deserialize::Result<Self> {
+                    FromSql::<Integer, Sqlite>::from_sql(bytes).map(Self)
+                }
+            }
+            impl ToSql<Integer, Sqlite> for $name {
+                fn to_sql<'b>(
+                    &'b self,
+                    out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
+                ) -> diesel::serialize::Result {
+                    ToSql::<Integer, Sqlite>::to_sql(&self.0, out)
+                }
+            }
+        };
+    }
+
+    declare_id!(ChainId);
 
     #[expect(
         clippy::cast_sign_loss,
@@ -103,21 +134,13 @@ pub mod types {
         }
     };
 
-    impl FromSql<Integer, Sqlite> for ChainId {
-        fn from_sql(
-            bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
-        ) -> diesel::deserialize::Result<Self> {
-            FromSql::<Integer, Sqlite>::from_sql(bytes).map(Self)
-        }
-    }
-    impl ToSql<Integer, Sqlite> for ChainId {
-        fn to_sql<'b>(
-            &'b self,
-            out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
-        ) -> diesel::serialize::Result {
-            ToSql::<Integer, Sqlite>::to_sql(&self.0, out)
-        }
-    }
+    declare_id!(OperatorId);
+    declare_id!(OperatorIdentityId);
+    declare_id!(AeadEncryptedId);
+    declare_id!(RootKeyHistoryId);
+    declare_id!(TlsHistoryId);
+    declare_id!(EvmWalletId);
+    declare_id!(ClientId);
 }
 pub use types::*;
 
@@ -130,12 +153,12 @@ pub use types::*;
 )]
 #[diesel(table_name = aead_encrypted, check_for_backend(Sqlite))]
 pub struct AeadEncrypted {
-    pub id: i32,
+    pub id: AeadEncryptedId,
     pub ciphertext: Vec<u8>,
     pub tag: Vec<u8>,
     pub current_nonce: Vec<u8>,
     pub schema_version: i32,
-    pub associated_root_key_id: i32, // references root_key_history.id
+    pub associated_root_key_id: RootKeyHistoryId,
     pub created_at: SqliteTimestamp,
 }
 
@@ -148,7 +171,7 @@ pub struct AeadEncrypted {
     attributes_with = "deriveless"
 )]
 pub struct RootKeyHistory {
-    pub id: i32,
+    pub id: RootKeyHistoryId,
     pub ciphertext: Vec<u8>,
     pub tag: Vec<u8>,
     pub root_key_encryption_nonce: Vec<u8>,
@@ -166,7 +189,7 @@ pub struct RootKeyHistory {
     attributes_with = "deriveless"
 )]
 pub struct TlsHistory {
-    pub id: i32,
+    pub id: TlsHistoryId,
     pub cert: String,
     pub cert_key: String, // PEM Encoded private key
     pub ca_cert: String,  // PEM Encoded certificate for cert signing
@@ -191,7 +214,7 @@ pub struct ArbiterSettings {
     attributes_with = "deriveless"
 )]
 pub struct EvmWallet {
-    pub id: i32,
+    pub id: EvmWalletId,
     pub address: Vec<u8>,
     pub aead_encrypted_id: i32,
     pub created_at: SqliteTimestamp,
@@ -213,7 +236,7 @@ pub struct EvmWallet {
 )]
 pub struct EvmWalletAccess {
     pub id: i32,
-    pub wallet_id: i32,
+    pub wallet_id: EvmWalletId,
     pub client_id: i32,
     pub created_at: SqliteTimestamp,
 }
@@ -240,7 +263,7 @@ pub struct ProgramClientMetadataHistory {
 #[derive(Models, Queryable, Debug, Insertable, Selectable)]
 #[diesel(table_name = schema::program_client, check_for_backend(Sqlite))]
 pub struct ProgramClient {
-    pub id: i32,
+    pub id: ClientId,
     pub public_key: Vec<u8>,
     pub metadata_id: i32,
     pub created_at: SqliteTimestamp,
@@ -250,8 +273,18 @@ pub struct ProgramClient {
 #[derive(Queryable, Debug)]
 #[diesel(table_name = schema::operator_client, check_for_backend(Sqlite))]
 pub struct OperatorClient {
-    pub id: i32,
+    pub id: OperatorIdentityId,
     pub public_key: Vec<u8>,
+    pub created_at: SqliteTimestamp,
+    pub updated_at: SqliteTimestamp,
+}
+
+#[derive(Queryable, Debug)]
+#[diesel(table_name = schema::operator, check_for_backend(Sqlite))]
+pub struct Operator {
+    pub id: OperatorId,
+    pub share: Vec<u8>,
+    pub share_nonce: Vec<u8>,
     pub created_at: SqliteTimestamp,
     pub updated_at: SqliteTimestamp,
 }
@@ -399,7 +432,7 @@ pub struct IntegrityEnvelope {
     pub entity_kind: String,
     pub entity_id: Vec<u8>,
     pub payload_version: i32,
-    pub key_version: i32,
+    pub key_version: RootKeyHistoryId,
     pub mac: Vec<u8>,
     pub signed_at: SqliteTimestamp,
     pub created_at: SqliteTimestamp,

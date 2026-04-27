@@ -2,7 +2,7 @@ use super::{Settings, TokenTransfer};
 use crate::{
     db::{
         self, DatabaseConnection,
-        models::{EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, SqliteTimestamp},
+        models::{EvmBasicGrant, EvmWalletAccess, EvmWalletId, NewEvmBasicGrant, SqliteTimestamp},
         schema::evm_basic_grant,
     },
     evm::{
@@ -45,7 +45,7 @@ fn ctx(to: Address, calldata: Bytes) -> EvalContext {
     EvalContext {
         target: EvmWalletAccess {
             id: WALLET_ACCESS_ID,
-            wallet_id: 10,
+            wallet_id: EvmWalletId::from_raw(10),
             client_id: 20,
             created_at: SqliteTimestamp(Utc::now()),
         },
