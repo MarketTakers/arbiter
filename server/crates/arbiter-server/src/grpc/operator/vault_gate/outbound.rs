@@ -4,7 +4,6 @@ use crate::{
     peers::operator::vault_gate::{self as vault_gate},
 };
 use arbiter_proto::proto::{
-    shared::VaultState as ProtoVaultState,
     operator::{
         operator_response::Payload as OperatorResponsePayload,
         vault::{
@@ -17,6 +16,7 @@ use arbiter_proto::proto::{
             },
         },
     },
+    shared::VaultState as ProtoVaultState,
 };
 
 use tonic::Status;
@@ -46,6 +46,7 @@ impl Convert for VaultState {
     fn convert(self) -> OperatorResponsePayload {
         let proto_state = match self {
             Self::Unbootstrapped => ProtoVaultState::Unbootstrapped,
+            Self::Bootstrapping => ProtoVaultState::Boostrapping,
             Self::Sealed => ProtoVaultState::Sealed,
             Self::Unsealed => ProtoVaultState::Unsealed,
         };

@@ -22,7 +22,7 @@ pub trait SafeCellHandle<T> {
     fn read(&mut self) -> Self::CellRead<'_>;
     fn write(&mut self) -> Self::CellWrite<'_>;
 
-    fn new_inline<F>(f: F) -> Self
+    fn new_inline_default<F>(f: F) -> Self
     where
         Self: Sized,
         T: Default,
@@ -34,6 +34,14 @@ pub trait SafeCellHandle<T> {
             f(&mut *handle);
         }
         cell
+    }
+
+    fn new_inline<F>(f: Box<F>) -> Self
+    where
+        Self: Sized,
+        F: for<'a> FnOnce() -> T,
+    {
+        Self::new(f())
     }
 
     #[inline(always)]

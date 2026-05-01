@@ -28,7 +28,7 @@ impl TryFrom<SafeCell<Vec<u8>>> for KeyCell {
         if value.len() != size_of::<Key>() {
             return Err(());
         }
-        let cell = SafeCell::new_inline(|cell_write: &mut Key| {
+        let cell = SafeCell::new_inline_default(|cell_write: &mut Key| {
             cell_write.copy_from_slice(&value);
         });
         Ok(Self(cell))
@@ -37,7 +37,7 @@ impl TryFrom<SafeCell<Vec<u8>>> for KeyCell {
 
 impl KeyCell {
     pub fn new_secure_random() -> Self {
-        let key = SafeCell::new_inline(|key_buffer: &mut Key| {
+        let key = SafeCell::new_inline_default(|key_buffer: &mut Key| {
             let mut rng = StdRng::try_from_rng(&mut SysRng)
                 .expect("Rng failure is unrecoverable and should panic");
             rng.fill_bytes(key_buffer);
@@ -94,7 +94,7 @@ impl KeyCell {
 }
 
 /// Derive a fixed-length key from the password using Argon2id, which is designed for password hashing and key derivation.
-pub fn derive_key(mut password: SafeCell<Vec<u8>>, salt: &Salt) -> KeyCell {
+pub fn derive_key(password: &mut SafeCell<Vec<u8>>, salt: &Salt) -> KeyCell {
     let params = {
         #[cfg(debug_assertions)]
         {

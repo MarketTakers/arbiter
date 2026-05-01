@@ -3,7 +3,6 @@ use crate::{
     peers::operator::{OperatorSession, session::handlers::HandleQueryVaultState},
 };
 use arbiter_proto::{
-    proto::shared::VaultState as ProtoVaultState,
     proto::operator::{
         operator_response::Payload as OperatorResponsePayload,
         vault::{
@@ -11,6 +10,7 @@ use arbiter_proto::{
             response::Payload as VaultResponsePayload,
         },
     },
+    proto::shared::VaultState as ProtoVaultState,
 };
 
 use kameo::actor::ActorRef;
@@ -47,6 +47,7 @@ async fn handle_query_vault_state(
     let state = match actor.ask(HandleQueryVaultState {}).await {
         Ok(VaultState::Unbootstrapped) => ProtoVaultState::Unbootstrapped,
         Ok(VaultState::Sealed) => ProtoVaultState::Sealed,
+        Ok(VaultState::Bootstrapping) => ProtoVaultState::Boostrapping,
         Ok(VaultState::Unsealed) => ProtoVaultState::Unsealed,
         Err(err) => {
             warn!(error = ?err, "Failed to query vault state");
