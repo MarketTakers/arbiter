@@ -171,46 +171,42 @@ async fn insert_client(
         Error::DatabasePoolUnavailable
     })?;
 
-    conn.exclusive_transaction(|conn| {
-        let vault = vault.clone();
-        let pubkey = pubkey.clone();
-        Box::pin(async move {
-            let metadata_id = insert_into(client_metadata::table)
-                .values((
-                    client_metadata::name.eq(&metadata.name),
-                    client_metadata::description.eq(&metadata.description),
-                    client_metadata::version.eq(&metadata.version),
-                ))
-                .returning(client_metadata::id)
-                .get_result::<i32>(conn)
-                .await?;
+    conn.exclusive_transaction(async |conn| {
+        let metadata_id = insert_into(client_metadata::table)
+            .values((
+                client_metadata::name.eq(&metadata.name),
+                client_metadata::description.eq(&metadata.description),
+                client_metadata::version.eq(&metadata.version),
+            ))
+            .returning(client_metadata::id)
+            .get_result::<i32>(&mut *conn)
+            .await?;
 
-            let client_id = insert_into(program_client::table)
-                .values((
-                    program_client::public_key.eq(pubkey.to_bytes()),
-                    program_client::metadata_id.eq(metadata_id),
-                ))
-                .on_conflict_do_nothing()
-                .returning(program_client::id)
-                .get_result::<i32>(conn)
-                .await?;
+        let client_id = insert_into(program_client::table)
+            .values((
+                program_client::public_key.eq(pubkey.to_bytes()),
+                program_client::metadata_id.eq(metadata_id),
+            ))
+            .on_conflict_do_nothing()
+            .returning(program_client::id)
+            .get_result::<i32>(&mut *conn)
+            .await?;
 
-            integrity::sign_entity(
-                conn,
-                &vault,
-                &ClientCredentials {
-                    pubkey: pubkey.clone(),
-                },
-                client_id,
-            )
-            .await
-            .map_err(|e| {
-                error!(error = ?e, "Failed to sign integrity tag for new client key");
-                Error::DatabaseOperationFailed
-            })?;
+        integrity::sign_entity(
+            &mut *conn,
+            vault,
+            &ClientCredentials {
+                pubkey: pubkey.clone(),
+            },
+            client_id,
+        )
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "Failed to sign integrity tag for new client key");
+            Error::DatabaseOperationFailed
+        })?;
 
-            Ok(client_id)
-        })
+        Ok(client_id)
     })
     .await
 }
@@ -229,55 +225,51 @@ async fn sync_client_metadata(
         Error::DatabasePoolUnavailable
     })?;
 
-    conn.exclusive_transaction(|conn| {
-        let metadata = metadata.clone();
-        Box::pin(async move {
-            let (current_metadata_id, current): (i32, ProgramClientMetadata) =
-                program_client::table
-                    .find(client_id)
-                    .inner_join(client_metadata::table)
-                    .select((
-                        program_client::metadata_id,
-                        ProgramClientMetadata::as_select(),
-                    ))
-                    .first(conn)
-                    .await?;
+    conn.exclusive_transaction(async |conn| {
+        let (current_metadata_id, current): (i32, ProgramClientMetadata) = program_client::table
+            .find(client_id)
+            .inner_join(client_metadata::table)
+            .select((
+                program_client::metadata_id,
+                ProgramClientMetadata::as_select(),
+            ))
+            .first(&mut *conn)
+            .await?;
 
-            let unchanged = current.name == metadata.name
-                && current.description == metadata.description
-                && current.version == metadata.version;
-            if unchanged {
-                return Ok(());
-            }
+        let unchanged = current.name == metadata.name
+            && current.description == metadata.description
+            && current.version == metadata.version;
+        if unchanged {
+            return Ok(());
+        }
 
-            insert_into(client_metadata_history::table)
-                .values((
-                    client_metadata_history::metadata_id.eq(current_metadata_id),
-                    client_metadata_history::client_id.eq(client_id),
-                ))
-                .execute(conn)
-                .await?;
+        insert_into(client_metadata_history::table)
+            .values((
+                client_metadata_history::metadata_id.eq(current_metadata_id),
+                client_metadata_history::client_id.eq(client_id),
+            ))
+            .execute(&mut *conn)
+            .await?;
 
-            let metadata_id = insert_into(client_metadata::table)
-                .values((
-                    client_metadata::name.eq(&metadata.name),
-                    client_metadata::description.eq(&metadata.description),
-                    client_metadata::version.eq(&metadata.version),
-                ))
-                .returning(client_metadata::id)
-                .get_result::<i32>(conn)
-                .await?;
+        let metadata_id = insert_into(client_metadata::table)
+            .values((
+                client_metadata::name.eq(&metadata.name),
+                client_metadata::description.eq(&metadata.description),
+                client_metadata::version.eq(&metadata.version),
+            ))
+            .returning(client_metadata::id)
+            .get_result::<i32>(&mut *conn)
+            .await?;
 
-            update(program_client::table.find(client_id))
-                .set((
-                    program_client::metadata_id.eq(metadata_id),
-                    program_client::updated_at.eq(now),
-                ))
-                .execute(conn)
-                .await?;
+        update(program_client::table.find(client_id))
+            .set((
+                program_client::metadata_id.eq(metadata_id),
+                program_client::updated_at.eq(now),
+            ))
+            .execute(&mut *conn)
+            .await?;
 
-            Ok::<(), diesel::result::Error>(())
-        })
+        Ok::<(), diesel::result::Error>(())
     })
     .await
     .map_err(|e| {

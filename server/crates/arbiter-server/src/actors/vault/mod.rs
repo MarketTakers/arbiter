@@ -119,31 +119,29 @@ impl Vault {
         let mut conn = pool.get().await?;
 
         let nonce = conn
-            .exclusive_transaction(|conn| {
-                Box::pin(async move {
-                    let current_nonce: Vec<u8> = schema::root_key_history::table
-                        .filter(schema::root_key_history::id.eq(root_key_id))
-                        .select(schema::root_key_history::data_encryption_nonce)
-                        .first(conn)
-                        .await?;
+            .exclusive_transaction(async |conn| {
+                let current_nonce: Vec<u8> = schema::root_key_history::table
+                    .filter(schema::root_key_history::id.eq(root_key_id))
+                    .select(schema::root_key_history::data_encryption_nonce)
+                    .first(&mut *conn)
+                    .await?;
 
-                    let mut nonce = Nonce::try_from(current_nonce.as_slice()).map_err(|()| {
-                        error!(
-                            "Broken database: invalid nonce for root key history id={}",
-                            root_key_id
-                        );
-                        Error::BrokenDatabase
-                    })?;
-                    nonce.increment();
+                let mut nonce = Nonce::try_from(current_nonce.as_slice()).map_err(|()| {
+                    error!(
+                        "Broken database: invalid nonce for root key history id={}",
+                        root_key_id
+                    );
+                    Error::BrokenDatabase
+                })?;
+                nonce.increment();
 
-                    update(schema::root_key_history::table)
-                        .filter(schema::root_key_history::id.eq(root_key_id))
-                        .set(schema::root_key_history::data_encryption_nonce.eq(nonce.to_vec()))
-                        .execute(conn)
-                        .await?;
+                update(schema::root_key_history::table)
+                    .filter(schema::root_key_history::id.eq(root_key_id))
+                    .set(schema::root_key_history::data_encryption_nonce.eq(nonce.to_vec()))
+                    .execute(&mut *conn)
+                    .await?;
 
-                    Result::<_, Error>::Ok(nonce)
-                })
+                Result::<_, Error>::Ok(nonce)
             })
             .await?;
 
@@ -185,28 +183,26 @@ impl Vault {
 
         let data_encryption_nonce_bytes = data_encryption_nonce.to_vec();
         let root_key_history_id = conn
-            .transaction(|conn| {
-                Box::pin(async move {
-                    let root_key_history_id: i32 = insert_into(schema::root_key_history::table)
-                        .values(&models::NewRootKeyHistory {
-                            ciphertext: root_key_ciphertext,
-                            tag: v1::ROOT_KEY_TAG.to_vec(),
-                            root_key_encryption_nonce: root_key_nonce.to_vec(),
-                            data_encryption_nonce: data_encryption_nonce_bytes,
-                            schema_version: 1,
-                            salt: salt.to_vec(),
-                        })
-                        .returning(schema::root_key_history::id)
-                        .get_result(conn)
-                        .await?;
+            .transaction(async |conn| {
+                let root_key_history_id: i32 = insert_into(schema::root_key_history::table)
+                    .values(&models::NewRootKeyHistory {
+                        ciphertext: root_key_ciphertext.clone(),
+                        tag: v1::ROOT_KEY_TAG.to_vec(),
+                        root_key_encryption_nonce: root_key_nonce.to_vec(),
+                        data_encryption_nonce: data_encryption_nonce_bytes.clone(),
+                        schema_version: 1,
+                        salt: salt.to_vec(),
+                    })
+                    .returning(schema::root_key_history::id)
+                    .get_result(&mut *conn)
+                    .await?;
 
-                    update(schema::arbiter_settings::table)
-                        .set(schema::arbiter_settings::root_key_id.eq(root_key_history_id))
-                        .execute(conn)
-                        .await?;
+                update(schema::arbiter_settings::table)
+                    .set(schema::arbiter_settings::root_key_id.eq(root_key_history_id))
+                    .execute(&mut *conn)
+                    .await?;
 
-                    Result::<_, diesel::result::Error>::Ok(root_key_history_id)
-                })
+                Result::<_, diesel::result::Error>::Ok(root_key_history_id)
             })
             .await?;
 
