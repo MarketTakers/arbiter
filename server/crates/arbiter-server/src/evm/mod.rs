@@ -179,24 +179,22 @@ impl Engine {
         }
 
         if run_kind == RunKind::Execution {
-            conn.transaction(|conn| {
-                Box::pin(async move {
-                    let log_id: i32 = insert_into(evm_transaction_log::table)
-                        .values(&NewEvmTransactionLog {
-                            grant_id: grant.common_settings_id,
-                            wallet_access_id: context.target.id,
-                            chain_id: context.chain.into(),
-                            eth_value: utils::u256_to_bytes(context.value).to_vec(),
-                            signed_at: Utc::now().into(),
-                        })
-                        .returning(evm_transaction_log::id)
-                        .get_result(conn)
-                        .await?;
+            conn.transaction(async |conn| {
+                let log_id: i32 = insert_into(evm_transaction_log::table)
+                    .values(&NewEvmTransactionLog {
+                        grant_id: grant.common_settings_id,
+                        wallet_access_id: context.target.id,
+                        chain_id: context.chain.into(),
+                        eth_value: utils::u256_to_bytes(context.value).to_vec(),
+                        signed_at: Utc::now().into(),
+                    })
+                    .returning(evm_transaction_log::id)
+                    .get_result(&mut *conn)
+                    .await?;
 
-                    P::record_transaction(&context, meaning, log_id, &grant, conn).await?;
+                P::record_transaction(&context, meaning, log_id, &grant, &mut *conn).await?;
 
-                    QueryResult::Ok(())
-                })
+                QueryResult::Ok(())
             })
             .await
             .map_err(DatabaseError::from)?;
@@ -222,54 +220,52 @@ impl Engine {
         let vault = self.vault.clone();
 
         let id = conn
-            .transaction(|conn| {
-                Box::pin(async move {
-                    use schema::evm_basic_grant;
+            .transaction(async |conn| {
+                use schema::evm_basic_grant;
 
-                    #[expect(
-                        clippy::cast_possible_truncation,
-                        clippy::cast_possible_wrap,
-                        clippy::as_conversions,
-                        reason = "fixme! #86"
-                    )]
-                    let basic_grant: EvmBasicGrant = insert_into(evm_basic_grant::table)
-                        .values(&NewEvmBasicGrant {
-                            chain_id: full_grant.shared.chain.into(),
-                            wallet_access_id: full_grant.shared.wallet_access_id,
-                            valid_from: full_grant.shared.valid_from.map(SqliteTimestamp),
-                            valid_until: full_grant.shared.valid_until.map(SqliteTimestamp),
-                            max_gas_fee_per_gas: full_grant
-                                .shared
-                                .max_gas_fee_per_gas
-                                .map(|fee| utils::u256_to_bytes(fee).to_vec()),
-                            max_priority_fee_per_gas: full_grant
-                                .shared
-                                .max_priority_fee_per_gas
-                                .map(|fee| utils::u256_to_bytes(fee).to_vec()),
-                            rate_limit_count: full_grant
-                                .shared
-                                .rate_limit
-                                .as_ref()
-                                .map(|rl| rl.count as i32),
-                            rate_limit_window_secs: full_grant
-                                .shared
-                                .rate_limit
-                                .as_ref()
-                                .map(|rl| rl.window.num_seconds() as i32),
-                            revoked_at: None,
-                        })
-                        .returning(evm_basic_grant::all_columns)
-                        .get_result(conn)
-                        .await?;
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_possible_wrap,
+                    clippy::as_conversions,
+                    reason = "fixme! #86"
+                )]
+                let basic_grant: EvmBasicGrant = insert_into(evm_basic_grant::table)
+                    .values(&NewEvmBasicGrant {
+                        chain_id: full_grant.shared.chain.into(),
+                        wallet_access_id: full_grant.shared.wallet_access_id,
+                        valid_from: full_grant.shared.valid_from.map(SqliteTimestamp),
+                        valid_until: full_grant.shared.valid_until.map(SqliteTimestamp),
+                        max_gas_fee_per_gas: full_grant
+                            .shared
+                            .max_gas_fee_per_gas
+                            .map(|fee| utils::u256_to_bytes(fee).to_vec()),
+                        max_priority_fee_per_gas: full_grant
+                            .shared
+                            .max_priority_fee_per_gas
+                            .map(|fee| utils::u256_to_bytes(fee).to_vec()),
+                        rate_limit_count: full_grant
+                            .shared
+                            .rate_limit
+                            .as_ref()
+                            .map(|rl| rl.count as i32),
+                        rate_limit_window_secs: full_grant
+                            .shared
+                            .rate_limit
+                            .as_ref()
+                            .map(|rl| rl.window.num_seconds() as i32),
+                        revoked_at: None,
+                    })
+                    .returning(evm_basic_grant::all_columns)
+                    .get_result(&mut *conn)
+                    .await?;
 
-                    P::create_grant(&basic_grant, &full_grant.specific, conn).await?;
+                P::create_grant(&basic_grant, &full_grant.specific, &mut *conn).await?;
 
-                    integrity::sign_entity(conn, &vault, &full_grant, basic_grant.id)
-                        .await
-                        .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                integrity::sign_entity(&mut *conn, &vault, &full_grant, basic_grant.id)
+                    .await
+                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
 
-                    QueryResult::Ok(basic_grant.id)
-                })
+                QueryResult::Ok(basic_grant.id)
             })
             .await?;
 

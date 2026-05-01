@@ -1,8 +1,8 @@
 use super::{Error, OperatorSession};
 use crate::{
     actors::evm::{
-        ClientSignTransaction, Generate, ListWallets, SignTransactionError as EvmSignError,
-        OperatorCreateGrant, OperatorListGrants,
+        ClientSignTransaction, Generate, ListWallets, OperatorCreateGrant, OperatorListGrants,
+        SignTransactionError as EvmSignError,
     },
     actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer,
     actors::vault::VaultState,
@@ -169,20 +169,18 @@ impl OperatorSession {
         entries: Vec<NewEvmWalletAccess>,
     ) -> Result<(), Error> {
         let mut conn = self.props.db.get().await?;
-        conn.transaction(|conn| {
-            Box::pin(async move {
-                use crate::db::schema::evm_wallet_access;
+        conn.transaction(async |conn| {
+            use crate::db::schema::evm_wallet_access;
 
-                for entry in entries {
-                    diesel::insert_into(evm_wallet_access::table)
-                        .values(&entry)
-                        .on_conflict_do_nothing()
-                        .execute(conn)
-                        .await?;
-                }
+            for entry in entries {
+                diesel::insert_into(evm_wallet_access::table)
+                    .values(&entry)
+                    .on_conflict_do_nothing()
+                    .execute(&mut *conn)
+                    .await?;
+            }
 
-                Result::<_, Error>::Ok(())
-            })
+            Result::<_, Error>::Ok(())
         })
         .await?;
         Ok(())
@@ -194,18 +192,16 @@ impl OperatorSession {
         entries: Vec<i32>,
     ) -> Result<(), Error> {
         let mut conn = self.props.db.get().await?;
-        conn.transaction(|conn| {
-            Box::pin(async move {
-                use crate::db::schema::evm_wallet_access;
-                for entry in entries {
-                    diesel::delete(evm_wallet_access::table)
-                        .filter(evm_wallet_access::wallet_id.eq(entry))
-                        .execute(conn)
-                        .await?;
-                }
+        conn.transaction(async |conn| {
+            use crate::db::schema::evm_wallet_access;
+            for entry in entries {
+                diesel::delete(evm_wallet_access::table)
+                    .filter(evm_wallet_access::wallet_id.eq(entry))
+                    .execute(&mut *conn)
+                    .await?;
+            }
 
-                Result::<_, Error>::Ok(())
-            })
+            Result::<_, Error>::Ok(())
         })
         .await?;
         Ok(())

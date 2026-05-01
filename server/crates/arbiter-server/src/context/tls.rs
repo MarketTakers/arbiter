@@ -174,28 +174,26 @@ impl TlsManager {
 
         {
             let mut conn = db.get().await?;
-            conn.transaction(|conn| {
-                Box::pin(async {
-                    let new_tls_history = NewTlsHistory {
-                        cert: new_cert.cert.pem(),
-                        cert_key: new_cert.cert_key.serialize_pem(),
-                        ca_cert: encode_cert_to_pem(&ca.cert),
-                        ca_key: ca.issuer.key().serialize_pem(),
-                    };
+            conn.transaction(async |conn| {
+                let new_tls_history = NewTlsHistory {
+                    cert: new_cert.cert.pem(),
+                    cert_key: new_cert.cert_key.serialize_pem(),
+                    ca_cert: encode_cert_to_pem(&ca.cert),
+                    ca_key: ca.issuer.key().serialize_pem(),
+                };
 
-                    let inserted_tls_history: i32 = diesel::insert_into(tls_history::table)
-                        .values(&new_tls_history)
-                        .returning(tls_history::id)
-                        .get_result(conn)
-                        .await?;
+                let inserted_tls_history: i32 = diesel::insert_into(tls_history::table)
+                    .values(&new_tls_history)
+                    .returning(tls_history::id)
+                    .get_result(&mut *conn)
+                    .await?;
 
-                    diesel::update(arbiter_settings::table)
-                        .set(arbiter_settings::tls_id.eq(inserted_tls_history))
-                        .execute(conn)
-                        .await?;
+                diesel::update(arbiter_settings::table)
+                    .set(arbiter_settings::tls_id.eq(inserted_tls_history))
+                    .execute(&mut *conn)
+                    .await?;
 
-                    Result::<_, diesel::result::Error>::Ok(())
-                })
+                Result::<_, diesel::result::Error>::Ok(())
             })
             .await?;
         }
