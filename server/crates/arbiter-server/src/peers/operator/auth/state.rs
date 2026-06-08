@@ -19,7 +19,7 @@ pub(super) struct ChallengeRequest {
     pub(super) bootstrap_token: Option<String>,
 }
 
-pub(super) struct ChallengeContext {
+pub struct ChallengeContext {
     pub(super) challenge: AuthChallenge,
     pub(super) pubkey: authn::PublicKey,
     pub(super) bootstrap_token: Option<String>,
