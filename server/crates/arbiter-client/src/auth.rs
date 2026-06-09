@@ -1,4 +1,8 @@
-use arbiter_crypto::authn::{CLIENT_CONTEXT, SigningKey, format_challenge};
+use crate::{
+    storage::StorageError,
+    transport::{ClientTransport, next_request_id},
+};
+use arbiter_crypto::authn::{self, CLIENT_CONTEXT, SigningKey};
 use arbiter_proto::{
     ClientMetadata,
     proto::{
@@ -16,33 +20,31 @@ use arbiter_proto::{
     },
 };
 
-use crate::{
-    storage::StorageError,
-    transport::{ClientTransport, next_request_id},
-};
+use chrono::DateTime;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {
+    #[error("Server sent invalid auth challenge")]
+    InvalidChallenge,
+    #[error("Client approval denied by Operator")]
+    ApprovalDenied,
     #[error("Auth challenge was not returned by server")]
     MissingAuthChallenge,
 
-    #[error("Client approval denied by User Agent")]
-    ApprovalDenied,
-
-    #[error("No User Agents online to approve client")]
-    NoUserAgentsOnline,
-
-    #[error("Unexpected auth response payload")]
-    UnexpectedAuthResponse,
+    #[error("No Operators online to approve client")]
+    NoOperatorsOnline,
 
     #[error("Signing key storage error")]
     Storage(#[from] StorageError),
+
+    #[error("Unexpected auth response payload")]
+    UnexpectedAuthResponse,
 }
 
 fn map_auth_result(code: i32) -> AuthError {
     match AuthResult::try_from(code).unwrap_or(AuthResult::Unspecified) {
         AuthResult::ApprovalDenied => AuthError::ApprovalDenied,
-        AuthResult::NoUserAgentsOnline => AuthError::NoUserAgentsOnline,
+        AuthResult::NoOperatorsOnline => AuthError::NoOperatorsOnline,
         AuthResult::Unspecified
         | AuthResult::Success
         | AuthResult::InvalidKey
@@ -55,7 +57,7 @@ async fn send_auth_challenge_request(
     transport: &mut ClientTransport,
     metadata: ClientMetadata,
     key: &SigningKey,
-) -> std::result::Result<(), AuthError> {
+) -> Result<(), AuthError> {
     transport
         .send(ClientRequest {
             request_id: next_request_id(),
@@ -76,7 +78,7 @@ async fn send_auth_challenge_request(
 
 async fn receive_auth_challenge(
     transport: &mut ClientTransport,
-) -> std::result::Result<AuthChallenge, AuthError> {
+) -> Result<AuthChallenge, AuthError> {
     let response = transport
         .recv()
         .await
@@ -97,8 +99,16 @@ async fn send_auth_challenge_solution(
     transport: &mut ClientTransport,
     key: &SigningKey,
     challenge: AuthChallenge,
-) -> std::result::Result<(), AuthError> {
-    let challenge_payload = format_challenge(challenge.nonce, &challenge.pubkey);
+) -> Result<(), AuthError> {
+    let timestamp = DateTime::from_timestamp_nanos(challenge.timestamp_nanos as i64);
+    let challenge = authn::AuthChallenge {
+        nonce: *challenge
+            .random
+            .as_array()
+            .ok_or(AuthError::InvalidChallenge)?,
+        timestamp,
+    };
+    let challenge_payload: Vec<u8> = challenge.format();
     let signature = key
         .sign_message(&challenge_payload, CLIENT_CONTEXT)
         .map_err(|_| AuthError::UnexpectedAuthResponse)?
@@ -117,9 +127,7 @@ async fn send_auth_challenge_solution(
         .map_err(|_| AuthError::UnexpectedAuthResponse)
 }
 
-async fn receive_auth_confirmation(
-    transport: &mut ClientTransport,
-) -> std::result::Result<(), AuthError> {
+async fn receive_auth_confirmation(transport: &mut ClientTransport) -> Result<(), AuthError> {
     let response = transport
         .recv()
         .await
@@ -140,11 +148,11 @@ async fn receive_auth_confirmation(
     }
 }
 
-pub(crate) async fn authenticate(
+pub async fn authenticate(
     transport: &mut ClientTransport,
     metadata: ClientMetadata,
     key: &SigningKey,
-) -> std::result::Result<(), AuthError> {
+) -> Result<(), AuthError> {
     send_auth_challenge_request(transport, metadata, key).await?;
     let challenge = receive_auth_challenge(transport).await?;
     send_auth_challenge_solution(transport, key, challenge).await?;

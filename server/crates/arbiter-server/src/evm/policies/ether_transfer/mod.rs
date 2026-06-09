@@ -1,29 +1,31 @@
-use std::collections::HashMap;
-use std::fmt::Display;
-
-use alloy::primitives::{Address, U256};
-use chrono::{DateTime, Duration, Utc};
-use diesel::dsl::{auto_type, insert_into};
-use diesel::sqlite::Sqlite;
-use diesel::{ExpressionMethods, JoinOnDsl, prelude::*};
-use diesel_async::{AsyncConnection, RunQueryDsl};
-
-use crate::crypto::integrity::v1::Integrable;
-use crate::db::models::{
-    EvmBasicGrant, EvmEtherTransferGrant, EvmEtherTransferGrantTarget, EvmEtherTransferLimit,
-    NewEvmEtherTransferLimit, SqliteTimestamp,
-};
-use crate::db::schema::{evm_basic_grant, evm_ether_transfer_limit, evm_transaction_log};
-use crate::evm::policies::{
-    CombinedSettings, Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning, VolumeRateLimit,
-};
+use super::{DatabaseID, EvalContext, EvalViolation};
 use crate::{
+    crypto::integrity::v1::Integrable,
+    db::models::{
+        EvmBasicGrant, EvmEtherTransferGrant, EvmEtherTransferGrantTarget, EvmEtherTransferLimit,
+        NewEvmEtherTransferLimit, SqliteTimestamp,
+    },
+    db::schema::{evm_basic_grant, evm_ether_transfer_limit, evm_transaction_log},
     db::{
-        models::{self, NewEvmEtherTransferGrant, NewEvmEtherTransferGrantTarget},
+        models::{NewEvmEtherTransferGrant, NewEvmEtherTransferGrantTarget},
         schema::{evm_ether_transfer_grant, evm_ether_transfer_grant_target},
+    },
+    evm::policies::{
+        CombinedSettings, Grant, SharedGrantSettings, SpecificGrant, SpecificMeaning,
+        VolumeRateLimit,
     },
     evm::{policies::Policy, utils},
 };
+
+use alloy::primitives::{Address, U256};
+use chrono::{DateTime, Duration, Utc};
+use diesel::{
+    dsl::{auto_type, insert_into},
+    prelude::*,
+    sqlite::Sqlite,
+};
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use std::{collections::HashMap, fmt::Display};
 
 #[auto_type]
 fn grant_join() -> _ {
@@ -31,8 +33,6 @@ fn grant_join() -> _ {
         evm_basic_grant::table.on(evm_ether_transfer_grant::basic_grant_id.eq(evm_basic_grant::id)),
     )
 }
-
-use super::{DatabaseID, EvalContext, EvalViolation};
 
 // Plain ether transfer
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -46,8 +46,8 @@ impl Display for Meaning {
     }
 }
 impl From<Meaning> for SpecificMeaning {
-    fn from(val: Meaning) -> SpecificMeaning {
-        SpecificMeaning::EtherTransfer(val)
+    fn from(val: Meaning) -> Self {
+        Self::EtherTransfer(val)
     }
 }
 
@@ -62,8 +62,8 @@ impl Integrable for Settings {
 }
 
 impl From<Settings> for SpecificGrant {
-    fn from(val: Settings) -> SpecificGrant {
-        SpecificGrant::EtherTransfer(val)
+    fn from(val: Settings) -> Self {
+        Self::EtherTransfer(val)
     }
 }
 
@@ -74,9 +74,7 @@ async fn query_relevant_past_transaction(
 ) -> QueryResult<Vec<(U256, DateTime<Utc>)>> {
     let past_transactions: Vec<(Vec<u8>, SqliteTimestamp)> = evm_transaction_log::table
         .filter(evm_transaction_log::grant_id.eq(grant_id))
-        .filter(
-            evm_transaction_log::signed_at.ge(SqliteTimestamp(chrono::Utc::now() - longest_window)),
-        )
+        .filter(evm_transaction_log::signed_at.ge(SqliteTimestamp(Utc::now() - longest_window)))
         .select((
             evm_transaction_log::eth_value,
             evm_transaction_log::signed_at,
@@ -103,7 +101,7 @@ async fn check_rate_limits(
 
     let past_transaction = query_relevant_past_transaction(grant.id, window, db).await?;
 
-    let window_start = chrono::Utc::now() - grant.settings.specific.limit.window;
+    let window_start = Utc::now() - grant.settings.specific.limit.window;
     let prospective_cumulative_volume: U256 = past_transaction
         .iter()
         .filter(|(_, timestamp)| timestamp >= &window_start)
@@ -153,10 +151,15 @@ impl Policy for EtherTransfer {
     }
 
     async fn create_grant(
-        basic: &models::EvmBasicGrant,
+        basic: &EvmBasicGrant,
         grant: &Self::Settings,
         conn: &mut impl AsyncConnection<Backend = Sqlite>,
-    ) -> diesel::result::QueryResult<DatabaseID> {
+    ) -> QueryResult<DatabaseID> {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::as_conversions,
+            reason = "fixme! #86"
+        )]
         let limit_id: i32 = insert_into(evm_ether_transfer_limit::table)
             .values(NewEvmEtherTransferLimit {
                 window_secs: grant.limit.window.num_seconds() as i32,
@@ -191,7 +194,7 @@ impl Policy for EtherTransfer {
     async fn try_find_grant(
         context: &EvalContext,
         conn: &mut impl AsyncConnection<Backend = Sqlite>,
-    ) -> diesel::result::QueryResult<Option<Grant<Self::Settings>>> {
+    ) -> QueryResult<Option<Grant<Self::Settings>>> {
         let target_bytes = context.to.to_vec();
 
         // Find a grant where:
@@ -245,7 +248,7 @@ impl Policy for EtherTransfer {
             limit: VolumeRateLimit {
                 max_volume: utils::try_bytes_to_u256(&limit.max_volume)
                     .map_err(|err| diesel::result::Error::DeserializationError(Box::new(err)))?,
-                window: chrono::Duration::seconds(limit.window_secs as i64),
+                window: Duration::seconds(limit.window_secs.into()),
             },
         };
 
@@ -265,7 +268,7 @@ impl Policy for EtherTransfer {
         _log_id: i32,
         _grant: &Grant<Self::Settings>,
         _conn: &mut impl AsyncConnection<Backend = Sqlite>,
-    ) -> diesel::result::QueryResult<()> {
+    ) -> QueryResult<()> {
         // Basic log is sufficient
 
         Ok(())
@@ -318,7 +321,7 @@ impl Policy for EtherTransfer {
             .map(|(basic, specific)| {
                 let targets: Vec<Address> = targets_by_grant
                     .get(&specific.id)
-                    .map(|v| v.as_slice())
+                    .map(Vec::as_slice)
                     .unwrap_or_default()
                     .iter()
                     .filter_map(|t| {
@@ -342,7 +345,7 @@ impl Policy for EtherTransfer {
                                 max_volume: utils::try_bytes_to_u256(&limit.max_volume).map_err(
                                     |e| diesel::result::Error::DeserializationError(Box::new(e)),
                                 )?,
-                                window: Duration::seconds(limit.window_secs as i64),
+                                window: Duration::seconds(limit.window_secs.into()),
                             },
                         },
                     },

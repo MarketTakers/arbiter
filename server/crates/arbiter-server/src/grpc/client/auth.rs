@@ -1,3 +1,7 @@
+use crate::{
+    grpc::{Convert, request_tracker::RequestTracker},
+    peers::client::{ClientConnection, auth},
+};
 use arbiter_crypto::authn;
 use arbiter_proto::{
     ClientMetadata,
@@ -17,22 +21,18 @@ use arbiter_proto::{
     },
     transport::{Bi, Error as TransportError, Receiver, Sender, grpc::GrpcBi},
 };
+
 use async_trait::async_trait;
 use tonic::Status;
 use tracing::warn;
 
-use crate::{
-    actors::client::{self, ClientConnection, auth},
-    grpc::request_tracker::RequestTracker,
-};
-
-pub struct AuthTransportAdapter<'a> {
+pub(super) struct AuthTransportAdapter<'a> {
     bi: &'a mut GrpcBi<ClientRequest, ClientResponse>,
     request_tracker: &'a mut RequestTracker,
 }
 
 impl<'a> AuthTransportAdapter<'a> {
-    pub fn new(
+    pub(super) const fn new(
         bi: &'a mut GrpcBi<ClientRequest, ClientResponse>,
         request_tracker: &'a mut RequestTracker,
     ) -> Self {
@@ -40,40 +40,6 @@ impl<'a> AuthTransportAdapter<'a> {
             bi,
             request_tracker,
         }
-    }
-
-    fn response_to_proto(response: auth::Outbound) -> AuthResponsePayload {
-        match response {
-            auth::Outbound::AuthChallenge { pubkey, nonce } => {
-                AuthResponsePayload::Challenge(ProtoAuthChallenge {
-                    pubkey: pubkey.to_bytes(),
-                    nonce,
-                })
-            }
-            auth::Outbound::AuthSuccess => {
-                AuthResponsePayload::Result(ProtoAuthResult::Success.into())
-            }
-        }
-    }
-
-    fn error_to_proto(error: auth::Error) -> AuthResponsePayload {
-        AuthResponsePayload::Result(
-            match error {
-                auth::Error::InvalidChallengeSolution => ProtoAuthResult::InvalidSignature,
-                auth::Error::ApproveError(auth::ApproveError::Denied) => {
-                    ProtoAuthResult::ApprovalDenied
-                }
-                auth::Error::ApproveError(auth::ApproveError::Upstream(
-                    crate::actors::flow_coordinator::ApprovalError::NoUserAgentsConnected,
-                )) => ProtoAuthResult::NoUserAgentsOnline,
-                auth::Error::ApproveError(auth::ApproveError::Internal)
-                | auth::Error::DatabasePoolUnavailable
-                | auth::Error::DatabaseOperationFailed
-                | auth::Error::IntegrityCheckFailed
-                | auth::Error::Transport => ProtoAuthResult::Internal,
-            }
-            .into(),
-        )
     }
 
     async fn send_client_response(
@@ -103,8 +69,8 @@ impl Sender<Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {
         item: Result<auth::Outbound, auth::Error>,
     ) -> Result<(), TransportError> {
         let payload = match item {
-            Ok(message) => AuthTransportAdapter::response_to_proto(message),
-            Err(err) => AuthTransportAdapter::error_to_proto(err),
+            Ok(message) => message.convert(),
+            Err(err) => err.convert(),
         };
 
         self.send_client_response(payload).await
@@ -167,7 +133,7 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
                 };
                 Some(auth::Inbound::AuthChallengeRequest {
                     pubkey,
-                    metadata: client_metadata_from_proto(client_info),
+                    metadata: client_info.convert(),
                 })
             }
             AuthRequestPayload::ChallengeSolution(ProtoAuthChallengeSolution { signature }) => {
@@ -185,19 +151,69 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
 
 impl Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {}
 
-fn client_metadata_from_proto(metadata: ProtoClientInfo) -> ClientMetadata {
-    ClientMetadata {
-        name: metadata.name,
-        description: metadata.description,
-        version: metadata.version,
+impl Convert for ProtoClientInfo {
+    type Output = ClientMetadata;
+
+    fn convert(self) -> Self::Output {
+        ClientMetadata {
+            name: self.name,
+            description: self.description,
+            version: self.version,
+        }
     }
 }
 
-pub async fn start(
+impl Convert for auth::Error {
+    type Output = AuthResponsePayload;
+
+    fn convert(self) -> Self::Output {
+        use auth::Error::{
+            ApproveError, DatabaseOperationFailed, DatabasePoolUnavailable, IntegrityCheckFailed,
+            InvalidChallengeSolution, Transport,
+        };
+        AuthResponsePayload::Result(
+            match self {
+                InvalidChallengeSolution => ProtoAuthResult::InvalidSignature,
+                ApproveError(auth::ApproveError::Denied) => ProtoAuthResult::ApprovalDenied,
+                ApproveError(auth::ApproveError::Upstream(
+                    crate::actors::flow_coordinator::ApprovalError::NoOperatorsConnected,
+                )) => ProtoAuthResult::NoOperatorsOnline,
+                ApproveError(auth::ApproveError::Internal)
+                | DatabasePoolUnavailable
+                | DatabaseOperationFailed
+                | IntegrityCheckFailed
+                | Transport => ProtoAuthResult::Internal,
+            }
+            .into(),
+        )
+    }
+}
+
+impl Convert for auth::Outbound {
+    type Output = AuthResponsePayload;
+
+    fn convert(self) -> Self::Output {
+        match self {
+            Self::AuthChallenge { challenge } => {
+                AuthResponsePayload::Challenge(ProtoAuthChallenge {
+                    timestamp_nanos: challenge
+                        .timestamp
+                        .timestamp_nanos_opt()
+                        .expect("timestamp within range")
+                        as u64,
+                    random: challenge.nonce.to_vec(),
+                })
+            }
+            Self::AuthSuccess => AuthResponsePayload::Result(ProtoAuthResult::Success.into()),
+        }
+    }
+}
+
+pub(super) async fn start(
     conn: &mut ClientConnection,
     bi: &mut GrpcBi<ClientRequest, ClientResponse>,
     request_tracker: &mut RequestTracker,
 ) -> Result<i32, auth::Error> {
     let mut transport = AuthTransportAdapter::new(bi, request_tracker);
-    client::auth::authenticate(conn, &mut transport).await
+    auth::authenticate(conn, &mut transport).await
 }

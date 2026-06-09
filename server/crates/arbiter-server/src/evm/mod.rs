@@ -1,21 +1,8 @@
-pub mod abi;
-pub mod safe_signer;
-
-use alloy::primitives::Address;
-use alloy::{
-    consensus::TxEip1559,
-    primitives::{TxKind, U256},
-};
-use chrono::Utc;
-use diesel::{
-    ExpressionMethods as _, OptionalExtension, QueryDsl as _, QueryResult, SelectableHelper,
-    insert_into, sqlite::Sqlite, update,
-};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::actor::ActorRef;
 
 use crate::{
-    actors::keyholder::KeyHolder,
+    actors::vault::Vault,
     crypto::integrity,
     db::{
         self, DatabaseError,
@@ -33,6 +20,19 @@ use crate::{
     },
 };
 
+use alloy::{
+    consensus::TxEip1559,
+    primitives::{Address, TxKind, U256},
+};
+use chrono::Utc;
+use diesel::{
+    ExpressionMethods as _, OptionalExtension, QueryDsl as _, QueryResult, SelectableHelper,
+    insert_into, sqlite::Sqlite, update,
+};
+
+pub mod abi;
+pub mod safe_signer;
+
 pub mod policies;
 mod utils;
 
@@ -40,7 +40,7 @@ mod utils;
 #[derive(Debug, thiserror::Error)]
 pub enum PolicyError {
     #[error("Database error")]
-    Database(#[from] crate::db::DatabaseError),
+    Database(#[from] DatabaseError),
     #[error("Transaction violates policy: {0:?}")]
     Violations(Vec<EvalViolation>),
     #[error("No matching grant found")]
@@ -72,7 +72,7 @@ pub enum AnalyzeError {
 #[derive(Debug, thiserror::Error)]
 pub enum ListError {
     #[error("Database error")]
-    Database(#[from] crate::db::DatabaseError),
+    Database(#[from] DatabaseError),
 
     #[error("Integrity verification failed for grant")]
     Integrity(#[from] integrity::Error),
@@ -133,7 +133,7 @@ async fn check_shared_constraints(
             .get_result(conn)
             .await?;
 
-        if count >= rate_limit.count as i64 {
+        if count >= rate_limit.count.into() {
             violations.push(EvalViolation::RateLimitExceeded);
         }
     }
@@ -144,7 +144,7 @@ async fn check_shared_constraints(
 // Supporting only EIP-1559 transactions for now, but we can easily extend this to support legacy transactions if needed
 pub struct Engine {
     db: db::DatabasePool,
-    keyholder: ActorRef<KeyHolder>,
+    vault: ActorRef<Vault>,
 }
 
 impl Engine {
@@ -164,7 +164,7 @@ impl Engine {
             .map_err(DatabaseError::from)?
             .ok_or(PolicyError::NoMatchingGrant)?;
 
-        integrity::verify_entity(&mut conn, &self.keyholder, &grant.settings, grant.id).await?;
+        integrity::verify_entity(&mut conn, &self.vault, &grant.settings, grant.id).await?;
 
         let mut violations = check_shared_constraints(
             &context,
@@ -185,24 +185,22 @@ impl Engine {
         }
 
         if run_kind == RunKind::Execution {
-            conn.transaction(|conn| {
-                Box::pin(async move {
-                    let log_id: i32 = insert_into(evm_transaction_log::table)
-                        .values(&NewEvmTransactionLog {
-                            grant_id: grant.common_settings_id,
-                            wallet_access_id: context.target.id,
-                            chain_id: context.chain as i32,
-                            eth_value: utils::u256_to_bytes(context.value).to_vec(),
-                            signed_at: Utc::now().into(),
-                        })
-                        .returning(evm_transaction_log::id)
-                        .get_result(conn)
-                        .await?;
+            conn.transaction(async |conn| {
+                let log_id: i32 = insert_into(evm_transaction_log::table)
+                    .values(&NewEvmTransactionLog {
+                        grant_id: grant.common_settings_id,
+                        wallet_access_id: context.target.id,
+                        chain_id: context.chain.into(),
+                        eth_value: utils::u256_to_bytes(context.value).to_vec(),
+                        signed_at: Utc::now().into(),
+                    })
+                    .returning(evm_transaction_log::id)
+                    .get_result(&mut *conn)
+                    .await?;
 
-                    P::record_transaction(&context, meaning, log_id, &grant, conn).await?;
+                P::record_transaction(&context, meaning, log_id, &grant, &mut *conn).await?;
 
-                    QueryResult::Ok(())
-                })
+                QueryResult::Ok(())
             })
             .await
             .map_err(DatabaseError::from)?;
@@ -213,8 +211,8 @@ impl Engine {
 }
 
 impl Engine {
-    pub fn new(db: db::DatabasePool, keyholder: ActorRef<KeyHolder>) -> Self {
-        Self { db, keyholder }
+    pub const fn new(db: db::DatabasePool, vault: ActorRef<Vault>) -> Self {
+        Self { db, vault }
     }
 
     pub async fn create_grant<P: Policy>(
@@ -225,51 +223,55 @@ impl Engine {
         P::Settings: Clone,
     {
         let mut conn = self.db.get().await?;
-        let keyholder = self.keyholder.clone();
+        let vault = self.vault.clone();
 
         let id = conn
-            .transaction(|conn| {
-                Box::pin(async move {
-                    use schema::evm_basic_grant;
+            .transaction(async |conn| {
+                use schema::evm_basic_grant;
 
-                    let basic_grant: EvmBasicGrant = insert_into(evm_basic_grant::table)
-                        .values(&NewEvmBasicGrant {
-                            chain_id: full_grant.shared.chain as i32,
-                            wallet_access_id: full_grant.shared.wallet_access_id,
-                            valid_from: full_grant.shared.valid_from.map(SqliteTimestamp),
-                            valid_until: full_grant.shared.valid_until.map(SqliteTimestamp),
-                            max_gas_fee_per_gas: full_grant
-                                .shared
-                                .max_gas_fee_per_gas
-                                .map(|fee| utils::u256_to_bytes(fee).to_vec()),
-                            max_priority_fee_per_gas: full_grant
-                                .shared
-                                .max_priority_fee_per_gas
-                                .map(|fee| utils::u256_to_bytes(fee).to_vec()),
-                            rate_limit_count: full_grant
-                                .shared
-                                .rate_limit
-                                .as_ref()
-                                .map(|rl| rl.count as i32),
-                            rate_limit_window_secs: full_grant
-                                .shared
-                                .rate_limit
-                                .as_ref()
-                                .map(|rl| rl.window.num_seconds() as i32),
-                            revoked_at: None,
-                        })
-                        .returning(evm_basic_grant::all_columns)
-                        .get_result(conn)
-                        .await?;
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_possible_wrap,
+                    clippy::as_conversions,
+                    reason = "fixme! #86"
+                )]
+                let basic_grant: EvmBasicGrant = insert_into(evm_basic_grant::table)
+                    .values(&NewEvmBasicGrant {
+                        chain_id: full_grant.shared.chain.into(),
+                        wallet_access_id: full_grant.shared.wallet_access_id,
+                        valid_from: full_grant.shared.valid_from.map(SqliteTimestamp),
+                        valid_until: full_grant.shared.valid_until.map(SqliteTimestamp),
+                        max_gas_fee_per_gas: full_grant
+                            .shared
+                            .max_gas_fee_per_gas
+                            .map(|fee| utils::u256_to_bytes(fee).to_vec()),
+                        max_priority_fee_per_gas: full_grant
+                            .shared
+                            .max_priority_fee_per_gas
+                            .map(|fee| utils::u256_to_bytes(fee).to_vec()),
+                        rate_limit_count: full_grant
+                            .shared
+                            .rate_limit
+                            .as_ref()
+                            .map(|rl| rl.count as i32),
+                        rate_limit_window_secs: full_grant
+                            .shared
+                            .rate_limit
+                            .as_ref()
+                            .map(|rl| rl.window.num_seconds() as i32),
+                        revoked_at: None,
+                    })
+                    .returning(evm_basic_grant::all_columns)
+                    .get_result(&mut *conn)
+                    .await?;
 
-                    P::create_grant(&basic_grant, &full_grant.specific, conn).await?;
+                P::create_grant(&basic_grant, &full_grant.specific, &mut *conn).await?;
 
-                    integrity::sign_entity(conn, &keyholder, &full_grant, basic_grant.id)
-                        .await
-                        .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                integrity::sign_entity(&mut *conn, &vault, &full_grant, basic_grant.id)
+                    .await
+                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
 
-                    QueryResult::Ok(basic_grant.id)
-                })
+                QueryResult::Ok(basic_grant.id)
             })
             .await?;
 
@@ -281,143 +283,141 @@ impl Engine {
         basic_grant_id: i32,
     ) -> Result<(), DatabaseError> {
         let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
-        let keyholder = self.keyholder.clone();
+        let vault = self.vault.clone();
 
-        conn.transaction(|conn| {
-            Box::pin(async move {
-                use crate::db::schema::{
-                    evm_basic_grant, evm_ether_transfer_grant, evm_ether_transfer_grant_target,
-                    evm_ether_transfer_limit, evm_token_transfer_grant,
-                    evm_token_transfer_volume_limit,
+        conn.transaction(async move |conn| {
+            use crate::db::schema::{
+                evm_basic_grant, evm_ether_transfer_grant, evm_ether_transfer_grant_target,
+                evm_ether_transfer_limit, evm_token_transfer_grant,
+                evm_token_transfer_volume_limit,
+            };
+
+            update(evm_basic_grant::table)
+                .filter(evm_basic_grant::id.eq(basic_grant_id))
+                .set(evm_basic_grant::revoked_at.eq(SqliteTimestamp(Utc::now())))
+                .execute(&mut *conn)
+                .await?;
+
+            let basic_grant: EvmBasicGrant = evm_basic_grant::table
+                .filter(evm_basic_grant::id.eq(basic_grant_id))
+                .select(EvmBasicGrant::as_select())
+                .first(&mut *conn)
+                .await?;
+
+            let shared = SharedGrantSettings::try_from_model(basic_grant)?;
+
+            if let Some(ether_grant) = evm_ether_transfer_grant::table
+                .filter(evm_ether_transfer_grant::basic_grant_id.eq(basic_grant_id))
+                .select(EvmEtherTransferGrant::as_select())
+                .first(&mut *conn)
+                .await
+                .optional()?
+            {
+                let target_rows: Vec<EvmEtherTransferGrantTarget> =
+                    evm_ether_transfer_grant_target::table
+                        .filter(evm_ether_transfer_grant_target::grant_id.eq(ether_grant.id))
+                        .select(EvmEtherTransferGrantTarget::as_select())
+                        .load(&mut *conn)
+                        .await?;
+                let targets: Vec<Address> = target_rows
+                    .into_iter()
+                    .filter_map(|target| {
+                        let arr: [u8; 20] = target.address.try_into().ok()?;
+                        Some(Address::from(arr))
+                    })
+                    .collect();
+
+                let limit: EvmEtherTransferLimit = evm_ether_transfer_limit::table
+                    .filter(evm_ether_transfer_limit::id.eq(ether_grant.limit_id))
+                    .select(EvmEtherTransferLimit::as_select())
+                    .first(&mut *conn)
+                    .await?;
+
+                let settings = CombinedSettings {
+                    shared: shared.clone(),
+                    specific: policies::ether_transfer::Settings {
+                        target: targets,
+                        limit: VolumeRateLimit {
+                            max_volume: utils::try_bytes_to_u256(&limit.max_volume).map_err(
+                                |err| {
+                                    diesel::result::Error::DeserializationError(Box::new(err))
+                                },
+                            )?,
+                            window: chrono::Duration::seconds(limit.window_secs.into()),
+                        },
+                    },
                 };
 
-                update(evm_basic_grant::table)
-                    .filter(evm_basic_grant::id.eq(basic_grant_id))
-                    .set(evm_basic_grant::revoked_at.eq(SqliteTimestamp(Utc::now())))
-                    .execute(conn)
-                    .await?;
-
-                let basic_grant: EvmBasicGrant = evm_basic_grant::table
-                    .filter(evm_basic_grant::id.eq(basic_grant_id))
-                    .select(EvmBasicGrant::as_select())
-                    .first(conn)
-                    .await?;
-
-                let shared = SharedGrantSettings::try_from_model(basic_grant)?;
-
-                if let Some(ether_grant) = evm_ether_transfer_grant::table
-                    .filter(evm_ether_transfer_grant::basic_grant_id.eq(basic_grant_id))
-                    .select(EvmEtherTransferGrant::as_select())
-                    .first(conn)
+                integrity::sign_entity(&mut *conn, &vault, &settings, basic_grant_id)
                     .await
-                    .optional()?
-                {
-                    let target_rows: Vec<EvmEtherTransferGrantTarget> =
-                        evm_ether_transfer_grant_target::table
-                            .filter(evm_ether_transfer_grant_target::grant_id.eq(ether_grant.id))
-                            .select(EvmEtherTransferGrantTarget::as_select())
-                            .load(conn)
-                            .await?;
-                    let targets: Vec<Address> = target_rows
-                        .into_iter()
-                        .filter_map(|target| {
-                            let arr: [u8; 20] = target.address.try_into().ok()?;
-                            Some(Address::from(arr))
-                        })
-                        .collect();
+                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
 
-                    let limit: EvmEtherTransferLimit = evm_ether_transfer_limit::table
-                        .filter(evm_ether_transfer_limit::id.eq(ether_grant.limit_id))
-                        .select(EvmEtherTransferLimit::as_select())
-                        .first(conn)
+                return QueryResult::Ok(());
+            }
+
+            if let Some(token_grant) = evm_token_transfer_grant::table
+                .filter(evm_token_transfer_grant::basic_grant_id.eq(basic_grant_id))
+                .select(EvmTokenTransferGrant::as_select())
+                .first(&mut *conn)
+                .await
+                .optional()?
+            {
+                let volume_limit_rows: Vec<EvmTokenTransferVolumeLimit> =
+                    evm_token_transfer_volume_limit::table
+                        .filter(evm_token_transfer_volume_limit::grant_id.eq(token_grant.id))
+                        .select(EvmTokenTransferVolumeLimit::as_select())
+                        .load(&mut *conn)
                         .await?;
-
-                    let settings = CombinedSettings {
-                        shared: shared.clone(),
-                        specific: crate::evm::policies::ether_transfer::Settings {
-                            target: targets,
-                            limit: VolumeRateLimit {
-                                max_volume: utils::try_bytes_to_u256(&limit.max_volume).map_err(
-                                    |err| {
-                                        diesel::result::Error::DeserializationError(Box::new(err))
-                                    },
-                                )?,
-                                window: chrono::Duration::seconds(limit.window_secs as i64),
-                            },
-                        },
-                    };
-
-                    integrity::sign_entity(conn, &keyholder, &settings, basic_grant_id)
-                        .await
-                        .map_err(|_| diesel::result::Error::RollbackTransaction)?;
-
-                    return QueryResult::Ok(());
-                }
-
-                if let Some(token_grant) = evm_token_transfer_grant::table
-                    .filter(evm_token_transfer_grant::basic_grant_id.eq(basic_grant_id))
-                    .select(EvmTokenTransferGrant::as_select())
-                    .first(conn)
-                    .await
-                    .optional()?
-                {
-                    let volume_limit_rows: Vec<EvmTokenTransferVolumeLimit> =
-                        evm_token_transfer_volume_limit::table
-                            .filter(evm_token_transfer_volume_limit::grant_id.eq(token_grant.id))
-                            .select(EvmTokenTransferVolumeLimit::as_select())
-                            .load(conn)
-                            .await?;
-                    let volume_limits: Vec<VolumeRateLimit> = volume_limit_rows
-                        .into_iter()
-                        .map(|row| {
-                            Ok(VolumeRateLimit {
-                                max_volume: utils::try_bytes_to_u256(&row.max_volume).map_err(
-                                    |err| {
-                                        diesel::result::Error::DeserializationError(Box::new(err))
-                                    },
-                                )?,
-                                window: chrono::Duration::seconds(row.window_secs as i64),
-                            })
+                let volume_limits: Vec<VolumeRateLimit> = volume_limit_rows
+                    .into_iter()
+                    .map(|row| {
+                        Ok(VolumeRateLimit {
+                            max_volume: utils::try_bytes_to_u256(&row.max_volume).map_err(
+                                |err| {
+                                    diesel::result::Error::DeserializationError(Box::new(err))
+                                },
+                            )?,
+                            window: chrono::Duration::seconds(row.window_secs.into()),
                         })
-                        .collect::<QueryResult<Vec<_>>>()?;
+                    })
+                    .collect::<QueryResult<Vec<_>>>()?;
 
-                    let target: Option<Address> = match token_grant.receiver {
-                        None => None,
-                        Some(bytes) => {
-                            let arr: [u8; 20] = bytes.try_into().map_err(|_| {
-                                diesel::result::Error::DeserializationError(
-                                    "Invalid receiver address length".into(),
-                                )
-                            })?;
-                            Some(Address::from(arr))
-                        }
-                    };
-
-                    let token_contract: [u8; 20] =
-                        token_grant.token_contract.clone().try_into().map_err(|_| {
+                let target: Option<Address> = match token_grant.receiver {
+                    None => None,
+                    Some(bytes) => {
+                        let arr: [u8; 20] = bytes.try_into().map_err(|_| {
                             diesel::result::Error::DeserializationError(
-                                "Invalid token contract address length".into(),
+                                "Invalid receiver address length".into(),
                             )
                         })?;
+                        Some(Address::from(arr))
+                    }
+                };
 
-                    let settings = CombinedSettings {
-                        shared,
-                        specific: crate::evm::policies::token_transfers::Settings {
-                            token_contract: Address::from(token_contract),
-                            target,
-                            volume_limits,
-                        },
-                    };
+                let token_contract: [u8; 20] =
+                    token_grant.token_contract.clone().try_into().map_err(|_| {
+                        diesel::result::Error::DeserializationError(
+                            "Invalid token contract address length".into(),
+                        )
+                    })?;
 
-                    integrity::sign_entity(conn, &keyholder, &settings, basic_grant_id)
-                        .await
-                        .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+                let settings = CombinedSettings {
+                    shared,
+                    specific: policies::token_transfers::Settings {
+                        token_contract: Address::from(token_contract),
+                        target,
+                        volume_limits,
+                    },
+                };
 
-                    return QueryResult::Ok(());
-                }
+                integrity::sign_entity(&mut *conn, &vault, &settings, basic_grant_id)
+                    .await
+                    .map_err(|_| diesel::result::Error::RollbackTransaction)?;
 
-                Err(diesel::result::Error::NotFound)
-            })
+                return QueryResult::Ok(());
+            }
+
+            Err(diesel::result::Error::NotFound)
         })
         .await
         .map_err(DatabaseError::from)
@@ -436,7 +436,7 @@ impl Engine {
 
         // Verify integrity of all grants before returning any results
         for grant in &all_grants {
-            integrity::verify_entity(conn, &self.keyholder, &grant.settings, grant.id).await?;
+            integrity::verify_entity(conn, &self.vault, &grant.settings, grant.id).await?;
         }
 
         Ok(all_grants.into_iter().map(|g| Grant {
@@ -466,7 +466,7 @@ impl Engine {
         let TxKind::Call(to) = transaction.to else {
             return Err(VetError::ContractCreationNotSupported);
         };
-        let context = policies::EvalContext {
+        let context = EvalContext {
             target,
             chain: transaction.chain_id,
             to,
@@ -509,7 +509,7 @@ mod tests {
     use kameo::{actor::ActorRef, prelude::Spawn};
     use rstest::rstest;
 
-    use crate::actors::keyholder::{Bootstrap, KeyHolder};
+    use crate::actors::{GlobalActors, vault::{Bootstrap, Vault}};
     use crate::crypto::integrity;
     use crate::db::{
         self, DatabaseConnection,
@@ -564,10 +564,16 @@ mod tests {
         conn: &mut DatabaseConnection,
         shared: &SharedGrantSettings,
     ) -> EvmBasicGrant {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_possible_wrap,
+            clippy::as_conversions,
+            reason = "fixme! #86"
+        )]
         insert_into(evm_basic_grant::table)
             .values(NewEvmBasicGrant {
                 wallet_access_id: shared.wallet_access_id,
-                chain_id: shared.chain as i32,
+                chain_id: shared.chain.into(),
                 valid_from: shared.valid_from.map(SqliteTimestamp),
                 valid_until: shared.valid_until.map(SqliteTimestamp),
                 max_gas_fee_per_gas: shared
@@ -731,7 +737,7 @@ mod tests {
             .values(NewEvmTransactionLog {
                 grant_id: basic_grant.id,
                 wallet_access_id: WALLET_ACCESS_ID,
-                chain_id: CHAIN_ID as i32,
+                chain_id: CHAIN_ID.into(),
                 eth_value: super::utils::u256_to_bytes(U256::ZERO).to_vec(),
                 signed_at: SqliteTimestamp(Utc::now()),
             })
@@ -757,8 +763,12 @@ mod tests {
         }
     }
 
-    async fn bootstrapped_keyholder(db: &db::DatabasePool) -> ActorRef<KeyHolder> {
-        let actor = KeyHolder::spawn(KeyHolder::new(db.clone()).await.unwrap());
+    async fn bootstrapped_vault(db: &db::DatabasePool) -> ActorRef<Vault> {
+        let actor = Vault::spawn(
+            Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+                .await
+                .unwrap(),
+        );
         actor
             .ask(Bootstrap {
                 seal_key_raw: SafeCell::new(b"integrity-test-seal-key".to_vec()),
@@ -774,8 +784,8 @@ mod tests {
         use diesel::ExpressionMethods as _;
 
         let db = db::create_test_pool().await;
-        let keyholder = bootstrapped_keyholder(&db).await;
-        let engine = super::Engine::new(db.clone(), keyholder.clone());
+        let vault = bootstrapped_vault(&db).await;
+        let engine = super::Engine::new(db.clone(), vault.clone());
 
         let full_grant = CombinedSettings {
             shared: SharedGrantSettings {
@@ -788,7 +798,7 @@ mod tests {
                 max_priority_fee_per_gas: None,
                 rate_limit: None,
             },
-            specific: crate::evm::policies::ether_transfer::Settings {
+            specific: super::policies::ether_transfer::Settings {
                 target: vec![RECIPIENT],
                 limit: VolumeRateLimit {
                     max_volume: U256::from(100u64),
@@ -828,7 +838,7 @@ mod tests {
             max_priority_fee_per_gas: 1,
         };
 
-        let grant = crate::evm::policies::ether_transfer::EtherTransfer::try_find_grant(
+        let grant = EtherTransfer::try_find_grant(
             &context, &mut conn,
         )
         .await
@@ -836,11 +846,11 @@ mod tests {
         .unwrap();
 
         let result =
-            integrity::verify_entity(&mut conn, &keyholder, &grant.settings, grant.id).await;
+            integrity::verify_entity(&mut conn, &vault, &grant.settings, grant.id).await;
 
         assert!(matches!(
             result,
-            Err(crate::crypto::integrity::Error::MacMismatch { .. })
+            Err(integrity::Error::MacMismatch { .. })
         ));
     }
 

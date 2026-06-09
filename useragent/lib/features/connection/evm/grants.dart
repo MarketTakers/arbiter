@@ -10,9 +10,7 @@ Future<List<GrantEntry>> listEvmGrants(Connection connection) async {
     UserAgentRequest(evm: ua_evm.Request(grantList: request)),
   );
   if (!response.hasEvm()) {
-    throw Exception(
-      'Expected EVM response, got ${response.whichPayload()}',
-    );
+    throw Exception('Expected EVM response, got ${response.whichPayload()}');
   }
 
   final evmResponse = response.evm;
@@ -50,9 +48,7 @@ Future<int> createEvmGrant(
   final resp = await connection.ask(request);
 
   if (!resp.hasEvm()) {
-    throw Exception(
-      'Expected EVM response, got ${resp.whichPayload()}',
-    );
+    throw Exception('Expected EVM response, got ${resp.whichPayload()}');
   }
 
   final evmResponse = resp.evm;
@@ -70,15 +66,11 @@ Future<int> createEvmGrant(
 Future<void> deleteEvmGrant(Connection connection, int grantId) async {
   final response = await connection.ask(
     UserAgentRequest(
-      evm: ua_evm.Request(
-        grantDelete: EvmGrantDeleteRequest(grantId: grantId),
-      ),
+      evm: ua_evm.Request(grantDelete: EvmGrantDeleteRequest(grantId: grantId)),
     ),
   );
   if (!response.hasEvm()) {
-    throw Exception(
-      'Expected EVM response, got ${response.whichPayload()}',
-    );
+    throw Exception('Expected EVM response, got ${response.whichPayload()}');
   }
 
   final evmResponse = response.evm;

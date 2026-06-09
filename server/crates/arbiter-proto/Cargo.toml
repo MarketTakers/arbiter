@@ -9,7 +9,6 @@ license = "Apache-2.0"
 tonic.workspace = true
 tokio.workspace = true
 futures.workspace = true
-hex = "0.4.3"
 tonic-prost = "0.14.5"
 prost.workspace = true
 kameo.workspace = true
@@ -19,18 +18,18 @@ thiserror.workspace = true
 rustls-pki-types.workspace = true
 base64.workspace = true
 prost-types.workspace = true
-tracing.workspace = true
 async-trait.workspace = true
 tokio-stream.workspace = true
 
 [build-dependencies]
 tonic-prost-build = "0.14.5"
-protoc-bin-vendored = "3"
 
 [dev-dependencies]
 rstest.workspace = true
-rand.workspace = true
 rcgen.workspace = true
 
+[lib]
+doctest = false
+
 [package.metadata.cargo-shear]
-ignored = ["tonic-prost", "prost", "kameo"]
+ignored = ["tonic-prost", "prost"]

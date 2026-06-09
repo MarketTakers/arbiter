@@ -111,7 +111,7 @@ String shortAddress(List<int> bytes) {
 - [ ] **Step 2: Verify**
 
 ```sh
-cd useragent && dart analyze lib/screens/dashboard/evm/grants/create/utils.dart
+cd operator && dart analyze lib/screens/dashboard/evm/grants/create/utils.dart
 ```
 
 Expected: no errors.
@@ -168,7 +168,7 @@ class GrantCreation extends _$GrantCreation {
 - [ ] **Step 2: Run code generator**
 
 ```sh
-cd useragent && dart run build_runner build --delete-conflicting-outputs
+cd operator && dart run build_runner build --delete-conflicting-outputs
 ```
 
 Expected: generates `provider.freezed.dart` and `provider.g.dart`, no errors.
@@ -176,7 +176,7 @@ Expected: generates `provider.freezed.dart` and `provider.g.dart`, no errors.
 - [ ] **Step 3: Verify**
 
 ```sh
-cd useragent && dart analyze lib/screens/dashboard/evm/grants/create/provider.dart
+cd operator && dart analyze lib/screens/dashboard/evm/grants/create/provider.dart
 ```
 
 Expected: no errors.
@@ -204,7 +204,7 @@ jj describe -m "feat(grants): add GrantCreation provider (client selection + gra
 
 ```dart
 // lib/screens/dashboard/evm/grants/create/fields/client_picker_field.dart
-import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/proto/operator.pb.dart';
 import 'package:arbiter/providers/sdk_clients/list.dart';
 import 'package:arbiter/screens/dashboard/evm/grants/create/provider.dart';
 import 'package:flutter/material.dart';
@@ -246,7 +246,7 @@ class ClientPickerField extends ConsumerWidget {
 ```dart
 // lib/screens/dashboard/evm/grants/create/fields/wallet_access_picker_field.dart
 import 'package:arbiter/proto/evm.pb.dart';
-import 'package:arbiter/proto/user_agent.pb.dart';
+import 'package:arbiter/proto/operator.pb.dart';
 import 'package:arbiter/providers/evm/evm.dart';
 import 'package:arbiter/providers/sdk_clients/wallet_access_list.dart';
 import 'package:arbiter/screens/dashboard/evm/grants/create/provider.dart';
@@ -522,7 +522,7 @@ class TransactionRateLimitField extends StatelessWidget {
 - [ ] **Step 8: Verify all field widgets**
 
 ```sh
-cd useragent && dart analyze lib/screens/dashboard/evm/grants/create/fields/
+cd operator && dart analyze lib/screens/dashboard/evm/grants/create/fields/
 ```
 
 Expected: no errors.
@@ -585,7 +585,7 @@ class SharedGrantFields extends StatelessWidget {
 - [ ] **Step 2: Verify**
 
 ```sh
-cd useragent && dart analyze lib/screens/dashboard/evm/grants/create/shared_grant_fields.dart
+cd operator && dart analyze lib/screens/dashboard/evm/grants/create/shared_grant_fields.dart
 ```
 
 Expected: no errors.
@@ -978,7 +978,7 @@ class _TokenVolumeLimitRow extends HookWidget {
 - [ ] **Step 4: Run code generator for token_transfer_grant.g.dart**
 
 ```sh
-cd useragent && dart run build_runner build --delete-conflicting-outputs
+cd operator && dart run build_runner build --delete-conflicting-outputs
 ```
 
 Expected: generates `token_transfer_grant.g.dart`, no errors.
@@ -986,7 +986,7 @@ Expected: generates `token_transfer_grant.g.dart`, no errors.
 - [ ] **Step 5: Verify**
 
 ```sh
-cd useragent && dart analyze lib/screens/dashboard/evm/grants/create/grants/
+cd operator && dart analyze lib/screens/dashboard/evm/grants/create/grants/
 ```
 
 Expected: no errors.
@@ -1265,7 +1265,7 @@ String _formatError(Object error) {
 - [ ] **Step 2: Verify the full create/ directory**
 
 ```sh
-cd useragent && dart analyze lib/screens/dashboard/evm/grants/create/
+cd operator && dart analyze lib/screens/dashboard/evm/grants/create/
 ```
 
 Expected: no errors.

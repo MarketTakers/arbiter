@@ -1,8 +1,8 @@
-use alloy::{consensus::TxEip1559, primitives::Address, rlp::Decodable as _};
-
 use crate::grpc::TryConvert;
 
-pub struct RawEvmAddress(pub Vec<u8>);
+use alloy::{consensus::TxEip1559, primitives::Address, rlp::Decodable as _};
+
+pub(in crate::grpc) struct RawEvmAddress(pub(in crate::grpc) Vec<u8>);
 impl TryConvert for RawEvmAddress {
     type Output = Address;
 
@@ -21,7 +21,7 @@ impl TryConvert for RawEvmAddress {
     }
 }
 
-pub struct RawEvmTransaction(pub Vec<u8>);
+pub(in crate::grpc) struct RawEvmTransaction(pub(in crate::grpc) Vec<u8>);
 impl TryConvert for RawEvmTransaction {
     type Output = TxEip1559;
 

@@ -1,0 +1,4 @@
+[tasks.codegen]
+run = '''
+  flutter_rust_bridge_codegen generate 
+'''

@@ -1,7 +1,9 @@
-use std::ops::{Deref, DerefMut};
-use std::{any::type_name, fmt};
-
 use memsafe::MemSafe;
+use std::{
+    any::type_name,
+    fmt,
+    ops::{Deref, DerefMut},
+};
 
 pub trait SafeCellHandle<T> {
     type CellRead<'a>: Deref<Target = T>
@@ -29,7 +31,7 @@ pub trait SafeCellHandle<T> {
         let mut cell = Self::new(T::default());
         {
             let mut handle = cell.write();
-            f(handle.deref_mut());
+            f(&mut *handle);
         }
         cell
     }

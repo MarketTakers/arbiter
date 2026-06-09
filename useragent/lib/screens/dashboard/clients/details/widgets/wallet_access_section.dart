@@ -30,26 +30,23 @@ class WalletAccessSection extends ConsumerWidget {
     return CreamFrame(
       padding: const EdgeInsets.all(20),
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Wallet access',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text('Choose which managed wallets this client can see.'),
-            const SizedBox(height: 16),
-            _WalletAccessBody(
-              clientId: clientId,
-              state: state,
-              accessSelectionAsync: accessSelectionAsync,
-              isSavePending: isSavePending,
-              optionsAsync: optionsAsync,
-              onSearchChanged: onSearchChanged,
-              onToggleWallet: onToggleWallet,
-            ),
-          ],
-        ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Wallet access', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          Text('Choose which managed wallets this client can see.'),
+          const SizedBox(height: 16),
+          _WalletAccessBody(
+            clientId: clientId,
+            state: state,
+            accessSelectionAsync: accessSelectionAsync,
+            isSavePending: isSavePending,
+            optionsAsync: optionsAsync,
+            onSearchChanged: onSearchChanged,
+            onToggleWallet: onToggleWallet,
+          ),
+        ],
+      ),
     );
   }
 }

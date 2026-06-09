@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
 use alloy::{
     consensus::SignableTransaction,
@@ -6,9 +6,9 @@ use alloy::{
     primitives::{Address, B256, ChainId, Signature},
     signers::{Error, Result, Signer, SignerSync, utils::secret_key_to_address},
 };
-use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use async_trait::async_trait;
 use k256::ecdsa::{self, RecoveryId, SigningKey, signature::hazmat::PrehashSigner};
+use std::sync::Mutex;
 
 /// An Ethereum signer that stores its secp256k1 secret key inside a
 /// hardware-protected [`MemSafe`] cell.
@@ -82,8 +82,8 @@ impl SafeSigner {
         })
     }
 
+    #[expect(clippy::significant_drop_tightening, reason = "false positive")]
     fn sign_hash_inner(&self, hash: &B256) -> Result<Signature> {
-        #[allow(clippy::expect_used)]
         let mut cell = self.key.lock().expect("SafeSigner mutex poisoned");
         let reader = cell.read();
         let sig: (ecdsa::Signature, RecoveryId) = reader.sign_prehash(hash.as_ref())?;
@@ -96,7 +96,6 @@ impl SafeSigner {
         {
             return Err(Error::TransactionChainIdMismatch {
                 signer: chain_id,
-                #[allow(clippy::expect_used)]
                 tx: tx.chain_id().expect("Chain ID is guaranteed to be set"),
             });
         }

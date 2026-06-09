@@ -1,16 +1,65 @@
-use base64::{Engine as _, prelude::BASE64_STANDARD};
+use chrono::{DateTime, Utc};
 use hmac::digest::Digest;
 use ml_dsa::{
     EncodedVerifyingKey, Error, KeyGen, MlDsa87, Seed, Signature as MlDsaSignature,
     SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey, signature::Keypair as _,
 };
+use rand::RngExt;
 
 pub static CLIENT_CONTEXT: &[u8] = b"arbiter_client";
-pub static USERAGENT_CONTEXT: &[u8] = b"arbiter_user_agent";
+pub static OPERATOR_CONTEXT: &[u8] = b"arbiter_operator";
 
-pub fn format_challenge(nonce: i32, pubkey: &[u8]) -> Vec<u8> {
-    let concat_form = format!("{}:{}", nonce, BASE64_STANDARD.encode(pubkey));
-    concat_form.into_bytes()
+const NONCE_SIZE: usize = 32;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("invalid length: expected {expected} bytes, got {actual} bytes")]
+pub struct InvalidLength {
+    pub expected: usize,
+    pub actual: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthChallenge {
+    pub nonce: [u8; NONCE_SIZE],
+    pub timestamp: DateTime<Utc>,
+}
+
+impl AuthChallenge {
+    pub fn generate(rng: &mut impl rand::CryptoRng) -> Self {
+        let timestamp = Utc::now();
+        let nonce = {
+            let mut array = [0; NONCE_SIZE];
+            rng.fill(&mut array);
+            array
+        };
+
+        Self { nonce, timestamp }
+    }
+
+    pub fn format(&self) -> Vec<u8> {
+        {
+            let mut buffer = Vec::from(self.nonce);
+
+            let stamp = self
+                .timestamp
+                .timestamp_nanos_opt()
+                .expect("We would be long dead by the time this triggers :)");
+            buffer.extend_from_slice(stamp.to_be_bytes().as_slice());
+
+            buffer
+        }
+    }
+
+    pub fn from_parts(nonce: &[u8], timestamp: i64) -> Result<Self, InvalidLength> {
+        let random_nonce = nonce.as_array().ok_or(InvalidLength {
+            expected: NONCE_SIZE,
+            actual: nonce.len(),
+        })?;
+        Ok(Self {
+            nonce: *random_nonce,
+            timestamp: DateTime::from_timestamp_nanos(timestamp),
+        })
+    }
 }
 
 pub type KeyParams = MlDsa87;
@@ -35,12 +84,11 @@ impl PublicKey {
         self.0.encode().0.to_vec()
     }
 
-    pub fn verify(&self, nonce: i32, context: &[u8], signature: &Signature) -> bool {
-        self.0.verify_with_context(
-            &format_challenge(nonce, &self.to_bytes()),
-            context,
-            &signature.0,
-        )
+    #[must_use]
+    pub fn verify(&self, challenge: &AuthChallenge, context: &[u8], signature: &Signature) -> bool {
+        let challenge = challenge.format();
+        self.0
+            .verify_with_context(&challenge, context, &signature.0)
     }
 }
 
@@ -74,11 +122,14 @@ impl SigningKey {
             .map(Into::into)
     }
 
-    pub fn sign_challenge(&self, nonce: i32, context: &[u8]) -> Result<Signature, Error> {
-        self.sign_message(
-            &format_challenge(nonce, &self.public_key().to_bytes()),
-            context,
-        )
+    pub fn sign_challenge(
+        &self,
+        challenge: &AuthChallenge,
+        context: &[u8],
+    ) -> Result<Signature, Error> {
+        let challenge = challenge.format();
+
+        self.sign_message(&challenge, context)
     }
 }
 
@@ -139,7 +190,9 @@ impl TryFrom<&'_ [u8]> for Signature {
 mod tests {
     use ml_dsa::{KeyGen, MlDsa87, signature::Keypair as _};
 
-    use super::{CLIENT_CONTEXT, PublicKey, Signature, SigningKey, USERAGENT_CONTEXT};
+    use crate::authn::AuthChallenge;
+
+    use super::{CLIENT_CONTEXT, PublicKey, Signature, SigningKey, OPERATOR_CONTEXT};
 
     #[test]
     fn public_key_round_trip_decodes() {
@@ -168,13 +221,13 @@ mod tests {
     fn challenge_verification_uses_context_and_canonical_key_bytes() {
         let key = SigningKey::generate();
         let public_key = key.public_key();
-        let nonce = 17;
+        let challenge = AuthChallenge::generate(&mut rand::rng());
         let signature = key
-            .sign_challenge(nonce, CLIENT_CONTEXT)
+            .sign_challenge(&challenge, CLIENT_CONTEXT)
             .expect("signature should be created");
 
-        assert!(public_key.verify(nonce, CLIENT_CONTEXT, &signature));
-        assert!(!public_key.verify(nonce, USERAGENT_CONTEXT, &signature));
+        assert!(public_key.verify(&challenge, CLIENT_CONTEXT, &signature));
+        assert!(!public_key.verify(&challenge, OPERATOR_CONTEXT, &signature));
     }
 
     #[test]
@@ -184,10 +237,16 @@ mod tests {
 
         assert_eq!(restored.public_key(), original.public_key());
 
+        let challenge = AuthChallenge::generate(&mut rand::rng());
+
         let signature = restored
-            .sign_challenge(9, CLIENT_CONTEXT)
+            .sign_challenge(&challenge, CLIENT_CONTEXT)
             .expect("signature should be created");
 
-        assert!(restored.public_key().verify(9, CLIENT_CONTEXT, &signature));
+        assert!(
+            restored
+                .public_key()
+                .verify(&challenge, CLIENT_CONTEXT, &signature)
+        );
     }
 }

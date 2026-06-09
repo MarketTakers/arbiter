@@ -1,10 +1,8 @@
+use crate::utils::{HASHABLE_TRAIT_PATH, HMAC_DIGEST_PATH};
+
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::quote;
-use syn::parse_quote;
-use syn::spanned::Spanned;
-use syn::{DataStruct, DeriveInput, Fields, Generics, Index};
-
-use crate::utils::{HASHABLE_TRAIT_PATH, HMAC_DIGEST_PATH};
+use syn::{DataStruct, DeriveInput, Fields, Generics, Index, parse_quote, spanned::Spanned};
 
 pub(crate) fn derive(input: &DeriveInput) -> TokenStream {
     match &input.data {
@@ -20,7 +18,7 @@ pub(crate) fn derive(input: &DeriveInput) -> TokenStream {
     }
 }
 
-fn hashable_struct(input: &DeriveInput, struct_data: &syn::DataStruct) -> TokenStream {
+fn hashable_struct(input: &DeriveInput, struct_data: &DataStruct) -> TokenStream {
     let ident = &input.ident;
     let hashable_trait = HASHABLE_TRAIT_PATH.to_path();
     let hmac_digest = HMAC_DIGEST_PATH.to_path();

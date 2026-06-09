@@ -1,4 +1,10 @@
-use std::{collections::HashMap, ops::ControlFlow};
+use crate::{
+    actors::{
+        flow_coordinator::client_connect_approval::ClientApprovalController,
+        operator_registry::{GetConnected, OperatorRegistry},
+    },
+    peers::client::{ClientProfile, session::ClientSession},
+};
 
 use kameo::{
     Actor,
@@ -7,20 +13,23 @@ use kameo::{
     prelude::{ActorStopReason, Context, WeakActorRef},
     reply::DelegatedReply,
 };
+use std::{collections::HashMap, ops::ControlFlow};
 use tracing::info;
-
-use crate::actors::{
-    client::{ClientProfile, session::ClientSession},
-    flow_coordinator::client_connect_approval::ClientApprovalController,
-    user_agent::session::UserAgentSession,
-};
 
 pub mod client_connect_approval;
 
-#[derive(Default)]
 pub struct FlowCoordinator {
-    pub user_agents: HashMap<ActorId, ActorRef<UserAgentSession>>,
     pub clients: HashMap<ActorId, ActorRef<ClientSession>>,
+    operator_registry: ActorRef<OperatorRegistry>,
+}
+
+impl FlowCoordinator {
+    pub fn new(operator_registry: ActorRef<OperatorRegistry>) -> Self {
+        Self {
+            clients: HashMap::default(),
+            operator_registry,
+        }
+    }
 }
 
 impl Actor for FlowCoordinator {
@@ -38,13 +47,7 @@ impl Actor for FlowCoordinator {
         id: ActorId,
         _: ActorStopReason,
     ) -> Result<ControlFlow<ActorStopReason>, Self::Error> {
-        if self.user_agents.remove(&id).is_some() {
-            info!(
-                ?id,
-                actor = "FlowCoordinator",
-                event = "useragent.disconnected"
-            );
-        } else if self.clients.remove(&id).is_some() {
+        if self.clients.remove(&id).is_some() {
             info!(
                 ?id,
                 actor = "FlowCoordinator",
@@ -63,23 +66,12 @@ impl Actor for FlowCoordinator {
 
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq, Hash)]
 pub enum ApprovalError {
-    #[error("No user agents connected")]
-    NoUserAgentsConnected,
+    #[error("No operators connected")]
+    NoOperatorsConnected,
 }
 
 #[messages]
 impl FlowCoordinator {
-    #[message(ctx)]
-    pub async fn register_user_agent(
-        &mut self,
-        actor: ActorRef<UserAgentSession>,
-        ctx: &mut Context<Self, ()>,
-    ) {
-        info!(id = %actor.id(), actor = "FlowCoordinator", event = "useragent.connected");
-        ctx.actor_ref().link(&actor).await;
-        self.user_agents.insert(actor.id(), actor);
-    }
-
     #[message(ctx)]
     pub async fn register_client(
         &mut self,
@@ -101,15 +93,19 @@ impl FlowCoordinator {
             unreachable!("Expected `request_client_approval` to have callback channel");
         };
 
-        let refs: Vec<_> = self.user_agents.values().cloned().collect();
+        let Ok(refs) = self.operator_registry.ask(GetConnected).await else {
+            reply_sender.send(Err(ApprovalError::NoOperatorsConnected));
+            return reply;
+        };
+
         if refs.is_empty() {
-            reply_sender.send(Err(ApprovalError::NoUserAgentsConnected));
+            reply_sender.send(Err(ApprovalError::NoOperatorsConnected));
             return reply;
         }
 
         ClientApprovalController::spawn(client_connect_approval::Args {
             client,
-            user_agents: refs,
+            operators: refs,
             reply: reply_sender,
         });
 

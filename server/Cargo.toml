@@ -4,47 +4,168 @@ members = [
 ]
 resolver = "3"
 
-[workspace.lints.clippy]
-disallowed-methods = "deny"
-
 
 [workspace.dependencies]
-tonic = { version = "0.14.5", features = [
-    "deflate",
-    "gzip",
-    "tls-connect-info",
-    "zstd",
-] }
-tracing = "0.1.44"
-tokio = { version = "1.50.0", features = ["full"] }
-ed25519-dalek = { version = "3.0.0-pre.6", features = ["rand_core"] }
+alloy = "2.0.4"
+async-trait = "0.1.89"
+base64 = "0.22.1"
 chrono = { version = "0.4.44", features = ["serde"] }
-rand = "0.10.0"
-rustls = { version = "0.23.37", features = ["aws-lc-rs", "logging", "prefer-post-quantum", "std"], default-features = false }
+futures = "0.3.32"
+k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"] }
+kameo = {git = "https://github.com/hdbg/kameo.git", rev = "805b417"}
+kameo_actors = {git = "https://github.com/hdbg/kameo.git", rev = "805b417"}
+hmac = "0.13.0"
+miette = { version = "7.6.0", features = ["fancy", "serde"] }
+ml-dsa = { version = "0.1.0-rc.9", features = ["zeroize"] }
+mutants = "0.0.4"
+prost = "0.14.3"
+prost-types = { version = "0.14.3", features = ["chrono"] }
+rand = "0.10.1"
+rcgen = { version = "0.14.7", features = [ "aws_lc_rs",  "pem", "x509-parser", "zeroize" ], default-features = false }
+rstest = "0.26.1"
+rustls = { version = "0.23.40", features = ["aws-lc-rs", "logging", "prefer-post-quantum", "std"], default-features = false }
+rustls-pki-types = "1.14.1"
+sha2 = "0.11"
 smlang = "0.8.0"
 thiserror = "2.0.18"
-async-trait = "0.1.89"
-futures = "0.3.32"
+tokio = { version = "1.52.1", features = ["full"] }
 tokio-stream = { version = "0.1.18", features = ["full"] }
-kameo = "0.19.2"
-prost-types = { version = "0.14.3", features = ["chrono"] }
+tonic = { version = "0.14.5", features = [ "deflate", "gzip", "tls-connect-info", "zstd" ] }
+tracing = "0.1.44"
 x25519-dalek = { version = "2.0.1", features = ["getrandom"] }
-rstest = "0.26.1"
-rustls-pki-types = "1.14.0"
-alloy = "1.7.3"
-rcgen = { version = "0.14.7", features = [
-    "aws_lc_rs",
-    "pem",
-    "x509-parser",
-    "zeroize",
-], default-features = false }
-k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"] }
-rsa = { version = "0.9", features = ["sha2"] }
-sha2 = "0.10"
-spki = "0.7"
-prost = "0.14.3"
-miette = { version = "7.6.0", features = ["fancy", "serde"] }
-mutants = "0.0.4"
-ml-dsa = { version = "0.1.0-rc.8", features = ["zeroize"] }
-base64 = "0.22.1"
-hmac = "0.12.1"
+
+[workspace.lints.rust]
+missing_unsafe_on_extern = "deny"
+unsafe_attr_outside_unsafe = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+unstable_features = "deny"
+
+deprecated_safe_2024 = "warn"
+ffi_unwind_calls = "warn"
+linker_messages = "warn"
+
+elided_lifetimes_in_paths = "warn"
+explicit_outlives_requirements = "warn"
+impl-trait-overcaptures = "warn"
+impl-trait-redundant-captures = "warn"
+redundant_lifetimes = "warn"
+single_use_lifetimes = "warn"
+unused_lifetimes = "warn"
+
+macro_use_extern_crate = "warn"
+redundant_imports = "warn"
+unused_import_braces = "warn"
+unused_macro_rules = "warn"
+unused_qualifications = "warn"
+
+unit_bindings = "warn"
+
+# missing_docs = "warn" # ENABLE BY THE FIRST MAJOR VERSION!!
+unnameable_types = "warn"
+
+[workspace.lints.clippy]
+derive_partial_eq_without_eq = "allow" 
+future_not_send = "allow"
+inconsistent_struct_constructor = "allow"
+inline_always = "allow"
+missing_errors_doc = "allow"
+missing_fields_in_debug = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+needless_pass_by_ref_mut = "allow"
+pub_underscore_fields = "allow"
+redundant_pub_crate = "allow" 
+uninhabited_references = "allow" # safe with unsafe_code = "forbid" and standard uninhabited pattern (match *self {})
+too-many-lines = "allow" # this is a very common pattern in server code, and it's not always possible to break it down into smaller modules without hurting readability
+
+# restriction lints
+alloc_instead_of_core = "warn"
+allow_attributes_without_reason = "warn"
+as_conversions = "warn"
+assertions_on_result_states = "warn"
+cfg_not_test = "warn"
+clone_on_ref_ptr = "warn"
+cognitive_complexity = "warn"
+create_dir = "warn"
+dbg_macro = "warn"
+decimal_literal_representation = "warn"
+default_union_representation = "warn"
+deref_by_slicing = "warn"
+disallowed_script_idents = "warn"
+doc_include_without_cfg = "warn"
+empty_drop = "warn"
+empty_enum_variants_with_brackets = "warn"
+empty_structs_with_brackets = "warn"
+exit = "warn"
+filetype_is_file = "warn"
+float_arithmetic = "warn"
+float_cmp_const = "warn"
+fn_to_numeric_cast_any = "warn"
+get_unwrap = "warn"
+if_then_some_else_none = "warn"
+indexing_slicing = "warn"
+infinite_loop = "warn"
+inline_asm_x86_att_syntax = "warn"
+inline_asm_x86_intel_syntax = "warn"
+integer_division = "warn"
+large_include_file = "warn"
+lossy_float_literal = "warn"
+map_with_unused_argument_over_ranges = "warn"
+mem_forget = "warn"
+missing_assert_message = "warn"
+mixed_read_write_in_expression = "warn"
+modulo_arithmetic = "warn"
+multiple_unsafe_ops_per_block = "warn"
+mutex_atomic = "warn"
+mutex_integer = "warn"
+needless_raw_strings = "warn"
+non_ascii_literal = "warn"
+non_zero_suggestions = "warn"
+pathbuf_init_then_push = "warn"
+pointer_format = "warn"
+precedence_bits = "warn"
+pub_without_shorthand = "warn"
+rc_buffer = "warn"
+rc_mutex = "warn"
+redundant_test_prefix = "warn"
+redundant_type_annotations = "warn"
+ref_patterns = "warn"
+renamed_function_params = "warn"
+rest_pat_in_fully_bound_structs = "warn"
+return_and_then = "warn"
+semicolon_inside_block = "warn"
+str_to_string = "warn"
+string_add = "warn"
+string_lit_chars_any = "warn"
+string_slice = "warn"
+suspicious_xor_used_as_pow = "warn"
+try_err = "warn"
+undocumented_unsafe_blocks = "warn"
+uninlined_format_args = "warn"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+unnecessary_self_imports = "warn"
+unneeded_field_pattern = "warn"
+unused_result_ok = "warn"
+verbose_file_reads = "warn"
+
+# cargo lints
+negative_feature_names = "warn"
+redundant_feature_names = "warn"
+wildcard_dependencies = "warn"
+
+# ENABLE BY THE FIRST MAJOR VERSION!!
+# todo = "warn"
+# unimplemented = "warn"
+# panic = "warn"
+# panic_in_result_fn = "warn"
+# 
+# cargo_common_metadata = "warn"
+# multiple_crate_versions = "warn" # a controversial option since it's really difficult to maintain
+
+disallowed_methods = "deny"
+
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+type_repetition_in_bounds = "allow"   # sometimes, it's better for readability this way

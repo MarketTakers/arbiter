@@ -45,7 +45,7 @@ sol! {
 
 sol! {
     /// Permit2 — Uniswap's canonical token approval manager.
-    /// Replaces per-contract ERC-20 approve() with a single approval hub.
+    /// Replaces per-contract ERC-20 `approve()` with a single approval hub.
     #[derive(Debug)]
     interface IPermit2 {
         struct TokenPermissions {

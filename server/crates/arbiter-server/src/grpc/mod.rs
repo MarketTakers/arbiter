@@ -1,23 +1,20 @@
+use crate::peers::{client::ClientConnection, operator::OperatorConnection};
 use arbiter_proto::{
     proto::{
         client::{ClientRequest, ClientResponse},
-        user_agent::{UserAgentRequest, UserAgentResponse},
+        operator::{OperatorRequest, OperatorResponse},
     },
     transport::grpc::GrpcBi,
 };
+
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, async_trait};
 use tracing::info;
 
-use crate::{
-    actors::{client::ClientConnection, user_agent::UserAgentConnection},
-    grpc::user_agent::start,
-};
-
 mod request_tracker;
 
 pub mod client;
-pub mod user_agent;
+pub mod operator;
 
 mod common;
 
@@ -36,7 +33,7 @@ pub trait TryConvert {
 
 #[async_trait]
 impl arbiter_proto::proto::arbiter_service_server::ArbiterService for super::Server {
-    type UserAgentStream = ReceiverStream<Result<UserAgentResponse, Status>>;
+    type OperatorStream = ReceiverStream<Result<OperatorResponse, Status>>;
     type ClientStream = ReceiverStream<Result<ClientResponse, Status>>;
 
     #[tracing::instrument(level = "debug", skip(self))]
@@ -55,23 +52,23 @@ impl arbiter_proto::proto::arbiter_service_server::ArbiterService for super::Ser
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
-    async fn user_agent(
+    async fn operator(
         &self,
-        request: Request<tonic::Streaming<UserAgentRequest>>,
-    ) -> Result<Response<Self::UserAgentStream>, Status> {
+        request: Request<tonic::Streaming<OperatorRequest>>,
+    ) -> Result<Response<Self::OperatorStream>, Status> {
         let req_stream = request.into_inner();
 
         let (bi, rx) = GrpcBi::from_bi_stream(req_stream);
 
-        tokio::spawn(start(
-            UserAgentConnection {
+        tokio::spawn(operator::start(
+            OperatorConnection {
                 db: self.context.db.clone(),
                 actors: self.context.actors.clone(),
             },
             bi,
         ));
 
-        info!(event = "connection established", "grpc.user_agent");
+        info!(event = "connection established", "grpc.operator");
 
         Ok(Response::new(rx))
     }
