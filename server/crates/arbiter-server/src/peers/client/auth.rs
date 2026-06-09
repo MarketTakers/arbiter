@@ -298,7 +298,7 @@ where
 
     let signature = expect_message(transport, |req: Inbound| match req {
         Inbound::AuthChallengeSolution { signature } => Some(signature),
-        _ => None,
+        Inbound::AuthChallengeRequest { .. } => None,
     })
     .await
     .map_err(|e| {
