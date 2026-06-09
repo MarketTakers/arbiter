@@ -170,6 +170,7 @@ async fn handle_grant_delete(
     let result = match actor
         .ask(HandleGrantDelete {
             grant_id: req.grant_id,
+            wallet_access_id: req.wallet_access_id,
         })
         .await
     {

@@ -158,9 +158,13 @@ impl EvmActor {
     }
 
     #[message]
-    pub async fn useragent_delete_grant(&mut self, grant_id: i32) -> Result<(), Error> {
+    pub async fn useragent_delete_grant(
+        &mut self,
+        grant_id: i32,
+        wallet_access_id: i32,
+    ) -> Result<(), Error> {
         self.engine
-            .revoke_grant(grant_id)
+            .revoke_grant(grant_id, wallet_access_id)
             .await
             .map_err(Error::from)
     }
