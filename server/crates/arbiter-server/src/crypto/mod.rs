@@ -1,4 +1,5 @@
-use std::ops::Deref as _;
+use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
+use encryption::v1::{Nonce, Salt};
 
 use argon2::{Algorithm, Argon2};
 use chacha20poly1305::{
@@ -10,12 +11,8 @@ use rand::{
     rngs::{StdRng, SysRng},
 };
 
-use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
-
 pub mod encryption;
 pub mod integrity;
-
-use encryption::v1::{Nonce, Salt};
 
 pub struct KeyCell(pub SafeCell<Key>);
 impl From<SafeCell<Key>> for KeyCell {
@@ -41,11 +38,8 @@ impl TryFrom<SafeCell<Vec<u8>>> for KeyCell {
 impl KeyCell {
     pub fn new_secure_random() -> Self {
         let key = SafeCell::new_inline(|key_buffer: &mut Key| {
-            #[allow(
-                clippy::unwrap_used,
-                reason = "Rng failure is unrecoverable and should panic"
-            )]
-            let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
+            let mut rng = StdRng::try_from_rng(&mut SysRng)
+                .expect("Rng failure is unrecoverable and should panic");
             rng.fill_bytes(key_buffer);
         });
 
@@ -59,8 +53,7 @@ impl KeyCell {
         mut buffer: impl AsMut<Vec<u8>>,
     ) -> Result<(), Error> {
         let key_reader = self.0.read();
-        let key_ref = key_reader.deref();
-        let cipher = XChaCha20Poly1305::new(key_ref);
+        let cipher = XChaCha20Poly1305::new(&key_reader);
         let nonce = XNonce::from_slice(nonce.0.as_ref());
         let buffer = buffer.as_mut();
         cipher.encrypt_in_place(nonce, associated_data, buffer)
@@ -72,8 +65,7 @@ impl KeyCell {
         buffer: &mut SafeCell<Vec<u8>>,
     ) -> Result<(), Error> {
         let key_reader = self.0.read();
-        let key_ref = key_reader.deref();
-        let cipher = XChaCha20Poly1305::new(key_ref);
+        let cipher = XChaCha20Poly1305::new(&key_reader);
         let nonce = XNonce::from_slice(nonce.0.as_ref());
         let mut buffer = buffer.write();
         let buffer: &mut Vec<u8> = buffer.as_mut();
@@ -87,8 +79,7 @@ impl KeyCell {
         plaintext: impl AsRef<[u8]>,
     ) -> Result<Vec<u8>, Error> {
         let key_reader = self.0.read();
-        let key_ref = key_reader.deref();
-        let mut cipher = XChaCha20Poly1305::new(key_ref);
+        let mut cipher = XChaCha20Poly1305::new(&key_reader);
         let nonce = XNonce::from_slice(nonce.0.as_ref());
 
         let ciphertext = cipher.encrypt(
@@ -116,20 +107,15 @@ pub fn derive_key(mut password: SafeCell<Vec<u8>>, salt: &Salt) -> KeyCell {
         }
     };
 
-    #[allow(clippy::unwrap_used)]
     let hasher = Argon2::new(Algorithm::Argon2id, argon2::Version::V0x13, params);
     let mut key = SafeCell::new(Key::default());
     password.read_inline(|password_source| {
         let mut key_buffer = key.write();
         let key_buffer: &mut [u8] = key_buffer.as_mut();
 
-        #[allow(
-            clippy::unwrap_used,
-            reason = "Better fail completely than return a weak key"
-        )]
         hasher
-            .hash_password_into(password_source.deref(), salt, key_buffer)
-            .unwrap();
+            .hash_password_into(password_source, salt, key_buffer)
+            .expect("Better fail completely than return a weak key");
     });
 
     key.into()
@@ -144,7 +130,7 @@ mod tests {
     use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
     #[test]
-    pub fn encrypt_decrypt() {
+    fn encrypt_decrypt() {
         static PASSWORD: &[u8] = b"password";
         let password = SafeCell::new(PASSWORD.to_vec());
         let salt = generate_salt();

@@ -1,24 +1,27 @@
-use alloy::primitives::{Address, Bytes, U256, address};
-use alloy::sol_types::SolCall;
+use super::{Settings, TokenTransfer};
+use crate::{
+    db::{
+        self, DatabaseConnection,
+        models::{EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, SqliteTimestamp},
+        schema::evm_basic_grant,
+    },
+    evm::{
+        abi::IERC20::transferCall,
+        policies::{
+            CombinedSettings, EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings,
+            VolumeRateLimit,
+        },
+        utils,
+    },
+};
+
+use alloy::{
+    primitives::{Address, Bytes, U256, address},
+    sol_types::SolCall,
+};
 use chrono::{Duration, Utc};
 use diesel::{SelectableHelper, insert_into};
 use diesel_async::RunQueryDsl;
-
-use crate::db::{
-    self, DatabaseConnection,
-    models::{EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, SqliteTimestamp},
-    schema::evm_basic_grant,
-};
-use crate::evm::{
-    abi::IERC20::transferCall,
-    policies::{
-        CombinedSettings, EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings,
-        VolumeRateLimit,
-    },
-    utils,
-};
-
-use super::{Settings, TokenTransfer};
 
 // DAI on Ethereum mainnet — present in the static token registry
 const CHAIN_ID: u64 = 1;
@@ -59,7 +62,7 @@ async fn insert_basic(conn: &mut DatabaseConnection, revoked: bool) -> EvmBasicG
     insert_into(evm_basic_grant::table)
         .values(NewEvmBasicGrant {
             wallet_access_id: WALLET_ACCESS_ID,
-            chain_id: CHAIN_ID as i32,
+            chain_id: CHAIN_ID.into(),
             valid_from: None,
             valid_until: None,
             max_gas_fee_per_gas: None,
@@ -239,12 +242,11 @@ async fn evaluate_passes_volume_at_exact_limit() {
         .unwrap();
 
     // Record a past transfer of 900, with current transfer 100 => exactly 1000 limit
-    use crate::db::{models::NewEvmTokenTransferLog, schema::evm_token_transfer_log};
-    insert_into(evm_token_transfer_log::table)
-        .values(NewEvmTokenTransferLog {
+    insert_into(db::schema::evm_token_transfer_log::table)
+        .values(db::models::NewEvmTokenTransferLog {
             grant_id,
             log_id: 0,
-            chain_id: CHAIN_ID as i32,
+            chain_id: CHAIN_ID.into(),
             token_contract: DAI.to_vec(),
             recipient_address: RECIPIENT.to_vec(),
             value: utils::u256_to_bytes(U256::from(900u64)).to_vec(),
@@ -284,12 +286,11 @@ async fn evaluate_rejects_volume_over_limit() {
         .await
         .unwrap();
 
-    use crate::db::{models::NewEvmTokenTransferLog, schema::evm_token_transfer_log};
-    insert_into(evm_token_transfer_log::table)
-        .values(NewEvmTokenTransferLog {
+    insert_into(db::schema::evm_token_transfer_log::table)
+        .values(db::models::NewEvmTokenTransferLog {
             grant_id,
             log_id: 0,
-            chain_id: CHAIN_ID as i32,
+            chain_id: CHAIN_ID.into(),
             token_contract: DAI.to_vec(),
             recipient_address: RECIPIENT.to_vec(),
             value: utils::u256_to_bytes(U256::from(1_000u64)).to_vec(),

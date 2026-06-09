@@ -5,3 +5,7 @@ edition = "2024"
 
 [dependencies]
 alloy.workspace = true
+
+[lib]
+test = false
+doctest = false

@@ -1,23 +1,22 @@
+use super::common::ChannelTransport;
 use arbiter_crypto::{
-    authn::{self, CLIENT_CONTEXT, format_challenge},
+    authn::{self, AuthChallenge, CLIENT_CONTEXT},
     safecell::{SafeCell, SafeCellHandle as _},
 };
-use arbiter_proto::ClientMetadata;
-use arbiter_proto::transport::{Receiver, Sender};
+use arbiter_proto::{
+    ClientMetadata,
+    transport::{Receiver, Sender},
+};
 use arbiter_server::{
-    actors::{
-        GlobalActors,
-        client::{ClientConnection, ClientCredentials, auth, connect_client},
-        keyholder::Bootstrap,
-    },
+    actors::{GlobalActors, vault::Bootstrap},
     crypto::integrity,
     db::{self, schema},
+    peers::client::{ClientConnection, ClientCredentials, auth, connect_client},
 };
+
 use diesel::{ExpressionMethods as _, NullableExpressionMethods as _, QueryDsl as _, insert_into};
 use diesel_async::RunQueryDsl;
-use ml_dsa::{KeyGen, MlDsa87, SigningKey, VerifyingKey, signature::Keypair as _};
-
-use super::common::ChannelTransport;
+use ml_dsa::{KeyGen, MlDsa87, SigningKey, VerifyingKey, signature::Keypair};
 
 fn metadata(name: &str, description: Option<&str>, version: Option<&str>) -> ClientMetadata {
     ClientMetadata {
@@ -25,6 +24,10 @@ fn metadata(name: &str, description: Option<&str>, version: Option<&str>) -> Cli
         description: description.map(str::to_owned),
         version: version.map(str::to_owned),
     }
+}
+
+fn verifying_key(key: &SigningKey<MlDsa87>) -> VerifyingKey<MlDsa87> {
+    <SigningKey<MlDsa87> as Keypair>::verifying_key(key)
 }
 
 async fn insert_registered_client(
@@ -48,7 +51,7 @@ async fn insert_registered_client(
         .unwrap();
     let client_id: i32 = insert_into(program_client::table)
         .values((
-            program_client::public_key.eq(pubkey.encode().to_vec()),
+            program_client::public_key.eq(pubkey.encode().0.to_vec()),
             program_client::metadata_id.eq(metadata_id),
         ))
         .returning(program_client::id)
@@ -58,10 +61,9 @@ async fn insert_registered_client(
 
     integrity::sign_entity(
         &mut conn,
-        &actors.key_holder,
+        &actors.vault,
         &ClientCredentials {
             pubkey: pubkey.into(),
-            nonce: 1,
         },
         client_id,
     )
@@ -69,41 +71,34 @@ async fn insert_registered_client(
     .unwrap();
 }
 
-fn sign_client_challenge(
-    key: &SigningKey<MlDsa87>,
-    nonce: i32,
-    pubkey: &authn::PublicKey,
-) -> authn::Signature {
-    let challenge = format_challenge(nonce, &pubkey.to_bytes());
+fn sign_client_challenge(key: &SigningKey<MlDsa87>, challenge: &AuthChallenge) -> authn::Signature {
+    let challenge = challenge.format();
     key.signing_key()
         .sign_deterministic(&challenge, CLIENT_CONTEXT)
         .unwrap()
         .into()
 }
 
-async fn insert_bootstrap_sentinel_useragent(db: &db::DatabasePool) {
+async fn insert_bootstrap_sentinel_operator(db: &db::DatabasePool) {
     let mut conn = db.get().await.unwrap();
-    let sentinel_key = MlDsa87::key_gen(&mut rand::rng())
-        .verifying_key()
+    let sentinel_key = verifying_key(&MlDsa87::key_gen(&mut rand::rng()))
         .encode()
+        .0
         .to_vec();
 
-    insert_into(schema::useragent_client::table)
-        .values((
-            schema::useragent_client::public_key.eq(sentinel_key),
-            schema::useragent_client::key_type.eq(1i32),
-        ))
+    insert_into(schema::operator_client::table)
+        .values((schema::operator_client::public_key.eq(sentinel_key),))
         .execute(&mut conn)
         .await
         .unwrap();
 }
 
 async fn spawn_test_actors(db: &db::DatabasePool) -> GlobalActors {
-    insert_bootstrap_sentinel_useragent(db).await;
+    insert_bootstrap_sentinel_operator(db).await;
 
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
-        .key_holder
+        .vault
         .ask(Bootstrap {
             seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
         })
@@ -114,7 +109,7 @@ async fn spawn_test_actors(db: &db::DatabasePool) -> GlobalActors {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_unregistered_pubkey_rejected() {
+pub async fn unregistered_pubkey_rejected() {
     let db = db::create_test_pool().await;
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
@@ -129,7 +124,7 @@ pub async fn test_unregistered_pubkey_rejected() {
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key().into(),
+            pubkey: verifying_key(&new_key).into(),
             metadata: metadata("client", Some("desc"), Some("1.0.0")),
         })
         .await
@@ -141,18 +136,18 @@ pub async fn test_unregistered_pubkey_rejected() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_challenge_auth() {
+pub async fn challenge_auth() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
 
     let new_key = MlDsa87::key_gen(&mut rand::rng());
 
-    insert_registered_client(
+    Box::pin(insert_registered_client(
         &db,
         &actors,
-        new_key.verifying_key(),
+        verifying_key(&new_key),
         &metadata("client", Some("desc"), Some("1.0.0")),
-    )
+    ))
     .await;
 
     let (server_transport, mut test_transport) = ChannelTransport::new();
@@ -165,7 +160,7 @@ pub async fn test_challenge_auth() {
     // Send challenge request
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key().into(),
+            pubkey: verifying_key(&new_key).into(),
             metadata: metadata("client", Some("desc"), Some("1.0.0")),
         })
         .await
@@ -178,14 +173,14 @@ pub async fn test_challenge_auth() {
         .expect("should receive challenge");
     let challenge = match response {
         Ok(resp) => match resp {
-            auth::Outbound::AuthChallenge { pubkey, nonce } => (pubkey, nonce),
-            other => panic!("Expected AuthChallenge, got {other:?}"),
+            auth::Outbound::AuthChallenge { challenge } => challenge,
+            other @ auth::Outbound::AuthSuccess => panic!("Expected AuthChallenge, got {other:?}"),
         },
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };
 
     // Sign the challenge and send solution
-    let signature = sign_client_challenge(&new_key, challenge.1, &challenge.0);
+    let signature = sign_client_challenge(&new_key, &challenge);
 
     test_transport
         .send(auth::Inbound::AuthChallengeSolution { signature })
@@ -208,13 +203,19 @@ pub async fn test_challenge_auth() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_metadata_unchanged_does_not_append_history() {
+pub async fn metadata_unchanged_does_not_append_history() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
     let new_key = MlDsa87::key_gen(&mut rand::rng());
     let requested = metadata("client", Some("desc"), Some("1.0.0"));
 
-    insert_registered_client(&db, &actors, new_key.verifying_key(), &requested).await;
+    Box::pin(insert_registered_client(
+        &db,
+        &actors,
+        verifying_key(&new_key),
+        &requested,
+    ))
+    .await;
 
     let props = ClientConnection::new(db.clone(), actors);
 
@@ -226,18 +227,18 @@ pub async fn test_metadata_unchanged_does_not_append_history() {
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key().into(),
+            pubkey: verifying_key(&new_key).into(),
             metadata: requested,
         })
         .await
         .unwrap();
 
     let response = test_transport.recv().await.unwrap().unwrap();
-    let (pubkey, nonce) = match response {
-        auth::Outbound::AuthChallenge { pubkey, nonce } => (pubkey, nonce),
-        other => panic!("Expected AuthChallenge, got {other:?}"),
+    let challenge = match response {
+        auth::Outbound::AuthChallenge { challenge } => challenge,
+        auth::Outbound::AuthSuccess => panic!("Expected AuthChallenge, got AuthSuccess"),
     };
-    let signature = sign_client_challenge(&new_key, nonce, &pubkey);
+    let signature = sign_client_challenge(&new_key, &challenge);
     test_transport
         .send(auth::Inbound::AuthChallengeSolution { signature })
         .await
@@ -265,17 +266,17 @@ pub async fn test_metadata_unchanged_does_not_append_history() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_metadata_change_appends_history_and_repoints_binding() {
+pub async fn metadata_change_appends_history_and_repoints_binding() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
     let new_key = MlDsa87::key_gen(&mut rand::rng());
 
-    insert_registered_client(
+    Box::pin(insert_registered_client(
         &db,
         &actors,
-        new_key.verifying_key(),
+        verifying_key(&new_key),
         &metadata("client", Some("old"), Some("1.0.0")),
-    )
+    ))
     .await;
 
     let props = ClientConnection::new(db.clone(), actors);
@@ -288,23 +289,23 @@ pub async fn test_metadata_change_appends_history_and_repoints_binding() {
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key().into(),
+            pubkey: verifying_key(&new_key).into(),
             metadata: metadata("client", Some("new"), Some("2.0.0")),
         })
         .await
         .unwrap();
 
     let response = test_transport.recv().await.unwrap().unwrap();
-    let (pubkey, nonce) = match response {
-        auth::Outbound::AuthChallenge { pubkey, nonce } => (pubkey, nonce),
-        other => panic!("Expected AuthChallenge, got {other:?}"),
+    let challenge = match response {
+        auth::Outbound::AuthChallenge { challenge } => challenge,
+        auth::Outbound::AuthSuccess => panic!("Expected AuthChallenge, got AuthSuccess"),
     };
-    let signature = sign_client_challenge(&new_key, nonce, &pubkey);
+    let signature = sign_client_challenge(&new_key, &challenge);
     test_transport
         .send(auth::Inbound::AuthChallengeSolution { signature })
         .await
         .unwrap();
-    let _ = test_transport.recv().await.unwrap();
+    drop(test_transport.recv().await.unwrap());
     task.await.unwrap();
 
     {
@@ -352,7 +353,7 @@ pub async fn test_metadata_change_appends_history_and_repoints_binding() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn test_challenge_auth_rejects_integrity_tag_mismatch() {
+pub async fn challenge_auth_rejects_integrity_tag_mismatch() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
 
@@ -374,7 +375,7 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch() {
             .unwrap();
         insert_into(program_client::table)
             .values((
-                program_client::public_key.eq(new_key.verifying_key().encode().to_vec()),
+                program_client::public_key.eq(verifying_key(&new_key).encode().0.to_vec()),
                 program_client::metadata_id.eq(metadata_id),
             ))
             .execute(&mut conn)
@@ -391,7 +392,7 @@ pub async fn test_challenge_auth_rejects_integrity_tag_mismatch() {
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
-            pubkey: new_key.verifying_key().into(),
+            pubkey: verifying_key(&new_key).into(),
             metadata: requested,
         })
         .await

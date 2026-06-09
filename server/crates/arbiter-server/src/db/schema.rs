@@ -155,7 +155,6 @@ diesel::table! {
 diesel::table! {
     program_client (id) {
         id -> Integer,
-        nonce -> Integer,
         public_key -> Binary,
         metadata_id -> Integer,
         created_at -> Integer,
@@ -187,11 +186,9 @@ diesel::table! {
 }
 
 diesel::table! {
-    useragent_client (id) {
+    operator_client (id) {
         id -> Integer,
-        nonce -> Integer,
         public_key -> Binary,
-        key_type -> Integer,
         created_at -> Integer,
         updated_at -> Integer,
     }
@@ -236,5 +233,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     program_client,
     root_key_history,
     tls_history,
-    useragent_client,
+    operator_client,
 );

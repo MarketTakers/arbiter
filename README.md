@@ -4,7 +4,7 @@
 ## Security warning
 Arbiter can't meaningfully protect against host compromise. Potential attack flow:
 - Attacker steals TLS keys from database
-- Pretends to be server; just accepts user agent challenge solutions
+- Pretends to be server; just accepts operator challenge solutions
 - Pretend to be in sealed state and performing DH with client
 - Steals user password and derives seal key
 

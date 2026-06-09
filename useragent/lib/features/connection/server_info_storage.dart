@@ -17,9 +17,9 @@ class StoredServerInfo {
   final int port;
   final String caCertFingerprint;
 
-  factory StoredServerInfo.fromJson(Map<String, dynamic> json) => _$StoredServerInfoFromJson(json);
+  factory StoredServerInfo.fromJson(Map<String, dynamic> json) =>
+      _$StoredServerInfoFromJson(json);
   Map<String, dynamic> toJson() => _$StoredServerInfoToJson(this);
-  
 }
 
 abstract class ServerInfoStorage {

@@ -18,7 +18,6 @@ sealed class CalloutEvent with _$CalloutEvent {
     required CalloutData data,
   }) = CalloutEventAdded;
 
-  const factory CalloutEvent.cancelled({
-    required String id,
-  }) = CalloutEventCancelled;
+  const factory CalloutEvent.cancelled({required String id}) =
+      CalloutEventCancelled;
 }

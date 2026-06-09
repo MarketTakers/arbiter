@@ -28,27 +28,27 @@ class WalletAccessSaveBar extends StatelessWidget {
     return CreamFrame(
       padding: const EdgeInsets.all(16),
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (errorText != null) ...[
-              Text(errorText, style: TextStyle(color: Palette.coral)),
-              const SizedBox(height: 12),
-            ],
-            Row(
-              children: [
-                TextButton(
-                  onPressed: state.hasChanges && !isPending ? onDiscard : null,
-                  child: const Text('Reset'),
-                ),
-                const Spacer(),
-                FilledButton(
-                  onPressed: state.hasChanges && !isPending ? onSave : null,
-                  child: Text(isPending ? 'Saving...' : 'Save changes'),
-                ),
-              ],
-            ),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (errorText != null) ...[
+            Text(errorText, style: TextStyle(color: Palette.coral)),
+            const SizedBox(height: 12),
           ],
-        ),
+          Row(
+            children: [
+              TextButton(
+                onPressed: state.hasChanges && !isPending ? onDiscard : null,
+                child: const Text('Reset'),
+              ),
+              const Spacer(),
+              FilledButton(
+                onPressed: state.hasChanges && !isPending ? onSave : null,
+                child: Text(isPending ? 'Saving...' : 'Save changes'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

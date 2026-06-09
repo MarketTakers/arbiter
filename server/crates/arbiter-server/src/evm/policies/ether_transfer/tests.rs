@@ -1,27 +1,28 @@
+use super::{EtherTransfer, Settings};
+use crate::{
+    db::{
+        self, DatabaseConnection,
+        models::{
+            EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp,
+        },
+        schema::{evm_basic_grant, evm_transaction_log},
+    },
+    evm::{
+        policies::{
+            CombinedSettings, EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings,
+            VolumeRateLimit,
+        },
+        utils,
+    },
+};
+
 use alloy::primitives::{Address, Bytes, U256, address};
 use chrono::{Duration, Utc};
 use diesel::{SelectableHelper, insert_into};
 use diesel_async::RunQueryDsl;
 
-use crate::db::{
-    self, DatabaseConnection,
-    models::{
-        EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp,
-    },
-    schema::{evm_basic_grant, evm_transaction_log},
-};
-use crate::evm::{
-    policies::{
-        CombinedSettings, EvalContext, EvalViolation, Grant, Policy, SharedGrantSettings,
-        VolumeRateLimit,
-    },
-    utils,
-};
-
-use super::{EtherTransfer, Settings};
-
 const WALLET_ACCESS_ID: i32 = 1;
-const CHAIN_ID: u64 = 1;
+const CHAIN_ID: alloy::primitives::ChainId = 1;
 
 const ALLOWED: Address = address!("1111111111111111111111111111111111111111");
 const OTHER: Address = address!("2222222222222222222222222222222222222222");
@@ -47,7 +48,7 @@ async fn insert_basic(conn: &mut DatabaseConnection, revoked: bool) -> EvmBasicG
     insert_into(evm_basic_grant::table)
         .values(NewEvmBasicGrant {
             wallet_access_id: WALLET_ACCESS_ID,
-            chain_id: CHAIN_ID as i32,
+            chain_id: CHAIN_ID.into(),
             valid_from: None,
             valid_until: None,
             max_gas_fee_per_gas: None,
@@ -161,7 +162,7 @@ async fn evaluate_passes_when_volume_within_limit() {
         .values(NewEvmTransactionLog {
             grant_id,
             wallet_access_id: WALLET_ACCESS_ID,
-            chain_id: CHAIN_ID as i32,
+            chain_id: CHAIN_ID.into(),
             eth_value: utils::u256_to_bytes(U256::from(500u64)).to_vec(),
             signed_at: SqliteTimestamp(Utc::now()),
         })
@@ -203,7 +204,7 @@ async fn evaluate_rejects_volume_over_limit() {
         .values(NewEvmTransactionLog {
             grant_id,
             wallet_access_id: WALLET_ACCESS_ID,
-            chain_id: CHAIN_ID as i32,
+            chain_id: CHAIN_ID.into(),
             eth_value: utils::u256_to_bytes(U256::from(1_000u64)).to_vec(),
             signed_at: SqliteTimestamp(Utc::now()),
         })
@@ -246,7 +247,7 @@ async fn evaluate_passes_at_exactly_volume_limit() {
         .values(NewEvmTransactionLog {
             grant_id,
             wallet_access_id: WALLET_ACCESS_ID,
-            chain_id: CHAIN_ID as i32,
+            chain_id: CHAIN_ID.into(),
             eth_value: utils::u256_to_bytes(U256::from(900u64)).to_vec(),
             signed_at: SqliteTimestamp(Utc::now()),
         })

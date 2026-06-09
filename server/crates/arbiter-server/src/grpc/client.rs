@@ -1,3 +1,7 @@
+use crate::{
+    grpc::request_tracker::RequestTracker,
+    peers::client::{ClientConnection, session::ClientSession},
+};
 use arbiter_proto::{
     proto::client::{
         ClientRequest, ClientResponse, client_request::Payload as ClientRequestPayload,
@@ -5,14 +9,10 @@ use arbiter_proto::{
     },
     transport::{Receiver, Sender, grpc::GrpcBi},
 };
+
 use kameo::actor::{ActorRef, Spawn as _};
 use tonic::Status;
 use tracing::{info, warn};
-
-use crate::{
-    actors::client::{ClientConnection, session::ClientSession},
-    grpc::request_tracker::RequestTracker,
-};
 
 mod auth;
 mod evm;
@@ -98,8 +98,7 @@ pub async fn start(mut conn: ClientConnection, mut bi: GrpcBi<ClientRequest, Cli
         Err(err) => {
             let _ = bi
                 .send(Err(Status::unauthenticated(format!(
-                    "Authentication failed: {}",
-                    err
+                    "Authentication failed: {err}",
                 ))))
                 .await;
             warn!(error = ?err, "Client authentication failed");

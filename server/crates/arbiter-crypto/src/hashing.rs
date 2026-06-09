@@ -1,5 +1,6 @@
-pub use hmac::digest::Digest;
 use std::collections::HashSet;
+
+pub use hmac::digest::Digest;
 
 /// Deterministically hash a value by feeding its fields into the hasher in a consistent order.
 #[diagnostic::on_unimplemented(
@@ -49,7 +50,7 @@ impl<T: Hashable + PartialOrd> Hashable for Vec<T> {
     }
 }
 
-impl<T: Hashable + PartialOrd> Hashable for HashSet<T> {
+impl<T: Hashable + PartialOrd, S: std::hash::BuildHasher> Hashable for HashSet<T, S> {
     fn hash<H: Digest>(&self, hasher: &mut H) {
         let ref_sorted = {
             let mut sorted = self.iter().collect::<Vec<_>>();

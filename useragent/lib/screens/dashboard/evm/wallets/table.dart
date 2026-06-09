@@ -36,54 +36,51 @@ class WalletTable extends StatelessWidget {
     return CreamFrame(
       padding: EdgeInsets.all(2.h),
       child: LayoutBuilder(
-          builder: (context, constraints) {
-            final tableWidth = math.max(_tableMinWidth, constraints.maxWidth);
+        builder: (context, constraints) {
+          final tableWidth = math.max(_tableMinWidth, constraints.maxWidth);
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Managed wallets',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    color: Palette.ink,
-                    fontWeight: FontWeight.w800,
-                  ),
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Managed wallets',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: Palette.ink,
+                  fontWeight: FontWeight.w800,
                 ),
-                SizedBox(height: 0.6.h),
-                Text(
-                  'Every address here is generated and held by Arbiter.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Palette.ink.withValues(alpha: 0.70),
-                    height: 1.4,
-                  ),
+              ),
+              SizedBox(height: 0.6.h),
+              Text(
+                'Every address here is generated and held by Arbiter.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Palette.ink.withValues(alpha: 0.70),
+                  height: 1.4,
                 ),
-                SizedBox(height: 1.6.h),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: tableWidth,
-                    child: Column(
-                      children: [
-                        const _WalletTableHeader(),
-                        SizedBox(height: 1.h),
-                        for (var i = 0; i < wallets.length; i++)
-                          Padding(
-                            padding: EdgeInsets.only(
-                              bottom: i == wallets.length - 1 ? 0 : 1.h,
-                            ),
-                            child: _WalletTableRow(
-                              wallet: wallets[i],
-                              index: i,
-                            ),
+              ),
+              SizedBox(height: 1.6.h),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: tableWidth,
+                  child: Column(
+                    children: [
+                      const _WalletTableHeader(),
+                      SizedBox(height: 1.h),
+                      for (var i = 0; i < wallets.length; i++)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            bottom: i == wallets.length - 1 ? 0 : 1.h,
                           ),
-                      ],
-                    ),
+                          child: _WalletTableRow(wallet: wallets[i], index: i),
+                        ),
+                    ],
                   ),
                 ),
-              ],
-            );
-          },
-        ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

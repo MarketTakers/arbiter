@@ -1,17 +1,3 @@
-use std::{net::Ipv4Addr, string::FromUtf8Error};
-
-use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper as _};
-use diesel_async::{AsyncConnection, RunQueryDsl};
-
-use pem::Pem;
-use rcgen::{
-    BasicConstraints, Certificate, CertificateParams, CertifiedIssuer, DistinguishedName, DnType,
-    IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType,
-};
-use rustls::pki_types::pem::PemObject;
-use thiserror::Error;
-use tonic::transport::CertificateDer;
-
 use crate::db::{
     self,
     models::{NewTlsHistory, TlsHistory},
@@ -21,10 +7,23 @@ use crate::db::{
     },
 };
 
+use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper as _};
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use pem::Pem;
+use rcgen::{
+    BasicConstraints, Certificate, CertificateParams, CertifiedIssuer, DistinguishedName, DnType,
+    IsCa, Issuer, KeyPair, KeyUsagePurpose, SanType,
+};
+use rustls::pki_types::pem::PemObject;
+use std::{net::Ipv4Addr, string::FromUtf8Error};
+use thiserror::Error;
+use tonic::transport::CertificateDer;
+
 const ENCODE_CONFIG: pem::EncodeConfig = {
-    let line_ending = match cfg!(target_family = "windows") {
-        true => pem::LineEnding::CRLF,
-        false => pem::LineEnding::LF,
+    let line_ending = if cfg!(target_family = "windows") {
+        pem::LineEnding::CRLF
+    } else {
+        pem::LineEnding::LF
     };
     pem::EncodeConfig::new().set_line_ending(line_ending)
 };
@@ -52,11 +51,14 @@ pub enum InitError {
 
 pub type PemCert = String;
 
-pub fn encode_cert_to_pem(cert: &CertificateDer) -> PemCert {
+pub fn encode_cert_to_pem(cert: &CertificateDer<'_>) -> PemCert {
     pem::encode_config(&Pem::new("CERTIFICATE", cert.to_vec()), ENCODE_CONFIG)
 }
 
-#[allow(unused)]
+#[expect(
+    unused,
+    reason = "may be needed for future cert rotation implementation"
+)]
 struct SerializedTls {
     cert_pem: PemCert,
     cert_key_pem: String,
@@ -85,7 +87,7 @@ impl TlsCa {
 
         let cert_key_pem = certified_issuer.key().serialize_pem();
 
-        #[allow(
+        #[expect(
             clippy::unwrap_used,
             reason = "Broken cert couldn't bootstrap server anyway"
         )]
@@ -124,7 +126,11 @@ impl TlsCa {
         })
     }
 
-    #[allow(unused)]
+    #[expect(
+        unused,
+        clippy::unnecessary_wraps,
+        reason = "may be needed for future cert rotation implementation"
+    )]
     fn serialize(&self) -> Result<SerializedTls, InitError> {
         let cert_key_pem = self.issuer.key().serialize_pem();
         Ok(SerializedTls {
@@ -133,7 +139,10 @@ impl TlsCa {
         })
     }
 
-    #[allow(unused)]
+    #[expect(
+        unused,
+        reason = "may be needed for future cert rotation implementation"
+    )]
     fn try_deserialize(cert_pem: &str, cert_key_pem: &str) -> Result<Self, InitError> {
         let keypair =
             KeyPair::from_pem(cert_key_pem).map_err(InitError::KeyDeserializationError)?;
@@ -165,28 +174,26 @@ impl TlsManager {
 
         {
             let mut conn = db.get().await?;
-            conn.transaction(|conn| {
-                Box::pin(async {
-                    let new_tls_history = NewTlsHistory {
-                        cert: new_cert.cert.pem(),
-                        cert_key: new_cert.cert_key.serialize_pem(),
-                        ca_cert: encode_cert_to_pem(&ca.cert),
-                        ca_key: ca.issuer.key().serialize_pem(),
-                    };
+            conn.transaction(async |conn| {
+                let new_tls_history = NewTlsHistory {
+                    cert: new_cert.cert.pem(),
+                    cert_key: new_cert.cert_key.serialize_pem(),
+                    ca_cert: encode_cert_to_pem(&ca.cert),
+                    ca_key: ca.issuer.key().serialize_pem(),
+                };
 
-                    let inserted_tls_history: i32 = diesel::insert_into(tls_history::table)
-                        .values(&new_tls_history)
-                        .returning(tls_history::id)
-                        .get_result(conn)
-                        .await?;
+                let inserted_tls_history: i32 = diesel::insert_into(tls_history::table)
+                    .values(&new_tls_history)
+                    .returning(tls_history::id)
+                    .get_result(&mut *conn)
+                    .await?;
 
-                    diesel::update(arbiter_settings::table)
-                        .set(arbiter_settings::tls_id.eq(inserted_tls_history))
-                        .execute(conn)
-                        .await?;
+                diesel::update(arbiter_settings::table)
+                    .set(arbiter_settings::tls_id.eq(inserted_tls_history))
+                    .execute(&mut *conn)
+                    .await?;
 
-                    Result::<_, diesel::result::Error>::Ok(())
-                })
+                Result::<_, diesel::result::Error>::Ok(())
             })
             .await?;
         }
@@ -234,10 +241,10 @@ impl TlsManager {
         }
     }
 
-    pub fn cert(&self) -> &CertificateDer<'static> {
+    pub const fn cert(&self) -> &CertificateDer<'static> {
         &self.cert
     }
-    pub fn ca_cert(&self) -> &CertificateDer<'static> {
+    pub const fn ca_cert(&self) -> &CertificateDer<'static> {
         &self.ca_cert
     }
 

@@ -378,48 +378,48 @@ class _ClientTable extends StatelessWidget {
         builder: (context, constraints) {
           final tableWidth = math.max(_tableMinWidth, constraints.maxWidth);
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Registered clients',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    color: Palette.ink,
-                    fontWeight: FontWeight.w800,
-                  ),
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Registered clients',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: Palette.ink,
+                  fontWeight: FontWeight.w800,
                 ),
-                SizedBox(height: 0.6.h),
-                Text(
-                  'Every entry here has authenticated with Arbiter at least once.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Palette.ink.withValues(alpha: 0.70),
-                    height: 1.4,
-                  ),
+              ),
+              SizedBox(height: 0.6.h),
+              Text(
+                'Every entry here has authenticated with Arbiter at least once.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Palette.ink.withValues(alpha: 0.70),
+                  height: 1.4,
                 ),
-                SizedBox(height: 1.6.h),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: tableWidth,
-                    child: Column(
-                      children: [
-                        const _ClientTableHeader(),
-                        SizedBox(height: 1.h),
-                        for (var i = 0; i < clients.length; i++)
-                          Padding(
-                            padding: EdgeInsets.only(
-                              bottom: i == clients.length - 1 ? 0 : 1.h,
-                            ),
-                            child: _ClientTableRow(client: clients[i]),
+              ),
+              SizedBox(height: 1.6.h),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: tableWidth,
+                  child: Column(
+                    children: [
+                      const _ClientTableHeader(),
+                      SizedBox(height: 1.h),
+                      for (var i = 0; i < clients.length; i++)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            bottom: i == clients.length - 1 ? 0 : 1.h,
                           ),
-                      ],
-                    ),
+                          child: _ClientTableRow(client: clients[i]),
+                        ),
+                    ],
                   ),
                 ),
-              ],
-            );
-          },
-        ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
