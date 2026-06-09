@@ -1,12 +1,16 @@
 pub mod abi;
 pub mod safe_signer;
 
+use alloy::primitives::Address;
 use alloy::{
     consensus::TxEip1559,
     primitives::{TxKind, U256},
 };
 use chrono::Utc;
-use diesel::{ExpressionMethods as _, QueryDsl as _, QueryResult, insert_into, sqlite::Sqlite};
+use diesel::{
+    ExpressionMethods as _, OptionalExtension, QueryDsl as _, QueryResult, SelectableHelper,
+    insert_into, sqlite::Sqlite, update,
+};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::actor::ActorRef;
 
@@ -16,14 +20,16 @@ use crate::{
     db::{
         self, DatabaseError,
         models::{
-            EvmBasicGrant, EvmWalletAccess, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp,
+            EvmBasicGrant, EvmEtherTransferGrant, EvmEtherTransferGrantTarget,
+            EvmEtherTransferLimit, EvmTokenTransferGrant, EvmTokenTransferVolumeLimit,
+            EvmWalletAccess, NewEvmBasicGrant, NewEvmTransactionLog, SqliteTimestamp,
         },
         schema::{self, evm_transaction_log},
     },
     evm::policies::{
         CombinedSettings, DatabaseID, EvalContext, EvalViolation, Grant, Policy,
-        SharedGrantSettings, SpecificGrant, SpecificMeaning, ether_transfer::EtherTransfer,
-        token_transfers::TokenTransfer,
+        SharedGrantSettings, SpecificGrant, SpecificMeaning, VolumeRateLimit,
+        ether_transfer::EtherTransfer, token_transfers::TokenTransfer,
     },
 };
 
@@ -270,6 +276,150 @@ impl Engine {
         Ok(id)
     }
 
+    pub async fn revoke_grant(&self, basic_grant_id: i32) -> Result<(), DatabaseError> {
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
+        let keyholder = self.keyholder.clone();
+
+        conn.transaction(|conn| {
+            Box::pin(async move {
+                use crate::db::schema::{
+                    evm_basic_grant, evm_ether_transfer_grant, evm_ether_transfer_grant_target,
+                    evm_ether_transfer_limit, evm_token_transfer_grant,
+                    evm_token_transfer_volume_limit,
+                };
+
+                update(evm_basic_grant::table)
+                    .filter(evm_basic_grant::id.eq(basic_grant_id))
+                    .set(evm_basic_grant::revoked_at.eq(SqliteTimestamp(Utc::now())))
+                    .execute(conn)
+                    .await?;
+
+                let basic_grant: EvmBasicGrant = evm_basic_grant::table
+                    .filter(evm_basic_grant::id.eq(basic_grant_id))
+                    .select(EvmBasicGrant::as_select())
+                    .first(conn)
+                    .await?;
+
+                let shared = SharedGrantSettings::try_from_model(basic_grant)?;
+
+                if let Some(ether_grant) = evm_ether_transfer_grant::table
+                    .filter(evm_ether_transfer_grant::basic_grant_id.eq(basic_grant_id))
+                    .select(EvmEtherTransferGrant::as_select())
+                    .first(conn)
+                    .await
+                    .optional()?
+                {
+                    let target_rows: Vec<EvmEtherTransferGrantTarget> =
+                        evm_ether_transfer_grant_target::table
+                            .filter(evm_ether_transfer_grant_target::grant_id.eq(ether_grant.id))
+                            .select(EvmEtherTransferGrantTarget::as_select())
+                            .load(conn)
+                            .await?;
+                    let targets: Vec<Address> = target_rows
+                        .into_iter()
+                        .filter_map(|target| {
+                            let arr: [u8; 20] = target.address.try_into().ok()?;
+                            Some(Address::from(arr))
+                        })
+                        .collect();
+
+                    let limit: EvmEtherTransferLimit = evm_ether_transfer_limit::table
+                        .filter(evm_ether_transfer_limit::id.eq(ether_grant.limit_id))
+                        .select(EvmEtherTransferLimit::as_select())
+                        .first(conn)
+                        .await?;
+
+                    let settings = CombinedSettings {
+                        shared: shared.clone(),
+                        specific: crate::evm::policies::ether_transfer::Settings {
+                            target: targets,
+                            limit: VolumeRateLimit {
+                                max_volume: utils::try_bytes_to_u256(&limit.max_volume).map_err(
+                                    |err| {
+                                        diesel::result::Error::DeserializationError(Box::new(err))
+                                    },
+                                )?,
+                                window: chrono::Duration::seconds(limit.window_secs as i64),
+                            },
+                        },
+                    };
+
+                    integrity::sign_entity(conn, &keyholder, &settings, basic_grant_id)
+                        .await
+                        .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+
+                    return QueryResult::Ok(());
+                }
+
+                if let Some(token_grant) = evm_token_transfer_grant::table
+                    .filter(evm_token_transfer_grant::basic_grant_id.eq(basic_grant_id))
+                    .select(EvmTokenTransferGrant::as_select())
+                    .first(conn)
+                    .await
+                    .optional()?
+                {
+                    let volume_limit_rows: Vec<EvmTokenTransferVolumeLimit> =
+                        evm_token_transfer_volume_limit::table
+                            .filter(evm_token_transfer_volume_limit::grant_id.eq(token_grant.id))
+                            .select(EvmTokenTransferVolumeLimit::as_select())
+                            .load(conn)
+                            .await?;
+                    let volume_limits: Vec<VolumeRateLimit> = volume_limit_rows
+                        .into_iter()
+                        .map(|row| {
+                            Ok(VolumeRateLimit {
+                                max_volume: utils::try_bytes_to_u256(&row.max_volume).map_err(
+                                    |err| {
+                                        diesel::result::Error::DeserializationError(Box::new(err))
+                                    },
+                                )?,
+                                window: chrono::Duration::seconds(row.window_secs as i64),
+                            })
+                        })
+                        .collect::<QueryResult<Vec<_>>>()?;
+
+                    let target: Option<Address> = match token_grant.receiver {
+                        None => None,
+                        Some(bytes) => {
+                            let arr: [u8; 20] = bytes.try_into().map_err(|_| {
+                                diesel::result::Error::DeserializationError(
+                                    "Invalid receiver address length".into(),
+                                )
+                            })?;
+                            Some(Address::from(arr))
+                        }
+                    };
+
+                    let token_contract: [u8; 20] =
+                        token_grant.token_contract.clone().try_into().map_err(|_| {
+                            diesel::result::Error::DeserializationError(
+                                "Invalid token contract address length".into(),
+                            )
+                        })?;
+
+                    let settings = CombinedSettings {
+                        shared,
+                        specific: crate::evm::policies::token_transfers::Settings {
+                            token_contract: Address::from(token_contract),
+                            target,
+                            volume_limits,
+                        },
+                    };
+
+                    integrity::sign_entity(conn, &keyholder, &settings, basic_grant_id)
+                        .await
+                        .map_err(|_| diesel::result::Error::RollbackTransaction)?;
+
+                    return QueryResult::Ok(());
+                }
+
+                Err(diesel::result::Error::NotFound)
+            })
+        })
+        .await
+        .map_err(DatabaseError::from)
+    }
+
     async fn list_one_kind<Kind: Policy, Y>(
         &self,
         conn: &mut impl AsyncConnection<Backend = Sqlite>,
@@ -349,11 +499,15 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use alloy::primitives::{Address, Bytes, U256, address};
+    use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
     use chrono::{Duration, Utc};
     use diesel::{SelectableHelper, insert_into};
     use diesel_async::RunQueryDsl;
+    use kameo::{actor::ActorRef, prelude::Spawn};
     use rstest::rstest;
 
+    use crate::actors::keyholder::{Bootstrap, KeyHolder};
+    use crate::crypto::integrity;
     use crate::db::{
         self, DatabaseConnection,
         models::{
@@ -361,8 +515,10 @@ mod tests {
         },
         schema::{evm_basic_grant, evm_transaction_log},
     };
+    use crate::evm::policies::ether_transfer::EtherTransfer;
     use crate::evm::policies::{
-        EvalContext, EvalViolation, SharedGrantSettings, TransactionRateLimit,
+        CombinedSettings, EvalContext, EvalViolation, Policy, SharedGrantSettings,
+        TransactionRateLimit, VolumeRateLimit,
     };
 
     use super::check_shared_constraints;
@@ -596,6 +752,93 @@ mod tests {
         } else {
             assert!(violations.is_empty());
         }
+    }
+
+    async fn bootstrapped_keyholder(db: &db::DatabasePool) -> ActorRef<KeyHolder> {
+        let actor = KeyHolder::spawn(KeyHolder::new(db.clone()).await.unwrap());
+        actor
+            .ask(Bootstrap {
+                seal_key_raw: SafeCell::new(b"integrity-test-seal-key".to_vec()),
+            })
+            .await
+            .unwrap();
+        actor
+    }
+
+    #[tokio::test]
+    async fn revoke_grant_preserves_revoked_integrity() {
+        use crate::db::schema::evm_basic_grant;
+        use diesel::ExpressionMethods as _;
+
+        let db = db::create_test_pool().await;
+        let keyholder = bootstrapped_keyholder(&db).await;
+        let engine = super::Engine::new(db.clone(), keyholder.clone());
+
+        let full_grant = CombinedSettings {
+            shared: SharedGrantSettings {
+                wallet_access_id: WALLET_ACCESS_ID,
+                chain: CHAIN_ID,
+                valid_from: None,
+                valid_until: None,
+                revoked_at: None,
+                max_gas_fee_per_gas: None,
+                max_priority_fee_per_gas: None,
+                rate_limit: None,
+            },
+            specific: crate::evm::policies::ether_transfer::Settings {
+                target: vec![RECIPIENT],
+                limit: VolumeRateLimit {
+                    max_volume: U256::from(100u64),
+                    window: Duration::hours(1),
+                },
+            },
+        };
+
+        let grant_id = engine
+            .create_grant::<EtherTransfer>(full_grant)
+            .await
+            .unwrap();
+
+        engine.revoke_grant(grant_id).await.unwrap();
+
+        let mut conn = db.get().await.unwrap();
+        diesel::update(evm_basic_grant::table)
+            .filter(evm_basic_grant::id.eq(grant_id))
+            .set(evm_basic_grant::revoked_at.eq::<Option<SqliteTimestamp>>(None))
+            .execute(&mut conn)
+            .await
+            .unwrap();
+
+        let wallet_access = EvmWalletAccess {
+            id: WALLET_ACCESS_ID,
+            wallet_id: 10,
+            client_id: 20,
+            created_at: SqliteTimestamp(Utc::now()),
+        };
+        let context = EvalContext {
+            target: wallet_access,
+            chain: CHAIN_ID,
+            to: RECIPIENT,
+            value: U256::ONE,
+            calldata: Bytes::new(),
+            max_fee_per_gas: 1,
+            max_priority_fee_per_gas: 1,
+        };
+
+        let grant = crate::evm::policies::ether_transfer::EtherTransfer::try_find_grant(
+            &context, &mut conn,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        let result =
+            integrity::verify_entity(&mut conn, &keyholder, &grant.settings, grant.id).await;
+
+        assert!(matches!(
+            result,
+            Err(crate::crypto::integrity::Error::MacMismatch { .. })
+        ));
     }
 
     #[test]
