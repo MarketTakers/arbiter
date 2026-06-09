@@ -90,7 +90,6 @@ message EvmGrantCreateResponse {
 
 message EvmGrantDeleteRequest {
   int32 grant_id = 1;
-  int32 wallet_access_id = 2;
 }
 
 message EvmGrantDeleteResponse {

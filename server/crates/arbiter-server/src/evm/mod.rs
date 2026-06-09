@@ -279,7 +279,6 @@ impl Engine {
     pub async fn revoke_grant(
         &self,
         basic_grant_id: i32,
-        wallet_access_id: i32,
     ) -> Result<(), DatabaseError> {
         let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
         let keyholder = self.keyholder.clone();
@@ -294,14 +293,12 @@ impl Engine {
 
                 update(evm_basic_grant::table)
                     .filter(evm_basic_grant::id.eq(basic_grant_id))
-                    .filter(evm_basic_grant::wallet_access_id.eq(wallet_access_id))
                     .set(evm_basic_grant::revoked_at.eq(SqliteTimestamp(Utc::now())))
                     .execute(conn)
                     .await?;
 
                 let basic_grant: EvmBasicGrant = evm_basic_grant::table
                     .filter(evm_basic_grant::id.eq(basic_grant_id))
-                    .filter(evm_basic_grant::wallet_access_id.eq(wallet_access_id))
                     .select(EvmBasicGrant::as_select())
                     .first(conn)
                     .await?;
@@ -805,7 +802,7 @@ mod tests {
             .await
             .unwrap();
 
-        engine.revoke_grant(grant_id, WALLET_ACCESS_ID).await.unwrap();
+        engine.revoke_grant(grant_id).await.unwrap();
 
         let mut conn = db.get().await.unwrap();
         diesel::update(evm_basic_grant::table)

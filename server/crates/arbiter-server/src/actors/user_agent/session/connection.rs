@@ -360,13 +360,12 @@ impl UserAgentSession {
     pub(crate) async fn handle_grant_delete(
         &mut self,
         grant_id: i32,
-        wallet_access_id: i32,
     ) -> Result<(), GrantMutationError> {
         // match self
         //     .props
         //     .actors
         //     .evm
-        //     .ask(UseragentDeleteGrant { grant_id, wallet_access_id })
+        //     .ask(UseragentDeleteGrant { grant_id })
         //     .await
         // {
         //     Ok(()) => Ok(()),
@@ -375,7 +374,7 @@ impl UserAgentSession {
         //         Err(GrantMutationError::Internal)
         //     }
         // }
-        let _ = (grant_id, wallet_access_id);
+        let _ = grant_id;
         todo!()
     }
 
