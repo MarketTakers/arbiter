@@ -146,6 +146,7 @@ pub struct SharedGrantSettings {
 
     pub valid_from: Option<DateTime<Utc>>,
     pub valid_until: Option<DateTime<Utc>>,
+    pub revoked_at: Option<DateTime<Utc>>,
 
     pub max_gas_fee_per_gas: Option<U256>,
     pub max_priority_fee_per_gas: Option<U256>,
@@ -160,6 +161,7 @@ impl SharedGrantSettings {
             chain: model.chain_id as u64, // safe because chain_id is stored as i32 but is guaranteed to be a valid ChainId by the API when creating grants
             valid_from: model.valid_from.map(Into::into),
             valid_until: model.valid_until.map(Into::into),
+            revoked_at: model.revoked_at.map(Into::into),
             max_gas_fee_per_gas: model
                 .max_gas_fee_per_gas
                 .map(|b| utils::try_bytes_to_u256(&b))

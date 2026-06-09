@@ -78,6 +78,7 @@ fn shared() -> SharedGrantSettings {
         chain: CHAIN_ID,
         valid_from: None,
         valid_until: None,
+        revoked_at: None,
         max_gas_fee_per_gas: None,
         max_priority_fee_per_gas: None,
         rate_limit: None,
