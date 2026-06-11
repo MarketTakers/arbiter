@@ -63,7 +63,7 @@ impl OperatorSession {
         Self {
             props,
             sender,
-            pending_client_approvals: Default::default(),
+            pending_client_approvals: HashMap::default(),
         }
     }
 }

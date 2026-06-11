@@ -127,8 +127,6 @@ where
         })
     }
 
-    #[allow(missing_docs)]
-    #[allow(clippy::unused_unit)]
     async fn verify_solution(
         &mut self,
         ChallengeContext {

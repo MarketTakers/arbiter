@@ -76,6 +76,7 @@ needless_pass_by_ref_mut = "allow"
 pub_underscore_fields = "allow"
 redundant_pub_crate = "allow" 
 uninhabited_references = "allow" # safe with unsafe_code = "forbid" and standard uninhabited pattern (match *self {})
+too-many-lines = "allow" # this is a very common pattern in server code, and it's not always possible to break it down into smaller modules without hurting readability
 
 # restriction lints
 alloc_instead_of_core = "warn"

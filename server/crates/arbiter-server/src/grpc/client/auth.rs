@@ -200,7 +200,7 @@ impl Convert for auth::Outbound {
                         .timestamp
                         .timestamp_nanos_opt()
                         .expect("timestamp within range")
-                        as u64,
+                        .cast_unsigned(),
                     random: challenge.nonce.to_vec(),
                 })
             }

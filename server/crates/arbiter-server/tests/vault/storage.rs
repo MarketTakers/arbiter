@@ -12,7 +12,7 @@ use std::collections::HashSet;
 
 #[tokio::test]
 #[test_log::test]
-async fn test_create_decrypt_roundtrip() {
+async fn create_decrypt_roundtrip() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
 
@@ -28,7 +28,7 @@ async fn test_create_decrypt_roundtrip() {
 
 #[tokio::test]
 #[test_log::test]
-async fn test_decrypt_nonexistent_returns_not_found() {
+async fn decrypt_nonexistent_returns_not_found() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
 
@@ -38,7 +38,7 @@ async fn test_decrypt_nonexistent_returns_not_found() {
 
 #[tokio::test]
 #[test_log::test]
-async fn test_ciphertext_differs_across_entries() {
+async fn ciphertext_differs_across_entries() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
 
@@ -76,7 +76,7 @@ async fn test_ciphertext_differs_across_entries() {
 
 #[tokio::test]
 #[test_log::test]
-async fn test_nonce_never_reused() {
+async fn nonce_never_reused() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
 
