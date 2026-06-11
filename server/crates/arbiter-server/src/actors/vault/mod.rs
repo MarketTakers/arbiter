@@ -346,12 +346,10 @@ impl Vault {
             root_key_history_id,
         } = Self::expect_unsealed(&mut self.state)?;
 
-        let mut hmac = root_key
-            .0
-            .read_inline(|k| match HmacSha256::new_from_slice(k) {
-                Ok(v) => v,
-                Err(_) => unreachable!("HMAC accepts keys of any size"),
-            });
+        let mut hmac = root_key.0.read_inline(|k| {
+            HmacSha256::new_from_slice(k)
+                .unwrap_or_else(|_| unreachable!("HMAC accepts keys of any size"))
+        });
         hmac.update(&root_key_history_id.to_be_bytes());
         hmac.update(&mac_input);
 
@@ -375,12 +373,10 @@ impl Vault {
             return Ok(false);
         }
 
-        let mut hmac = root_key
-            .0
-            .read_inline(|k| match HmacSha256::new_from_slice(k) {
-                Ok(v) => v,
-                Err(_) => unreachable!("HMAC accepts keys of any size"),
-            });
+        let mut hmac = root_key.0.read_inline(|k| {
+            HmacSha256::new_from_slice(k)
+                .unwrap_or_else(|_| unreachable!("HMAC accepts keys of any size"))
+        });
         hmac.update(&key_version.to_be_bytes());
         hmac.update(&mac_input);
 
@@ -423,12 +419,13 @@ mod tests {
     async fn nonce_monotonic_even_when_nonce_allocation_interleaves() {
         let db = db::create_test_pool().await;
         let mut actor = bootstrapped_actor(&db).await;
-        let root_key_history_id = match actor.state {
-            State::Unsealed(Unsealed {
-                root_key_history_id,
-                ..
-            }) => root_key_history_id,
-            _ => panic!("expected unsealed state"),
+
+        let State::Unsealed(Unsealed {
+            root_key_history_id,
+            ..
+        }) = actor.state
+        else {
+            panic!("expected unsealed state")
         };
 
         let n1 = Vault::get_new_nonce(&db, root_key_history_id)
@@ -440,8 +437,8 @@ mod tests {
         assert!(n2.to_vec() > n1.to_vec(), "nonce must increase");
 
         let mut conn = db.get().await.unwrap();
-        let root_row: models::RootKeyHistory = schema::root_key_history::table
-            .select(models::RootKeyHistory::as_select())
+        let root_row: RootKeyHistory = schema::root_key_history::table
+            .select(RootKeyHistory::as_select())
             .first(&mut conn)
             .await
             .unwrap();

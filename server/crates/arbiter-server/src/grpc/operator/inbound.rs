@@ -87,6 +87,7 @@ impl TryConvert for ProtoSharedSettings {
                 .valid_until
                 .map(ProtoTimestamp::try_convert)
                 .transpose()?,
+            revoked_at: None,
             max_gas_fee_per_gas: self
                 .max_gas_fee_per_gas
                 .as_deref()

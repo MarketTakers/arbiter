@@ -160,29 +160,14 @@ impl EvmActor {
     }
 
     #[message]
-    #[expect(clippy::unused_async, reason = "reserved for impl")]
-    pub async fn operator_delete_grant(&mut self, _grant_id: i32) -> Result<(), Error> {
-        // let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
-        // let vault = self.vault.clone();
-
-        // diesel_async::AsyncConnection::transaction(&mut conn, |conn| {
-        //     Box::pin(async move {
-        //         diesel::update(schema::evm_basic_grant::table)
-        //             .filter(schema::evm_basic_grant::id.eq(grant_id))
-        //             .set(schema::evm_basic_grant::revoked_at.eq(SqliteTimestamp::now()))
-        //             .execute(conn)
-        //             .await?;
-
-        //         let signed = integrity::evm::load_signed_grant_by_basic_id(conn, grant_id).await?;
-
-        //         diesel::result::QueryResult::Ok(())
-        //     })
-        // })
-        // .await
-        // .map_err(DatabaseError::from)?;
-
-        // Ok(())
-        todo!()
+    pub async fn useragent_delete_grant(
+        &mut self,
+        grant_id: i32,
+    ) -> Result<(), Error> {
+        self.engine
+            .revoke_grant(grant_id)
+            .await
+            .map_err(Error::from)
     }
 
     #[message]

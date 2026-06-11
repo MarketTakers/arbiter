@@ -400,7 +400,7 @@ pub async fn challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() {
     let challenge = match response {
         Ok(resp) => match resp {
             auth::Outbound::AuthChallenge { challenge } => challenge,
-            other => panic!("Expected AuthChallenge, got {other:?}"),
+            other @ auth::Outbound::AuthSuccess => panic!("Expected AuthChallenge, got {other:?}"),
         },
         Err(err) => panic!("Expected Ok response, got Err({err:?})"),
     };

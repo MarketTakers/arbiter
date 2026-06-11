@@ -212,8 +212,7 @@ impl OperatorSession {
         &mut self,
     ) -> Result<Vec<EvmWalletAccess>, Error> {
         let mut conn = self.props.db.get().await?;
-        use crate::db::schema::evm_wallet_access;
-        let access_entries = evm_wallet_access::table
+        let access_entries = crate::db::schema::evm_wallet_access::table
             .select(EvmWalletAccess::as_select())
             .load::<_>(&mut conn)
             .await?;
