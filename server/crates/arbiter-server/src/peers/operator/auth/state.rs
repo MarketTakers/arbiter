@@ -14,19 +14,19 @@ use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl};
 use diesel_async::RunQueryDsl;
 use tracing::error;
 
-pub(super) struct ChallengeRequest {
-    pub(super) pubkey: authn::PublicKey,
-    pub(super) bootstrap_token: Option<String>,
+pub(crate) struct ChallengeRequest {
+    pub(crate) pubkey: authn::PublicKey,
+    pub(crate) bootstrap_token: Option<String>,
 }
 
-pub(super) struct ChallengeContext {
-    pub(super) challenge: AuthChallenge,
-    pub(super) pubkey: authn::PublicKey,
-    pub(super) bootstrap_token: Option<String>,
+pub struct ChallengeContext {
+    pub challenge: AuthChallenge,
+    pub pubkey: authn::PublicKey,
+    pub bootstrap_token: Option<String>,
 }
 
-pub(super) struct ChallengeSolution {
-    pub(super) solution: Vec<u8>,
+pub(crate) struct ChallengeSolution {
+    pub(crate) solution: Vec<u8>,
 }
 
 smlang::statemachine!(
@@ -127,8 +127,6 @@ where
         })
     }
 
-    #[allow(missing_docs)]
-    #[allow(clippy::unused_unit)]
     async fn verify_solution(
         &mut self,
         ChallengeContext {
