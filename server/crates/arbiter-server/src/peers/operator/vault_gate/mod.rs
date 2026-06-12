@@ -3,6 +3,7 @@ use crate::{
     actors::{
         GlobalActors,
         vault::{self, Bootstrap, GetState, TryUnseal, VaultState, events},
+        vault_coordinator::{ContributeBootstrap, ContributeUnseal, StartBootstrap},
     },
     crypto::integrity::{self},
     db::DatabasePool,
@@ -16,6 +17,9 @@ use kameo_actors::message_bus::Register;
 use tokio::sync::oneshot;
 use tracing::{error, info};
 use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
+
+pub use VaultGateMessage as Inbound;
+pub use VaultGateMessageReply as Outbound;
 
 pub mod state;
 
@@ -118,8 +122,7 @@ impl VaultGate {
         }
     }
 }
-
-#[messages(messages = Inbound, replies = Outbound)]
+#[messages(enum)]
 impl VaultGate {
     #[message]
     pub fn handle_handshake(
@@ -233,6 +236,52 @@ impl VaultGate {
             .map_err(|_| Error::internal("failed to query vault"))?;
 
         Ok(answer)
+    }
+
+    #[message]
+    pub async fn handle_declare_committee(&mut self, count: usize) -> Result<(), Error> {
+        self.actors
+            .vault_coordinator
+            .ask(StartBootstrap {
+                operator_id: self.auth_creds.id,
+                declared_count: count,
+            })
+            .await
+            .map_err(|_| Error::internal("VaultCoordinator unavailable"))
+    }
+
+    #[message]
+    pub async fn handle_contribute_bootstrap_passphrase(
+        &mut self,
+        passphrase: Vec<u8>,
+    ) -> Result<bool, Error> {
+        use arbiter_crypto::safecell::SafeCell;
+        let passphrase_cell = SafeCell::new(passphrase);
+        self.actors
+            .vault_coordinator
+            .ask(ContributeBootstrap {
+                operator_id: self.auth_creds.id,
+                passphrase: passphrase_cell,
+            })
+            .await
+            .map_err(|_| Error::internal("VaultCoordinator unavailable"))
+    }
+
+    #[message]
+    pub async fn handle_contribute_unseal_passphrase(
+        &mut self,
+        passphrase: Vec<u8>,
+    ) -> Result<bool, Error> {
+        use arbiter_crypto::safecell::SafeCell;
+        let passphrase_cell = SafeCell::new(passphrase);
+        self.actors
+            .vault_coordinator
+            .ask(ContributeUnseal {
+                operator_id: self.auth_creds.id,
+                passphrase: passphrase_cell,
+            })
+            .await
+            .map_err(|_| Error::internal("VaultCoordinator unavailable"))
     }
 }
 

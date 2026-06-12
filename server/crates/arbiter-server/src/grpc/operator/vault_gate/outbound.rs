@@ -46,7 +46,6 @@ impl Convert for VaultState {
     fn convert(self) -> OperatorResponsePayload {
         let proto_state = match self {
             Self::Unbootstrapped => ProtoVaultState::Unbootstrapped,
-            Self::Bootstrapping => ProtoVaultState::Boostrapping,
             Self::Sealed => ProtoVaultState::Sealed,
             Self::Unsealed => ProtoVaultState::Unsealed,
         };
@@ -110,6 +109,40 @@ impl TryConvert for vault_gate::Outbound {
                     }
                 };
                 Ok(wrap_bootstrap_response(proto_result))
+            }
+            Self::HandleDeclareCommittee(result) => {
+                let proto_result = match result {
+                    Ok(()) => ProtoBootstrapResult::Success,
+                    Err(err) => {
+                        warn!(?err, "declare committee failed");
+                        return Err(Status::internal("Failed to declare committee"));
+                    }
+                };
+                Ok(wrap_bootstrap_response(proto_result))
+            }
+            Self::HandleContributeBootstrapPassphrase(result) => {
+                let proto_result = match result {
+                    Ok(true) => ProtoBootstrapResult::Success,
+                    Ok(false) => ProtoBootstrapResult::AwaitingContributions,
+                    Err(err) => {
+                        warn!(?err, "contribute bootstrap passphrase failed");
+                        return Err(Status::internal("Failed to contribute bootstrap passphrase"));
+                    }
+                };
+                Ok(wrap_bootstrap_response(proto_result))
+            }
+            Self::HandleContributeUnsealPassphrase(result) => {
+                let proto_result = match result {
+                    Ok(true) => ProtoUnsealResult::Success,
+                    Ok(false) => ProtoUnsealResult::AwaitingContributions,
+                    Err(err) => {
+                        warn!(?err, "contribute unseal passphrase failed");
+                        return Err(Status::internal("Failed to contribute unseal passphrase"));
+                    }
+                };
+                Ok(wrap_unseal_response(UnsealResponsePayload::Result(
+                    proto_result.into(),
+                )))
             }
         }
     }
