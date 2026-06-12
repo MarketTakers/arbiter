@@ -22,7 +22,7 @@ use tokio::sync::oneshot;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 async fn setup_sealed_gate(
-    seal_key: &[u8],
+    seal_key: &[u8; 32],
 ) -> (
     db::DatabasePool,
     kameo::actor::ActorRef<VaultGate>,
@@ -50,7 +50,7 @@ async fn setup_sealed_gate(
 
 async fn client_dh_encrypt(
     gate: &kameo::actor::ActorRef<VaultGate>,
-    key_to_send: &[u8],
+    key_to_send: &[u8; 32],
 ) -> HandleUnsealEncryptedKey {
     let client_secret = EphemeralSecret::random();
     let client_public = PublicKey::from(&client_secret);
@@ -83,7 +83,7 @@ async fn client_dh_encrypt(
 #[tokio::test]
 #[test_log::test]
 pub async fn unseal_success() {
-    let seal_key = b"test-seal-key";
+    let seal_key = b"test-seal-key-padded-to-32bytes!";
     let (_db, gate, _promotion_rx) = setup_sealed_gate(seal_key).await;
 
     let encrypted_key = client_dh_encrypt(&gate, seal_key).await;
@@ -95,10 +95,10 @@ pub async fn unseal_success() {
 #[tokio::test]
 #[test_log::test]
 pub async fn unseal_wrong_seal_key() {
-    let seal_key = b"test-seal-key";
+    let seal_key = b"test-seal-key-padded-to-32bytes!";
     let (_db, gate, _promotion_rx) = setup_sealed_gate(seal_key).await;
 
-    let encrypted_key = client_dh_encrypt(&gate, b"wrong-key").await;
+    let encrypted_key = client_dh_encrypt(&gate, b"wrong-key-padded-to-32-bytes!!!!").await;
 
     let response = gate.ask(encrypted_key).await;
     assert!(matches!(
@@ -112,7 +112,7 @@ pub async fn unseal_wrong_seal_key() {
 #[tokio::test]
 #[test_log::test]
 pub async fn unseal_corrupted_ciphertext() {
-    let seal_key = b"test-seal-key";
+    let seal_key = b"test-seal-key-padded-to-32bytes!";
     let (_db, gate, _promotion_rx) = setup_sealed_gate(seal_key).await;
 
     let client_secret = EphemeralSecret::random();
@@ -143,11 +143,11 @@ pub async fn unseal_corrupted_ciphertext() {
 #[tokio::test]
 #[test_log::test]
 pub async fn unseal_retry_after_invalid_key() {
-    let seal_key = b"real-seal-key";
+    let seal_key = b"real-seal-key-padded-to-32bytes!";
     let (_db, gate, _promotion_rx) = setup_sealed_gate(seal_key).await;
 
     {
-        let encrypted_key = client_dh_encrypt(&gate, b"wrong-key").await;
+        let encrypted_key = client_dh_encrypt(&gate, b"wrong-key-padded-to-32-bytes!!!!").await;
 
         let response = gate.ask(encrypted_key).await;
         assert!(matches!(

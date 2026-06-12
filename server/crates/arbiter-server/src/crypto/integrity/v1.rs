@@ -235,7 +235,7 @@ mod tests {
         );
         actor
             .ask(Bootstrap {
-                seal_key_raw: SafeCell::new(b"integrity-test-seal-key".to_vec()),
+                seal_key_raw: SafeCell::new([0u8; 32].to_vec()),
             })
             .await
             .unwrap();

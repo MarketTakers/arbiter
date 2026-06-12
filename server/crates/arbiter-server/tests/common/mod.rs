@@ -19,7 +19,7 @@ pub(crate) async fn bootstrapped_vault(db: &db::DatabasePool) -> Vault {
         .await
         .unwrap();
     actor
-        .bootstrap(SafeCell::new(b"test-seal-key".to_vec()))
+        .bootstrap(SafeCell::new([0u8; 32].to_vec()))
         .await
         .unwrap();
     actor

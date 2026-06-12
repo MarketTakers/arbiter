@@ -157,7 +157,7 @@ pub async fn bootstrap_token_auth() {
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
+            seal_key_raw: SafeCell::new([0u8; 32].to_vec()),
         })
         .await
         .unwrap();
@@ -275,7 +275,7 @@ pub async fn challenge_auth() {
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
+            seal_key_raw: SafeCell::new([0u8; 32].to_vec()),
         })
         .await
         .unwrap();
@@ -361,7 +361,7 @@ pub async fn challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() {
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
+            seal_key_raw: SafeCell::new([0u8; 32].to_vec()),
         })
         .await
         .unwrap();
@@ -434,7 +434,7 @@ pub async fn challenge_auth_rejects_invalid_signature() {
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
+            seal_key_raw: SafeCell::new([0u8; 32].to_vec()),
         })
         .await
         .unwrap();

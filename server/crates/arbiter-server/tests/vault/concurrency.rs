@@ -166,7 +166,7 @@ async fn decrypt_roundtrip_after_high_concurrency() {
         .await
         .unwrap();
     decryptor
-        .try_unseal(SafeCell::new(b"test-seal-key".to_vec()))
+        .try_unseal(SafeCell::new([0u8; 32].to_vec()))
         .await
         .unwrap();
 
