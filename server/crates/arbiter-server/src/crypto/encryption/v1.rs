@@ -61,12 +61,12 @@ mod tests {
     #[test]
     fn derive_seal_key_deterministic() {
         static PASSWORD: &[u8] = b"password";
-        let password = SafeCell::new(PASSWORD.to_vec());
-        let password2 = SafeCell::new(PASSWORD.to_vec());
+        let mut password = SafeCell::new(PASSWORD.to_vec());
+        let mut password2 = SafeCell::new(PASSWORD.to_vec());
         let salt = generate_salt();
 
-        let mut key1 = derive_key(password, &salt);
-        let mut key2 = derive_key(password2, &salt);
+        let mut key1 = derive_key(&mut password, &salt);
+        let mut key2 = derive_key(&mut password2, &salt);
 
         let key1_reader = key1.0.read();
         let key2_reader = key2.0.read();
@@ -77,10 +77,10 @@ mod tests {
     #[test]
     fn successful_derive() {
         static PASSWORD: &[u8] = b"password";
-        let password = SafeCell::new(PASSWORD.to_vec());
+        let mut password = SafeCell::new(PASSWORD.to_vec());
         let salt = generate_salt();
 
-        let mut key = derive_key(password, &salt);
+        let mut key = derive_key(&mut password, &salt);
         let key_reader = key.0.read();
 
         assert_ne!(key_reader.as_slice(), &[0u8; 32][..]);

@@ -1,5 +1,5 @@
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
-use encryption::v1::{Nonce, Salt};
+use encryption::v1::Nonce;
 
 use argon2::{Algorithm, Argon2};
 use chacha20poly1305::{
@@ -13,6 +13,7 @@ use rand::{
 
 pub mod encryption;
 pub mod integrity;
+pub mod shamir;
 
 pub struct KeyCell(pub SafeCell<Key>);
 impl From<SafeCell<Key>> for KeyCell {
@@ -94,7 +95,7 @@ impl KeyCell {
 }
 
 /// Derive a fixed-length key from the password using Argon2id, which is designed for password hashing and key derivation.
-pub fn derive_key(password: &mut SafeCell<Vec<u8>>, salt: &Salt) -> KeyCell {
+pub fn derive_key(password: &mut SafeCell<Vec<u8>>, salt: &[u8]) -> KeyCell {
     let params = {
         #[cfg(debug_assertions)]
         {
@@ -132,10 +133,10 @@ mod tests {
     #[test]
     fn encrypt_decrypt() {
         static PASSWORD: &[u8] = b"password";
-        let password = SafeCell::new(PASSWORD.to_vec());
+        let mut password = SafeCell::new(PASSWORD.to_vec());
         let salt = generate_salt();
 
-        let mut key = derive_key(password, &salt);
+        let mut key = derive_key(&mut password, &salt);
         let nonce = Nonce(*b"unique nonce 123 1231233"); // 24 bytes for XChaCha20Poly1305
         let associated_data = b"associated data";
         let mut buffer = b"secret data".to_vec();
