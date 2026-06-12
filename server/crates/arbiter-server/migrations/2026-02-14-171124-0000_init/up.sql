@@ -56,6 +56,7 @@ create table if not exists operator (
 
     share blob not null,
     share_nonce blob not null,
+    share_salt blob not null default (randomblob(32)),
 
     created_at integer not null default(unixepoch ('now')),
     updated_at integer not null default(unixepoch ('now'))

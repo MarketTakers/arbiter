@@ -157,6 +157,7 @@ diesel::table! {
         id -> Nullable<Integer>,
         share -> Binary,
         share_nonce -> Binary,
+        share_salt -> Binary,
         created_at -> Integer,
         updated_at -> Integer,
     }

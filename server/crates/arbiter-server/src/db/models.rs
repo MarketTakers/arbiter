@@ -285,6 +285,7 @@ pub struct Operator {
     pub id: OperatorId,
     pub share: Vec<u8>,
     pub share_nonce: Vec<u8>,
+    pub share_salt: Vec<u8>,
     pub created_at: SqliteTimestamp,
     pub updated_at: SqliteTimestamp,
 }
