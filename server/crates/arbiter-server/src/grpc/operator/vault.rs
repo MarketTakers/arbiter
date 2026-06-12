@@ -47,7 +47,6 @@ async fn handle_query_vault_state(
     let state = match actor.ask(HandleQueryVaultState {}).await {
         Ok(VaultState::Unbootstrapped) => ProtoVaultState::Unbootstrapped,
         Ok(VaultState::Sealed) => ProtoVaultState::Sealed,
-        Ok(VaultState::Bootstrapping) => ProtoVaultState::Boostrapping,
         Ok(VaultState::Unsealed) => ProtoVaultState::Unsealed,
         Err(err) => {
             warn!(error = ?err, "Failed to query vault state");

@@ -1,15 +1,13 @@
-use std::collections::HashMap;
-
 use crate::{
     crypto::{
-        KeyCell, derive_key,
+        KeyCell,
         encryption::v1::{self, Nonce},
         integrity::v1::HmacSha256,
     },
     db::{
         self,
-        models::{self, OperatorId, OperatorIdentityId, RootKeyHistory, RootKeyHistoryId},
-        schema::{self},
+        models::{self, RootKeyHistory, RootKeyHistoryId},
+        schema,
     },
 };
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
@@ -17,11 +15,10 @@ use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use chrono::Utc;
 use diesel::{
     ExpressionMethods as _, OptionalExtension, QueryDsl, SelectableHelper,
-    dsl::{count, insert_into, update},
-    select,
+    dsl::{insert_into, update},
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use hmac::{KeyInit as _, Mac as _, digest::common};
+use hmac::{KeyInit as _, Mac as _};
 use kameo::{Actor, Reply, actor::ActorRef, messages};
 use kameo_actors::message_bus::{MessageBus, Publish};
 use strum::{EnumDiscriminants, IntoDiscriminant};
@@ -65,15 +62,6 @@ pub enum Error {
     BrokenDatabase,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum UnsealError {}
-
-#[derive(Debug, thiserror::Error)]
-pub enum BootstrapError {
-    #[error("That operator already contributed his share")]
-    AlreadyContributed,
-}
-
 struct Unsealed {
     root_key_history_id: RootKeyHistoryId,
     root_key: KeyCell,
@@ -85,15 +73,8 @@ enum State {
     #[default]
     Unbootstrapped,
 
-    Bootstrapping {
-        declared_operators: u64,
-        current_passphrases: HashMap<OperatorIdentityId, SafeCell<Vec<u8>>>,
-    },
-
     Sealed {
-        threshold: u64, // basically, quorum size
         root_key_history_id: RootKeyHistoryId,
-        current_shares: HashMap<OperatorId, SafeCell<Vec<u8>>>,
     },
     Unsealed(Unsealed),
 }
@@ -121,17 +102,9 @@ impl Vault {
                 .await?;
 
             match root_key_history {
-                Some(root_key_history) => {
-                    let operator_count: i64 = schema::operator::table
-                        .count()
-                        .get_result(&mut conn)
-                        .await?;
-                    State::Sealed {
-                        root_key_history_id: root_key_history.id,
-                        current_shares: HashMap::default(),
-                        threshold: shamir_threshold(operator_count.cast_unsigned()), // invariant: db couldn't return negative number of rows
-                    }
-                }
+                Some(root_key_history) => State::Sealed {
+                    root_key_history_id: root_key_history.id,
+                },
                 None => State::Unbootstrapped,
             }
         };
@@ -139,7 +112,7 @@ impl Vault {
         Ok(Self { db, state, events })
     }
 
-    // Exclusive transaction to avoid race condtions if multiple vaults write
+    // Exclusive transaction to avoid race conditions if multiple vaults write
     // additional layer of protection against nonce-reuse
     async fn get_new_nonce(
         pool: &db::DatabasePool,
@@ -180,37 +153,33 @@ impl Vault {
     const fn expect_unsealed(state: &mut State) -> Result<&mut Unsealed, Error> {
         match state {
             State::Unsealed(unsealed) => Ok(unsealed),
-            State::Bootstrapping { .. } => Err(Error::NotBootstrapped),
             State::Unbootstrapped => Err(Error::NotBootstrapped),
             State::Sealed { .. } => Err(Error::Sealed),
         }
     }
+}
 
-    pub async fn finalize_bootstrap(&mut self) -> Result<(), Error> {
-        let State::Bootstrapping {
-            declared_operators,
-            current_passphrases,
-        } = &mut self.state
-        else {
+#[messages]
+impl Vault {
+    #[message]
+    pub async fn bootstrap(&mut self, seal_key_raw: SafeCell<Vec<u8>>) -> Result<(), Error> {
+        if !matches!(&self.state, State::Unbootstrapped) {
             return Err(Error::AlreadyBootstrapped);
-        };
+        }
+
         let mut root_key = KeyCell::new_secure_random();
-        let root_key_salt = v1::generate_salt();
-
-        let mut seal_key = KeyCell::new_secure_random();
-
-        let shares = seal_key.0.read_inline(|seal_key| {
-            generate_shamir_shares(current_passphrases.len() as u64, seal_key.as_slice())
-        });
+        let mut seal_key = KeyCell::try_from(seal_key_raw).map_err(|()| Error::InvalidKey)?;
 
         // Zero nonces are fine because they are one-time
         let root_key_nonce = Nonce::default();
         let data_encryption_nonce = Nonce::default();
 
-        let root_key_ciphertext: Vec<u8> = root_key.0.read_inline(|reader| {
-            let root_key_reader = reader.as_slice();
+        // Generate salt (kept for schema compat)
+        let root_key_salt = v1::generate_salt();
+
+        let root_key_ciphertext: Vec<u8> = root_key.0.read_inline(|rk| {
             seal_key
-                .encrypt(&root_key_nonce, v1::ROOT_KEY_TAG, root_key_reader)
+                .encrypt(&root_key_nonce, v1::ROOT_KEY_TAG, rk.as_slice())
                 .map_err(|err| {
                     error!(?err, "Fatal bootstrap error");
                     Error::Encryption(err)
@@ -222,16 +191,6 @@ impl Vault {
 
         let root_key_history_id = conn
             .transaction(async |conn| {
-                for ((operator_id, raw_passphrase), raw_share) in
-                    current_passphrases.iter_mut().zip(shares.iter())
-                {
-                    let salt = v1::generate_salt();
-                    let mut share_seal_key = derive_key(&mut raw_passphrase, &salt);
-                    let share_encryption_nonce = Nonce::default();
-
-                    let share_key = derive_key(&mut raw_passphrase, &salt);
-                }
-
                 let root_key_history_id = insert_into(schema::root_key_history::table)
                     .values(&models::NewRootKeyHistory {
                         ciphertext: root_key_ciphertext.clone(),
@@ -266,82 +225,28 @@ impl Vault {
 
         Ok(())
     }
-}
-
-// Seal / unseal / bootstrap stuff. Will be separated into another actor, eventually
-#[messages]
-impl Vault {
-    #[message]
-    pub async fn start_bootstrap(&mut self, declared_operators: u64) -> Result<(), Error> {
-        if !matches!(&self.state, State::Unbootstrapped) {
-            return Err(Error::AlreadyBootstrapped);
-        }
-
-        self.state = State::Bootstrapping {
-            declared_operators,
-            current_passphrases: HashMap::default(),
-        };
-        Ok(())
-    }
 
     #[message]
-    pub async fn contribute_bootstrap(
-        &mut self,
-        operator: OperatorIdentityId,
-        key_raw: SafeCell<Vec<u8>>,
-    ) -> Result<(), Error> {
-        let State::Bootstrapping {
-            current_passphrases,
-            declared_operators,
-        } = &mut self.state
-        else {
-            return Err(Error::AlreadyBootstrapped);
-        };
-
-        if current_passphrases.contains_key(&operator) {
-            return Err(Error::AlreadyBootstrapped);
-        }
-        current_passphrases.insert(operator, key_raw);
-
-        if current_passphrases.len() == declared_operators {
-            return self.finalize_bootstrap(seal_key_raw);
-        }
-
-        Ok(())
-    }
-
-    #[message]
-    pub async fn contribute_unseal(
-        &mut self,
-        operator: OperatorId,
-        key_raw: SafeCell<Vec<u8>>,
-    ) -> Result<(), Error> {
+    pub async fn try_unseal(&mut self, seal_key_raw: SafeCell<Vec<u8>>) -> Result<(), Error> {
         let State::Sealed {
             root_key_history_id,
-            current_shares,
         } = &self.state
         else {
             return Err(Error::NotBootstrapped);
         };
+        let root_key_history_id = *root_key_history_id;
 
-        // We don't want to hold connection while doing expensive KDF work
+        // We don't want to hold connection while doing expensive work
         let current_key = {
             let mut conn = self.db.get().await?;
             schema::root_key_history::table
-                .filter(schema::root_key_history::id.eq(*root_key_history_id))
+                .filter(schema::root_key_history::id.eq(root_key_history_id))
                 .select(RootKeyHistory::as_select())
                 .first(&mut conn)
                 .await?
         };
 
-        let salt = &current_key.salt;
-        let salt = v1::Salt::try_from(salt.as_slice()).map_err(|_| {
-            error!("Broken database: invalid salt for root key");
-            Error::BrokenDatabase
-        })?;
-        let mut seal_key = derive_key(key_raw, &salt);
-
-        let mut root_key = SafeCell::new(current_key.ciphertext.clone());
+        let mut seal_key = KeyCell::try_from(seal_key_raw).map_err(|()| Error::InvalidKey)?;
 
         let nonce =
             Nonce::try_from(current_key.root_key_encryption_nonce.as_slice()).map_err(|()| {
@@ -349,19 +254,22 @@ impl Vault {
                 Error::BrokenDatabase
             })?;
 
+        let mut root_key_bytes = SafeCell::new(current_key.ciphertext.clone());
         seal_key
-            .decrypt_in_place(&nonce, v1::ROOT_KEY_TAG, &mut root_key)
+            .decrypt_in_place(&nonce, v1::ROOT_KEY_TAG, &mut root_key_bytes)
             .map_err(|err| {
                 error!(?err, "Failed to unseal root key: invalid seal key");
                 Error::InvalidKey
             })?;
 
+        let root_key = KeyCell::try_from(root_key_bytes).map_err(|()| {
+            error!("Broken database: invalid encryption key size");
+            Error::BrokenDatabase
+        })?;
+
         self.state = State::Unsealed(Unsealed {
             root_key_history_id: current_key.id,
-            root_key: KeyCell::try_from(root_key).map_err(|err| {
-                error!(?err, "Broken database: invalid encryption key size");
-                Error::BrokenDatabase
-            })?,
+            root_key,
         });
 
         info!("Vault unsealed successfully");
@@ -379,7 +287,6 @@ impl Vault {
 
         self.state = State::Sealed {
             root_key_history_id: *root_key_history_id,
-            current_shares: HashMap::new(),
         };
         let _ = self.events.tell(Publish(events::VaultResealed)).await;
         Ok(())
@@ -466,12 +373,10 @@ impl Vault {
             root_key_history_id,
         } = Self::expect_unsealed(&mut self.state)?;
 
-        let mut hmac = root_key
-            .0
-            .read_inline(|k| match HmacSha256::new_from_slice(k) {
-                Ok(v) => v,
-                Err(_) => unreachable!("HMAC accepts keys of any size"),
-            });
+        let mut hmac = root_key.0.read_inline(|k| {
+            HmacSha256::new_from_slice(k)
+                .unwrap_or_else(|_| unreachable!("HMAC accepts keys of any size"))
+        });
         hmac.update(&root_key_history_id.to_raw().to_be_bytes());
         hmac.update(&mac_input);
 
@@ -495,53 +400,15 @@ impl Vault {
             return Ok(false);
         }
 
-        let mut hmac = root_key
-            .0
-            .read_inline(|k| match HmacSha256::new_from_slice(k) {
-                Ok(v) => v,
-                Err(_) => unreachable!("HMAC accepts keys of any size"),
-            });
+        let mut hmac = root_key.0.read_inline(|k| {
+            HmacSha256::new_from_slice(k)
+                .unwrap_or_else(|_| unreachable!("HMAC accepts keys of any size"))
+        });
         hmac.update(&key_version.to_raw().to_be_bytes());
         hmac.update(&mac_input);
 
         Ok(hmac.verify_slice(&expected_mac).is_ok())
     }
-}
-
-/// According to the spec, the quorum is 50% + 1
-/// with exception for 1 and 2 operators, those require exactly the number of operators registered
-fn shamir_threshold(comittee_size: u64) -> u64 {
-    if comittee_size == 2 || comittee_size == 1 {
-        return comittee_size;
-    }
-
-    let half_comittee = match comittee_size % 2 != 0 {
-        true => (comittee_size - 1) / 2,
-        false => comittee_size / 2,
-    };
-
-    half_comittee + 1
-}
-
-/// Beware: this function accepts raw key references (without memory protection)
-fn generate_shamir_shares(threshold: u64, key: &[u8]) -> Vec<SafeCell<Vec<u8>>> {
-    use vsss_rs::{shamir, *};
-
-    type P256Share = DefaultShare<IdentifierPrimeField<Scalar>, IdentifierPrimeField<Scalar>>;
-
-    let mut osrng = rand_core::OsRng::default();
-    let sk = SecretKey::random(&mut osrng);
-    let nzs = sk.to_nonzero_scalar();
-    let shared_secret = IdentifierPrimeField(*nzs.as_ref());
-    let res = shamir::split_secret::<P256Share>(2, 3, &shared_secret, &mut osrng);
-    assert!(res.is_ok());
-    let shares = res.unwrap();
-    let res = shares.combine();
-    assert!(res.is_ok());
-    let scalar = res.unwrap();
-    let nzs_dup = NonZeroScalar::from_repr(scalar.0.to_repr()).unwrap();
-    let sk_dup = SecretKey::from(nzs_dup);
-    assert_eq!(sk_dup.to_bytes(), sk.to_bytes());
 }
 
 #[cfg(test)]
@@ -555,8 +422,8 @@ mod tests {
         let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
             .await
             .unwrap();
-        let seal_key = SafeCell::new(b"test-seal-key".to_vec());
-        actor.finalize_bootstrap(seal_key).await.unwrap();
+        let seal_key = SafeCell::new([0u8; 32].to_vec());
+        actor.bootstrap(seal_key).await.unwrap();
         actor
     }
 
@@ -565,12 +432,12 @@ mod tests {
     async fn nonce_monotonic_even_when_nonce_allocation_interleaves() {
         let db = db::create_test_pool().await;
         let mut actor = bootstrapped_actor(&db).await;
-        let root_key_history_id = match actor.state {
-            State::Unsealed(Unsealed {
-                root_key_history_id,
-                ..
-            }) => root_key_history_id,
-            _ => panic!("expected unsealed state"),
+        let State::Unsealed(Unsealed {
+            root_key_history_id,
+            ..
+        }) = actor.state
+        else {
+            panic!("expected unsealed state");
         };
 
         let n1 = Vault::get_new_nonce(&db, root_key_history_id)

@@ -31,7 +31,6 @@ pub(super) async fn dispatch(
         VaultRequestPayload::QueryState(()) => {
             let state = match actor.ask(HandleQueryVaultState {}).await {
                 Ok(VaultState::Unbootstrapped) => ProtoVaultState::Unbootstrapped,
-                Ok(VaultState::Bootstrapping) => ProtoVaultState::Boostrapping,
                 Ok(VaultState::Sealed) => ProtoVaultState::Sealed,
                 Ok(VaultState::Unsealed) => ProtoVaultState::Unsealed,
                 Err(SendError::HandlerError(Error::Internal)) => ProtoVaultState::Error,
