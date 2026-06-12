@@ -2,6 +2,7 @@ use crate::{
     actors::{
         bootstrap::Bootstrapper, evm::EvmActor, flow_coordinator::FlowCoordinator,
         operator_registry::OperatorRegistry, vault::Vault,
+        vault_coordinator::VaultCoordinator,
     },
     db,
 };
@@ -15,6 +16,7 @@ pub mod evm;
 pub mod flow_coordinator;
 pub mod operator_registry;
 pub mod vault;
+pub mod vault_coordinator;
 
 #[derive(Error, Debug)]
 pub enum SpawnError {
@@ -30,6 +32,7 @@ pub enum SpawnError {
 pub struct GlobalActors {
     pub vault: ActorRef<Vault>,
     pub bootstrapper: ActorRef<Bootstrapper>,
+    pub vault_coordinator: ActorRef<VaultCoordinator>,
     pub flow_coordinator: ActorRef<FlowCoordinator>,
     pub operator_registry: ActorRef<OperatorRegistry>,
     pub evm: ActorRef<EvmActor>,
@@ -47,7 +50,11 @@ impl GlobalActors {
         let operator_registry = OperatorRegistry::spawn(OperatorRegistry::default());
         Ok(Self {
             bootstrapper: Bootstrapper::spawn(Bootstrapper::new(&db).await?),
-            evm: EvmActor::spawn(EvmActor::new(key_holder.clone(), db)),
+            evm: EvmActor::spawn(EvmActor::new(key_holder.clone(), db.clone())),
+            vault_coordinator: VaultCoordinator::spawn(VaultCoordinator::new(
+                db,
+                key_holder.clone(),
+            )),
             vault: key_holder,
             flow_coordinator: FlowCoordinator::spawn(FlowCoordinator::new(
                 operator_registry.clone(),

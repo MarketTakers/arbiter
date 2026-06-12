@@ -771,6 +771,7 @@ dependencies = [
  "proptest",
  "prost-types",
  "rand 0.10.1",
+ "rand_core 0.6.4",
  "rcgen",
  "restructed",
  "rstest",
@@ -3027,7 +3028,7 @@ dependencies = [
 [[package]]
 name = "kameo"
 version = "0.20.0"
-source = "git+https://github.com/hdbg/kameo.git?rev=805b417#805b41783fe90b54827ecad142b422c7a9b69b9a"
+source = "git+https://github.com/hdbg/kameo.git?rev=3e18ba2#3e18ba24023d0422034e60ff2ea1ecd49e8c3c93"
 dependencies = [
  "downcast-rs",
  "dyn-clone",
@@ -3041,7 +3042,7 @@ dependencies = [
 [[package]]
 name = "kameo_actors"
 version = "0.5.0"
-source = "git+https://github.com/hdbg/kameo.git?rev=805b417#805b41783fe90b54827ecad142b422c7a9b69b9a"
+source = "git+https://github.com/hdbg/kameo.git?rev=3e18ba2#3e18ba24023d0422034e60ff2ea1ecd49e8c3c93"
 dependencies = [
  "futures",
  "glob",
@@ -3053,9 +3054,8 @@ dependencies = [
 [[package]]
 name = "kameo_macros"
 version = "0.20.0"
-source = "git+https://github.com/hdbg/kameo.git?rev=805b417#805b41783fe90b54827ecad142b422c7a9b69b9a"
+source = "git+https://github.com/hdbg/kameo.git?rev=3e18ba2#3e18ba24023d0422034e60ff2ea1ecd49e8c3c93"
 dependencies = [
- "darling 0.23.0",
  "heck",
  "proc-macro2",
  "quote",

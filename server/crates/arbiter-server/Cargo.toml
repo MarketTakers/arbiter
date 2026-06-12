@@ -51,6 +51,7 @@ x25519-dalek.workspace = true
 k256.workspace = true
 kameo_actors.workspace = true
 vsss-rs = "5.4.0"
+rand_core = "0.6"
 
 [dev-dependencies]
 proptest = "1.11.0"
