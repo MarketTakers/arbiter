@@ -160,29 +160,23 @@ impl EvmActor {
     }
 
     #[message]
-    #[expect(clippy::unused_async, reason = "reserved for impl")]
-    pub async fn operator_delete_grant(&mut self, _grant_id: i32) -> Result<(), Error> {
-        // let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
-        // let vault = self.vault.clone();
+    pub async fn operator_delete_grant(&mut self, grant_id: i32) -> Result<(), Error> {
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
 
-        // diesel_async::AsyncConnection::transaction(&mut conn, |conn| {
-        //     Box::pin(async move {
-        //         diesel::update(schema::evm_basic_grant::table)
-        //             .filter(schema::evm_basic_grant::id.eq(grant_id))
-        //             .set(schema::evm_basic_grant::revoked_at.eq(SqliteTimestamp::now()))
-        //             .execute(conn)
-        //             .await?;
+        let affected = diesel::update(schema::evm_basic_grant::table)
+            .filter(schema::evm_basic_grant::id.eq(grant_id))
+            .set(schema::evm_basic_grant::revoked_at.eq(models::SqliteTimestamp::now()))
+            .execute(&mut conn)
+            .await
+            .map_err(DatabaseError::from)?;
 
-        //         let signed = integrity::evm::load_signed_grant_by_basic_id(conn, grant_id).await?;
+        if affected == 0 {
+            return Err(Error::Database(DatabaseError::from(
+                diesel::result::Error::NotFound,
+            )));
+        }
 
-        //         diesel::result::QueryResult::Ok(())
-        //     })
-        // })
-        // .await
-        // .map_err(DatabaseError::from)?;
-
-        // Ok(())
-        todo!()
+        Ok(())
     }
 
     #[message]

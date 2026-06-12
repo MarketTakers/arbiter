@@ -2,8 +2,8 @@ use super::{Error, OperatorSession};
 use crate::{
     actors::{
         evm::{
-            ClientSignTransaction, Generate, ListWallets, OperatorCreateGrant, OperatorListGrants,
-            SignTransactionError as EvmSignError,
+            ClientSignTransaction, Generate, ListWallets, OperatorCreateGrant, OperatorDeleteGrant,
+            OperatorListGrants, SignTransactionError as EvmSignError,
         },
         flow_coordinator::client_connect_approval::ClientApprovalAnswer,
         vault::VaultState,
@@ -122,22 +122,23 @@ impl OperatorSession {
     }
 
     #[message]
-    pub(crate) fn handle_grant_delete(&mut self, grant_id: i32) -> Result<(), GrantMutationError> {
-        // match self
-        //     .props
-        //     .actors
-        //     .evm
-        //     .ask(OperatorDeleteGrant { grant_id })
-        //     .await
-        // {
-        //     Ok(()) => Ok(()),
-        //     Err(err) => {
-        //         error!(?err, "EVM grant delete failed");
-        //         Err(GrantMutationError::Internal)
-        //     }
-        // }
-        let _ = grant_id;
-        todo!()
+    pub(crate) async fn handle_grant_delete(
+        &mut self,
+        grant_id: i32,
+    ) -> Result<(), GrantMutationError> {
+        match self
+            .props
+            .actors
+            .evm
+            .ask(OperatorDeleteGrant { grant_id })
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(err) => {
+                error!(?err, "EVM grant delete failed");
+                Err(GrantMutationError::Internal)
+            }
+        }
     }
 
     #[message]
@@ -217,8 +218,8 @@ impl OperatorSession {
     pub(crate) async fn handle_list_wallet_access(
         &mut self,
     ) -> Result<Vec<EvmWalletAccess>, Error> {
-        let mut conn = self.props.db.get().await?;
         use crate::db::schema::evm_wallet_access;
+        let mut conn = self.props.db.get().await?;
         let access_entries = evm_wallet_access::table
             .select(EvmWalletAccess::as_select())
             .load::<_>(&mut conn)
