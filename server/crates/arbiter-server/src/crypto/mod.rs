@@ -21,6 +21,15 @@ impl From<SafeCell<Key>> for KeyCell {
         Self(value)
     }
 }
+impl From<[u8; 32]> for KeyCell {
+    fn from(bytes: [u8; 32]) -> Self {
+        let cell = SafeCell::new_inline_default(|key: &mut Key| {
+            key.copy_from_slice(&bytes);
+        });
+        Self(cell)
+    }
+}
+
 impl TryFrom<SafeCell<Vec<u8>>> for KeyCell {
     type Error = ();
 

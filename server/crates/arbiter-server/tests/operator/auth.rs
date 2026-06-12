@@ -1,8 +1,5 @@
 use super::common::ChannelTransport;
-use arbiter_crypto::{
-    authn::{self, AuthChallenge, OPERATOR_CONTEXT},
-    safecell::{SafeCell, SafeCellHandle as _},
-};
+use arbiter_crypto::authn::{self, AuthChallenge, OPERATOR_CONTEXT};
 use arbiter_proto::transport::{Error as TransportError, Receiver, Sender};
 use arbiter_server::{
     actors::{GlobalActors, bootstrap::GetToken, vault::Bootstrap},
@@ -157,7 +154,7 @@ pub async fn bootstrap_token_auth() {
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new([0u8; 32].to_vec()),
+            seal_key: arbiter_server::crypto::KeyCell::from([0u8; 32]),
         })
         .await
         .unwrap();
@@ -275,7 +272,7 @@ pub async fn challenge_auth() {
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new([0u8; 32].to_vec()),
+            seal_key: arbiter_server::crypto::KeyCell::from([0u8; 32]),
         })
         .await
         .unwrap();
@@ -361,7 +358,7 @@ pub async fn challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() {
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new([0u8; 32].to_vec()),
+            seal_key: arbiter_server::crypto::KeyCell::from([0u8; 32]),
         })
         .await
         .unwrap();
@@ -434,7 +431,7 @@ pub async fn challenge_auth_rejects_invalid_signature() {
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new([0u8; 32].to_vec()),
+            seal_key: arbiter_server::crypto::KeyCell::from([0u8; 32]),
         })
         .await
         .unwrap();

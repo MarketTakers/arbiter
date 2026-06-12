@@ -162,13 +162,12 @@ impl Vault {
 #[messages]
 impl Vault {
     #[message]
-    pub async fn bootstrap(&mut self, seal_key_raw: SafeCell<Vec<u8>>) -> Result<(), Error> {
+    pub async fn bootstrap(&mut self, mut seal_key: KeyCell) -> Result<(), Error> {
         if !matches!(&self.state, State::Unbootstrapped) {
             return Err(Error::AlreadyBootstrapped);
         }
 
         let mut root_key = KeyCell::new_secure_random();
-        let mut seal_key = KeyCell::try_from(seal_key_raw).map_err(|()| Error::InvalidKey)?;
 
         // Zero nonces are fine because they are one-time
         let root_key_nonce = Nonce::default();
@@ -227,7 +226,7 @@ impl Vault {
     }
 
     #[message]
-    pub async fn try_unseal(&mut self, seal_key_raw: SafeCell<Vec<u8>>) -> Result<(), Error> {
+    pub async fn try_unseal(&mut self, mut seal_key: KeyCell) -> Result<(), Error> {
         let State::Sealed {
             root_key_history_id,
         } = &self.state
@@ -245,8 +244,6 @@ impl Vault {
                 .first(&mut conn)
                 .await?
         };
-
-        let mut seal_key = KeyCell::try_from(seal_key_raw).map_err(|()| Error::InvalidKey)?;
 
         let nonce =
             Nonce::try_from(current_key.root_key_encryption_nonce.as_slice()).map_err(|()| {
@@ -422,8 +419,7 @@ mod tests {
         let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
             .await
             .unwrap();
-        let seal_key = SafeCell::new([0u8; 32].to_vec());
-        actor.bootstrap(seal_key).await.unwrap();
+        actor.bootstrap(KeyCell::from([0u8; 32])).await.unwrap();
         actor
     }
 

@@ -1,8 +1,5 @@
 use super::common::ChannelTransport;
-use arbiter_crypto::{
-    authn::{self, AuthChallenge, CLIENT_CONTEXT},
-    safecell::{SafeCell, SafeCellHandle as _},
-};
+use arbiter_crypto::authn::{self, AuthChallenge, CLIENT_CONTEXT};
 use arbiter_proto::{
     ClientMetadata,
     transport::{Receiver, Sender},
@@ -100,7 +97,7 @@ async fn spawn_test_actors(db: &db::DatabasePool) -> GlobalActors {
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new([0u8; 32].to_vec()),
+            seal_key: arbiter_server::crypto::KeyCell::from([0u8; 32]),
         })
         .await
         .unwrap();

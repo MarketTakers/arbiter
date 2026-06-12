@@ -2,7 +2,6 @@
     dead_code,
     reason = "Common test utilities that may not be used in every test"
 )]
-use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_proto::transport::{Bi, Error, Receiver, Sender};
 use arbiter_server::{
     actors::{GlobalActors, vault::Vault},
@@ -19,7 +18,7 @@ pub(crate) async fn bootstrapped_vault(db: &db::DatabasePool) -> Vault {
         .await
         .unwrap();
     actor
-        .bootstrap(SafeCell::new([0u8; 32].to_vec()))
+        .bootstrap(arbiter_server::crypto::KeyCell::from([0u8; 32]))
         .await
         .unwrap();
     actor

@@ -215,8 +215,6 @@ mod tests {
         },
         db::{self, schema},
     };
-    use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
-
     use super::{Error, Integrable, sign_entity, verify_entity};
     #[derive(Clone, arbiter_macros::Hashable)]
     struct DummyEntity {
@@ -235,7 +233,7 @@ mod tests {
         );
         actor
             .ask(Bootstrap {
-                seal_key_raw: SafeCell::new([0u8; 32].to_vec()),
+                seal_key: crate::crypto::KeyCell::from([0u8; 32]),
             })
             .await
             .unwrap();

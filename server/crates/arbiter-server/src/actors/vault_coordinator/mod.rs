@@ -9,7 +9,7 @@ use tracing::error;
 
 use crate::{
     actors::vault::{Bootstrap, TryUnseal, Vault},
-    crypto::{derive_key, encryption::v1::Nonce, shamir},
+    crypto::{KeyCell, derive_key, encryption::v1::Nonce, shamir},
     db::{self, models, schema},
 };
 
@@ -94,14 +94,14 @@ async fn finalize_bootstrap(
     let threshold = shamir_threshold(total);
 
     // Generate random 32-byte seal key
-    let mut seal_key_bytes = vec![0u8; 32];
+    let mut seal_key_bytes = [0u8; 32];
     OsRng.fill_bytes(&mut seal_key_bytes);
 
     // Split seal key into shares using Shamir (OsRng from rand_core 0.6, compatible with vsss-rs)
     let shares = shamir::split_key(threshold, total, &seal_key_bytes, OsRng)
         .map_err(|e| Error::Shamir(e.to_string()))?;
 
-    let seal_key = SafeCell::new(seal_key_bytes);
+    let seal_key = KeyCell::from(seal_key_bytes);
 
     let mut conn = db.get().await?;
 
@@ -136,9 +136,7 @@ async fn finalize_bootstrap(
     }
 
     vault
-        .ask(Bootstrap {
-            seal_key_raw: seal_key,
-        })
+        .ask(Bootstrap { seal_key })
         .await
         .map_err(|err| {
             error!(?err, "Vault bootstrap failed");
@@ -189,12 +187,10 @@ async fn finalize_unseal(
     let seal_key_bytes =
         shamir::combine_shares(&shares).map_err(|e| Error::Shamir(e.to_string()))?;
 
-    let seal_key = SafeCell::new(seal_key_bytes);
+    let seal_key = KeyCell::from(seal_key_bytes);
 
     vault
-        .ask(TryUnseal {
-            seal_key_raw: seal_key,
-        })
+        .ask(TryUnseal { seal_key })
         .await
         .map_err(|err| {
             error!(?err, "Vault unseal failed");

@@ -1,7 +1,4 @@
-use arbiter_crypto::{
-    authn,
-    safecell::{SafeCell, SafeCellHandle as _},
-};
+use arbiter_crypto::authn;
 use arbiter_server::{
     actors::{
         GlobalActors,
@@ -34,7 +31,7 @@ async fn setup_sealed_gate(
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new(seal_key.to_vec()),
+            seal_key: arbiter_server::crypto::KeyCell::from(*seal_key),
         })
         .await
         .unwrap();

@@ -13,15 +13,17 @@ pub enum ShamirError {
 pub fn split_key(
     threshold: usize,
     total: usize,
-    key: &[u8],
+    key: &[u8; 32],
     rng: impl rand_core::RngCore + rand_core::CryptoRng,
 ) -> Result<Vec<Vec<u8>>, ShamirError> {
-    Gf256::split_array(threshold, total, key, rng)
+    Gf256::split_array(threshold, total, key.as_slice(), rng)
         .map_err(|e| ShamirError::Split(format!("{e:?}")))
 }
 
 /// Reconstruct the secret from `threshold` or more shares.
-pub fn combine_shares(shares: &[Vec<u8>]) -> Result<Vec<u8>, ShamirError> {
-    Gf256::combine_array(shares)
-        .map_err(|e| ShamirError::Combine(format!("{e:?}")))
+pub fn combine_shares(shares: &[Vec<u8>]) -> Result<[u8; 32], ShamirError> {
+    let bytes = Gf256::combine_array(shares)
+        .map_err(|e| ShamirError::Combine(format!("{e:?}")))?;
+    <[u8; 32]>::try_from(bytes.as_slice())
+        .map_err(|_| ShamirError::Combine("unexpected reconstructed key length".to_owned()))
 }

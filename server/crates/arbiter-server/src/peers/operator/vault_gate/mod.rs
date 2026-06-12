@@ -5,7 +5,7 @@ use crate::{
         vault::{self, Bootstrap, GetState, TryUnseal, VaultState, events},
         vault_coordinator::{ContributeBootstrap, ContributeUnseal, StartBootstrap},
     },
-    crypto::integrity::{self},
+    crypto::{KeyCell, integrity::{self}},
     db::DatabasePool,
 };
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
@@ -102,11 +102,9 @@ impl VaultGate {
         nonce: &[u8],
         ciphertext: &[u8],
         associated_data: &[u8],
-    ) -> Result<SafeCell<Vec<u8>>, ()> {
+    ) -> Result<KeyCell, ()> {
         let nonce = XNonce::from_slice(nonce);
-
         let cipher = XChaCha20Poly1305::new(secret.as_bytes().into());
-
         let mut key_buffer = SafeCell::new(ciphertext.to_vec());
 
         let decryption_result = key_buffer.write_inline(|write_handle| {
@@ -114,7 +112,9 @@ impl VaultGate {
         });
 
         match decryption_result {
-            Ok(()) => Ok(key_buffer),
+            Ok(()) => KeyCell::try_from(key_buffer).map_err(|()| {
+                error!("Decrypted key material has unexpected length");
+            }),
             Err(err) => {
                 error!(?err, "Failed to decrypt encrypted key material");
                 Err(())
@@ -122,6 +122,7 @@ impl VaultGate {
         }
     }
 }
+
 #[messages(enum)]
 impl VaultGate {
     #[message]
@@ -155,17 +156,14 @@ impl VaultGate {
             return Err(Error::State);
         };
 
-        let Ok(seal_key_buffer) = Self::decrypt_key(secret, &nonce, &ciphertext, &associated_data)
-        else {
+        let Ok(seal_key) = Self::decrypt_key(secret, &nonce, &ciphertext, &associated_data) else {
             return Err(Error::InvalidKey);
         };
 
         match self
             .actors
             .vault
-            .ask(TryUnseal {
-                seal_key_raw: seal_key_buffer,
-            })
+            .ask(TryUnseal { seal_key })
             .await
         {
             Ok(()) => {
@@ -195,17 +193,14 @@ impl VaultGate {
             return Err(Error::State);
         };
 
-        let Ok(seal_key_buffer) = Self::decrypt_key(secret, &nonce, &ciphertext, &associated_data)
-        else {
+        let Ok(seal_key) = Self::decrypt_key(secret, &nonce, &ciphertext, &associated_data) else {
             return Err(Error::InvalidKey);
         };
 
         match self
             .actors
             .vault
-            .ask(Bootstrap {
-                seal_key_raw: seal_key_buffer,
-            })
+            .ask(Bootstrap { seal_key })
             .await
         {
             Ok(()) => {
@@ -255,7 +250,6 @@ impl VaultGate {
         &mut self,
         passphrase: Vec<u8>,
     ) -> Result<bool, Error> {
-        use arbiter_crypto::safecell::SafeCell;
         let passphrase_cell = SafeCell::new(passphrase);
         self.actors
             .vault_coordinator
@@ -272,7 +266,6 @@ impl VaultGate {
         &mut self,
         passphrase: Vec<u8>,
     ) -> Result<bool, Error> {
-        use arbiter_crypto::safecell::SafeCell;
         let passphrase_cell = SafeCell::new(passphrase);
         self.actors
             .vault_coordinator

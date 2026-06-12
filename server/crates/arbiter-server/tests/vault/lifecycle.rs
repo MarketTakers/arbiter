@@ -5,7 +5,7 @@ use arbiter_server::{
         GlobalActors,
         vault::{Error, Vault},
     },
-    crypto::encryption::v1::{Nonce, ROOT_KEY_TAG},
+    crypto::{KeyCell, encryption::v1::{Nonce, ROOT_KEY_TAG}},
     db::{self, models, schema},
 };
 
@@ -20,7 +20,7 @@ async fn test_bootstrap() {
         .await
         .unwrap();
 
-    let seal_key = SafeCell::new([0u8; 32].to_vec());
+    let seal_key = KeyCell::from([0u8; 32]);
     actor.bootstrap(seal_key).await.unwrap();
 
     let mut conn = db.get().await.unwrap();
@@ -43,7 +43,7 @@ async fn test_bootstrap_rejects_double() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
 
-    let seal_key2 = SafeCell::new([0u8; 32].to_vec());
+    let seal_key2 = KeyCell::from([0u8; 32]);
     let err = actor.bootstrap(seal_key2).await.unwrap_err();
     assert!(matches!(err, Error::AlreadyBootstrapped));
 }
@@ -105,7 +105,7 @@ async fn test_unseal_correct_password() {
     let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
         .await
         .unwrap();
-    let seal_key = SafeCell::new([0u8; 32].to_vec());
+    let seal_key = KeyCell::from([0u8; 32]);
     actor.try_unseal(seal_key).await.unwrap();
 
     let mut decrypted = actor.decrypt(aead_id).await.unwrap();
@@ -129,11 +129,11 @@ async fn test_unseal_wrong_then_correct_password() {
         .await
         .unwrap();
 
-    let bad_key = SafeCell::new([1u8; 32].to_vec());
+    let bad_key = KeyCell::from([1u8; 32]);
     let err = actor.try_unseal(bad_key).await.unwrap_err();
     assert!(matches!(err, Error::InvalidKey));
 
-    let good_key = SafeCell::new([0u8; 32].to_vec());
+    let good_key = KeyCell::from([0u8; 32]);
     actor.try_unseal(good_key).await.unwrap();
 
     let mut decrypted = actor.decrypt(aead_id).await.unwrap();
