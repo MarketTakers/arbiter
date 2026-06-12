@@ -210,7 +210,7 @@ impl VaultCoordinator {
         operator_id: i32,
         declared_count: usize,
     ) -> Result<(), Error> {
-        let _ = operator_id;
+        let _ = operator_id; // fixme!: any authenticated operator may announce the committee size. the first call wins
         if !matches!(self.state, CoordinatorState::Idle) {
             return Err(Error::AlreadyBootstrapping);
         }
