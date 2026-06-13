@@ -8,6 +8,7 @@ use rand::RngExt;
 
 pub static CLIENT_CONTEXT: &[u8] = b"arbiter_client";
 pub static OPERATOR_CONTEXT: &[u8] = b"arbiter_operator";
+pub static GOVERNANCE_CONTEXT: &[u8] = b"arbiter_governance_vote";
 
 const NONCE_SIZE: usize = 32;
 
@@ -89,6 +90,11 @@ impl PublicKey {
         let challenge = challenge.format();
         self.0
             .verify_with_context(&challenge, context, &signature.0)
+    }
+
+    #[must_use]
+    pub fn verify_message(&self, message: &[u8], context: &[u8], signature: &Signature) -> bool {
+        self.0.verify_with_context(message, context, &signature.0)
     }
 }
 

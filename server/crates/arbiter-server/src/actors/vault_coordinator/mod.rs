@@ -9,7 +9,7 @@ use tracing::error;
 
 use crate::{
     actors::vault::{Bootstrap, TryUnseal, Vault},
-    crypto::{KeyCell, derive_key, encryption::v1::Nonce, shamir},
+    crypto::{KeyCell, derive_key, encryption::v1::Nonce, shamir, shamir::shamir_threshold},
     db::{self, models, schema},
 };
 
@@ -75,15 +75,6 @@ impl VaultCoordinator {
 }
 
 const SHARE_AAD: &[u8] = b"arbiter/shamir-share/v1";
-
-const fn shamir_threshold(n: usize) -> usize {
-    match n {
-        0 => panic!("No operators"),
-        1 => 1,
-        2 => 2,
-        n => n / 2 + 1,
-    }
-}
 
 async fn finalize_bootstrap(
     db: db::DatabasePool,

@@ -20,6 +20,18 @@ pub fn split_key(
         .map_err(|e| ShamirError::Split(format!("{e:?}")))
 }
 
+/// Returns the minimum number of shares required to reconstruct the secret
+/// for a committee of `n` operators.
+#[must_use]
+pub const fn shamir_threshold(n: usize) -> usize {
+    match n {
+        0 => panic!("No operators"),
+        1 => 1,
+        2 => 2,
+        n => n / 2 + 1,
+    }
+}
+
 /// Reconstruct the secret from `threshold` or more shares.
 pub fn combine_shares(shares: &[Vec<u8>]) -> Result<[u8; 32], ShamirError> {
     let bytes = Gf256::combine_array(shares)
