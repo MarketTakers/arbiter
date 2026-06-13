@@ -2,6 +2,7 @@ use crate::{
     grpc::{Convert, TryConvert},
     peers::operator::vault_gate::{
         self as vault_gate, HandleBootstrapEncryptedKey, HandleContributeBootstrapPassphrase,
+        HandleContributeRecoveryBootstrapPassphrase, HandleContributeRecoveryUnsealPassphrase,
         HandleContributeUnsealPassphrase, HandleDeclareCommittee, HandleHandshake,
         HandleUnsealEncryptedKey,
     },
@@ -82,6 +83,14 @@ impl TryConvert for UnsealRequestPayload {
                     },
                 ),
             ),
+            Self::ContributeRecoveryPassphrase(crp) => Ok(
+                vault_gate::Inbound::HandleContributeRecoveryUnsealPassphrase(
+                    HandleContributeRecoveryUnsealPassphrase {
+                        recovery_operator_id: crp.recovery_operator_id,
+                        passphrase: crp.passphrase,
+                    },
+                ),
+            ),
         }
     }
 }
@@ -139,6 +148,14 @@ impl TryConvert for BootstrapRequestPayload {
                 vault_gate::Inbound::HandleContributeBootstrapPassphrase(
                     HandleContributeBootstrapPassphrase {
                         passphrase: cp.passphrase,
+                    },
+                ),
+            ),
+            Self::ContributeRecoveryPassphrase(crp) => Ok(
+                vault_gate::Inbound::HandleContributeRecoveryBootstrapPassphrase(
+                    HandleContributeRecoveryBootstrapPassphrase {
+                        recovery_operator_id: crp.recovery_operator_id,
+                        passphrase: crp.passphrase,
                     },
                 ),
             ),

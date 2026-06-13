@@ -246,8 +246,18 @@ create table if not exists proposal_result (
 ) STRICT;
 
 -- ===============================
--- Recovery Operators (§3.5/§3.6)
+-- Recovery Operators (§3.4/§3.5/§3.6)
 -- ===============================
+
+-- Encrypted Shamir shares for recovery operators (mirrors the `operator` table).
+create table if not exists recovery_operator (
+    id          integer not null primary key references recovery_operator_identity(id) on delete restrict,
+    share       blob    not null,
+    share_nonce blob    not null,
+    share_salt  blob    not null,
+    created_at  integer not null default(unixepoch('now')),
+    updated_at  integer not null default(unixepoch('now'))
+) STRICT;
 
 create table if not exists recovery_operator_identity (
     id         integer not null primary key,

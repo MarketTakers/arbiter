@@ -3,7 +3,10 @@ use crate::{
     actors::{
         GlobalActors,
         vault::{self, Bootstrap, GetState, TryUnseal, VaultState, events},
-        vault_coordinator::{ContributeBootstrap, ContributeUnseal, StartBootstrap},
+        vault_coordinator::{
+            ContributeBootstrap, ContributeRecoveryBootstrap, ContributeRecoveryUnseal,
+            ContributeUnseal, StartBootstrap,
+        },
     },
     crypto::{KeyCell, integrity::{self}},
     db::DatabasePool,
@@ -267,6 +270,23 @@ impl VaultGate {
     }
 
     #[message]
+    pub async fn handle_contribute_recovery_bootstrap_passphrase(
+        &mut self,
+        recovery_operator_id: i32,
+        passphrase: Vec<u8>,
+    ) -> Result<bool, Error> {
+        let passphrase_cell = SafeCell::new(passphrase);
+        self.actors
+            .vault_coordinator
+            .ask(ContributeRecoveryBootstrap {
+                recovery_operator_id,
+                passphrase: passphrase_cell,
+            })
+            .await
+            .map_err(|_| Error::internal("VaultCoordinator unavailable"))
+    }
+
+    #[message]
     pub async fn handle_contribute_unseal_passphrase(
         &mut self,
         passphrase: Vec<u8>,
@@ -276,6 +296,23 @@ impl VaultGate {
             .vault_coordinator
             .ask(ContributeUnseal {
                 operator_id: self.auth_creds.id,
+                passphrase: passphrase_cell,
+            })
+            .await
+            .map_err(|_| Error::internal("VaultCoordinator unavailable"))
+    }
+
+    #[message]
+    pub async fn handle_contribute_recovery_unseal_passphrase(
+        &mut self,
+        recovery_operator_id: i32,
+        passphrase: Vec<u8>,
+    ) -> Result<bool, Error> {
+        let passphrase_cell = SafeCell::new(passphrase);
+        self.actors
+            .vault_coordinator
+            .ask(ContributeRecoveryUnseal {
+                recovery_operator_id,
                 passphrase: passphrase_cell,
             })
             .await
