@@ -23,6 +23,10 @@ pub mod proto {
             tonic::include_proto!("arbiter.operator.evm");
         }
 
+        pub mod governance {
+            tonic::include_proto!("arbiter.operator.governance");
+        }
+
         pub mod sdk_client {
             tonic::include_proto!("arbiter.operator.sdk_client");
         }
