@@ -1,7 +1,7 @@
 use crate::{
     actors::{
         bootstrap::Bootstrapper, evm::EvmActor, flow_coordinator::FlowCoordinator,
-        operator_registry::OperatorRegistry, vault::Vault,
+        operator_registry::OperatorRegistry, proposal_manager::ProposalManager, vault::Vault,
         vault_coordinator::VaultCoordinator,
     },
     db,
@@ -15,6 +15,7 @@ pub mod bootstrap;
 pub mod evm;
 pub mod flow_coordinator;
 pub mod operator_registry;
+pub mod proposal_manager;
 pub mod vault;
 pub mod vault_coordinator;
 
@@ -36,6 +37,7 @@ pub struct GlobalActors {
     pub flow_coordinator: ActorRef<FlowCoordinator>,
     pub operator_registry: ActorRef<OperatorRegistry>,
     pub evm: ActorRef<EvmActor>,
+    pub proposal_manager: ActorRef<ProposalManager>,
     pub events: ActorRef<MessageBus>,
 }
 
@@ -52,6 +54,10 @@ impl GlobalActors {
             bootstrapper: Bootstrapper::spawn(Bootstrapper::new(&db).await?),
             evm: EvmActor::spawn(EvmActor::new(key_holder.clone(), db.clone())),
             vault_coordinator: VaultCoordinator::spawn(VaultCoordinator::new(
+                db.clone(),
+                key_holder.clone(),
+            )),
+            proposal_manager: ProposalManager::spawn(ProposalManager::new(
                 db,
                 key_holder.clone(),
             )),
