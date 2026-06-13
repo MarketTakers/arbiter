@@ -54,7 +54,8 @@ async fn handle_create(
         },
         Some(ProtoKind::ApproveServerUpdate(_)) => ProposalKind::ApproveServerUpdate,
         Some(ProtoKind::ReplaceOperator(p)) => ProposalKind::ReplaceOperator {
-            new_pubkey: p.new_pubkey,
+            new_pubkey: p.new_pubkey.try_into()
+                .map_err(|_| Status::invalid_argument("replace_operator: pubkey must be 32 bytes"))?,
         },
         Some(ProtoKind::UpdateShamirParameters(p)) => ProposalKind::UpdateShamirParameters {
             #[expect(clippy::cast_possible_truncation, clippy::as_conversions, reason = "new_n is always a small operator count")]

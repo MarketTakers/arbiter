@@ -41,7 +41,10 @@ impl ProposalKind {
     pub fn encode_payload(&self) -> Vec<u8> {
         match self {
             Self::ApproveSdkClient { client_id } => client_id.to_be_bytes().to_vec(),
-            Self::GrantWalletAccess { wallet_id, client_id } => {
+            Self::GrantWalletAccess {
+                wallet_id,
+                client_id,
+            } => {
                 let mut buf = Vec::with_capacity(8);
                 buf.extend_from_slice(&wallet_id.to_be_bytes());
                 buf.extend_from_slice(&client_id.to_be_bytes());
@@ -49,8 +52,7 @@ impl ProposalKind {
             }
             Self::ApproveServerUpdate => vec![],
             Self::ReplaceOperator { new_pubkey } => {
-                #[expect(clippy::cast_possible_truncation, clippy::as_conversions, reason = "pubkey is always 32 bytes")]
-                let len = new_pubkey.len() as u32;
+                let len = u32::try_from(new_pubkey.len()).expect("pubkey len fits in u32");
                 let mut buf = Vec::with_capacity(4 + new_pubkey.len());
                 buf.extend_from_slice(&len.to_be_bytes());
                 buf.extend_from_slice(new_pubkey);
@@ -153,7 +155,11 @@ pub struct ProposalManager {
 }
 
 impl ProposalManager {
-    pub const fn new(db: db::DatabasePool, vault: ActorRef<Vault>, evm: ActorRef<EvmActor>) -> Self {
+    pub const fn new(
+        db: db::DatabasePool,
+        vault: ActorRef<Vault>,
+        evm: ActorRef<EvmActor>,
+    ) -> Self {
         Self { db, vault, evm }
     }
 }
@@ -162,10 +168,7 @@ impl kameo::Actor for ProposalManager {
     type Args = Self;
     type Error = ();
 
-    async fn on_start(
-        args: Self::Args,
-        actor_ref: ActorRef<Self>,
-    ) -> Result<Self, Self::Error> {
+    async fn on_start(args: Self::Args, actor_ref: ActorRef<Self>) -> Result<Self, Self::Error> {
         let weak = actor_ref.downgrade();
         tokio::spawn(async move {
             loop {
@@ -429,9 +432,10 @@ impl ProposalManager {
             ProposalKind::ApproveSdkClient { client_id } => {
                 self.execute_approve_sdk_client(client_id).await
             }
-            ProposalKind::GrantWalletAccess { wallet_id, client_id } => {
-                self.execute_grant_wallet_access(wallet_id, client_id).await
-            }
+            ProposalKind::GrantWalletAccess {
+                wallet_id,
+                client_id,
+            } => self.execute_grant_wallet_access(wallet_id, client_id).await,
             ProposalKind::ApproveServerUpdate => Ok(()),
             ProposalKind::ReplaceOperator { new_pubkey } => {
                 self.execute_replace_operator(new_pubkey).await
@@ -443,12 +447,17 @@ impl ProposalManager {
                 self.execute_approve_persistent_grant(payload_bytes).await
             }
             ProposalKind::ApproveOneOffTransaction { payload_bytes } => {
-                self.execute_approve_one_off_transaction(proposal.id, payload_bytes).await
+                self.execute_approve_one_off_transaction(proposal.id, payload_bytes)
+                    .await
             }
         }
     }
 
-    async fn execute_grant_wallet_access(&self, wallet_id: i32, client_id: i32) -> Result<(), Error> {
+    async fn execute_grant_wallet_access(
+        &self,
+        wallet_id: i32,
+        client_id: i32,
+    ) -> Result<(), Error> {
         use crate::db::models::EvmWalletId;
 
         let mut conn = self.db.get().await.map_err(Error::DatabaseConnection)?;
@@ -481,7 +490,10 @@ impl ProposalManager {
         reason = "signature must match other execute_* methods"
     )]
     fn execute_update_shamir_parameters(&self, new_n: u8) -> Result<(), Error> {
-        warn!(new_n, "UpdateShamirParameters approved; Shamir re-keying must be performed out-of-band");
+        warn!(
+            new_n,
+            "UpdateShamirParameters approved; Shamir re-keying must be performed out-of-band"
+        );
         Ok(())
     }
 
@@ -490,7 +502,6 @@ impl ProposalManager {
         proposal_id: i32,
         payload_bytes: Vec<u8>,
     ) -> Result<(), Error> {
-        use arbiter_proto::proto::operator::governance::ApproveOneOffTransactionPayload;
         use crate::actors::evm::ClientSignTransaction;
         use crate::db::models::NewProposalResult;
         use alloy::{
@@ -498,6 +509,7 @@ impl ProposalManager {
             eips::eip2930::AccessList,
             primitives::{Address, Bytes, TxKind, U256},
         };
+        use arbiter_proto::proto::operator::governance::ApproveOneOffTransactionPayload;
         use prost::Message as _;
 
         let p = ApproveOneOffTransactionPayload::decode(payload_bytes.as_slice())
@@ -520,7 +532,9 @@ impl ProposalManager {
                 p.max_priority_fee_per_gas
                     .as_slice()
                     .try_into()
-                    .map_err(|_| Error::ExecutionFailed("invalid max_priority_fee_per_gas".to_owned()))?,
+                    .map_err(|_| {
+                        Error::ExecutionFailed("invalid max_priority_fee_per_gas".to_owned())
+                    })?,
             ),
             to: TxKind::Call(to),
             value: U256::from_be_slice(p.value.as_slice()),
@@ -552,10 +566,6 @@ impl ProposalManager {
     }
 
     async fn execute_approve_persistent_grant(&self, payload_bytes: Vec<u8>) -> Result<(), Error> {
-        use arbiter_proto::proto::operator::governance::{
-            ApprovePersistentGrantPayload,
-            approve_persistent_grant_payload::Specific,
-        };
         use crate::{
             actors::evm::OperatorCreateGrant,
             evm::policies::{
@@ -564,6 +574,9 @@ impl ProposalManager {
             },
         };
         use alloy::primitives::{Address, U256};
+        use arbiter_proto::proto::operator::governance::{
+            ApprovePersistentGrantPayload, approve_persistent_grant_payload::Specific,
+        };
         use chrono::Duration;
         use prost::Message as _;
 
@@ -573,10 +586,18 @@ impl ProposalManager {
         let basic = SharedGrantSettings {
             wallet_access_id: payload.wallet_access_id,
             chain: payload.chain_id,
-            valid_from: payload.valid_from_secs.and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
-            valid_until: payload.valid_until_secs.and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
-            max_gas_fee_per_gas: payload.max_gas_fee_per_gas.map(|b| U256::from_be_slice(b.as_slice())),
-            max_priority_fee_per_gas: payload.max_priority_fee_per_gas.map(|b| U256::from_be_slice(b.as_slice())),
+            valid_from: payload
+                .valid_from_secs
+                .and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
+            valid_until: payload
+                .valid_until_secs
+                .and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
+            max_gas_fee_per_gas: payload
+                .max_gas_fee_per_gas
+                .map(|b| U256::from_be_slice(b.as_slice())),
+            max_priority_fee_per_gas: payload
+                .max_priority_fee_per_gas
+                .map(|b| U256::from_be_slice(b.as_slice())),
             rate_limit: payload.rate_limit.map(|r| TransactionRateLimit {
                 count: r.count,
                 window: Duration::seconds(r.window_secs),
@@ -585,22 +606,27 @@ impl ProposalManager {
 
         let grant = match payload.specific {
             Some(Specific::EtherTransfer(spec)) => {
-                let target: Vec<Address> = spec.targets
+                let target: Vec<Address> = spec
+                    .targets
                     .iter()
                     .map(|b| Address::from_slice(b.as_slice()))
                     .collect();
-                let limit = spec.limit
+                let limit = spec
+                    .limit
                     .map(|l| VolumeRateLimit {
                         max_volume: U256::from_be_slice(l.max_volume.as_slice()),
                         window: Duration::seconds(l.window_secs),
                     })
-                    .ok_or_else(|| Error::ExecutionFailed("missing ether transfer limit".to_owned()))?;
+                    .ok_or_else(|| {
+                        Error::ExecutionFailed("missing ether transfer limit".to_owned())
+                    })?;
                 SpecificGrant::EtherTransfer(ether_transfer::Settings { target, limit })
             }
             Some(Specific::TokenTransfer(spec)) => {
                 let token_contract = Address::from_slice(spec.token_contract.as_slice());
                 let target = spec.target.map(|b| Address::from_slice(b.as_slice()));
-                let volume_limits: Vec<VolumeRateLimit> = spec.volume_limits
+                let volume_limits: Vec<VolumeRateLimit> = spec
+                    .volume_limits
                     .iter()
                     .map(|l| VolumeRateLimit {
                         max_volume: U256::from_be_slice(l.max_volume.as_slice()),
@@ -625,11 +651,8 @@ impl ProposalManager {
     }
 
     async fn execute_approve_sdk_client(&self, client_id: i32) -> Result<(), Error> {
+        use crate::{crypto::integrity, peers::client::ClientCredentials};
         use arbiter_crypto::authn;
-        use crate::{
-            crypto::integrity,
-            peers::client::ClientCredentials,
-        };
 
         let mut conn = self.db.get().await.map_err(Error::DatabaseConnection)?;
 

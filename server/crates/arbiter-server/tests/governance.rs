@@ -717,7 +717,7 @@ async fn replace_operator_inserts_identity_row() {
     let op_id = register_operator(&db, &signing_key.public_key()).await;
 
     let new_op_key = authn::SigningKey::generate();
-    let new_pubkey = new_op_key.public_key().to_bytes().to_vec();
+    let new_pubkey = new_op_key.public_key().to_bytes();
 
     let proposal_id = actors
         .proposal_manager
