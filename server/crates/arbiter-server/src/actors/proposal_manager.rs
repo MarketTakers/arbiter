@@ -64,6 +64,12 @@ impl ProposalKind {
         }
     }
 
+    /// Key-rotation proposals require every operator to approve (§3.3).
+    #[must_use]
+    pub fn requires_full_quorum(kind: &str) -> bool {
+        matches!(kind, "replace_operator" | "update_shamir_parameters")
+    }
+
     pub fn decode(kind: &str, payload: &[u8]) -> Result<Self, String> {
         match kind {
             "approve_sdk_client" => {
@@ -379,7 +385,12 @@ impl ProposalManager {
             clippy::as_conversions,
             reason = "operator count is always a small positive integer"
         )]
-        let threshold = crate::crypto::shamir::shamir_threshold(total_operators as usize);
+        let threshold = if ProposalKind::requires_full_quorum(&proposal.kind) {
+            // §3.3: key-rotation proposals require every operator to approve
+            total_operators as usize
+        } else {
+            crate::crypto::shamir::shamir_threshold(total_operators as usize)
+        };
 
         let approve_count: i64 = schema::proposal_vote::table
             .filter(schema::proposal_vote::proposal_id.eq(proposal_id))

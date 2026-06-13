@@ -793,6 +793,54 @@ async fn update_shamir_parameters_reaches_quorum() {
 }
 
 #[tokio::test]
+async fn key_rotation_requires_full_quorum() {
+    // §3.3: ReplaceOperator needs all 3 operators to approve, not just shamir_threshold(3)=2
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors
+        .vault
+        .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
+        .await
+        .unwrap();
+
+    let key1 = authn::SigningKey::generate();
+    let key2 = authn::SigningKey::generate();
+    let key3 = authn::SigningKey::generate();
+    let op1 = register_operator(&db, &key1.public_key()).await;
+    let op2 = register_operator(&db, &key2.public_key()).await;
+    let op3 = register_operator(&db, &key3.public_key()).await;
+
+    let new_pubkey = authn::SigningKey::generate().public_key().to_bytes();
+    let proposal_id = actors
+        .proposal_manager
+        .ask(CreateProposal {
+            kind: ProposalKind::ReplaceOperator { new_pubkey },
+            initiator_id: op1,
+            ttl_secs: None,
+        })
+        .await
+        .unwrap();
+
+    let cast = |op_id, key: &authn::SigningKey| {
+        let actors = actors.clone();
+        let sig = key.sign_message(&make_vote_message(proposal_id, true), GOVERNANCE_CONTEXT).unwrap();
+        async move {
+            actors
+                .proposal_manager
+                .ask(CastVote { proposal_id, operator_id: op_id, approve: true, signature: sig.to_bytes() })
+                .await
+                .unwrap()
+        }
+    };
+
+    // With shamir_threshold(3)=2, two approvals would suffice for a normal proposal.
+    // For key rotation, they must not.
+    assert_eq!(cast(op1, &key1).await, VoteOutcome::Pending);
+    assert_eq!(cast(op2, &key2).await, VoteOutcome::Pending);
+    assert_eq!(cast(op3, &key3).await, VoteOutcome::QuorumApproved);
+}
+
+#[tokio::test]
 async fn approve_server_update_reaches_quorum() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
