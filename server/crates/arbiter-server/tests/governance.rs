@@ -8,7 +8,7 @@ use arbiter_server::{
     db,
 };
 use arbiter_server::actors::vault::Bootstrap;
-use arbiter_server::db::schema::{aead_encrypted, evm_wallet, evm_wallet_access, operator_identity};
+use arbiter_server::db::schema::{aead_encrypted, evm_basic_grant, evm_wallet, evm_wallet_access, operator_identity};
 use diesel::{ExpressionMethods, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
 
@@ -493,6 +493,94 @@ async fn grant_wallet_access_on_quorum_approval() {
     let count: i64 = evm_wallet_access::table
         .filter(evm_wallet_access::wallet_id.eq(wallet_id))
         .filter(evm_wallet_access::client_id.eq(client_id))
+        .count()
+        .get_result(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn approve_persistent_grant_creates_basic_grant_row() {
+    use arbiter_proto::proto::operator::governance::{
+        ApprovePersistentGrantPayload, EtherTransferSpecProto, VolumeLimitProto,
+        approve_persistent_grant_payload::Specific,
+    };
+    use prost::Message as _;
+
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors
+        .vault
+        .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
+        .await
+        .unwrap();
+
+    let signing_key = authn::SigningKey::generate();
+    let op_id = register_operator(&db, &signing_key.public_key()).await;
+
+    // Insert a dummy wallet and client, then a wallet_access row
+    let wallet_id = insert_evm_wallet(&db).await;
+    let client_key = authn::SigningKey::generate();
+    let client_id = insert_unapproved_client(&db, &client_key.public_key()).await;
+
+    let mut conn = db.get().await.unwrap();
+    let wallet_access_id: i32 = insert_into(evm_wallet_access::table)
+        .values((
+            evm_wallet_access::wallet_id.eq(wallet_id),
+            evm_wallet_access::client_id.eq(client_id),
+        ))
+        .returning(evm_wallet_access::id)
+        .get_result(&mut conn)
+        .await
+        .unwrap();
+    drop(conn);
+
+    let payload = ApprovePersistentGrantPayload {
+        wallet_access_id,
+        chain_id: 1,
+        valid_from_secs: None,
+        valid_until_secs: None,
+        max_gas_fee_per_gas: None,
+        max_priority_fee_per_gas: None,
+        rate_limit: None,
+        specific: Some(Specific::EtherTransfer(EtherTransferSpecProto {
+            targets: vec![vec![0u8; 20]],
+            limit: Some(VolumeLimitProto {
+                max_volume: alloy::primitives::U256::from(1_000_000u64).to_be_bytes_vec(),
+                window_secs: 86400,
+            }),
+        })),
+    };
+
+    let proposal_id = actors
+        .proposal_manager
+        .ask(CreateProposal {
+            kind: ProposalKind::ApprovePersistentGrant { payload_bytes: payload.encode_to_vec() },
+            initiator_id: op_id,
+            ttl_secs: None,
+        })
+        .await
+        .unwrap();
+
+    let msg = make_vote_message(proposal_id, true);
+    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let outcome = actors
+        .proposal_manager
+        .ask(CastVote {
+            proposal_id,
+            operator_id: op_id,
+            approve: true,
+            signature: sig.to_bytes(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(outcome, VoteOutcome::QuorumApproved);
+
+    let mut conn = db.get().await.unwrap();
+    let count: i64 = evm_basic_grant::table
+        .filter(evm_basic_grant::wallet_access_id.eq(wallet_access_id))
         .count()
         .get_result(&mut conn)
         .await

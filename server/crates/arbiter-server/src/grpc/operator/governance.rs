@@ -60,6 +60,10 @@ async fn handle_create(
             #[expect(clippy::cast_possible_truncation, clippy::as_conversions, reason = "new_n is always a small operator count")]
             new_n: p.new_n as u8,
         },
+        Some(ProtoKind::ApprovePersistentGrant(p)) => {
+            use prost::Message as _;
+            ProposalKind::ApprovePersistentGrant { payload_bytes: p.encode_to_vec() }
+        }
         None => return Err(Status::invalid_argument("Missing proposal kind")),
     };
     let ttl_secs = req.ttl_secs.map(i64::from);

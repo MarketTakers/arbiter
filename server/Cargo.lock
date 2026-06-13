@@ -769,6 +769,7 @@ dependencies = [
  "mutants",
  "pem",
  "proptest",
+ "prost",
  "prost-types",
  "rand 0.10.1",
  "rand_core 0.6.4",

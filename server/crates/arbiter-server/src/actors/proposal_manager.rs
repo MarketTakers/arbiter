@@ -1,5 +1,5 @@
 use crate::{
-    actors::vault::Vault,
+    actors::{evm::EvmActor, vault::Vault},
     db::{
         self,
         models::{NewProposal, NewProposalVote, Proposal, ProposalStatus, SqliteTimestamp},
@@ -21,6 +21,7 @@ pub enum ProposalKind {
     ApproveServerUpdate,
     ReplaceOperator { new_pubkey: Vec<u8> },
     UpdateShamirParameters { new_n: u8 },
+    ApprovePersistentGrant { payload_bytes: Vec<u8> },
 }
 
 impl ProposalKind {
@@ -31,6 +32,7 @@ impl ProposalKind {
             Self::ApproveServerUpdate => "approve_server_update",
             Self::ReplaceOperator { .. } => "replace_operator",
             Self::UpdateShamirParameters { .. } => "update_shamir_parameters",
+            Self::ApprovePersistentGrant { .. } => "approve_persistent_grant",
         }
     }
 
@@ -45,7 +47,7 @@ impl ProposalKind {
             }
             Self::ApproveServerUpdate => vec![],
             Self::ReplaceOperator { new_pubkey } => {
-                #[expect(clippy::cast_possible_truncation, reason = "pubkey is always 32 bytes")]
+                #[expect(clippy::cast_possible_truncation, clippy::as_conversions, reason = "pubkey is always 32 bytes")]
                 let len = new_pubkey.len() as u32;
                 let mut buf = Vec::with_capacity(4 + new_pubkey.len());
                 buf.extend_from_slice(&len.to_be_bytes());
@@ -53,6 +55,7 @@ impl ProposalKind {
                 buf
             }
             Self::UpdateShamirParameters { new_n } => vec![*new_n],
+            Self::ApprovePersistentGrant { payload_bytes } => payload_bytes.clone(),
         }
     }
 
@@ -80,12 +83,11 @@ impl ProposalKind {
                     .ok_or_else(|| "replace_operator payload too short".to_owned())?;
                 let len = u32::from_be_bytes(*len_bytes);
                 let len = usize::try_from(len).unwrap_or(usize::MAX);
-                if rest.len() < len {
-                    return Err("replace_operator payload truncated".to_owned());
-                }
-                Ok(Self::ReplaceOperator {
-                    new_pubkey: rest[..len].to_vec(),
-                })
+                let new_pubkey = rest
+                    .get(..len)
+                    .ok_or_else(|| "replace_operator payload truncated".to_owned())?
+                    .to_vec();
+                Ok(Self::ReplaceOperator { new_pubkey })
             }
             "update_shamir_parameters" => {
                 let &[new_n] = payload else {
@@ -93,6 +95,9 @@ impl ProposalKind {
                 };
                 Ok(Self::UpdateShamirParameters { new_n })
             }
+            "approve_persistent_grant" => Ok(Self::ApprovePersistentGrant {
+                payload_bytes: payload.to_vec(),
+            }),
             other => Err(format!("unknown proposal kind: {other}")),
         }
     }
@@ -138,11 +143,12 @@ pub struct ProposalSummary {
 pub struct ProposalManager {
     pub(crate) db: db::DatabasePool,
     pub(crate) vault: ActorRef<Vault>,
+    pub(crate) evm: ActorRef<EvmActor>,
 }
 
 impl ProposalManager {
-    pub const fn new(db: db::DatabasePool, vault: ActorRef<Vault>) -> Self {
-        Self { db, vault }
+    pub const fn new(db: db::DatabasePool, vault: ActorRef<Vault>, evm: ActorRef<EvmActor>) -> Self {
+        Self { db, vault, evm }
     }
 }
 
@@ -427,6 +433,9 @@ impl ProposalManager {
             ProposalKind::UpdateShamirParameters { new_n } => {
                 self.execute_update_shamir_parameters(new_n)
             }
+            ProposalKind::ApprovePersistentGrant { payload_bytes } => {
+                self.execute_approve_persistent_grant(payload_bytes).await
+            }
         }
     }
 
@@ -464,6 +473,79 @@ impl ProposalManager {
     )]
     fn execute_update_shamir_parameters(&self, new_n: u8) -> Result<(), Error> {
         warn!(new_n, "UpdateShamirParameters approved; Shamir re-keying must be performed out-of-band");
+        Ok(())
+    }
+
+    async fn execute_approve_persistent_grant(&self, payload_bytes: Vec<u8>) -> Result<(), Error> {
+        use arbiter_proto::proto::operator::governance::{
+            ApprovePersistentGrantPayload,
+            approve_persistent_grant_payload::Specific,
+        };
+        use crate::{
+            actors::evm::OperatorCreateGrant,
+            evm::policies::{
+                SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit,
+                ether_transfer, token_transfers,
+            },
+        };
+        use alloy::primitives::{Address, U256};
+        use chrono::Duration;
+        use prost::Message as _;
+
+        let payload = ApprovePersistentGrantPayload::decode(payload_bytes.as_slice())
+            .map_err(|e| Error::ExecutionFailed(format!("decode grant payload: {e}")))?;
+
+        let basic = SharedGrantSettings {
+            wallet_access_id: payload.wallet_access_id,
+            chain: payload.chain_id,
+            valid_from: payload.valid_from_secs.and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
+            valid_until: payload.valid_until_secs.and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
+            max_gas_fee_per_gas: payload.max_gas_fee_per_gas.map(|b| U256::from_be_slice(b.as_slice())),
+            max_priority_fee_per_gas: payload.max_priority_fee_per_gas.map(|b| U256::from_be_slice(b.as_slice())),
+            rate_limit: payload.rate_limit.map(|r| TransactionRateLimit {
+                count: r.count,
+                window: Duration::seconds(r.window_secs),
+            }),
+        };
+
+        let grant = match payload.specific {
+            Some(Specific::EtherTransfer(spec)) => {
+                let target: Vec<Address> = spec.targets
+                    .iter()
+                    .map(|b| Address::from_slice(b.as_slice()))
+                    .collect();
+                let limit = spec.limit
+                    .map(|l| VolumeRateLimit {
+                        max_volume: U256::from_be_slice(l.max_volume.as_slice()),
+                        window: Duration::seconds(l.window_secs),
+                    })
+                    .ok_or_else(|| Error::ExecutionFailed("missing ether transfer limit".to_owned()))?;
+                SpecificGrant::EtherTransfer(ether_transfer::Settings { target, limit })
+            }
+            Some(Specific::TokenTransfer(spec)) => {
+                let token_contract = Address::from_slice(spec.token_contract.as_slice());
+                let target = spec.target.map(|b| Address::from_slice(b.as_slice()));
+                let volume_limits: Vec<VolumeRateLimit> = spec.volume_limits
+                    .iter()
+                    .map(|l| VolumeRateLimit {
+                        max_volume: U256::from_be_slice(l.max_volume.as_slice()),
+                        window: Duration::seconds(l.window_secs),
+                    })
+                    .collect();
+                SpecificGrant::TokenTransfer(token_transfers::Settings {
+                    token_contract,
+                    target,
+                    volume_limits,
+                })
+            }
+            None => return Err(Error::ExecutionFailed("missing grant specific".to_owned())),
+        };
+
+        self.evm
+            .ask(OperatorCreateGrant { basic, grant })
+            .await
+            .map_err(|e| Error::ExecutionFailed(format!("create grant: {e}")))?;
+
         Ok(())
     }
 
