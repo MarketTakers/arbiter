@@ -185,6 +185,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    proposal_result (proposal_id) {
+        proposal_id -> Integer,
+        data -> Binary,
+        created_at -> Integer,
+    }
+}
+
+diesel::table! {
     proposal_vote (id) {
         id -> Integer,
         proposal_id -> Integer,
@@ -249,11 +257,13 @@ diesel::joinable!(evm_wallet_access -> program_client (client_id));
 diesel::joinable!(operator -> operator_identity (id));
 diesel::joinable!(program_client -> client_metadata (metadata_id));
 diesel::joinable!(proposal -> operator_identity (initiator_id));
+diesel::joinable!(proposal_result -> proposal (proposal_id));
 diesel::joinable!(proposal_vote -> proposal (proposal_id));
 diesel::joinable!(proposal_vote -> operator_identity (operator_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     aead_encrypted,
+    proposal_result,
     arbiter_settings,
     client_metadata,
     client_metadata_history,

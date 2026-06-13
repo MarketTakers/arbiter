@@ -22,6 +22,7 @@ pub enum ProposalKind {
     ReplaceOperator { new_pubkey: Vec<u8> },
     UpdateShamirParameters { new_n: u8 },
     ApprovePersistentGrant { payload_bytes: Vec<u8> },
+    ApproveOneOffTransaction { payload_bytes: Vec<u8> },
 }
 
 impl ProposalKind {
@@ -33,6 +34,7 @@ impl ProposalKind {
             Self::ReplaceOperator { .. } => "replace_operator",
             Self::UpdateShamirParameters { .. } => "update_shamir_parameters",
             Self::ApprovePersistentGrant { .. } => "approve_persistent_grant",
+            Self::ApproveOneOffTransaction { .. } => "approve_one_off_transaction",
         }
     }
 
@@ -56,6 +58,7 @@ impl ProposalKind {
             }
             Self::UpdateShamirParameters { new_n } => vec![*new_n],
             Self::ApprovePersistentGrant { payload_bytes } => payload_bytes.clone(),
+            Self::ApproveOneOffTransaction { payload_bytes } => payload_bytes.clone(),
         }
     }
 
@@ -96,6 +99,9 @@ impl ProposalKind {
                 Ok(Self::UpdateShamirParameters { new_n })
             }
             "approve_persistent_grant" => Ok(Self::ApprovePersistentGrant {
+                payload_bytes: payload.to_vec(),
+            }),
+            "approve_one_off_transaction" => Ok(Self::ApproveOneOffTransaction {
                 payload_bytes: payload.to_vec(),
             }),
             other => Err(format!("unknown proposal kind: {other}")),
@@ -436,6 +442,9 @@ impl ProposalManager {
             ProposalKind::ApprovePersistentGrant { payload_bytes } => {
                 self.execute_approve_persistent_grant(payload_bytes).await
             }
+            ProposalKind::ApproveOneOffTransaction { payload_bytes } => {
+                self.execute_approve_one_off_transaction(proposal.id, payload_bytes).await
+            }
         }
     }
 
@@ -473,6 +482,72 @@ impl ProposalManager {
     )]
     fn execute_update_shamir_parameters(&self, new_n: u8) -> Result<(), Error> {
         warn!(new_n, "UpdateShamirParameters approved; Shamir re-keying must be performed out-of-band");
+        Ok(())
+    }
+
+    async fn execute_approve_one_off_transaction(
+        &self,
+        proposal_id: i32,
+        payload_bytes: Vec<u8>,
+    ) -> Result<(), Error> {
+        use arbiter_proto::proto::operator::governance::ApproveOneOffTransactionPayload;
+        use crate::actors::evm::ClientSignTransaction;
+        use crate::db::models::NewProposalResult;
+        use alloy::{
+            consensus::TxEip1559,
+            eips::eip2930::AccessList,
+            primitives::{Address, Bytes, TxKind, U256},
+        };
+        use prost::Message as _;
+
+        let p = ApproveOneOffTransactionPayload::decode(payload_bytes.as_slice())
+            .map_err(|e| Error::ExecutionFailed(format!("decode one-off tx payload: {e}")))?;
+
+        let wallet_address = Address::from_slice(p.wallet_address.as_slice());
+        let to = Address::from_slice(p.to.as_slice());
+
+        let transaction = TxEip1559 {
+            chain_id: p.chain_id,
+            nonce: p.nonce,
+            gas_limit: p.gas_limit,
+            max_fee_per_gas: u128::from_be_bytes(
+                p.max_fee_per_gas
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| Error::ExecutionFailed("invalid max_fee_per_gas".to_owned()))?,
+            ),
+            max_priority_fee_per_gas: u128::from_be_bytes(
+                p.max_priority_fee_per_gas
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| Error::ExecutionFailed("invalid max_priority_fee_per_gas".to_owned()))?,
+            ),
+            to: TxKind::Call(to),
+            value: U256::from_be_slice(p.value.as_slice()),
+            input: Bytes::from(p.input),
+            access_list: AccessList::default(),
+        };
+
+        let sig = self
+            .evm
+            .ask(ClientSignTransaction {
+                client_id: p.client_id,
+                wallet_address,
+                transaction,
+            })
+            .await
+            .map_err(|e| Error::ExecutionFailed(format!("sign one-off tx: {e}")))?;
+
+        let mut conn = self.db.get().await.map_err(Error::DatabaseConnection)?;
+        diesel::insert_into(schema::proposal_result::table)
+            .values(NewProposalResult {
+                proposal_id,
+                data: sig.as_bytes().to_vec(),
+            })
+            .execute(&mut conn)
+            .await
+            .map_err(|e| Error::ExecutionFailed(format!("store proposal result: {e}")))?;
+
         Ok(())
     }
 

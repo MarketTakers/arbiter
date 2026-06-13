@@ -520,3 +520,11 @@ pub struct NewProposalVote {
     pub approve: bool,
     pub signature: Vec<u8>,
 }
+
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = schema::proposal_result, check_for_backend(Sqlite))]
+pub struct NewProposalResult {
+    pub proposal_id: i32,
+    pub data: Vec<u8>,
+}

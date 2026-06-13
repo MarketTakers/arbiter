@@ -64,6 +64,10 @@ async fn handle_create(
             use prost::Message as _;
             ProposalKind::ApprovePersistentGrant { payload_bytes: p.encode_to_vec() }
         }
+        Some(ProtoKind::ApproveOneOffTransaction(p)) => {
+            use prost::Message as _;
+            ProposalKind::ApproveOneOffTransaction { payload_bytes: p.encode_to_vec() }
+        }
         None => return Err(Status::invalid_argument("Missing proposal kind")),
     };
     let ttl_secs = req.ttl_secs.map(i64::from);

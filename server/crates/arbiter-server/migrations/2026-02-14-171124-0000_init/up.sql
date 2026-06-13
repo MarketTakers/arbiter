@@ -237,3 +237,10 @@ create table if not exists proposal_vote (
     voted_at    integer not null default(unixepoch('now')),
     unique (proposal_id, operator_id)
 ) STRICT;
+
+
+create table if not exists proposal_result (
+    proposal_id integer not null primary key references proposal(id) on delete cascade,
+    data        blob    not null,
+    created_at  integer not null default(unixepoch('now'))
+) STRICT;
