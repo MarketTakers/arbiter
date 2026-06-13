@@ -173,6 +173,29 @@ diesel::table! {
 }
 
 diesel::table! {
+    proposal (id) {
+        id -> Integer,
+        kind -> Text,
+        payload -> Binary,
+        initiator_id -> Integer,
+        created_at -> Integer,
+        expires_at -> Integer,
+        status -> Text,
+    }
+}
+
+diesel::table! {
+    proposal_vote (id) {
+        id -> Integer,
+        proposal_id -> Integer,
+        operator_id -> Integer,
+        approve -> Bool,
+        signature -> Binary,
+        voted_at -> Integer,
+    }
+}
+
+diesel::table! {
     program_client (id) {
         id -> Integer,
         public_key -> Binary,
@@ -225,6 +248,9 @@ diesel::joinable!(evm_wallet_access -> evm_wallet (wallet_id));
 diesel::joinable!(evm_wallet_access -> program_client (client_id));
 diesel::joinable!(operator -> operator_identity (id));
 diesel::joinable!(program_client -> client_metadata (metadata_id));
+diesel::joinable!(proposal -> operator_identity (initiator_id));
+diesel::joinable!(proposal_vote -> proposal (proposal_id));
+diesel::joinable!(proposal_vote -> operator_identity (operator_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     aead_encrypted,
@@ -245,6 +271,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     operator,
     operator_identity,
     program_client,
+    proposal,
+    proposal_vote,
     root_key_history,
     tls_history,
 );

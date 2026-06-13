@@ -216,3 +216,24 @@ create table if not exists integrity_envelope (
 ) STRICT;
 
 create unique index if not exists uniq_integrity_envelope_entity on integrity_envelope (entity_kind, entity_id);
+
+create table if not exists proposal (
+    id           integer not null primary key,
+    kind         text    not null,
+    payload      blob    not null,
+    initiator_id integer not null references operator_identity(id) on delete restrict,
+    created_at   integer not null default(unixepoch('now')),
+    expires_at   integer not null,
+    status       text    not null default 'pending'
+        check (status in ('pending', 'approved', 'rejected', 'expired'))
+) STRICT;
+
+create table if not exists proposal_vote (
+    id          integer not null primary key,
+    proposal_id integer not null references proposal(id) on delete cascade,
+    operator_id integer not null references operator_identity(id) on delete restrict,
+    approve     integer not null check (approve in (0, 1)),
+    signature   blob    not null,
+    voted_at    integer not null default(unixepoch('now')),
+    unique (proposal_id, operator_id)
+) STRICT;

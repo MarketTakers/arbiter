@@ -15,10 +15,11 @@ use restructed::Models;
 pub mod types {
     use chrono::{DateTime, Utc};
     use diesel::{
+        backend::Backend,
         deserialize::{FromSql, FromSqlRow},
         expression::AsExpression,
         serialize::{IsNull, ToSql},
-        sql_types::Integer,
+        sql_types::{Integer, Text},
         sqlite::{Sqlite, SqliteType},
     };
 
@@ -61,7 +62,7 @@ pub mod types {
 
     impl FromSql<Integer, Sqlite> for SqliteTimestamp {
         fn from_sql(
-            mut bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
+            mut bytes: <Sqlite as Backend>::RawValue<'_>,
         ) -> diesel::deserialize::Result<Self> {
             let Some(SqliteType::Long) = bytes.value_type() else {
                 return Err(format!(
@@ -141,6 +142,45 @@ pub mod types {
     declare_id!(TlsHistoryId);
     declare_id!(EvmWalletId);
     declare_id!(ClientId);
+
+    #[derive(Debug, Clone, PartialEq, Eq, AsExpression, FromSqlRow)]
+    #[diesel(sql_type = Text)]
+    pub enum ProposalStatus {
+        Pending,
+        Approved,
+        Rejected,
+        Expired,
+    }
+
+    impl ToSql<Text, Sqlite> for ProposalStatus {
+        fn to_sql<'b>(
+            &'b self,
+            out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
+        ) -> diesel::serialize::Result {
+            let s: &str = match self {
+                Self::Pending => "pending",
+                Self::Approved => "approved",
+                Self::Rejected => "rejected",
+                Self::Expired => "expired",
+            };
+            <str as ToSql<Text, Sqlite>>::to_sql(s, out)
+        }
+    }
+
+    impl FromSql<Text, Sqlite> for ProposalStatus {
+        fn from_sql(
+            bytes: <Sqlite as Backend>::RawValue<'_>,
+        ) -> diesel::deserialize::Result<Self> {
+            let s = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+            match s.as_str() {
+                "pending" => Ok(Self::Pending),
+                "approved" => Ok(Self::Approved),
+                "rejected" => Ok(Self::Rejected),
+                "expired" => Ok(Self::Expired),
+                other => Err(format!("Unknown proposal status: {other}").into()),
+            }
+        }
+    }
 }
 pub use types::*;
 
@@ -437,4 +477,46 @@ pub struct IntegrityEnvelope {
     pub mac: Vec<u8>,
     pub signed_at: SqliteTimestamp,
     pub created_at: SqliteTimestamp,
+}
+
+#[derive(Debug, Queryable, Selectable, Identifiable)]
+#[diesel(table_name = schema::proposal, check_for_backend(Sqlite))]
+pub struct Proposal {
+    pub id: i32,
+    pub kind: String,
+    pub payload: Vec<u8>,
+    pub initiator_id: i32,
+    pub created_at: SqliteTimestamp,
+    pub expires_at: SqliteTimestamp,
+    pub status: ProposalStatus,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = schema::proposal, check_for_backend(Sqlite))]
+pub struct NewProposal {
+    pub kind: String,
+    pub payload: Vec<u8>,
+    pub initiator_id: i32,
+    // status defaults to 'pending' at the DB layer
+    pub expires_at: SqliteTimestamp,
+}
+
+#[derive(Debug, Queryable, Selectable, Identifiable)]
+#[diesel(table_name = schema::proposal_vote, check_for_backend(Sqlite))]
+pub struct ProposalVote {
+    pub id: i32,
+    pub proposal_id: i32,
+    pub operator_id: i32,
+    pub approve: bool,
+    pub signature: Vec<u8>,
+    pub voted_at: SqliteTimestamp,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = schema::proposal_vote, check_for_backend(Sqlite))]
+pub struct NewProposalVote {
+    pub proposal_id: i32,
+    pub operator_id: i32,
+    pub approve: bool,
+    pub signature: Vec<u8>,
 }
