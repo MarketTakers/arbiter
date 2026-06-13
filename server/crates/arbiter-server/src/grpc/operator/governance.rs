@@ -48,6 +48,11 @@ async fn handle_create(
         Some(ProtoKind::ApproveSdkClient(p)) => ProposalKind::ApproveSdkClient {
             client_id: p.client_id,
         },
+        Some(ProtoKind::GrantWalletAccess(p)) => ProposalKind::GrantWalletAccess {
+            wallet_id: p.wallet_id,
+            client_id: p.client_id,
+        },
+        Some(ProtoKind::ApproveServerUpdate(_)) => ProposalKind::ApproveServerUpdate,
         None => return Err(Status::invalid_argument("Missing proposal kind")),
     };
     let ttl_secs = req.ttl_secs.map(i64::from);

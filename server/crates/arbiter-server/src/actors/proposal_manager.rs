@@ -17,18 +17,29 @@ pub const DEFAULT_TTL_SECS: i64 = 7 * 24 * 60 * 60; // 7 days
 #[derive(Debug, Clone)]
 pub enum ProposalKind {
     ApproveSdkClient { client_id: i32 },
+    GrantWalletAccess { wallet_id: i32, client_id: i32 },
+    ApproveServerUpdate,
 }
 
 impl ProposalKind {
     pub const fn kind_str(&self) -> &'static str {
         match self {
             Self::ApproveSdkClient { .. } => "approve_sdk_client",
+            Self::GrantWalletAccess { .. } => "grant_wallet_access",
+            Self::ApproveServerUpdate => "approve_server_update",
         }
     }
 
     pub fn encode_payload(&self) -> Vec<u8> {
         match self {
             Self::ApproveSdkClient { client_id } => client_id.to_be_bytes().to_vec(),
+            Self::GrantWalletAccess { wallet_id, client_id } => {
+                let mut buf = Vec::with_capacity(8);
+                buf.extend_from_slice(&wallet_id.to_be_bytes());
+                buf.extend_from_slice(&client_id.to_be_bytes());
+                buf
+            }
+            Self::ApproveServerUpdate => vec![],
         }
     }
 
@@ -41,6 +52,15 @@ impl ProposalKind {
                     client_id: i32::from_be_bytes(bytes),
                 })
             }
+            "grant_wallet_access" => {
+                let bytes = <[u8; 8]>::try_from(payload)
+                    .map_err(|_| "invalid payload for grant_wallet_access".to_owned())?;
+                Ok(Self::GrantWalletAccess {
+                    wallet_id: i32::from_be_bytes(bytes[..4].try_into().unwrap()),
+                    client_id: i32::from_be_bytes(bytes[4..].try_into().unwrap()),
+                })
+            }
+            "approve_server_update" => Ok(Self::ApproveServerUpdate),
             other => Err(format!("unknown proposal kind: {other}")),
         }
     }
@@ -365,7 +385,28 @@ impl ProposalManager {
             ProposalKind::ApproveSdkClient { client_id } => {
                 self.execute_approve_sdk_client(client_id).await
             }
+            ProposalKind::GrantWalletAccess { wallet_id, client_id } => {
+                self.execute_grant_wallet_access(wallet_id, client_id).await
+            }
+            ProposalKind::ApproveServerUpdate => Ok(()),
         }
+    }
+
+    async fn execute_grant_wallet_access(&self, wallet_id: i32, client_id: i32) -> Result<(), Error> {
+        use crate::db::models::EvmWalletId;
+
+        let mut conn = self.db.get().await.map_err(Error::DatabaseConnection)?;
+
+        diesel::insert_into(schema::evm_wallet_access::table)
+            .values((
+                schema::evm_wallet_access::wallet_id.eq(EvmWalletId::from_raw(wallet_id)),
+                schema::evm_wallet_access::client_id.eq(client_id),
+            ))
+            .execute(&mut conn)
+            .await
+            .map_err(|e| Error::ExecutionFailed(format!("grant wallet access: {e}")))?;
+
+        Ok(())
     }
 
     async fn execute_approve_sdk_client(&self, client_id: i32) -> Result<(), Error> {

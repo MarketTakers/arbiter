@@ -8,7 +8,7 @@ use arbiter_server::{
     db,
 };
 use arbiter_server::actors::vault::Bootstrap;
-use arbiter_server::db::schema::operator_identity;
+use arbiter_server::db::schema::{aead_encrypted, evm_wallet, evm_wallet_access, operator_identity};
 use diesel::{ExpressionMethods, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
 
@@ -27,6 +27,30 @@ fn make_vote_message(proposal_id: i32, approve: bool) -> Vec<u8> {
     msg.extend_from_slice(&(proposal_id as i64).to_be_bytes());
     msg.push(u8::from(approve));
     msg
+}
+
+async fn insert_evm_wallet(db: &db::DatabasePool) -> i32 {
+    let mut conn = db.get().await.unwrap();
+    let aead_id: i32 = insert_into(aead_encrypted::table)
+        .values((
+            aead_encrypted::current_nonce.eq(vec![0u8; 4]),
+            aead_encrypted::ciphertext.eq(vec![0u8; 32]),
+            aead_encrypted::tag.eq(vec![0u8; 16]),
+            aead_encrypted::associated_root_key_id.eq(0i32),
+        ))
+        .returning(aead_encrypted::id)
+        .get_result::<i32>(&mut conn)
+        .await
+        .unwrap();
+    insert_into(evm_wallet::table)
+        .values((
+            evm_wallet::address.eq(vec![0u8; 20]),
+            evm_wallet::aead_encrypted_id.eq(aead_id),
+        ))
+        .returning(evm_wallet::id)
+        .get_result::<i32>(&mut conn)
+        .await
+        .unwrap()
 }
 
 async fn insert_unapproved_client(db: &db::DatabasePool, pubkey: &authn::PublicKey) -> i32 {
@@ -421,4 +445,96 @@ async fn approve_sdk_client_writes_integrity_envelope() {
         .await
         .unwrap();
     assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn grant_wallet_access_on_quorum_approval() {
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors
+        .vault
+        .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
+        .await
+        .unwrap();
+
+    let signing_key = authn::SigningKey::generate();
+    let op_id = register_operator(&db, &signing_key.public_key()).await;
+
+    let wallet_id = insert_evm_wallet(&db).await;
+    let client_key = authn::SigningKey::generate();
+    let client_id = insert_unapproved_client(&db, &client_key.public_key()).await;
+
+    let proposal_id = actors
+        .proposal_manager
+        .ask(CreateProposal {
+            kind: ProposalKind::GrantWalletAccess { wallet_id, client_id },
+            initiator_id: op_id,
+            ttl_secs: None,
+        })
+        .await
+        .unwrap();
+
+    let msg = make_vote_message(proposal_id, true);
+    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let outcome = actors
+        .proposal_manager
+        .ask(CastVote {
+            proposal_id,
+            operator_id: op_id,
+            approve: true,
+            signature: sig.to_bytes(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(outcome, VoteOutcome::QuorumApproved);
+
+    let mut conn = db.get().await.unwrap();
+    let count: i64 = evm_wallet_access::table
+        .filter(evm_wallet_access::wallet_id.eq(wallet_id))
+        .filter(evm_wallet_access::client_id.eq(client_id))
+        .count()
+        .get_result(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn approve_server_update_reaches_quorum() {
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors
+        .vault
+        .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
+        .await
+        .unwrap();
+
+    let signing_key = authn::SigningKey::generate();
+    let op_id = register_operator(&db, &signing_key.public_key()).await;
+
+    let proposal_id = actors
+        .proposal_manager
+        .ask(CreateProposal {
+            kind: ProposalKind::ApproveServerUpdate,
+            initiator_id: op_id,
+            ttl_secs: None,
+        })
+        .await
+        .unwrap();
+
+    let msg = make_vote_message(proposal_id, true);
+    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let outcome = actors
+        .proposal_manager
+        .ask(CastVote {
+            proposal_id,
+            operator_id: op_id,
+            approve: true,
+            signature: sig.to_bytes(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(outcome, VoteOutcome::QuorumApproved);
 }
