@@ -132,6 +132,7 @@ impl TryConvert for BootstrapRequestPayload {
             Self::DeclareCommittee(dc) => Ok(
                 vault_gate::Inbound::HandleDeclareCommittee(HandleDeclareCommittee {
                     count: dc.count as usize,
+                    recovery_count: dc.recovery_count as usize,
                 }),
             ),
             Self::ContributePassphrase(cp) => Ok(

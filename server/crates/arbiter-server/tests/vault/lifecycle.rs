@@ -4,6 +4,7 @@ use arbiter_server::{
     actors::{
         GlobalActors,
         vault::{Error, Vault},
+        vault_coordinator::{Error as CoordinatorError, StartBootstrap, VaultCoordinator},
     },
     crypto::{KeyCell, encryption::v1::{Nonce, ROOT_KEY_TAG}},
     db::{self, models, schema},
@@ -11,6 +12,7 @@ use arbiter_server::{
 
 use diesel::{QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
+use kameo::actor::Spawn as _;
 
 #[tokio::test]
 #[test_log::test]
@@ -138,4 +140,30 @@ async fn test_unseal_wrong_then_correct_password() {
 
     let mut decrypted = actor.decrypt(aead_id).await.unwrap();
     assert_eq!(*decrypted.read(), plaintext);
+}
+
+#[tokio::test]
+#[test_log::test]
+async fn two_operator_vault_requires_recovery_share() {
+    let db = db::create_test_pool().await;
+    let bus = GlobalActors::spawn_message_bus();
+    let vault_ref = Vault::spawn(Vault::new(db.clone(), bus).await.unwrap());
+    let coordinator = VaultCoordinator::spawn(VaultCoordinator::new(db, vault_ref));
+
+    let err = coordinator
+        .ask(StartBootstrap {
+            operator_id: 1,
+            declared_count: 2,
+            recovery_count: 0,
+        })
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            kameo::error::SendError::HandlerError(CoordinatorError::TwoOperatorsRequireRecovery)
+        ),
+        "expected TwoOperatorsRequireRecovery, got {err:?}"
+    );
 }

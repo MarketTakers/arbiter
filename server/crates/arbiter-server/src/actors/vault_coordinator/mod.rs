@@ -39,6 +39,8 @@ pub enum Error {
     Encryption,
     #[error("Vault error")]
     VaultError,
+    #[error("Two-operator vaults require at least one recovery share")]
+    TwoOperatorsRequireRecovery,
     #[error("Broken database")]
     BrokenDatabase,
 }
@@ -200,10 +202,14 @@ impl VaultCoordinator {
         &mut self,
         operator_id: i32,
         declared_count: usize,
+        recovery_count: usize,
     ) -> Result<(), Error> {
         let _ = operator_id; // fixme!: any authenticated operator may announce the committee size. the first call wins
         if !matches!(self.state, CoordinatorState::Idle) {
             return Err(Error::AlreadyBootstrapping);
+        }
+        if declared_count == 2 && recovery_count == 0 {
+            return Err(Error::TwoOperatorsRequireRecovery);
         }
         self.state = CoordinatorState::Bootstrapping {
             declared_count,
@@ -223,6 +229,7 @@ impl VaultCoordinator {
         let CoordinatorState::Bootstrapping {
             declared_count,
             passphrases,
+            ..
         } = &mut self.state
         else {
             return Err(Error::NotBootstrapping);

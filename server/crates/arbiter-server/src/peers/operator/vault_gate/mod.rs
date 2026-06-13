@@ -234,12 +234,17 @@ impl VaultGate {
     }
 
     #[message]
-    pub async fn handle_declare_committee(&mut self, count: usize) -> Result<(), Error> {
+    pub async fn handle_declare_committee(
+        &mut self,
+        count: usize,
+        recovery_count: usize,
+    ) -> Result<(), Error> {
         self.actors
             .vault_coordinator
             .ask(StartBootstrap {
                 operator_id: self.auth_creds.id,
                 declared_count: count,
+                recovery_count,
             })
             .await
             .map_err(|_| Error::internal("VaultCoordinator unavailable"))
