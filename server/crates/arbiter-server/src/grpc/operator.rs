@@ -19,6 +19,7 @@ use tracing::{error, info, warn};
 
 mod auth;
 mod evm;
+mod governance;
 mod inbound;
 mod outbound;
 mod sdk_client;
@@ -115,6 +116,7 @@ async fn dispatch_inner(
             warn!("Unsupported post-auth operator auth request");
             Err(Status::invalid_argument("Unsupported operator request"))
         }
+        OperatorRequestPayload::Governance(req) => governance::dispatch(actor, req).await,
     }
 }
 

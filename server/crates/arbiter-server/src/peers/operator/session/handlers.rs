@@ -279,3 +279,59 @@ impl OperatorSession {
         Ok(clients)
     }
 }
+
+#[messages]
+impl OperatorSession {
+    #[message]
+    pub(crate) async fn handle_create_proposal(
+        &mut self,
+        kind: crate::actors::proposal_manager::ProposalKind,
+        ttl_secs: Option<i64>,
+    ) -> Result<i32, Error> {
+        use crate::actors::proposal_manager::CreateProposal;
+        let initiator_id = self.credentials.id;
+        self.props
+            .actors
+            .proposal_manager
+            .ask(CreateProposal { kind, initiator_id, ttl_secs })
+            .await
+            .map_err(|e| {
+                error!(?e, "create_proposal failed");
+                Error::internal("Failed to create proposal")
+            })
+    }
+
+    #[message]
+    pub(crate) async fn handle_cast_vote(
+        &mut self,
+        proposal_id: i32,
+        approve: bool,
+        signature: Vec<u8>,
+    ) -> Result<crate::actors::proposal_manager::VoteOutcome, crate::actors::proposal_manager::Error> {
+        use crate::actors::proposal_manager::CastVote;
+        let operator_id = self.credentials.id;
+        self.props
+            .actors
+            .proposal_manager
+            .ask(CastVote { proposal_id, operator_id, approve, signature })
+            .await
+            .map_err(|err| match err {
+                SendError::HandlerError(e) => e,
+                _ => crate::actors::proposal_manager::Error::ExecutionFailed("actor unavailable".to_owned()),
+            })
+    }
+
+    #[message]
+    pub(crate) async fn handle_query_pending(
+        &mut self,
+    ) -> Vec<crate::actors::proposal_manager::ProposalSummary> {
+        use crate::actors::proposal_manager::QueryPending;
+        let operator_id = self.credentials.id;
+        self.props
+            .actors
+            .proposal_manager
+            .ask(QueryPending { operator_id })
+            .await
+            .unwrap_or_default()
+    }
+}

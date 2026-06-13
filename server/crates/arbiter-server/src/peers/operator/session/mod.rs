@@ -1,4 +1,4 @@
-use super::{OutOfBand, OperatorConnection};
+use super::{Credentials, OutOfBand, OperatorConnection};
 use crate::{
     actors::{
         flow_coordinator::client_connect_approval::ClientApprovalController,
@@ -51,6 +51,7 @@ pub struct PendingClientApproval {
 
 pub struct OperatorSession {
     props: OperatorConnection,
+    credentials: Credentials,
     sender: Box<dyn Sender<OutOfBand>>,
 
     pending_client_approvals: HashMap<Vec<u8>, PendingClientApproval>,
@@ -59,9 +60,10 @@ pub struct OperatorSession {
 pub mod handlers;
 
 impl OperatorSession {
-    pub(crate) fn new(props: OperatorConnection, sender: Box<dyn Sender<OutOfBand>>) -> Self {
+    pub(crate) fn new(props: OperatorConnection, credentials: Credentials, sender: Box<dyn Sender<OutOfBand>>) -> Self {
         Self {
             props,
+            credentials,
             sender,
             pending_client_approvals: HashMap::default(),
         }

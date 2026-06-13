@@ -180,6 +180,7 @@ where
 
     Ok(OperatorSession::spawn(OperatorSession::new(
         props.clone(),
+        creds.clone(),
         oob_sender,
     )))
 }
