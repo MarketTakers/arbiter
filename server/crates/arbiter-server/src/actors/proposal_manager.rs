@@ -19,6 +19,7 @@ pub enum ProposalKind {
     ApproveSdkClient { client_id: i32 },
     GrantWalletAccess { wallet_id: i32, client_id: i32 },
     ApproveServerUpdate,
+    ReplaceOperator { new_pubkey: Vec<u8> },
 }
 
 impl ProposalKind {
@@ -27,6 +28,7 @@ impl ProposalKind {
             Self::ApproveSdkClient { .. } => "approve_sdk_client",
             Self::GrantWalletAccess { .. } => "grant_wallet_access",
             Self::ApproveServerUpdate => "approve_server_update",
+            Self::ReplaceOperator { .. } => "replace_operator",
         }
     }
 
@@ -40,6 +42,14 @@ impl ProposalKind {
                 buf
             }
             Self::ApproveServerUpdate => vec![],
+            Self::ReplaceOperator { new_pubkey } => {
+                #[expect(clippy::cast_possible_truncation, reason = "pubkey is always 32 bytes")]
+                let len = new_pubkey.len() as u32;
+                let mut buf = Vec::with_capacity(4 + new_pubkey.len());
+                buf.extend_from_slice(&len.to_be_bytes());
+                buf.extend_from_slice(new_pubkey);
+                buf
+            }
         }
     }
 
@@ -61,6 +71,19 @@ impl ProposalKind {
                 })
             }
             "approve_server_update" => Ok(Self::ApproveServerUpdate),
+            "replace_operator" => {
+                let (len_bytes, rest) = payload
+                    .split_first_chunk::<4>()
+                    .ok_or_else(|| "replace_operator payload too short".to_owned())?;
+                let len = u32::from_be_bytes(*len_bytes);
+                let len = usize::try_from(len).unwrap_or(usize::MAX);
+                if rest.len() < len {
+                    return Err("replace_operator payload truncated".to_owned());
+                }
+                Ok(Self::ReplaceOperator {
+                    new_pubkey: rest[..len].to_vec(),
+                })
+            }
             other => Err(format!("unknown proposal kind: {other}")),
         }
     }
@@ -389,6 +412,9 @@ impl ProposalManager {
                 self.execute_grant_wallet_access(wallet_id, client_id).await
             }
             ProposalKind::ApproveServerUpdate => Ok(()),
+            ProposalKind::ReplaceOperator { new_pubkey } => {
+                self.execute_replace_operator(new_pubkey).await
+            }
         }
     }
 
@@ -406,6 +432,16 @@ impl ProposalManager {
             .await
             .map_err(|e| Error::ExecutionFailed(format!("grant wallet access: {e}")))?;
 
+        Ok(())
+    }
+
+    async fn execute_replace_operator(&self, new_pubkey: Vec<u8>) -> Result<(), Error> {
+        let mut conn = self.db.get().await.map_err(Error::DatabaseConnection)?;
+        diesel::insert_into(schema::operator_identity::table)
+            .values(schema::operator_identity::public_key.eq(&new_pubkey))
+            .execute(&mut conn)
+            .await
+            .map_err(|e| Error::ExecutionFailed(format!("replace operator: {e}")))?;
         Ok(())
     }
 

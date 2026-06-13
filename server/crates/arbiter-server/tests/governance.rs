@@ -501,6 +501,56 @@ async fn grant_wallet_access_on_quorum_approval() {
 }
 
 #[tokio::test]
+async fn replace_operator_inserts_identity_row() {
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors
+        .vault
+        .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
+        .await
+        .unwrap();
+
+    let signing_key = authn::SigningKey::generate();
+    let op_id = register_operator(&db, &signing_key.public_key()).await;
+
+    let new_op_key = authn::SigningKey::generate();
+    let new_pubkey = new_op_key.public_key().to_bytes().to_vec();
+
+    let proposal_id = actors
+        .proposal_manager
+        .ask(CreateProposal {
+            kind: ProposalKind::ReplaceOperator { new_pubkey },
+            initiator_id: op_id,
+            ttl_secs: None,
+        })
+        .await
+        .unwrap();
+
+    let msg = make_vote_message(proposal_id, true);
+    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let outcome = actors
+        .proposal_manager
+        .ask(CastVote {
+            proposal_id,
+            operator_id: op_id,
+            approve: true,
+            signature: sig.to_bytes(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(outcome, VoteOutcome::QuorumApproved);
+
+    let mut conn = db.get().await.unwrap();
+    let count: i64 = operator_identity::table
+        .count()
+        .get_result(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(count, 2); // original + new
+}
+
+#[tokio::test]
 async fn approve_server_update_reaches_quorum() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();

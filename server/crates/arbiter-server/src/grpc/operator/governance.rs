@@ -53,6 +53,9 @@ async fn handle_create(
             client_id: p.client_id,
         },
         Some(ProtoKind::ApproveServerUpdate(_)) => ProposalKind::ApproveServerUpdate,
+        Some(ProtoKind::ReplaceOperator(p)) => ProposalKind::ReplaceOperator {
+            new_pubkey: p.new_pubkey,
+        },
         None => return Err(Status::invalid_argument("Missing proposal kind")),
     };
     let ttl_secs = req.ttl_secs.map(i64::from);
