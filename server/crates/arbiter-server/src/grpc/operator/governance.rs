@@ -56,6 +56,10 @@ async fn handle_create(
         Some(ProtoKind::ReplaceOperator(p)) => ProposalKind::ReplaceOperator {
             new_pubkey: p.new_pubkey,
         },
+        Some(ProtoKind::UpdateShamirParameters(p)) => ProposalKind::UpdateShamirParameters {
+            #[expect(clippy::cast_possible_truncation, clippy::as_conversions, reason = "new_n is always a small operator count")]
+            new_n: p.new_n as u8,
+        },
         None => return Err(Status::invalid_argument("Missing proposal kind")),
     };
     let ttl_secs = req.ttl_secs.map(i64::from);

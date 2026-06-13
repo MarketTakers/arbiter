@@ -20,6 +20,7 @@ pub enum ProposalKind {
     GrantWalletAccess { wallet_id: i32, client_id: i32 },
     ApproveServerUpdate,
     ReplaceOperator { new_pubkey: Vec<u8> },
+    UpdateShamirParameters { new_n: u8 },
 }
 
 impl ProposalKind {
@@ -29,6 +30,7 @@ impl ProposalKind {
             Self::GrantWalletAccess { .. } => "grant_wallet_access",
             Self::ApproveServerUpdate => "approve_server_update",
             Self::ReplaceOperator { .. } => "replace_operator",
+            Self::UpdateShamirParameters { .. } => "update_shamir_parameters",
         }
     }
 
@@ -50,6 +52,7 @@ impl ProposalKind {
                 buf.extend_from_slice(new_pubkey);
                 buf
             }
+            Self::UpdateShamirParameters { new_n } => vec![*new_n],
         }
     }
 
@@ -83,6 +86,12 @@ impl ProposalKind {
                 Ok(Self::ReplaceOperator {
                     new_pubkey: rest[..len].to_vec(),
                 })
+            }
+            "update_shamir_parameters" => {
+                let &[new_n] = payload else {
+                    return Err("invalid payload for update_shamir_parameters".to_owned());
+                };
+                Ok(Self::UpdateShamirParameters { new_n })
             }
             other => Err(format!("unknown proposal kind: {other}")),
         }
@@ -415,6 +424,9 @@ impl ProposalManager {
             ProposalKind::ReplaceOperator { new_pubkey } => {
                 self.execute_replace_operator(new_pubkey).await
             }
+            ProposalKind::UpdateShamirParameters { new_n } => {
+                self.execute_update_shamir_parameters(new_n)
+            }
         }
     }
 
@@ -442,6 +454,16 @@ impl ProposalManager {
             .execute(&mut conn)
             .await
             .map_err(|e| Error::ExecutionFailed(format!("replace operator: {e}")))?;
+        Ok(())
+    }
+
+    #[expect(
+        clippy::unused_self,
+        clippy::unnecessary_wraps,
+        reason = "signature must match other execute_* methods"
+    )]
+    fn execute_update_shamir_parameters(&self, new_n: u8) -> Result<(), Error> {
+        warn!(new_n, "UpdateShamirParameters approved; Shamir re-keying must be performed out-of-band");
         Ok(())
     }
 
