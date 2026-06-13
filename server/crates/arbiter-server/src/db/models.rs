@@ -528,3 +528,18 @@ pub struct NewProposalResult {
     pub proposal_id: i32,
     pub data: Vec<u8>,
 }
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = schema::recovery_proposal_vote, check_for_backend(Sqlite))]
+pub struct NewRecoveryProposalVote {
+    pub proposal_id: i32,
+    pub recovery_operator_id: i32,
+    pub approve: bool,
+    pub signature: Vec<u8>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = schema::recovery_wakeup_request, check_for_backend(Sqlite))]
+pub struct NewRecoveryWakeupRequest {
+    pub requested_by: i32,
+}

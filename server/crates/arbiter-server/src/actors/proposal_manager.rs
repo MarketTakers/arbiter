@@ -2,7 +2,10 @@ use crate::{
     actors::{evm::EvmActor, vault::Vault},
     db::{
         self,
-        models::{NewProposal, NewProposalVote, Proposal, ProposalStatus, SqliteTimestamp},
+        models::{
+            NewProposal, NewProposalVote, NewRecoveryProposalVote,
+            NewRecoveryWakeupRequest, Proposal, ProposalStatus, SqliteTimestamp,
+        },
         schema,
     },
 };
@@ -142,6 +145,14 @@ pub enum Error {
     DatabaseQuery(#[from] diesel::result::Error),
     #[error("Execution failed: {0}")]
     ExecutionFailed(String),
+    #[error("Recovery operators are sleeping")]
+    RecoveryNotActive,
+    #[error("Recovery operators may only vote on operator replacement")]
+    NotAllowedForRecoveryOperator,
+    #[error("A recovery wake-up is already pending or active")]
+    WakeupAlreadyPending,
+    #[error("No active recovery wake-up to cancel")]
+    NoActiveWakeup,
 }
 
 #[derive(Debug)]
@@ -379,6 +390,15 @@ impl ProposalManager {
             .count()
             .get_result(&mut conn)
             .await?;
+        let recovery_active = Self::is_recovery_active_conn(&mut conn).await?;
+        let total_recovery: i64 = if recovery_active {
+            schema::recovery_operator_identity::table
+                .count()
+                .get_result(&mut conn)
+                .await?
+        } else {
+            0
+        };
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
@@ -386,25 +406,40 @@ impl ProposalManager {
             reason = "operator count is always a small positive integer"
         )]
         let threshold = if ProposalKind::requires_full_quorum(&proposal.kind) {
-            // §3.3: key-rotation proposals require every operator to approve
-            total_operators as usize
+            // §3.3: key-rotation proposals require every eligible voter to approve
+            // §3.5: when recovery is active, recovery operators also vote on replace_operator
+            (total_operators + total_recovery) as usize
         } else {
             crate::crypto::shamir::shamir_threshold(total_operators as usize)
         };
 
-        let approve_count: i64 = schema::proposal_vote::table
+        let ordinary_approve: i64 = schema::proposal_vote::table
             .filter(schema::proposal_vote::proposal_id.eq(proposal_id))
             .filter(schema::proposal_vote::approve.eq(true))
             .count()
             .get_result(&mut conn)
             .await?;
+        let recovery_approve: i64 = schema::recovery_proposal_vote::table
+            .filter(schema::recovery_proposal_vote::proposal_id.eq(proposal_id))
+            .filter(schema::recovery_proposal_vote::approve.eq(true))
+            .count()
+            .get_result(&mut conn)
+            .await?;
+        let approve_count = ordinary_approve + recovery_approve;
 
-        let reject_count: i64 = schema::proposal_vote::table
+        let ordinary_reject: i64 = schema::proposal_vote::table
             .filter(schema::proposal_vote::proposal_id.eq(proposal_id))
             .filter(schema::proposal_vote::approve.eq(false))
             .count()
             .get_result(&mut conn)
             .await?;
+        let recovery_reject: i64 = schema::recovery_proposal_vote::table
+            .filter(schema::recovery_proposal_vote::proposal_id.eq(proposal_id))
+            .filter(schema::recovery_proposal_vote::approve.eq(false))
+            .count()
+            .get_result(&mut conn)
+            .await?;
+        let reject_count = ordinary_reject + recovery_reject;
 
         #[expect(
             clippy::cast_possible_wrap,
@@ -423,7 +458,184 @@ impl ProposalManager {
             return Ok(VoteOutcome::QuorumApproved);
         }
 
-        if reject_count > total_operators - threshold_i64 {
+        let total_eligible = total_operators + total_recovery;
+        if reject_count > total_eligible - threshold_i64 {
+            diesel::update(schema::proposal::table.find(proposal_id))
+                .set(schema::proposal::status.eq(ProposalStatus::Rejected))
+                .execute(&mut conn)
+                .await?;
+            return Ok(VoteOutcome::QuorumRejected);
+        }
+
+        Ok(VoteOutcome::Pending)
+    }
+
+    /// §3.6: Any ordinary operator may request recovery wake-up.
+    /// Fails if a wake-up is already pending or active.
+    #[message]
+    pub async fn request_recovery_wakeup(&mut self, operator_id: i32) -> Result<(), Error> {
+        let mut conn = self.db.get().await?;
+        if Self::has_uncancelled_wakeup(&mut conn).await? {
+            return Err(Error::WakeupAlreadyPending);
+        }
+        diesel::insert_into(schema::recovery_wakeup_request::table)
+            .values(&NewRecoveryWakeupRequest {
+                requested_by: operator_id,
+            })
+            .execute(&mut conn)
+            .await?;
+        Ok(())
+    }
+
+    /// §3.6: Any ordinary operator may cancel a pending wake-up request.
+    /// Fails if there is no uncancelled request.
+    #[message]
+    pub async fn cancel_recovery_wakeup(&mut self, operator_id: i32) -> Result<(), Error> {
+        let mut conn = self.db.get().await?;
+        let rows_updated = diesel::update(schema::recovery_wakeup_request::table)
+            .filter(schema::recovery_wakeup_request::cancelled_at.is_null())
+            .set((
+                schema::recovery_wakeup_request::cancelled_by.eq(Some(operator_id)),
+                schema::recovery_wakeup_request::cancelled_at
+                    .eq(Some(SqliteTimestamp::now())),
+            ))
+            .execute(&mut conn)
+            .await?;
+        if rows_updated == 0 {
+            return Err(Error::NoActiveWakeup);
+        }
+        Ok(())
+    }
+
+    /// §3.5: Recovery operators may only vote on operator replacement proposals.
+    /// §3.6: Voting is gated behind recovery being active (14-day window elapsed).
+    #[message]
+    pub async fn cast_recovery_vote(
+        &mut self,
+        proposal_id: i32,
+        recovery_operator_id: i32,
+        approve: bool,
+        signature: Vec<u8>,
+    ) -> Result<VoteOutcome, Error> {
+        use arbiter_crypto::authn::{self, GOVERNANCE_CONTEXT};
+
+        let mut conn = self.db.get().await?;
+
+        let proposal: Proposal = schema::proposal::table
+            .find(proposal_id)
+            .first(&mut conn)
+            .await
+            .map_err(|e| match e {
+                diesel::result::Error::NotFound => Error::ProposalNotFound,
+                other => Error::DatabaseQuery(other),
+            })?;
+
+        if proposal.kind != "replace_operator" {
+            return Err(Error::NotAllowedForRecoveryOperator);
+        }
+
+        if !Self::is_recovery_active_conn(&mut conn).await? {
+            return Err(Error::RecoveryNotActive);
+        }
+
+        let existing: i64 = schema::recovery_proposal_vote::table
+            .filter(schema::recovery_proposal_vote::proposal_id.eq(proposal_id))
+            .filter(schema::recovery_proposal_vote::recovery_operator_id.eq(recovery_operator_id))
+            .count()
+            .get_result(&mut conn)
+            .await?;
+        if existing > 0 {
+            return Err(Error::AlreadyVoted);
+        }
+
+        if proposal.status != ProposalStatus::Pending {
+            return Err(Error::ProposalNotPending);
+        }
+
+        let pubkey_bytes: Vec<u8> = schema::recovery_operator_identity::table
+            .find(recovery_operator_id)
+            .select(schema::recovery_operator_identity::public_key)
+            .first(&mut conn)
+            .await
+            .map_err(|e| match e {
+                diesel::result::Error::NotFound => Error::OperatorNotFound,
+                other => Error::DatabaseQuery(other),
+            })?;
+
+        let pubkey = authn::PublicKey::try_from(pubkey_bytes.as_slice())
+            .map_err(|()| Error::InvalidSignature)?;
+
+        let mut vote_msg = Vec::with_capacity(9);
+        vote_msg.extend_from_slice(&i64::from(proposal_id).to_be_bytes());
+        vote_msg.push(u8::from(approve));
+
+        let auth_sig = authn::Signature::try_from(signature.as_slice())
+            .map_err(|()| Error::InvalidSignature)?;
+
+        if !pubkey.verify_message(&vote_msg, GOVERNANCE_CONTEXT, &auth_sig) {
+            return Err(Error::InvalidSignature);
+        }
+
+        diesel::insert_into(schema::recovery_proposal_vote::table)
+            .values(&NewRecoveryProposalVote {
+                proposal_id,
+                recovery_operator_id,
+                approve,
+                signature,
+            })
+            .execute(&mut conn)
+            .await?;
+
+        // Quorum: all ordinary + all recovery operators must approve (§3.3 + §3.5)
+        let total_ordinary: i64 = schema::operator_identity::table
+            .count()
+            .get_result(&mut conn)
+            .await?;
+        let total_recovery: i64 = schema::recovery_operator_identity::table
+            .count()
+            .get_result(&mut conn)
+            .await?;
+        let threshold_i64 = total_ordinary + total_recovery;
+
+        let ordinary_approve: i64 = schema::proposal_vote::table
+            .filter(schema::proposal_vote::proposal_id.eq(proposal_id))
+            .filter(schema::proposal_vote::approve.eq(true))
+            .count()
+            .get_result(&mut conn)
+            .await?;
+        let recovery_approve: i64 = schema::recovery_proposal_vote::table
+            .filter(schema::recovery_proposal_vote::proposal_id.eq(proposal_id))
+            .filter(schema::recovery_proposal_vote::approve.eq(true))
+            .count()
+            .get_result(&mut conn)
+            .await?;
+        let approve_count = ordinary_approve + recovery_approve;
+
+        if approve_count >= threshold_i64 {
+            diesel::update(schema::proposal::table.find(proposal_id))
+                .set(schema::proposal::status.eq(ProposalStatus::Approved))
+                .execute(&mut conn)
+                .await?;
+            drop(conn);
+            self.execute_proposal(&proposal).await?;
+            return Ok(VoteOutcome::QuorumApproved);
+        }
+
+        let recovery_reject: i64 = schema::recovery_proposal_vote::table
+            .filter(schema::recovery_proposal_vote::proposal_id.eq(proposal_id))
+            .filter(schema::recovery_proposal_vote::approve.eq(false))
+            .count()
+            .get_result(&mut conn)
+            .await?;
+        let ordinary_reject: i64 = schema::proposal_vote::table
+            .filter(schema::proposal_vote::proposal_id.eq(proposal_id))
+            .filter(schema::proposal_vote::approve.eq(false))
+            .count()
+            .get_result(&mut conn)
+            .await?;
+        let reject_count = ordinary_reject + recovery_reject;
+
+        if reject_count > threshold_i64 - approve_count - reject_count {
             diesel::update(schema::proposal::table.find(proposal_id))
                 .set(schema::proposal::status.eq(ProposalStatus::Rejected))
                 .execute(&mut conn)
@@ -436,6 +648,40 @@ impl ProposalManager {
 }
 
 impl ProposalManager {
+    const WAKEUP_DELAY_SECS: i32 = 14 * 24 * 60 * 60;
+
+    /// Returns true when an uncancelled wakeup request has passed the 14-day dispute window.
+    async fn is_recovery_active_conn(
+        conn: &mut db::DatabaseConnection,
+    ) -> Result<bool, Error> {
+        let count: i64 = schema::recovery_wakeup_request::table
+            .filter(schema::recovery_wakeup_request::cancelled_at.is_null())
+            .filter(
+                schema::recovery_wakeup_request::requested_at.le(diesel::dsl::sql::<
+                    diesel::sql_types::Integer,
+                >(&format!(
+                    "unixepoch('now') - {}",
+                    Self::WAKEUP_DELAY_SECS
+                ))),
+            )
+            .count()
+            .get_result(conn)
+            .await?;
+        Ok(count > 0)
+    }
+
+    /// Returns true when there is any uncancelled wakeup request (pending or active).
+    async fn has_uncancelled_wakeup(
+        conn: &mut db::DatabaseConnection,
+    ) -> Result<bool, Error> {
+        let count: i64 = schema::recovery_wakeup_request::table
+            .filter(schema::recovery_wakeup_request::cancelled_at.is_null())
+            .count()
+            .get_result(conn)
+            .await?;
+        Ok(count > 0)
+    }
+
     async fn execute_proposal(&self, proposal: &Proposal) -> Result<(), Error> {
         let kind = ProposalKind::decode(&proposal.kind, &proposal.payload)
             .map_err(Error::ExecutionFailed)?;

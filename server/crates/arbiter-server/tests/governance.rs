@@ -2,13 +2,20 @@ use arbiter_crypto::authn::{self, GOVERNANCE_CONTEXT};
 use arbiter_server::{
     actors::{
         GlobalActors,
-        proposal_manager::{CastVote, CreateProposal, Error as ProposalError, ExpireStale, ProposalKind, QueryPending, VoteOutcome},
+        proposal_manager::{
+            CancelRecoveryWakeup, CastRecoveryVote, CastVote, CreateProposal,
+            Error as ProposalError, ExpireStale, ProposalKind, QueryPending,
+            RequestRecoveryWakeup, VoteOutcome,
+        },
     },
     crypto::KeyCell,
     db,
 };
 use arbiter_server::actors::vault::Bootstrap;
-use arbiter_server::db::schema::{aead_encrypted, evm_basic_grant, evm_wallet, evm_wallet_access, operator_identity, proposal_result};
+use arbiter_server::db::schema::{
+    aead_encrypted, evm_basic_grant, evm_wallet, evm_wallet_access, operator_identity,
+    proposal_result, recovery_operator_identity,
+};
 use diesel::{ExpressionMethods, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
 
@@ -20,6 +27,28 @@ async fn register_operator(db: &db::DatabasePool, pubkey: &authn::PublicKey) -> 
         .get_result::<i32>(&mut conn)
         .await
         .unwrap()
+}
+
+async fn register_recovery_operator(db: &db::DatabasePool, pubkey: &authn::PublicKey) -> i32 {
+    let mut conn = db.get().await.unwrap();
+    insert_into(recovery_operator_identity::table)
+        .values(recovery_operator_identity::public_key.eq(pubkey.to_bytes()))
+        .returning(recovery_operator_identity::id)
+        .get_result::<i32>(&mut conn)
+        .await
+        .unwrap()
+}
+
+/// Backdates a wakeup request so it appears to have passed the 14-day window.
+async fn insert_active_wakeup(db: &db::DatabasePool, operator_id: i32) {
+    let mut conn = db.get().await.unwrap();
+    diesel::sql_query(format!(
+        "INSERT INTO recovery_wakeup_request (requested_by, requested_at) \
+         VALUES ({operator_id}, unixepoch('now') - 14*24*3600 - 1)"
+    ))
+    .execute(&mut conn)
+    .await
+    .unwrap();
 }
 
 fn make_vote_message(proposal_id: i32, approve: bool) -> Vec<u8> {
@@ -876,5 +905,206 @@ async fn approve_server_update_reaches_quorum() {
         .await
         .unwrap();
 
+    assert_eq!(outcome, VoteOutcome::QuorumApproved);
+}
+
+// ─── §3.5 / §3.6 Recovery Operator tests ──────────────────────────────────
+
+#[tokio::test]
+async fn recovery_vote_rejected_when_sleeping() {
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors.vault.ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) }).await.unwrap();
+
+    let op_key = authn::SigningKey::generate();
+    let op_id = register_operator(&db, &op_key.public_key()).await;
+    let rec_key = authn::SigningKey::generate();
+    let rec_id = register_recovery_operator(&db, &rec_key.public_key()).await;
+
+    let new_pubkey = authn::SigningKey::generate().public_key().to_bytes();
+    let proposal_id = actors
+        .proposal_manager
+        .ask(CreateProposal {
+            kind: ProposalKind::ReplaceOperator { new_pubkey },
+            initiator_id: op_id,
+            ttl_secs: None,
+        })
+        .await
+        .unwrap();
+
+    let msg = make_vote_message(proposal_id, true);
+    let sig = rec_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let err = actors
+        .proposal_manager
+        .ask(CastRecoveryVote {
+            proposal_id,
+            recovery_operator_id: rec_id,
+            approve: true,
+            signature: sig.to_bytes(),
+        })
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(err, kameo::error::SendError::HandlerError(ProposalError::RecoveryNotActive)),
+        "expected RecoveryNotActive, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn recovery_vote_blocked_on_non_replace_proposal() {
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors.vault.ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) }).await.unwrap();
+
+    let op_key = authn::SigningKey::generate();
+    let op_id = register_operator(&db, &op_key.public_key()).await;
+    let rec_key = authn::SigningKey::generate();
+    let rec_id = register_recovery_operator(&db, &rec_key.public_key()).await;
+
+    insert_active_wakeup(&db, op_id).await;
+
+    let client_key = authn::SigningKey::generate();
+    let client_id = insert_unapproved_client(&db, &client_key.public_key()).await;
+    let proposal_id = actors
+        .proposal_manager
+        .ask(CreateProposal {
+            kind: ProposalKind::ApproveSdkClient { client_id },
+            initiator_id: op_id,
+            ttl_secs: None,
+        })
+        .await
+        .unwrap();
+
+    let msg = make_vote_message(proposal_id, true);
+    let sig = rec_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let err = actors
+        .proposal_manager
+        .ask(CastRecoveryVote {
+            proposal_id,
+            recovery_operator_id: rec_id,
+            approve: true,
+            signature: sig.to_bytes(),
+        })
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            kameo::error::SendError::HandlerError(ProposalError::NotAllowedForRecoveryOperator)
+        ),
+        "expected NotAllowedForRecoveryOperator, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn recovery_wakeup_can_be_cancelled() {
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors.vault.ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) }).await.unwrap();
+
+    let key = authn::SigningKey::generate();
+    let op_id = register_operator(&db, &key.public_key()).await;
+
+    actors
+        .proposal_manager
+        .ask(RequestRecoveryWakeup { operator_id: op_id })
+        .await
+        .unwrap();
+
+    actors
+        .proposal_manager
+        .ask(CancelRecoveryWakeup { operator_id: op_id })
+        .await
+        .unwrap();
+
+    // Second request must succeed (previous one was cancelled)
+    actors
+        .proposal_manager
+        .ask(RequestRecoveryWakeup { operator_id: op_id })
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn recovery_wakeup_prevents_duplicate_request() {
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors.vault.ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) }).await.unwrap();
+
+    let key = authn::SigningKey::generate();
+    let op_id = register_operator(&db, &key.public_key()).await;
+
+    actors
+        .proposal_manager
+        .ask(RequestRecoveryWakeup { operator_id: op_id })
+        .await
+        .unwrap();
+
+    let err = actors
+        .proposal_manager
+        .ask(RequestRecoveryWakeup { operator_id: op_id })
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(err, kameo::error::SendError::HandlerError(ProposalError::WakeupAlreadyPending)),
+        "expected WakeupAlreadyPending, got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn recovery_operator_vote_contributes_to_replace_quorum() {
+    // 1 ordinary operator + 1 recovery operator; replace_operator needs both.
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors.vault.ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) }).await.unwrap();
+
+    let op_key = authn::SigningKey::generate();
+    let op_id = register_operator(&db, &op_key.public_key()).await;
+    let rec_key = authn::SigningKey::generate();
+    let rec_id = register_recovery_operator(&db, &rec_key.public_key()).await;
+
+    insert_active_wakeup(&db, op_id).await;
+
+    let new_pubkey = authn::SigningKey::generate().public_key().to_bytes();
+    let proposal_id = actors
+        .proposal_manager
+        .ask(CreateProposal {
+            kind: ProposalKind::ReplaceOperator { new_pubkey },
+            initiator_id: op_id,
+            ttl_secs: None,
+        })
+        .await
+        .unwrap();
+
+    // Ordinary operator approves — still pending (needs recovery too)
+    let msg = make_vote_message(proposal_id, true);
+    let sig = op_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let outcome = actors
+        .proposal_manager
+        .ask(CastVote {
+            proposal_id,
+            operator_id: op_id,
+            approve: true,
+            signature: sig.to_bytes(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(outcome, VoteOutcome::Pending);
+
+    // Recovery operator approves — now quorum is reached
+    let sig = rec_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let outcome = actors
+        .proposal_manager
+        .ask(CastRecoveryVote {
+            proposal_id,
+            recovery_operator_id: rec_id,
+            approve: true,
+            signature: sig.to_bytes(),
+        })
+        .await
+        .unwrap();
     assert_eq!(outcome, VoteOutcome::QuorumApproved);
 }

@@ -244,3 +244,35 @@ create table if not exists proposal_result (
     data        blob    not null,
     created_at  integer not null default(unixepoch('now'))
 ) STRICT;
+
+-- ===============================
+-- Recovery Operators (§3.5/§3.6)
+-- ===============================
+
+create table if not exists recovery_operator_identity (
+    id         integer not null primary key,
+    public_key blob    not null unique,
+    created_at integer not null default(unixepoch('now')),
+    updated_at integer not null default(unixepoch('now'))
+) STRICT;
+
+-- One active wakeup request at a time. A request is pending when cancelled_at IS NULL
+-- and requested_at + 14 days > now. It becomes active (recovery live) after 14 days.
+create table if not exists recovery_wakeup_request (
+    id           integer not null primary key,
+    requested_by integer not null references operator_identity(id) on delete restrict,
+    requested_at integer not null default(unixepoch('now')),
+    cancelled_by integer references operator_identity(id) on delete restrict,
+    cancelled_at integer
+) STRICT;
+
+-- Votes cast by recovery operators; only allowed on replace_operator proposals.
+create table if not exists recovery_proposal_vote (
+    id                   integer not null primary key,
+    proposal_id          integer not null references proposal(id) on delete cascade,
+    recovery_operator_id integer not null references recovery_operator_identity(id) on delete restrict,
+    approve              integer not null check (approve in (0, 1)),
+    signature            blob    not null,
+    voted_at             integer not null default(unixepoch('now')),
+    unique (proposal_id, recovery_operator_id)
+) STRICT;

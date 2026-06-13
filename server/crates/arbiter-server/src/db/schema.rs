@@ -193,6 +193,36 @@ diesel::table! {
 }
 
 diesel::table! {
+    recovery_operator_identity (id) {
+        id -> Integer,
+        public_key -> Binary,
+        created_at -> Integer,
+        updated_at -> Integer,
+    }
+}
+
+diesel::table! {
+    recovery_wakeup_request (id) {
+        id -> Integer,
+        requested_by -> Integer,
+        requested_at -> Integer,
+        cancelled_by -> Nullable<Integer>,
+        cancelled_at -> Nullable<Integer>,
+    }
+}
+
+diesel::table! {
+    recovery_proposal_vote (id) {
+        id -> Integer,
+        proposal_id -> Integer,
+        recovery_operator_id -> Integer,
+        approve -> Bool,
+        signature -> Binary,
+        voted_at -> Integer,
+    }
+}
+
+diesel::table! {
     proposal_vote (id) {
         id -> Integer,
         proposal_id -> Integer,
@@ -260,10 +290,16 @@ diesel::joinable!(proposal -> operator_identity (initiator_id));
 diesel::joinable!(proposal_result -> proposal (proposal_id));
 diesel::joinable!(proposal_vote -> proposal (proposal_id));
 diesel::joinable!(proposal_vote -> operator_identity (operator_id));
+diesel::joinable!(recovery_proposal_vote -> proposal (proposal_id));
+diesel::joinable!(recovery_proposal_vote -> recovery_operator_identity (recovery_operator_id));
+diesel::joinable!(recovery_wakeup_request -> operator_identity (requested_by));
 
 diesel::allow_tables_to_appear_in_same_query!(
     aead_encrypted,
     proposal_result,
+    recovery_operator_identity,
+    recovery_wakeup_request,
+    recovery_proposal_vote,
     arbiter_settings,
     client_metadata,
     client_metadata_history,
