@@ -335,3 +335,46 @@ impl OperatorSession {
             .unwrap_or_default()
     }
 }
+
+#[messages]
+impl OperatorSession {
+    #[message]
+    pub(crate) async fn handle_contribute_rekey_passphrase(
+        &mut self,
+        passphrase: Vec<u8>,
+    ) -> Result<bool, Error> {
+        use crate::actors::vault_coordinator::ContributeRekey;
+        use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
+
+        let operator_id = self.credentials.id;
+        self.props
+            .actors
+            .vault_coordinator
+            .ask(ContributeRekey {
+                operator_id,
+                passphrase: SafeCell::new(passphrase),
+            })
+            .await
+            .map_err(|_| Error::internal("VaultCoordinator unavailable"))
+    }
+
+    #[message]
+    pub(crate) async fn handle_contribute_recovery_rekey_passphrase(
+        &mut self,
+        recovery_operator_id: i32,
+        passphrase: Vec<u8>,
+    ) -> Result<bool, Error> {
+        use crate::actors::vault_coordinator::ContributeRecoveryRekey;
+        use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
+
+        self.props
+            .actors
+            .vault_coordinator
+            .ask(ContributeRecoveryRekey {
+                recovery_operator_id,
+                passphrase: SafeCell::new(passphrase),
+            })
+            .await
+            .map_err(|_| Error::internal("VaultCoordinator unavailable"))
+    }
+}

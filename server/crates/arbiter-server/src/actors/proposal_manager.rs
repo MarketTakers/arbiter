@@ -60,7 +60,7 @@ pub enum ProposalKind {
 }
 
 impl ProposalKind {
-    pub fn tag(&self) -> ProposalKindTag {
+    pub const fn tag(&self) -> ProposalKindTag {
         match self {
             Self::ApproveSdkClient { .. } => ProposalKindTag::ApproveSdkClient,
             Self::GrantWalletAccess { .. } => ProposalKindTag::GrantWalletAccess,

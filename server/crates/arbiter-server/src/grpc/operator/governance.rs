@@ -54,20 +54,28 @@ async fn handle_create(
         },
         Some(ProtoKind::ApproveServerUpdate(_)) => ProposalKind::ApproveServerUpdate,
         Some(ProtoKind::ReplaceOperator(p)) => ProposalKind::ReplaceOperator {
-            new_pubkey: p.new_pubkey.try_into()
-                .map_err(|_| Status::invalid_argument("replace_operator: pubkey must be 32 bytes"))?,
+            old_operator_id: p.old_operator_id,
+            new_pubkey: p.new_pubkey,
         },
         Some(ProtoKind::UpdateShamirParameters(p)) => ProposalKind::UpdateShamirParameters {
-            #[expect(clippy::cast_possible_truncation, clippy::as_conversions, reason = "new_n is always a small operator count")]
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::as_conversions,
+                reason = "new_n is always a small operator count"
+            )]
             new_n: p.new_n as u8,
         },
         Some(ProtoKind::ApprovePersistentGrant(p)) => {
             use prost::Message as _;
-            ProposalKind::ApprovePersistentGrant { payload_bytes: p.encode_to_vec() }
+            ProposalKind::ApprovePersistentGrant {
+                payload_bytes: p.encode_to_vec(),
+            }
         }
         Some(ProtoKind::ApproveOneOffTransaction(p)) => {
             use prost::Message as _;
-            ProposalKind::ApproveOneOffTransaction { payload_bytes: p.encode_to_vec() }
+            ProposalKind::ApproveOneOffTransaction {
+                payload_bytes: p.encode_to_vec(),
+            }
         }
         None => return Err(Status::invalid_argument("Missing proposal kind")),
     };

@@ -275,6 +275,59 @@ impl Vault {
         Ok(())
     }
 
+    /// Re-encrypts the root key with `new_seal_key` and records a new root_key_history row.
+    /// Called after a Shamir re-key so the old seal key is no longer sufficient to unseal.
+    #[message]
+    pub async fn rekey_root_key(&mut self, mut new_seal_key: KeyCell) -> Result<(), Error> {
+        let Unsealed {
+            root_key,
+            root_key_history_id,
+        } = Self::expect_unsealed(&mut self.state)?;
+
+        let new_nonce = Nonce::default();
+        let new_salt = v1::generate_salt();
+
+        let new_ciphertext: Vec<u8> = root_key.0.read_inline(|rk| {
+            new_seal_key
+                .encrypt(&new_nonce, v1::ROOT_KEY_TAG, rk.as_slice())
+                .map_err(|err| {
+                    error!(?err, "Fatal rekey error");
+                    Error::Encryption(err)
+                })
+        })?;
+
+        let data_encryption_nonce = Nonce::default();
+
+        let mut conn = self.db.get().await?;
+        let new_root_key_history_id: i32 = conn
+            .transaction(async |conn| {
+                let new_id = insert_into(schema::root_key_history::table)
+                    .values(&models::NewRootKeyHistory {
+                        ciphertext: new_ciphertext,
+                        tag: v1::ROOT_KEY_TAG.to_vec(),
+                        root_key_encryption_nonce: new_nonce.to_vec(),
+                        data_encryption_nonce: data_encryption_nonce.to_vec(),
+                        schema_version: 1,
+                        salt: new_salt.to_vec(),
+                    })
+                    .returning(schema::root_key_history::id)
+                    .get_result::<i32>(&mut *conn)
+                    .await?;
+
+                update(schema::arbiter_settings::table)
+                    .set(schema::arbiter_settings::root_key_id.eq(new_id))
+                    .execute(&mut *conn)
+                    .await?;
+
+                Result::<_, diesel::result::Error>::Ok(new_id)
+            })
+            .await?;
+
+        *root_key_history_id = RootKeyHistoryId::from_raw(new_root_key_history_id);
+        info!("Vault root key rekeyed successfully");
+        Ok(())
+    }
+
     #[message]
     pub async fn seal(&mut self) -> Result<(), Error> {
         let Unsealed {

@@ -51,18 +51,20 @@ impl GlobalActors {
         let key_holder = Vault::spawn(Vault::new(db.clone(), message_bus.clone()).await?);
         let operator_registry = OperatorRegistry::spawn(OperatorRegistry::default());
         let evm = EvmActor::spawn(EvmActor::new(key_holder.clone(), db.clone()));
+        let vault_coordinator = VaultCoordinator::spawn(VaultCoordinator::new(
+            db.clone(),
+            key_holder.clone(),
+        ));
         Ok(Self {
             bootstrapper: Bootstrapper::spawn(Bootstrapper::new(&db).await?),
-            vault_coordinator: VaultCoordinator::spawn(VaultCoordinator::new(
-                db.clone(),
-                key_holder.clone(),
-            )),
             proposal_manager: ProposalManager::spawn(ProposalManager::new(
                 db,
                 key_holder.clone(),
                 evm.clone(),
+                vault_coordinator.clone(),
             )),
             vault: key_holder,
+            vault_coordinator,
             flow_coordinator: FlowCoordinator::spawn(FlowCoordinator::new(
                 operator_registry.clone(),
             )),

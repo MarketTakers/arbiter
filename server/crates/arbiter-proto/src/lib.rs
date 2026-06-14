@@ -38,6 +38,10 @@ pub mod proto {
                 tonic::include_proto!("arbiter.operator.vault.bootstrap");
             }
 
+            pub mod rekey {
+                tonic::include_proto!("arbiter.operator.vault.rekey");
+            }
+
             pub mod unseal {
                 tonic::include_proto!("arbiter.operator.vault.unseal");
             }

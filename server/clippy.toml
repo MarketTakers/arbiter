@@ -26,3 +26,5 @@ trait-assoc-item-kinds-order = [
     "type",
     "fn",
 ] # community tested standard
+
+too-many-lines-threshold = 150

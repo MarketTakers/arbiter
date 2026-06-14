@@ -733,7 +733,7 @@ async fn approve_one_off_transaction_stores_result() {
 }
 
 #[tokio::test]
-async fn replace_operator_inserts_identity_row() {
+async fn replace_operator_updates_pubkey_and_starts_rekey() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
@@ -751,7 +751,7 @@ async fn replace_operator_inserts_identity_row() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ReplaceOperator { new_pubkey },
+            kind: ProposalKind::ReplaceOperator { old_operator_id: op_id, new_pubkey: new_pubkey.clone() },
             initiator_id: op_id,
             ttl_secs: None,
         })
@@ -774,12 +774,22 @@ async fn replace_operator_inserts_identity_row() {
     assert_eq!(outcome, VoteOutcome::QuorumApproved);
 
     let mut conn = db.get().await.unwrap();
+    // The old identity row is updated in-place; count stays the same.
     let count: i64 = operator_identity::table
         .count()
         .get_result(&mut conn)
         .await
         .unwrap();
-    assert_eq!(count, 2); // original + new
+    assert_eq!(count, 1);
+
+    // Verify the public key was updated to the new one.
+    let stored_pubkey: Vec<u8> = operator_identity::table
+        .filter(operator_identity::id.eq(op_id))
+        .select(operator_identity::public_key)
+        .first(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(stored_pubkey, new_pubkey.clone());
 }
 
 #[tokio::test]
@@ -843,7 +853,7 @@ async fn key_rotation_requires_full_quorum() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ReplaceOperator { new_pubkey },
+            kind: ProposalKind::ReplaceOperator { old_operator_id: 1, new_pubkey },
             initiator_id: op1,
             ttl_secs: None,
         })
@@ -925,7 +935,7 @@ async fn recovery_vote_rejected_when_sleeping() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ReplaceOperator { new_pubkey },
+            kind: ProposalKind::ReplaceOperator { old_operator_id: 1, new_pubkey },
             initiator_id: op_id,
             ttl_secs: None,
         })
@@ -1072,7 +1082,7 @@ async fn recovery_operator_vote_contributes_to_replace_quorum() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ReplaceOperator { new_pubkey },
+            kind: ProposalKind::ReplaceOperator { old_operator_id: 1, new_pubkey },
             initiator_id: op_id,
             ttl_secs: None,
         })

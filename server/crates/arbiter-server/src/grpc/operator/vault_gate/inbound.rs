@@ -53,6 +53,9 @@ impl TryConvert for VaultRequestPayload {
             Self::QueryState(()) => Ok(vault_gate::Inbound::HandleVaultState),
             Self::Unseal(req) => req.try_convert(),
             Self::Bootstrap(req) => req.try_convert(),
+            Self::Rekey(_) => Err(Status::permission_denied(
+                "Rekey requires an authenticated session",
+            )),
         }
     }
 }
