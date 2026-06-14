@@ -1,10 +1,14 @@
 use crate::{
-    actors::{evm::EvmActor, vault::Vault},
+    actors::{
+        evm::EvmActor,
+        vault::Vault,
+        vault_coordinator::{StartRekey, VaultCoordinator},
+    },
     db::{
         self,
         models::{
-            NewProposal, NewProposalVote, NewRecoveryProposalVote,
-            NewRecoveryWakeupRequest, Proposal, ProposalStatus, SqliteTimestamp,
+            NewProposal, NewProposalVote, NewRecoveryProposalVote, NewRecoveryWakeupRequest,
+            Proposal, ProposalStatus, SqliteTimestamp,
         },
         schema,
     },
@@ -13,32 +17,63 @@ use chrono::Utc;
 use diesel::{ExpressionMethods as _, QueryDsl};
 use diesel_async::RunQueryDsl;
 use kameo::{actor::ActorRef, messages};
+use strum::{Display, EnumString, IntoStaticStr};
 use tracing::{error, warn};
 
 pub const DEFAULT_TTL_SECS: i64 = 7 * 24 * 60 * 60; // 7 days
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display, EnumString, IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum ProposalKindTag {
+    ApproveSdkClient,
+    GrantWalletAccess,
+    ApproveServerUpdate,
+    ReplaceOperator,
+    UpdateShamirParameters,
+    ApprovePersistentGrant,
+    ApproveOneOffTransaction,
+}
+
 #[derive(Debug, Clone)]
 pub enum ProposalKind {
-    ApproveSdkClient { client_id: i32 },
-    GrantWalletAccess { wallet_id: i32, client_id: i32 },
+    ApproveSdkClient {
+        client_id: i32,
+    },
+    GrantWalletAccess {
+        wallet_id: i32,
+        client_id: i32,
+    },
     ApproveServerUpdate,
-    ReplaceOperator { new_pubkey: Vec<u8> },
-    UpdateShamirParameters { new_n: u8 },
-    ApprovePersistentGrant { payload_bytes: Vec<u8> },
-    ApproveOneOffTransaction { payload_bytes: Vec<u8> },
+    ReplaceOperator {
+        old_operator_id: i32,
+        new_pubkey: Vec<u8>,
+    },
+    UpdateShamirParameters {
+        new_n: u8,
+    },
+    ApprovePersistentGrant {
+        payload_bytes: Vec<u8>,
+    },
+    ApproveOneOffTransaction {
+        payload_bytes: Vec<u8>,
+    },
 }
 
 impl ProposalKind {
-    pub const fn kind_str(&self) -> &'static str {
+    pub fn tag(&self) -> ProposalKindTag {
         match self {
-            Self::ApproveSdkClient { .. } => "approve_sdk_client",
-            Self::GrantWalletAccess { .. } => "grant_wallet_access",
-            Self::ApproveServerUpdate => "approve_server_update",
-            Self::ReplaceOperator { .. } => "replace_operator",
-            Self::UpdateShamirParameters { .. } => "update_shamir_parameters",
-            Self::ApprovePersistentGrant { .. } => "approve_persistent_grant",
-            Self::ApproveOneOffTransaction { .. } => "approve_one_off_transaction",
+            Self::ApproveSdkClient { .. } => ProposalKindTag::ApproveSdkClient,
+            Self::GrantWalletAccess { .. } => ProposalKindTag::GrantWalletAccess,
+            Self::ApproveServerUpdate => ProposalKindTag::ApproveServerUpdate,
+            Self::ReplaceOperator { .. } => ProposalKindTag::ReplaceOperator,
+            Self::UpdateShamirParameters { .. } => ProposalKindTag::UpdateShamirParameters,
+            Self::ApprovePersistentGrant { .. } => ProposalKindTag::ApprovePersistentGrant,
+            Self::ApproveOneOffTransaction { .. } => ProposalKindTag::ApproveOneOffTransaction,
         }
+    }
+
+    pub fn kind_str(&self) -> &'static str {
+        self.tag().into()
     }
 
     pub fn encode_payload(&self) -> Vec<u8> {
@@ -54,35 +89,45 @@ impl ProposalKind {
                 buf
             }
             Self::ApproveServerUpdate => vec![],
-            Self::ReplaceOperator { new_pubkey } => {
+            Self::ReplaceOperator {
+                old_operator_id,
+                new_pubkey,
+            } => {
                 let len = u32::try_from(new_pubkey.len()).expect("pubkey len fits in u32");
-                let mut buf = Vec::with_capacity(4 + new_pubkey.len());
+                let mut buf = Vec::with_capacity(4 + 4 + new_pubkey.len());
+                buf.extend_from_slice(&old_operator_id.to_be_bytes());
                 buf.extend_from_slice(&len.to_be_bytes());
                 buf.extend_from_slice(new_pubkey);
                 buf
             }
             Self::UpdateShamirParameters { new_n } => vec![*new_n],
-            Self::ApprovePersistentGrant { payload_bytes } => payload_bytes.clone(),
-            Self::ApproveOneOffTransaction { payload_bytes } => payload_bytes.clone(),
+            Self::ApprovePersistentGrant { payload_bytes }
+            | Self::ApproveOneOffTransaction { payload_bytes } => payload_bytes.clone(),
         }
     }
 
     /// Key-rotation proposals require every operator to approve (§3.3).
     #[must_use]
     pub fn requires_full_quorum(kind: &str) -> bool {
-        matches!(kind, "replace_operator" | "update_shamir_parameters")
+        matches!(
+            kind.parse::<ProposalKindTag>(),
+            Ok(ProposalKindTag::ReplaceOperator | ProposalKindTag::UpdateShamirParameters)
+        )
     }
 
     pub fn decode(kind: &str, payload: &[u8]) -> Result<Self, String> {
-        match kind {
-            "approve_sdk_client" => {
+        let tag = kind
+            .parse::<ProposalKindTag>()
+            .map_err(|_| format!("unknown proposal kind: {kind}"))?;
+        match tag {
+            ProposalKindTag::ApproveSdkClient => {
                 let bytes = <[u8; 4]>::try_from(payload)
                     .map_err(|_| "invalid payload for approve_sdk_client".to_owned())?;
                 Ok(Self::ApproveSdkClient {
                     client_id: i32::from_be_bytes(bytes),
                 })
             }
-            "grant_wallet_access" => {
+            ProposalKindTag::GrantWalletAccess => {
                 let bytes = <[u8; 8]>::try_from(payload)
                     .map_err(|_| "invalid payload for grant_wallet_access".to_owned())?;
                 Ok(Self::GrantWalletAccess {
@@ -90,9 +135,13 @@ impl ProposalKind {
                     client_id: i32::from_be_bytes(bytes[4..].try_into().unwrap()),
                 })
             }
-            "approve_server_update" => Ok(Self::ApproveServerUpdate),
-            "replace_operator" => {
-                let (len_bytes, rest) = payload
+            ProposalKindTag::ApproveServerUpdate => Ok(Self::ApproveServerUpdate),
+            ProposalKindTag::ReplaceOperator => {
+                let (id_bytes, rest) = payload
+                    .split_first_chunk::<4>()
+                    .ok_or_else(|| "replace_operator payload too short".to_owned())?;
+                let old_operator_id = i32::from_be_bytes(*id_bytes);
+                let (len_bytes, rest) = rest
                     .split_first_chunk::<4>()
                     .ok_or_else(|| "replace_operator payload too short".to_owned())?;
                 let len = u32::from_be_bytes(*len_bytes);
@@ -101,21 +150,23 @@ impl ProposalKind {
                     .get(..len)
                     .ok_or_else(|| "replace_operator payload truncated".to_owned())?
                     .to_vec();
-                Ok(Self::ReplaceOperator { new_pubkey })
+                Ok(Self::ReplaceOperator {
+                    old_operator_id,
+                    new_pubkey,
+                })
             }
-            "update_shamir_parameters" => {
+            ProposalKindTag::UpdateShamirParameters => {
                 let &[new_n] = payload else {
                     return Err("invalid payload for update_shamir_parameters".to_owned());
                 };
                 Ok(Self::UpdateShamirParameters { new_n })
             }
-            "approve_persistent_grant" => Ok(Self::ApprovePersistentGrant {
+            ProposalKindTag::ApprovePersistentGrant => Ok(Self::ApprovePersistentGrant {
                 payload_bytes: payload.to_vec(),
             }),
-            "approve_one_off_transaction" => Ok(Self::ApproveOneOffTransaction {
+            ProposalKindTag::ApproveOneOffTransaction => Ok(Self::ApproveOneOffTransaction {
                 payload_bytes: payload.to_vec(),
             }),
-            other => Err(format!("unknown proposal kind: {other}")),
         }
     }
 }
@@ -169,6 +220,7 @@ pub struct ProposalManager {
     pub(crate) db: db::DatabasePool,
     pub(crate) vault: ActorRef<Vault>,
     pub(crate) evm: ActorRef<EvmActor>,
+    pub(crate) vault_coordinator: ActorRef<VaultCoordinator>,
 }
 
 impl ProposalManager {
@@ -176,8 +228,14 @@ impl ProposalManager {
         db: db::DatabasePool,
         vault: ActorRef<Vault>,
         evm: ActorRef<EvmActor>,
+        vault_coordinator: ActorRef<VaultCoordinator>,
     ) -> Self {
-        Self { db, vault, evm }
+        Self {
+            db,
+            vault,
+            evm,
+            vault_coordinator,
+        }
     }
 }
 
@@ -496,8 +554,7 @@ impl ProposalManager {
             .filter(schema::recovery_wakeup_request::cancelled_at.is_null())
             .set((
                 schema::recovery_wakeup_request::cancelled_by.eq(Some(operator_id)),
-                schema::recovery_wakeup_request::cancelled_at
-                    .eq(Some(SqliteTimestamp::now())),
+                schema::recovery_wakeup_request::cancelled_at.eq(Some(SqliteTimestamp::now())),
             ))
             .execute(&mut conn)
             .await?;
@@ -530,7 +587,7 @@ impl ProposalManager {
                 other => Error::DatabaseQuery(other),
             })?;
 
-        if proposal.kind != "replace_operator" {
+        if proposal.kind.parse::<ProposalKindTag>() != Ok(ProposalKindTag::ReplaceOperator) {
             return Err(Error::NotAllowedForRecoveryOperator);
         }
 
@@ -651,9 +708,7 @@ impl ProposalManager {
     const WAKEUP_DELAY_SECS: i32 = 14 * 24 * 60 * 60;
 
     /// Returns true when an uncancelled wakeup request has passed the 14-day dispute window.
-    async fn is_recovery_active_conn(
-        conn: &mut db::DatabaseConnection,
-    ) -> Result<bool, Error> {
+    async fn is_recovery_active_conn(conn: &mut db::DatabaseConnection) -> Result<bool, Error> {
         let count: i64 = schema::recovery_wakeup_request::table
             .filter(schema::recovery_wakeup_request::cancelled_at.is_null())
             .filter(
@@ -671,9 +726,7 @@ impl ProposalManager {
     }
 
     /// Returns true when there is any uncancelled wakeup request (pending or active).
-    async fn has_uncancelled_wakeup(
-        conn: &mut db::DatabaseConnection,
-    ) -> Result<bool, Error> {
+    async fn has_uncancelled_wakeup(conn: &mut db::DatabaseConnection) -> Result<bool, Error> {
         let count: i64 = schema::recovery_wakeup_request::table
             .filter(schema::recovery_wakeup_request::cancelled_at.is_null())
             .count()
@@ -694,11 +747,15 @@ impl ProposalManager {
                 client_id,
             } => self.execute_grant_wallet_access(wallet_id, client_id).await,
             ProposalKind::ApproveServerUpdate => Ok(()),
-            ProposalKind::ReplaceOperator { new_pubkey } => {
-                self.execute_replace_operator(new_pubkey).await
+            ProposalKind::ReplaceOperator {
+                old_operator_id,
+                new_pubkey,
+            } => {
+                self.execute_replace_operator(old_operator_id, new_pubkey)
+                    .await
             }
             ProposalKind::UpdateShamirParameters { new_n } => {
-                self.execute_update_shamir_parameters(new_n)
+                self.execute_update_shamir_parameters(new_n).await
             }
             ProposalKind::ApprovePersistentGrant { payload_bytes } => {
                 self.execute_approve_persistent_grant(payload_bytes).await
@@ -731,26 +788,45 @@ impl ProposalManager {
         Ok(())
     }
 
-    async fn execute_replace_operator(&self, new_pubkey: Vec<u8>) -> Result<(), Error> {
+    /// Updates the old operator's public key in-place (preserving their DB id and history),
+    /// removes their old Shamir share, then begins a coordinated re-key (§3.3).
+    async fn execute_replace_operator(
+        &self,
+        old_operator_id: i32,
+        new_pubkey: Vec<u8>,
+    ) -> Result<(), Error> {
         let mut conn = self.db.get().await.map_err(Error::DatabaseConnection)?;
-        diesel::insert_into(schema::operator_identity::table)
-            .values(schema::operator_identity::public_key.eq(&new_pubkey))
+
+        diesel::update(schema::operator_identity::table)
+            .filter(schema::operator_identity::id.eq(old_operator_id))
+            .set(schema::operator_identity::public_key.eq(&new_pubkey))
             .execute(&mut conn)
             .await
-            .map_err(|e| Error::ExecutionFailed(format!("replace operator: {e}")))?;
+            .map_err(|e| Error::ExecutionFailed(format!("update operator pubkey: {e}")))?;
+
+        // Remove the old Shamir share; finalize_rekey will store a fresh one.
+        diesel::delete(schema::operator::table)
+            .filter(schema::operator::id.eq(Some(old_operator_id)))
+            .execute(&mut conn)
+            .await
+            .map_err(|e| Error::ExecutionFailed(format!("remove old operator share: {e}")))?;
+
+        drop(conn);
+
+        self.vault_coordinator
+            .ask(StartRekey {})
+            .await
+            .map_err(|e| Error::ExecutionFailed(format!("start rekey: {e}")))?;
+
         Ok(())
     }
 
-    #[expect(
-        clippy::unused_self,
-        clippy::unnecessary_wraps,
-        reason = "signature must match other execute_* methods"
-    )]
-    fn execute_update_shamir_parameters(&self, new_n: u8) -> Result<(), Error> {
-        warn!(
-            new_n,
-            "UpdateShamirParameters approved; Shamir re-keying must be performed out-of-band"
-        );
+    /// Triggers a Shamir re-key with the current operator set (§3.3).
+    async fn execute_update_shamir_parameters(&self, _new_n: u8) -> Result<(), Error> {
+        self.vault_coordinator
+            .ask(StartRekey {})
+            .await
+            .map_err(|e| Error::ExecutionFailed(format!("start rekey: {e}")))?;
         Ok(())
     }
 
