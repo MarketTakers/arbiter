@@ -22,7 +22,7 @@ use hmac::{KeyInit as _, Mac as _};
 use kameo::{Actor, Reply, actor::ActorRef, messages};
 use kameo_actors::message_bus::{MessageBus, Publish};
 use strum::{EnumDiscriminants, IntoDiscriminant};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub mod events {
 
@@ -46,6 +46,8 @@ pub enum Error {
     Sealed,
     #[error("Invalid key provided")]
     InvalidKey,
+    #[error("Vault locked: too many failed unseal attempts")]
+    LockedOut,
 
     #[error("Requested aead entry not found")]
     NotFound,
@@ -79,6 +81,8 @@ enum State {
     Unsealed(Unsealed),
 }
 
+const MAX_UNSEAL_ATTEMPTS: u32 = 5;
+
 /// Manages vault root key and tracks current state of the vault (bootstrapped/unbootstrapped, sealed/unsealed).
 ///
 /// Provides API for encrypting and decrypting data using the vault root key.
@@ -88,6 +92,7 @@ pub struct Vault {
     db: db::DatabasePool,
     state: State,
     events: ActorRef<MessageBus>,
+    unseal_failures: u32,
 }
 
 #[messages]
@@ -110,7 +115,7 @@ impl Vault {
             }
         };
 
-        Ok(Self { db, state, events })
+        Ok(Self { db, state, events, unseal_failures: 0 })
     }
 
     // Exclusive transaction to avoid race condtions if multiple vaults write
@@ -219,6 +224,10 @@ impl Vault {
 
     #[message]
     pub async fn try_unseal(&mut self, seal_key_raw: SafeCell<Vec<u8>>) -> Result<(), Error> {
+        if self.unseal_failures >= MAX_UNSEAL_ATTEMPTS {
+            return Err(Error::LockedOut);
+        }
+
         let State::Sealed {
             root_key_history_id,
         } = &self.state
@@ -251,13 +260,27 @@ impl Vault {
                 Error::BrokenDatabase
             })?;
 
-        seal_key
+        if seal_key
             .decrypt_in_place(&nonce, v1::ROOT_KEY_TAG, &mut root_key)
-            .map_err(|err| {
-                error!(?err, "Failed to unseal root key: invalid seal key");
-                Error::InvalidKey
-            })?;
+            .is_err()
+        {
+            self.unseal_failures += 1;
+            if self.unseal_failures >= MAX_UNSEAL_ATTEMPTS {
+                error!(
+                    attempts = self.unseal_failures,
+                    "Vault locked: maximum failed unseal attempts reached"
+                );
+            } else {
+                warn!(
+                    attempts = self.unseal_failures,
+                    remaining = MAX_UNSEAL_ATTEMPTS - self.unseal_failures,
+                    "Failed unseal attempt"
+                );
+            }
+            return Err(Error::InvalidKey);
+        }
 
+        self.unseal_failures = 0;
         self.state = State::Unsealed(Unsealed {
             root_key_history_id: current_key.id,
             root_key: KeyCell::try_from(root_key).map_err(|err| {
