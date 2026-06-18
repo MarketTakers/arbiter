@@ -9,6 +9,7 @@ use crate::{
 };
 use arbiter_crypto::authn::{self, AuthChallenge, OPERATOR_CONTEXT};
 use arbiter_proto::transport::Bi;
+use zeroize::Zeroizing;
 
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl};
 use diesel_async::RunQueryDsl;
@@ -16,13 +17,13 @@ use tracing::error;
 
 pub(super) struct ChallengeRequest {
     pub(super) pubkey: authn::PublicKey,
-    pub(super) bootstrap_token: Option<String>,
+    pub(super) bootstrap_token: Option<Zeroizing<String>>,
 }
 
 pub struct ChallengeContext {
     pub(super) challenge: AuthChallenge,
     pub(super) pubkey: authn::PublicKey,
-    pub(super) bootstrap_token: Option<String>,
+    pub(super) bootstrap_token: Option<Zeroizing<String>>,
 }
 
 pub(super) struct ChallengeSolution {
@@ -152,15 +153,13 @@ where
         }
 
         // Resolve client id: bootstrap (consume token + register) or lookup
-        let id = match bootstrap_token {
+        let id = match bootstrap_token.clone() {
             Some(token) => {
                 let token_ok: bool = self
                     .conn
                     .actors
                     .bootstrapper
-                    .ask(ConsumeToken {
-                        token: token.clone(),
-                    })
+                    .ask(ConsumeToken { token })
                     .await
                     .map_err(|e| {
                         error!(?e, "Failed to consume bootstrap token");

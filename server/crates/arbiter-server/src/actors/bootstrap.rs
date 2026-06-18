@@ -7,6 +7,7 @@ use kameo::{Actor, messages};
 use rand::{RngExt, distr::Alphanumeric, make_rng, rngs::StdRng};
 use subtle::ConstantTimeEq as _;
 use thiserror::Error;
+use zeroize::Zeroizing;
 
 const TOKEN_LENGTH: usize = 64;
 
@@ -40,7 +41,7 @@ pub enum Error {
 
 #[derive(Actor)]
 pub struct Bootstrapper {
-    token: Option<String>,
+    token: Option<Zeroizing<String>>,
 }
 
 impl Bootstrapper {
@@ -56,7 +57,7 @@ impl Bootstrapper {
 
         let token = if row_count == 0 {
             let token = generate_token().await?;
-            Some(token)
+            Some(Zeroizing::new(token))
         } else {
             None
         };
@@ -65,10 +66,8 @@ impl Bootstrapper {
     }
 }
 
-#[messages]
 impl Bootstrapper {
-    #[message]
-    pub fn is_correct_token(&self, token: String) -> bool {
+    fn is_correct_token(&self, token: &str) -> bool {
         self.token.as_ref().is_some_and(|expected| {
             let expected_bytes = expected.as_bytes();
             let token_bytes = token.as_bytes();
@@ -77,10 +76,13 @@ impl Bootstrapper {
             bool::from(choice)
         })
     }
+}
 
+#[messages]
+impl Bootstrapper {
     #[message]
-    pub fn consume_token(&mut self, token: String) -> bool {
-        if self.is_correct_token(token) {
+    pub fn consume_token(&mut self, token: Zeroizing<String>) -> bool {
+        if self.is_correct_token(&token) {
             self.token = None;
             true
         } else {
@@ -93,6 +95,6 @@ impl Bootstrapper {
 impl Bootstrapper {
     #[message]
     pub fn get_token(&self) -> Option<String> {
-        self.token.clone()
+        self.token.as_ref().map(|token| token.to_string())
     }
 }
