@@ -1,7 +1,7 @@
 use super::{OutOfBand, OperatorConnection};
 use crate::{
     actors::{
-        flow_coordinator::client_connect_approval::ClientApprovalController,
+        flow_coordinator::client_connect_approval::{ClientApprovalAnswer, ClientApprovalController},
         operator_registry::ConnectOperator,
     },
     peers::client::ClientProfile,
@@ -88,6 +88,7 @@ impl OperatorSession {
                 actor = "operator",
                 event = "failed to announce new client connection"
             );
+            let _ = controller.tell(ClientApprovalAnswer { approved: false }).await;
             return;
         }
 
