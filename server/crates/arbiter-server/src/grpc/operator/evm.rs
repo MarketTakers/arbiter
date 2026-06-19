@@ -217,6 +217,11 @@ async fn handle_sign_transaction(
                 result: Some(vet_error.convert()),
             }
         }
+        Err(kameo::error::SendError::HandlerError(
+            SessionSignTransactionError::ClientNotConnected,
+        )) => {
+            return Err(Status::permission_denied("client not connected"));
+        }
         Err(kameo::error::SendError::HandlerError(SessionSignTransactionError::Internal)) => {
             EvmSignTransactionResponse {
                 result: Some(EvmSignTransactionResult::Error(

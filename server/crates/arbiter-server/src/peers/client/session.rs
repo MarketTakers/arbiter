@@ -83,7 +83,7 @@ impl Actor for ClientSession {
         args.props
             .actors
             .flow_coordinator
-            .ask(RegisterClient { actor: this })
+            .ask(RegisterClient { client_id: args.client_id, actor: this })
             .await
             .map_err(|_| Error::ConnectionRegistrationFailed)?;
         Ok(args)

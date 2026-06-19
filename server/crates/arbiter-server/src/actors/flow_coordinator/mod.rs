@@ -20,6 +20,8 @@ pub mod client_connect_approval;
 
 pub struct FlowCoordinator {
     pub clients: HashMap<ActorId, ActorRef<ClientSession>>,
+    /// Maps DB client_id → ActorId for fast connected-client lookup.
+    client_ids: HashMap<i32, ActorId>,
     operator_registry: ActorRef<OperatorRegistry>,
 }
 
@@ -27,6 +29,7 @@ impl FlowCoordinator {
     pub fn new(operator_registry: ActorRef<OperatorRegistry>) -> Self {
         Self {
             clients: HashMap::default(),
+            client_ids: HashMap::default(),
             operator_registry,
         }
     }
@@ -48,6 +51,7 @@ impl Actor for FlowCoordinator {
         _: ActorStopReason,
     ) -> Result<ControlFlow<ActorStopReason>, Self::Error> {
         if self.clients.remove(&id).is_some() {
+            self.client_ids.retain(|_, actor_id| *actor_id != id);
             info!(
                 ?id,
                 actor = "FlowCoordinator",
@@ -75,12 +79,19 @@ impl FlowCoordinator {
     #[message(ctx)]
     pub async fn register_client(
         &mut self,
+        client_id: i32,
         actor: ActorRef<ClientSession>,
         ctx: &mut Context<Self, ()>,
     ) {
-        info!(id = %actor.id(), actor = "FlowCoordinator", event = "client.connected");
+        info!(id = %actor.id(), client_id, actor = "FlowCoordinator", event = "client.connected");
         ctx.actor_ref().link(&actor).await;
+        self.client_ids.insert(client_id, actor.id());
         self.clients.insert(actor.id(), actor);
+    }
+
+    #[message]
+    pub fn is_client_connected(&self, client_id: i32) -> bool {
+        self.client_ids.contains_key(&client_id)
     }
 
     #[message(ctx)]
