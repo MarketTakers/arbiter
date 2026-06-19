@@ -4,7 +4,7 @@ use crate::{
         ClientSignTransaction, Generate, ListWallets, OperatorCreateGrant, OperatorListGrants,
         SignTransactionError as EvmSignError,
     },
-    actors::flow_coordinator::client_connect_approval::ClientApprovalAnswer,
+    actors::flow_coordinator::{IsClientConnected, client_connect_approval::ClientApprovalAnswer},
     actors::vault::VaultState,
     db::models::{EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata},
     evm::policies::{Grant, SpecificGrant},
@@ -15,12 +15,15 @@ use alloy::{consensus::TxEip1559, primitives::Address, signers::Signature};
 use diesel::{ExpressionMethods as _, QueryDsl as _, SelectableHelper};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use kameo::{error::SendError, messages, prelude::Context};
-use tracing::error;
+use tracing::{error, info, warn};
 
 #[derive(Debug, Error)]
 pub enum SignTransactionError {
     #[error("Policy evaluation failed")]
     Vet(#[from] crate::evm::VetError),
+
+    #[error("Client not connected")]
+    ClientNotConnected,
 
     #[error("Internal signing error")]
     Internal,
@@ -141,6 +144,21 @@ impl OperatorSession {
         wallet_address: Address,
         transaction: TxEip1559,
     ) -> Result<Signature, SignTransactionError> {
+        let connected = self
+            .props
+            .actors
+            .flow_coordinator
+            .ask(IsClientConnected { client_id })
+            .await
+            .unwrap_or(false);
+
+        if !connected {
+            warn!(client_id, "operator attempted to sign for disconnected client");
+            return Err(SignTransactionError::ClientNotConnected);
+        }
+
+        info!(client_id, event = "sign_transaction", "operator.sign_transaction");
+
         match self
             .props
             .actors
