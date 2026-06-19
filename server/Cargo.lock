@@ -788,7 +788,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "x25519-dalek 2.0.1",
- "zeroize",
 ]
 
 [[package]]

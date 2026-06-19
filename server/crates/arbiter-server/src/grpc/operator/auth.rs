@@ -18,7 +18,6 @@ use arbiter_proto::{
 use async_trait::async_trait;
 use tonic::Status;
 use tracing::warn;
-use zeroize::Zeroizing;
 
 pub(super) struct AuthTransportAdapter<'a> {
     pub(super) bi: &'a mut GrpcBi<OperatorRequest, OperatorResponse>,
@@ -172,7 +171,7 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
 
                 Some(auth::Inbound::AuthChallengeRequest {
                     pubkey,
-                    bootstrap_token: bootstrap_token.map(Zeroizing::new),
+                    bootstrap_token: bootstrap_token.map(String::into_bytes),
                 })
             }
             AuthRequestPayload::ChallengeSolution(ProtoAuthChallengeSolution { signature }) => {
