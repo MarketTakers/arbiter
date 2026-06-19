@@ -174,7 +174,7 @@ pub async fn bootstrap_token_auth() {
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
             pubkey: verifying_key(&new_key).into(),
-            bootstrap_token: Some(token),
+            bootstrap_token: Some(token.into_bytes()),
         })
         .await
         .unwrap();
@@ -231,7 +231,7 @@ pub async fn bootstrap_invalid_token_auth() {
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
             pubkey: verifying_key(&new_key).into(),
-            bootstrap_token: Some("invalid_token".to_owned()),
+            bootstrap_token: Some(b"invalid_token".to_vec()),
         })
         .await
         .unwrap();

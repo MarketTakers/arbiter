@@ -1,7 +1,6 @@
 use super::{Credentials, OperatorConnection};
 use arbiter_crypto::authn::{self, AuthChallenge};
 use arbiter_proto::transport::Bi;
-use zeroize::Zeroizing;
 
 use state::{
     AuthContext, AuthError, AuthEvents, AuthStateMachine, AuthStates, ChallengeRequest,
@@ -15,7 +14,7 @@ mod state;
 pub enum Inbound {
     AuthChallengeRequest {
         pubkey: authn::PublicKey,
-        bootstrap_token: Option<Zeroizing<String>>,
+        bootstrap_token: Option<Vec<u8>>,
     },
     AuthChallengeSolution {
         signature: Vec<u8>,
