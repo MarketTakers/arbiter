@@ -14,6 +14,8 @@ use kameo::actor::{ActorRef, Spawn as _};
 use std::collections::{HashMap, HashSet};
 use tokio::task::JoinSet;
 
+const TEST_AAD: &[u8] = b"test-aad";
+
 async fn write_concurrently(
     actor: ActorRef<Vault>,
     prefix: &'static str,
@@ -27,6 +29,7 @@ async fn write_concurrently(
             let id = actor
                 .ask(CreateNew {
                     plaintext: SafeCell::new(plaintext.clone()),
+                    aad: TEST_AAD.to_vec(),
                 })
                 .await
                 .unwrap();
@@ -120,7 +123,7 @@ async fn insert_failure_does_not_create_partial_row() {
     drop(conn);
 
     let err = actor
-        .create_new(SafeCell::new(b"should fail".to_vec()))
+        .create_new(SafeCell::new(b"should fail".to_vec()), TEST_AAD.to_vec())
         .await
         .unwrap_err();
     assert!(matches!(err, Error::DatabaseTransaction(_)));
@@ -171,7 +174,7 @@ async fn decrypt_roundtrip_after_high_concurrency() {
         .unwrap();
 
     for (id, plaintext) in expected {
-        let mut decrypted = decryptor.decrypt(id).await.unwrap();
+        let mut decrypted = decryptor.decrypt(id, TEST_AAD.to_vec()).await.unwrap();
         assert_eq!(*decrypted.read(), plaintext);
     }
 }

@@ -298,8 +298,10 @@ impl Vault {
         Ok(())
     }
 
+    /// Decrypts an AEAD entry. The `aad` must match the value used at encryption time;
+    /// a mismatch causes authentication failure, preventing cross-wallet key swaps.
     #[message]
-    pub async fn decrypt(&mut self, aead_id: i32) -> Result<SafeCell<Vec<u8>>, Error> {
+    pub async fn decrypt(&mut self, aead_id: i32, aad: Vec<u8>) -> Result<SafeCell<Vec<u8>>, Error> {
         let Unsealed { root_key, .. } = Self::expect_unsealed(&mut self.state)?;
 
         let row: models::AeadEncrypted = {
@@ -321,13 +323,15 @@ impl Vault {
             Error::BrokenDatabase
         })?;
         let mut output = SafeCell::new(row.ciphertext);
-        root_key.decrypt_in_place(&nonce, v1::TAG, &mut output)?;
+        root_key.decrypt_in_place(&nonce, &aad, &mut output)?;
         Ok(output)
     }
 
+    /// Creates a new `aead_encrypted` entry and returns its ID.
+    /// The `aad` is bound into the ciphertext and must be reproduced exactly at decryption time.
     // Creates new `aead_encrypted` entry in the database and returns it's ID
     #[message]
-    pub async fn create_new(&mut self, mut plaintext: SafeCell<Vec<u8>>) -> Result<i32, Error> {
+    pub async fn create_new(&mut self, mut plaintext: SafeCell<Vec<u8>>, aad: Vec<u8>) -> Result<i32, Error> {
         let Unsealed {
             root_key,
             root_key_history_id,
@@ -339,7 +343,7 @@ impl Vault {
 
         let mut ciphertext_buffer = plaintext.write();
         let ciphertext_buffer: &mut Vec<u8> = ciphertext_buffer.as_mut();
-        root_key.encrypt_in_place(&nonce, v1::TAG, &mut *ciphertext_buffer)?;
+        root_key.encrypt_in_place(&nonce, &aad, &mut *ciphertext_buffer)?;
 
         let ciphertext = std::mem::take(ciphertext_buffer);
 
@@ -474,7 +478,7 @@ mod tests {
         assert_eq!(root_row.data_encryption_nonce, n2.to_vec());
 
         let id = actor
-            .create_new(SafeCell::new(b"post-interleave".to_vec()))
+            .create_new(SafeCell::new(b"post-interleave".to_vec()), b"test-aad".to_vec())
             .await
             .unwrap();
         let row: models::AeadEncrypted = schema::aead_encrypted::table
