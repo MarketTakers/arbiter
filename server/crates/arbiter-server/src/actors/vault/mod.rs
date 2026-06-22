@@ -63,6 +63,9 @@ pub enum Error {
 
     #[error("Broken database")]
     BrokenDatabase,
+
+    #[error("Integrity key version mismatch: envelope uses key {envelope}, current key is {current}")]
+    KeyVersionMismatch { envelope: i32, current: i32 },
 }
 
 struct Unsealed {
@@ -393,7 +396,10 @@ impl Vault {
         } = Self::expect_unsealed(&mut self.state)?;
 
         if *root_key_history_id != key_version {
-            return Ok(false);
+            return Err(Error::KeyVersionMismatch {
+                envelope: key_version,
+                current: *root_key_history_id,
+            });
         }
 
         let mut hmac = root_key.0.read_inline(|k| {
