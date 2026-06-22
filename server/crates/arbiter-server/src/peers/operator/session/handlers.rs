@@ -6,7 +6,10 @@ use crate::{
     },
     actors::flow_coordinator::{IsClientConnected, client_connect_approval::ClientApprovalAnswer},
     actors::vault::VaultState,
-    db::models::{EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata},
+    db::{
+        models::{EvmWalletAccess, NewEvmWalletAccess, ProgramClient, ProgramClientMetadata},
+        schema::program_client,
+    },
     evm::policies::{Grant, SpecificGrant},
 };
 use arbiter_crypto::authn;
@@ -144,6 +147,14 @@ impl OperatorSession {
         wallet_address: Address,
         transaction: TxEip1559,
     ) -> Result<Signature, SignTransactionError> {
+        if !self.approved_client_ids.contains(&client_id) {
+            warn!(
+                client_id,
+                "operator attempted to sign for client not in its approved set"
+            );
+            return Err(SignTransactionError::ClientNotConnected);
+        }
+
         let connected = self
             .props
             .actors
@@ -153,6 +164,7 @@ impl OperatorSession {
             .unwrap_or(false);
 
         if !connected {
+            self.approved_client_ids.remove(&client_id);
             warn!(client_id, "operator attempted to sign for disconnected client");
             return Err(SignTransactionError::ClientNotConnected);
         }
@@ -266,6 +278,30 @@ impl OperatorSession {
             })?;
 
         ctx.actor_ref().unlink(&pending_approval.controller).await;
+
+        if approved {
+            let pubkey_bytes = pending_approval.pubkey.to_bytes();
+            match self.props.db.get().await {
+                Ok(mut conn) => {
+                    match program_client::table
+                        .filter(program_client::public_key.eq(pubkey_bytes.as_slice()))
+                        .select(program_client::id)
+                        .first::<i32>(&mut conn)
+                        .await
+                    {
+                        Ok(client_id) => {
+                            self.approved_client_ids.insert(client_id);
+                        }
+                        Err(err) => {
+                            error!(?err, "Failed to look up client_id for approved pubkey");
+                        }
+                    }
+                }
+                Err(err) => {
+                    error!(?err, "DB pool error after client approval");
+                }
+            }
+        }
 
         Ok(())
     }
