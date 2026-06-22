@@ -1,7 +1,7 @@
 use super::{OutOfBand, OperatorConnection};
 use crate::{
     actors::{
-        flow_coordinator::client_connect_approval::ClientApprovalController,
+        flow_coordinator::{GetConnectedClientIds, client_connect_approval::ClientApprovalController},
         operator_registry::ConnectOperator,
     },
     peers::client::ClientProfile,
@@ -10,7 +10,7 @@ use arbiter_crypto::authn;
 use arbiter_proto::transport::Sender;
 
 use kameo::{Actor, actor::ActorRef, messages};
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::{HashMap, HashSet}};
 use thiserror::Error;
 use tracing::error;
 
@@ -54,6 +54,10 @@ pub struct OperatorSession {
     sender: Box<dyn Sender<OutOfBand>>,
 
     pending_client_approvals: HashMap<Vec<u8>, PendingClientApproval>,
+    /// DB client_ids this operator session is allowed to sign for.
+    /// Seeded from currently-connected clients on start, then updated as
+    /// approvals are granted or denied during the session lifetime.
+    approved_client_ids: HashSet<i32>,
 }
 
 pub mod handlers;
@@ -64,6 +68,7 @@ impl OperatorSession {
             props,
             sender,
             pending_client_approvals: HashMap::default(),
+            approved_client_ids: HashSet::default(),
         }
     }
 }
@@ -106,7 +111,7 @@ impl Actor for OperatorSession {
 
     type Error = Error;
 
-    async fn on_start(args: Self::Args, this: ActorRef<Self>) -> Result<Self, Self::Error> {
+    async fn on_start(mut args: Self::Args, this: ActorRef<Self>) -> Result<Self, Self::Error> {
         args.props
             .actors
             .operator_registry
@@ -121,6 +126,16 @@ impl Actor for OperatorSession {
                 );
                 Error::internal("Failed to register operator connection with operator registry")
             })?;
+
+        // Seed approved set with clients already connected when this session starts.
+        // New clients will be added via handle_new_client_approve as they are approved.
+        match args.props.actors.flow_coordinator.ask(GetConnectedClientIds {}).await {
+            Ok(ids) => args.approved_client_ids.extend(ids),
+            Err(err) => {
+                error!(?err, "Failed to fetch connected client IDs on operator session start");
+            }
+        }
+
         Ok(args)
     }
 

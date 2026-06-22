@@ -94,6 +94,13 @@ impl FlowCoordinator {
         self.client_ids.contains_key(&client_id)
     }
 
+    /// Returns the DB client_ids of all currently connected SDK clients.
+    /// Used by operator sessions on startup to seed their approved-client set.
+    #[message]
+    pub fn get_connected_client_ids(&self) -> Vec<i32> {
+        self.client_ids.keys().copied().collect()
+    }
+
     #[message(ctx)]
     pub async fn request_client_approval(
         &mut self,
