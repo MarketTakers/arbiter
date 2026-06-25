@@ -334,7 +334,7 @@ mod tests {
 
     /// Regression test: revocation must delete by access-entry `id`, not by `wallet_id`.
     ///
-    /// Before the fix, revoking entry_id=1 would delete all rows where wallet_id=1,
+    /// Before the fix, revoking `entry_id=1` would delete all rows where `wallet_id=1`,
     /// wiping out every client's access to wallet #1.
     #[tokio::test]
     async fn revoke_deletes_by_entry_id_not_wallet_id() {
@@ -395,10 +395,10 @@ mod tests {
         assert_eq!(still_there, 1, "unrelated entry must not be deleted");
     }
 
-    /// Regression test: when entry_id and wallet_id differ, only the correct row is removed.
+    /// Regression test: when `entry_id` and `wallet_id` differ, only the correct row is removed.
     ///
-    /// This specifically catches the case where entry.id=5 and wallet_id=1 are different values;
-    /// the old bug would delete by wallet_id, potentially matching a completely different entry.
+    /// This specifically catches the case where `entry.id=5` and `wallet_id=1` are different values;
+    /// the old bug would delete by `wallet_id`, potentially matching a completely different entry.
     #[tokio::test]
     async fn revoke_with_mismatched_wallet_and_entry_ids() {
         use crate::db::models::EvmWalletAccess;
