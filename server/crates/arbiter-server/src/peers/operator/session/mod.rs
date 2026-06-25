@@ -54,7 +54,7 @@ pub struct OperatorSession {
     sender: Box<dyn Sender<OutOfBand>>,
 
     pending_client_approvals: HashMap<Vec<u8>, PendingClientApproval>,
-    /// DB client_ids this operator session is allowed to sign for.
+    /// DB `client_ids` this operator session is allowed to sign for.
     /// Seeded from currently-connected clients on start, then updated as
     /// approvals are granted or denied during the session lifetime.
     approved_client_ids: HashSet<i32>,

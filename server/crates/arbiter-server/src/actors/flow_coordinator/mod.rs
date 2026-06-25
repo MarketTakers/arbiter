@@ -20,7 +20,7 @@ pub mod client_connect_approval;
 
 pub struct FlowCoordinator {
     pub clients: HashMap<ActorId, ActorRef<ClientSession>>,
-    /// Maps DB client_id → ActorId for fast connected-client lookup.
+    /// Maps DB `client_id` → `ActorId` for fast connected-client lookup.
     client_ids: HashMap<i32, ActorId>,
     operator_registry: ActorRef<OperatorRegistry>,
 }
@@ -94,7 +94,7 @@ impl FlowCoordinator {
         self.client_ids.contains_key(&client_id)
     }
 
-    /// Returns the DB client_ids of all currently connected SDK clients.
+    /// Returns the DB `client_ids` of all currently connected SDK clients.
     /// Used by operator sessions on startup to seed their approved-client set.
     #[message]
     pub fn get_connected_client_ids(&self) -> Vec<i32> {
