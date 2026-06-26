@@ -15,17 +15,29 @@ message UnsealEncryptedKey {
   bytes associated_data = 3;
 }
 
+message ContributePassphrase {
+  bytes passphrase = 1;
+}
+
+message ContributeRecoveryPassphrase {
+  int32 recovery_operator_id = 1;
+  bytes passphrase            = 2;
+}
+
 enum UnsealResult {
   UNSEAL_RESULT_UNSPECIFIED = 0;
   UNSEAL_RESULT_SUCCESS = 1;
   UNSEAL_RESULT_INVALID_KEY = 2;
   UNSEAL_RESULT_UNBOOTSTRAPPED = 3;
+  UNSEAL_RESULT_AWAITING_CONTRIBUTIONS = 4;
 }
 
 message Request {
   oneof payload {
-    UnsealStart start = 1;
-    UnsealEncryptedKey encrypted_key = 2;
+    UnsealStart                  start                          = 1;
+    UnsealEncryptedKey           encrypted_key                  = 2;
+    ContributePassphrase         contribute_passphrase          = 3;
+    ContributeRecoveryPassphrase contribute_recovery_passphrase = 4;
   }
 }
 

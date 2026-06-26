@@ -5,20 +5,23 @@ package arbiter.operator.vault;
 import "google/protobuf/empty.proto";
 import "shared/vault.proto";
 import "operator/vault/bootstrap.proto";
+import "operator/vault/rekey.proto";
 import "operator/vault/unseal.proto";
 
 message Request {
   oneof payload {
     google.protobuf.Empty query_state = 1;
-    unseal.Request unseal = 2;
-    bootstrap.Request bootstrap = 3;
+    unseal.Request        unseal      = 2;
+    bootstrap.Request     bootstrap   = 3;
+    rekey.Request         rekey       = 4;
   }
 }
 
 message Response {
   oneof payload {
-    arbiter.shared.VaultState state = 1;
-    unseal.Response unseal = 2;
-    bootstrap.Response bootstrap = 3;
+    arbiter.shared.VaultState state     = 1;
+    unseal.Response           unseal    = 2;
+    bootstrap.Response        bootstrap = 3;
+    rekey.Response            rekey     = 4;
   }
 }

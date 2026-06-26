@@ -4,25 +4,28 @@ package arbiter.operator;
 
 import "operator/auth.proto";
 import "operator/evm.proto";
+import "operator/governance.proto";
 import "operator/sdk_client.proto";
 import "operator/vault/vault.proto";
 
 message OperatorRequest {
   int32 id = 16;
   oneof payload {
-    auth.Request auth = 1;
-    vault.Request vault = 2;
-    evm.Request evm = 3;
-    sdk_client.Request sdk_client = 4;
+    auth.Request            auth        = 1;
+    vault.Request           vault       = 2;
+    evm.Request             evm         = 3;
+    sdk_client.Request      sdk_client  = 4;
+    governance.Request      governance  = 5;
   }
 }
 
 message OperatorResponse {
   optional int32 id = 16;
   oneof payload {
-    auth.Response auth = 1;
-    vault.Response vault = 2;
-    evm.Response evm = 3;
-    sdk_client.Response sdk_client = 4;
+    auth.Response           auth        = 1;
+    vault.Response          vault       = 2;
+    evm.Response            evm         = 3;
+    sdk_client.Response     sdk_client  = 4;
+    governance.Response     governance  = 5;
   }
 }

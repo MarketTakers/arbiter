@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package arbiter.operator.vault.rekey;
+
+message ContributePassphrase {
+  bytes passphrase = 1;
+}
+
+message ContributeRecoveryPassphrase {
+  int32 recovery_operator_id = 1;
+  bytes passphrase           = 2;
+}
+
+enum RekeyResult {
+  REKEY_RESULT_UNSPECIFIED            = 0;
+  REKEY_RESULT_SUCCESS                = 1;
+  REKEY_RESULT_AWAITING_CONTRIBUTIONS = 2;
+  REKEY_RESULT_NOT_IN_PROGRESS        = 3;
+}
+
+message Request {
+  oneof payload {
+    ContributePassphrase         contribute_passphrase          = 1;
+    ContributeRecoveryPassphrase contribute_recovery_passphrase = 2;
+  }
+}
+
+message Response {
+  RekeyResult result = 1;
+}

@@ -8,15 +8,35 @@ message BootstrapEncryptedKey {
   bytes associated_data = 3;
 }
 
+message DeclareCommittee {
+  uint32 count          = 1;
+  uint32 recovery_count = 2;
+}
+
+message ContributePassphrase {
+  bytes passphrase = 1;
+}
+
+message ContributeRecoveryPassphrase {
+  int32 recovery_operator_id = 1;
+  bytes passphrase            = 2;
+}
+
 enum BootstrapResult {
   BOOTSTRAP_RESULT_UNSPECIFIED = 0;
   BOOTSTRAP_RESULT_SUCCESS = 1;
   BOOTSTRAP_RESULT_ALREADY_BOOTSTRAPPED = 2;
   BOOTSTRAP_RESULT_INVALID_KEY = 3;
+  BOOTSTRAP_RESULT_AWAITING_CONTRIBUTIONS = 4;
 }
 
 message Request {
-  BootstrapEncryptedKey encrypted_key = 2;
+  oneof payload {
+    BootstrapEncryptedKey        encrypted_key                    = 2;
+    DeclareCommittee             declare_committee                = 3;
+    ContributePassphrase         contribute_passphrase            = 4;
+    ContributeRecoveryPassphrase contribute_recovery_passphrase   = 5;
+  }
 }
 
 message Response {
