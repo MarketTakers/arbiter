@@ -3,8 +3,8 @@ use encryption::v1::{Nonce, Salt};
 
 use argon2::{Algorithm, Argon2};
 use chacha20poly1305::{
-    AeadInPlace, Key, KeyInit as _, XChaCha20Poly1305, XNonce,
-    aead::{AeadMut, Error, Payload},
+    AeadInOut, Key, KeyInit as _, XChaCha20Poly1305, XNonce,
+    aead::{Aead, Error, Payload},
 };
 use rand::{
     Rng as _, SeedableRng as _,
@@ -54,9 +54,9 @@ impl KeyCell {
     ) -> Result<(), Error> {
         let key_reader = self.0.read();
         let cipher = XChaCha20Poly1305::new(&key_reader);
-        let nonce = XNonce::from_slice(nonce.0.as_ref());
+        let nonce = XNonce::from(nonce.0);
         let buffer = buffer.as_mut();
-        cipher.encrypt_in_place(nonce, associated_data, buffer)
+        cipher.encrypt_in_place(&nonce, associated_data, buffer)
     }
     pub fn decrypt_in_place(
         &mut self,
@@ -66,10 +66,10 @@ impl KeyCell {
     ) -> Result<(), Error> {
         let key_reader = self.0.read();
         let cipher = XChaCha20Poly1305::new(&key_reader);
-        let nonce = XNonce::from_slice(nonce.0.as_ref());
+        let nonce = XNonce::from(nonce.0);
         let mut buffer = buffer.write();
         let buffer: &mut Vec<u8> = buffer.as_mut();
-        cipher.decrypt_in_place(nonce, associated_data, buffer)
+        cipher.decrypt_in_place(&nonce, associated_data, buffer)
     }
 
     pub fn encrypt(
@@ -79,11 +79,11 @@ impl KeyCell {
         plaintext: impl AsRef<[u8]>,
     ) -> Result<Vec<u8>, Error> {
         let key_reader = self.0.read();
-        let mut cipher = XChaCha20Poly1305::new(&key_reader);
-        let nonce = XNonce::from_slice(nonce.0.as_ref());
+        let cipher = XChaCha20Poly1305::new(&key_reader);
+        let nonce = XNonce::from(nonce.0);
 
         let ciphertext = cipher.encrypt(
-            nonce,
+            &nonce,
             Payload {
                 msg: plaintext.as_ref(),
                 aad: associated_data,

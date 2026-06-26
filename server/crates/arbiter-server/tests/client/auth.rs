@@ -16,7 +16,7 @@ use arbiter_server::{
 
 use diesel::{ExpressionMethods as _, NullableExpressionMethods as _, QueryDsl as _, insert_into};
 use diesel_async::RunQueryDsl;
-use ml_dsa::{KeyGen, MlDsa87, SigningKey, VerifyingKey, signature::Keypair};
+use ml_dsa::{Generate as _, MlDsa87, SigningKey, VerifyingKey, signature::Keypair};
 
 fn metadata(name: &str, description: Option<&str>, version: Option<&str>) -> ClientMetadata {
     ClientMetadata {
@@ -73,7 +73,7 @@ async fn insert_registered_client(
 
 fn sign_client_challenge(key: &SigningKey<MlDsa87>, challenge: &AuthChallenge) -> authn::Signature {
     let challenge = challenge.format();
-    key.signing_key()
+    key.expanded_key()
         .sign_deterministic(&challenge, CLIENT_CONTEXT)
         .unwrap()
         .into()
@@ -81,7 +81,7 @@ fn sign_client_challenge(key: &SigningKey<MlDsa87>, challenge: &AuthChallenge) -
 
 async fn insert_bootstrap_sentinel_operator(db: &db::DatabasePool) {
     let mut conn = db.get().await.unwrap();
-    let sentinel_key = verifying_key(&MlDsa87::key_gen(&mut rand::rng()))
+    let sentinel_key = verifying_key(&SigningKey::<MlDsa87>::generate())
         .encode()
         .0
         .to_vec();
@@ -120,7 +120,7 @@ pub async fn unregistered_pubkey_rejected() {
         connect_client(props, &mut server_transport).await;
     });
 
-    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let new_key = SigningKey::<MlDsa87>::generate();
 
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
@@ -140,7 +140,7 @@ pub async fn challenge_auth() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
 
-    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let new_key = SigningKey::<MlDsa87>::generate();
 
     Box::pin(insert_registered_client(
         &db,
@@ -206,7 +206,7 @@ pub async fn challenge_auth() {
 pub async fn metadata_unchanged_does_not_append_history() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
-    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let new_key = SigningKey::<MlDsa87>::generate();
     let requested = metadata("client", Some("desc"), Some("1.0.0"));
 
     Box::pin(insert_registered_client(
@@ -269,7 +269,7 @@ pub async fn metadata_unchanged_does_not_append_history() {
 pub async fn metadata_frozen_after_approval_ignores_reconnect_changes() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
-    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let new_key = SigningKey::<MlDsa87>::generate();
 
     Box::pin(insert_registered_client(
         &db,
@@ -360,7 +360,7 @@ pub async fn challenge_auth_rejects_integrity_tag_mismatch() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
 
-    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let new_key = SigningKey::<MlDsa87>::generate();
     let requested = metadata("client", Some("desc"), Some("1.0.0"));
 
     {

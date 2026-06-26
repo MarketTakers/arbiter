@@ -16,7 +16,7 @@ use arbiter_server::{
     },
 };
 
-use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
+use chacha20poly1305::{AeadInOut, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use kameo::actor::Spawn as _;
 use tokio::sync::oneshot;
 use x25519_dalek::{EphemeralSecret, PublicKey};

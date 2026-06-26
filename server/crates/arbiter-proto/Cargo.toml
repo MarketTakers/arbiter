@@ -9,7 +9,7 @@ license = "Apache-2.0"
 tonic.workspace = true
 tokio.workspace = true
 futures.workspace = true
-tonic-prost = "0.14.5"
+tonic-prost = "0.14.6"
 prost.workspace = true
 kameo.workspace = true
 url = "2.5.8"
@@ -22,7 +22,7 @@ async-trait.workspace = true
 tokio-stream.workspace = true
 
 [build-dependencies]
-tonic-prost-build = "0.14.5"
+tonic-prost-build = "0.14.6"
 
 [dev-dependencies]
 rstest.workspace = true

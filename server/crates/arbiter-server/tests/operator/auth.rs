@@ -14,7 +14,7 @@ use arbiter_server::{
 use async_trait::async_trait;
 use diesel::{ExpressionMethods as _, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
-use ml_dsa::{KeyGen, MlDsa87, SigningKey, VerifyingKey, signature::Keypair};
+use ml_dsa::{Generate as _, MlDsa87, SigningKey, VerifyingKey, signature::Keypair};
 use tokio::sync::mpsc;
 
 fn verifying_key(key: &SigningKey<MlDsa87>) -> VerifyingKey<MlDsa87> {
@@ -26,7 +26,7 @@ fn sign_operator_challenge(
     challenge: &AuthChallenge,
 ) -> authn::Signature {
     let challenge = challenge.format();
-    key.signing_key()
+    key.expanded_key()
         .sign_deterministic(&challenge, OPERATOR_CONTEXT)
         .unwrap()
         .into()
@@ -170,7 +170,7 @@ pub async fn bootstrap_token_auth() {
         auth::authenticate(&mut props, &mut server_transport).await
     });
 
-    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let new_key = SigningKey::<MlDsa87>::generate();
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
             pubkey: verifying_key(&new_key).into(),
@@ -227,7 +227,7 @@ pub async fn bootstrap_invalid_token_auth() {
         auth::authenticate(&mut props, &mut server_transport).await
     });
 
-    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let new_key = SigningKey::<MlDsa87>::generate();
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
             pubkey: verifying_key(&new_key).into(),
@@ -280,7 +280,7 @@ pub async fn challenge_auth() {
         .await
         .unwrap();
 
-    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let new_key = SigningKey::<MlDsa87>::generate();
     let pubkey_bytes = authn::PublicKey::from(verifying_key(&new_key)).to_bytes();
 
     {
@@ -366,7 +366,7 @@ pub async fn challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() {
         .await
         .unwrap();
 
-    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let new_key = SigningKey::<MlDsa87>::generate();
     let pubkey_bytes = authn::PublicKey::from(verifying_key(&new_key)).to_bytes();
 
     {
@@ -439,7 +439,7 @@ pub async fn challenge_auth_rejects_invalid_signature() {
         .await
         .unwrap();
 
-    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    let new_key = SigningKey::<MlDsa87>::generate();
     let pubkey_bytes = authn::PublicKey::from(verifying_key(&new_key)).to_bytes();
 
     {

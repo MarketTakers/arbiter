@@ -20,8 +20,8 @@ tonic.features = ["tls-aws-lc"]
 tokio.workspace = true
 tokio-stream.workspace = true
 thiserror.workspace = true
-http = "1.4.0"
-rustls-webpki = { version = "0.103.13", features = ["aws-lc-rs"] }
+http = "1.5.0"
+rustls-webpki = { version = "0.103.15", features = ["aws-lc-rs"] }
 async-trait.workspace = true
 chrono.workspace = true
 

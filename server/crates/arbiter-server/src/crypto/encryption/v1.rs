@@ -1,4 +1,3 @@
-use argon2::password_hash::Salt as ArgonSalt;
 use rand::{
     Rng as _, SeedableRng,
     rngs::{StdRng, SysRng},
@@ -42,7 +41,7 @@ impl<'a> TryFrom<&'a [u8]> for Nonce {
     }
 }
 
-pub type Salt = [u8; ArgonSalt::RECOMMENDED_LENGTH];
+pub type Salt = [u8; argon2::RECOMMENDED_SALT_LEN];
 
 pub fn generate_salt() -> Salt {
     let mut salt = Salt::default();

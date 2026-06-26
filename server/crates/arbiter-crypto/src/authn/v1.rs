@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use hmac::digest::Digest;
 use ml_dsa::{
-    EncodedVerifyingKey, Error, KeyGen, MlDsa87, Seed, Signature as MlDsaSignature,
-    SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey, signature::Keypair as _,
+    EncodedVerifyingKey, Error, ExpandedSigningKey, Generate, MlDsa87, Seed,
+    Signature as MlDsaSignature, SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey,
 };
 use rand::RngExt;
 
@@ -77,7 +77,10 @@ impl crate::hashing::Hashable for PublicKey {
 pub struct Signature(Box<MlDsaSignature<KeyParams>>);
 
 #[derive(Debug)]
-pub struct SigningKey(Box<MlDsaSigningKey<KeyParams>>);
+pub struct SigningKey {
+    key: Box<ExpandedSigningKey<KeyParams>>,
+    seed: Seed,
+}
 
 impl PublicKey {
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -100,24 +103,31 @@ impl Signature {
 
 impl SigningKey {
     pub fn generate() -> Self {
-        Self(Box::new(KeyParams::key_gen(&mut rand::rng())))
+        let seed = MlDsaSigningKey::<KeyParams>::generate_from_rng(&mut rand::rng()).to_seed();
+        Self {
+            key: Box::new(ExpandedSigningKey::from_seed(&seed)),
+            seed,
+        }
     }
 
     pub fn from_seed(seed: [u8; 32]) -> Self {
-        Self(Box::new(KeyParams::from_seed(&Seed::from(seed))))
+        let seed = Seed::from(seed);
+        Self {
+            key: Box::new(ExpandedSigningKey::from_seed(&seed)),
+            seed,
+        }
     }
 
     pub fn to_seed(&self) -> [u8; 32] {
-        self.0.to_seed().into()
+        self.seed.into()
     }
 
     pub fn public_key(&self) -> PublicKey {
-        self.0.verifying_key().into()
+        self.key.verifying_key().into()
     }
 
     pub fn sign_message(&self, message: &[u8], context: &[u8]) -> Result<Signature, Error> {
-        self.0
-            .signing_key()
+        self.key
             .sign_deterministic(message, context)
             .map(Into::into)
     }
@@ -141,12 +151,6 @@ impl From<MlDsaVerifyingKey<KeyParams>> for PublicKey {
 
 impl From<MlDsaSignature<KeyParams>> for Signature {
     fn from(value: MlDsaSignature<KeyParams>) -> Self {
-        Self(Box::new(value))
-    }
-}
-
-impl From<MlDsaSigningKey<KeyParams>> for SigningKey {
-    fn from(value: MlDsaSigningKey<KeyParams>) -> Self {
         Self(Box::new(value))
     }
 }
@@ -188,15 +192,15 @@ impl TryFrom<&'_ [u8]> for Signature {
 
 #[cfg(test)]
 mod tests {
-    use ml_dsa::{KeyGen, MlDsa87, signature::Keypair as _};
+    use ml_dsa::{Generate as _, MlDsa87, SigningKey as RealSigningKey, signature::Keypair as _};
 
     use crate::authn::AuthChallenge;
 
-    use super::{CLIENT_CONTEXT, PublicKey, Signature, SigningKey, OPERATOR_CONTEXT};
+    use super::{CLIENT_CONTEXT, OPERATOR_CONTEXT, PublicKey, Signature, SigningKey};
 
     #[test]
     fn public_key_round_trip_decodes() {
-        let key = MlDsa87::key_gen(&mut rand::rng());
+        let key = RealSigningKey::<MlDsa87>::generate();
         let encoded = PublicKey::from(key.verifying_key()).to_bytes();
 
         let decoded = PublicKey::try_from(encoded.as_slice()).expect("public key should decode");

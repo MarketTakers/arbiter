@@ -10,7 +10,7 @@ use crate::{
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use state::State;
 
-use chacha20poly1305::{AeadInPlace, KeyInit as _, XChaCha20Poly1305, XNonce};
+use chacha20poly1305::{AeadInOut, KeyInit as _, XChaCha20Poly1305, XNonce};
 use kameo::{Actor, error::SendError, messages, prelude::Message};
 use kameo_actors::message_bus::Register;
 use tokio::sync::oneshot;
@@ -101,14 +101,17 @@ impl VaultGate {
         ciphertext: &[u8],
         associated_data: &[u8],
     ) -> Result<SafeCell<Vec<u8>>, ()> {
-        let nonce = XNonce::from_slice(nonce);
+        let Ok(nonce) = XNonce::try_from(nonce) else {
+            error!("Encrypted key material carries a nonce of the wrong length");
+            return Err(());
+        };
 
         let cipher = XChaCha20Poly1305::new(secret.as_bytes().into());
 
         let mut key_buffer = SafeCell::new(ciphertext.to_vec());
 
         let decryption_result = key_buffer.write_inline(|write_handle| {
-            cipher.decrypt_in_place(nonce, associated_data, write_handle)
+            cipher.decrypt_in_place(&nonce, associated_data, write_handle)
         });
 
         match decryption_result {

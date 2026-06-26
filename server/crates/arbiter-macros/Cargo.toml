@@ -10,7 +10,7 @@ doctest = false
 [dependencies]
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = { version = "2.0", features = ["derive", "fold", "full", "visit-mut"] }
+syn = { version = "3.0", features = ["derive", "fold", "full", "visit-mut"] }
 
 [dev-dependencies]
 arbiter-crypto = { path = "../arbiter-crypto" }
