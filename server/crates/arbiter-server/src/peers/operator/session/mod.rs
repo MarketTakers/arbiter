@@ -1,10 +1,8 @@
 use super::{OutOfBand, OperatorConnection};
 use crate::{
     actors::{
-        flow_coordinator::{GetConnectedClientIds, client_connect_approval::ClientApprovalController},
-        operator_registry::ConnectOperator,
-    },
-    peers::client::ClientProfile,
+        flow_coordinator::{GetConnectedClientIds, client_connect_approval::{ClientApprovalAnswer, ClientApprovalController}}, operator_registry::ConnectOperator,
+    }, peers::client::ClientProfile,
 };
 use arbiter_crypto::authn;
 use arbiter_proto::transport::Sender;
@@ -93,6 +91,7 @@ impl OperatorSession {
                 actor = "operator",
                 event = "failed to announce new client connection"
             );
+            let _ = controller.tell(ClientApprovalAnswer { approved: false }).await;
             return;
         }
 
