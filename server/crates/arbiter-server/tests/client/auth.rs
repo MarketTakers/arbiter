@@ -266,7 +266,7 @@ pub async fn metadata_unchanged_does_not_append_history() {
 
 #[tokio::test]
 #[test_log::test]
-pub async fn metadata_change_appends_history_and_repoints_binding() {
+pub async fn metadata_frozen_after_approval_ignores_reconnect_changes() {
     let db = db::create_test_pool().await;
     let actors = spawn_test_actors(&db).await;
     let new_key = MlDsa87::key_gen(&mut rand::rng());
@@ -287,6 +287,7 @@ pub async fn metadata_change_appends_history_and_repoints_binding() {
         connect_client(props, &mut server_transport).await;
     });
 
+    // Reconnect presenting different metadata — must be silently ignored.
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
             pubkey: verifying_key(&new_key).into(),
@@ -313,6 +314,7 @@ pub async fn metadata_change_appends_history_and_repoints_binding() {
             client_metadata, client_metadata_history, program_client,
         };
         let mut conn = db.get().await.unwrap();
+        // Metadata is frozen: no new row, no history entry.
         let metadata_count: i64 = client_metadata::table
             .count()
             .get_result(&mut conn)
@@ -338,15 +340,16 @@ pub async fn metadata_change_appends_history_and_repoints_binding() {
             .first::<(String, Option<String>, Option<String>)>(&mut conn)
             .await
             .unwrap();
-        assert_eq!(metadata_count, 2);
-        assert_eq!(history_count, 1);
+        assert_eq!(metadata_count, 1, "frozen: no new metadata row on reconnect");
+        assert_eq!(history_count, 0, "frozen: no history entry on reconnect");
         assert_eq!(
             current,
             (
                 "client".to_owned(),
-                Some("new".to_owned()),
-                Some("2.0.0".to_owned())
-            )
+                Some("old".to_owned()),
+                Some("1.0.0".to_owned())
+            ),
+            "frozen: original metadata must be preserved"
         );
     }
 }
