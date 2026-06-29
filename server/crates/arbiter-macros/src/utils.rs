@@ -22,3 +22,4 @@ macro_rules! ensure_path {
 
 ensure_path!(::arbiter_crypto::hashing::Hashable as HASHABLE_TRAIT_PATH);
 ensure_path!(::arbiter_crypto::hashing::Digest as HMAC_DIGEST_PATH);
+ensure_path!(::arbiter_crypto::integrity::Integrable as INTEGRABLE_TRAIT_PATH);
