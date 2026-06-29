@@ -52,10 +52,7 @@ pub const INTEGRITY_SUBKEY_TAG: &[u8] = b"arbiter/db-integrity-key/v1";
 
 pub type HmacSha256 = Hmac<Sha256>;
 
-pub trait Integrable: Hashable {
-    const KIND: &'static str;
-    const VERSION: i32 = 1;
-}
+pub use arbiter_crypto::integrity::Integrable;
 
 fn payload_hash(payload: &impl Hashable) -> [u8; 32] {
     let mut hasher = Sha256::new();
