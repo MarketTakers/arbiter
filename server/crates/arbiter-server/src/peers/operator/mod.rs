@@ -3,7 +3,7 @@ use crate::{
         GlobalActors,
         vault::{GetState, Vault},
     },
-    crypto::integrity::{self, AttestationStatus, Integrable},
+    crypto::integrity::{self, AttestationStatus},
     db::{DatabaseError, DatabasePool},
     peers::client::ClientProfile,
 };
@@ -23,14 +23,11 @@ pub mod auth;
 pub mod session;
 pub mod vault_gate;
 
-#[derive(Debug, Clone, Hashable)]
+#[derive(Debug, Clone, Hashable, arbiter_macros::Integrable)]
+#[integrable(kind = "operator_credentials")]
 pub struct Credentials {
     pub id: i32,
     pub pubkey: authn::PublicKey,
-}
-
-impl Integrable for Credentials {
-    const KIND: &'static str = "operator_credentials";
 }
 
 // Messages, sent by operator to connection client without having a request

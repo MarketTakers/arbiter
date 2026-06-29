@@ -1,6 +1,5 @@
 use super::{DatabaseID, EvalContext, EvalViolation};
 use crate::{
-    crypto::integrity::v1::Integrable,
     db::models::{
         EvmBasicGrant, EvmEtherTransferGrant, EvmEtherTransferGrantTarget, EvmEtherTransferLimit,
         NewEvmEtherTransferLimit, SqliteTimestamp,
@@ -52,13 +51,11 @@ impl From<Meaning> for SpecificMeaning {
 }
 
 // A grant for ether transfers, which can be scoped to specific target addresses and volume limits
-#[derive(Debug, Clone, arbiter_macros::Hashable)]
+#[derive(Debug, Clone, arbiter_macros::Hashable, arbiter_macros::Integrable)]
+#[integrable(kind = "EtherTransfer")]
 pub struct Settings {
     pub target: Vec<Address>,
     pub limit: VolumeRateLimit,
-}
-impl Integrable for Settings {
-    const KIND: &'static str = "EtherTransfer";
 }
 
 impl From<Settings> for SpecificGrant {

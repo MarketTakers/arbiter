@@ -214,14 +214,12 @@ mod tests {
     };
     use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
-    use super::{Error, Integrable, sign_entity, verify_entity};
-    #[derive(Clone, arbiter_macros::Hashable)]
+    use super::{Error, sign_entity, verify_entity};
+    #[derive(Clone, arbiter_macros::Hashable, arbiter_macros::Integrable)]
+    #[integrable(kind = "dummy_entity")]
     struct DummyEntity {
         payload_version: i32,
         payload: Vec<u8>,
-    }
-    impl Integrable for DummyEntity {
-        const KIND: &'static str = "dummy_entity";
     }
 
     async fn bootstrapped_vault(db: &db::DatabasePool) -> ActorRef<Vault> {

@@ -1,6 +1,5 @@
 use super::{DatabaseID, EvalContext, EvalViolation};
 use crate::{
-    crypto::integrity::Integrable,
     db::models::{
         EvmBasicGrant, EvmTokenTransferGrant, EvmTokenTransferVolumeLimit,
         NewEvmTokenTransferGrant, NewEvmTokenTransferLog, NewEvmTokenTransferVolumeLimit,
@@ -63,14 +62,12 @@ impl From<Meaning> for SpecificMeaning {
 }
 
 // A grant for token transfers, which can be scoped to specific target addresses and volume limits
-#[derive(Debug, Clone, arbiter_macros::Hashable)]
+#[derive(Debug, Clone, arbiter_macros::Hashable, arbiter_macros::Integrable)]
+#[integrable(kind = "TokenTransfer")]
 pub struct Settings {
     pub token_contract: Address,
     pub target: Option<Address>,
     pub volume_limits: Vec<VolumeRateLimit>,
-}
-impl Integrable for Settings {
-    const KIND: &'static str = "TokenTransfer";
 }
 
 impl From<Settings> for SpecificGrant {

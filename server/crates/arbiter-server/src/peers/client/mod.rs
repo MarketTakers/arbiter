@@ -1,5 +1,5 @@
 use crate::{
-    actors::GlobalActors, crypto::integrity::Integrable, db, peers::client::session::ClientSession,
+    actors::GlobalActors, db, peers::client::session::ClientSession,
 };
 use arbiter_crypto::authn;
 use arbiter_macros::Hashable;
@@ -14,13 +14,10 @@ pub struct ClientProfile {
     pub metadata: ClientMetadata,
 }
 
-#[derive(Hashable)]
+#[derive(Hashable, arbiter_macros::Integrable)]
+#[integrable(kind = "client_credentials")]
 pub struct ClientCredentials {
     pub pubkey: authn::PublicKey,
-}
-
-impl Integrable for ClientCredentials {
-    const KIND: &'static str = "client_credentials";
 }
 
 pub struct ClientConnection {
