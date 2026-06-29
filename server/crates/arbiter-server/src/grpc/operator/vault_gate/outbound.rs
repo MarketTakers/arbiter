@@ -87,6 +87,7 @@ impl TryConvert for vault_gate::Outbound {
                 let proto_result = match result {
                     Ok(()) => ProtoUnsealResult::Success,
                     Err(vault_gate::Error::InvalidKey) => ProtoUnsealResult::InvalidKey,
+                    Err(vault_gate::Error::LockedOut) => ProtoUnsealResult::LockedOut,
                     Err(err) => {
                         warn!(?err, "unseal failed");
                         return Err(Status::internal("Failed to unseal vault"));
