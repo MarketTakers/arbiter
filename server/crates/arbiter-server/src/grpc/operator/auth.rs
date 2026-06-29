@@ -171,7 +171,7 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
 
                 Some(auth::Inbound::AuthChallengeRequest {
                     pubkey,
-                    bootstrap_token,
+                    bootstrap_token: bootstrap_token.map(String::into_bytes),
                 })
             }
             AuthRequestPayload::ChallengeSolution(ProtoAuthChallengeSolution { signature }) => {

@@ -16,13 +16,12 @@ use tracing::error;
 
 pub(super) struct ChallengeRequest {
     pub(super) pubkey: authn::PublicKey,
-    pub(super) bootstrap_token: Option<String>,
+    pub(super) bootstrap_token: Option<Vec<u8>>,
 }
 
 pub struct ChallengeContext {
     pub(super) challenge: AuthChallenge,
     pub(super) pubkey: authn::PublicKey,
-    pub(super) bootstrap_token: Option<String>,
 }
 
 pub(super) struct ChallengeSolution {
@@ -79,11 +78,16 @@ async fn register_key(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<i3
 pub(super) struct AuthContext<'a, T: ?Sized> {
     pub(super) conn: &'a mut OperatorConnection,
     pub(super) transport: &'a mut T,
+    bootstrap_token: Option<Vec<u8>>,
 }
 
 impl<'a, T: ?Sized> AuthContext<'a, T> {
     pub(super) const fn new(conn: &'a mut OperatorConnection, transport: &'a mut T) -> Self {
-        Self { conn, transport }
+        Self {
+            conn,
+            transport,
+            bootstrap_token: None,
+        }
     }
 }
 
@@ -108,6 +112,8 @@ where
             }
         }
 
+        self.bootstrap_token = bootstrap_token;
+
         let challenge = AuthChallenge::generate(&mut rand::rng());
 
         self.transport
@@ -120,20 +126,12 @@ where
                 Error::Transport
             })?;
 
-        Ok(ChallengeContext {
-            challenge,
-            pubkey,
-            bootstrap_token,
-        })
+        Ok(ChallengeContext { challenge, pubkey })
     }
 
     async fn verify_solution(
         &mut self,
-        ChallengeContext {
-            challenge,
-            pubkey,
-            bootstrap_token,
-        }: &ChallengeContext,
+        ChallengeContext { challenge, pubkey }: &ChallengeContext,
         ChallengeSolution { solution }: ChallengeSolution,
     ) -> Result<Credentials, Self::Error> {
         let signature = authn::Signature::try_from(solution.as_slice()).map_err(|()| {
@@ -152,15 +150,13 @@ where
         }
 
         // Resolve client id: bootstrap (consume token + register) or lookup
-        let id = match bootstrap_token {
+        let id = match self.bootstrap_token.take() {
             Some(token) => {
                 let token_ok: bool = self
                     .conn
                     .actors
                     .bootstrapper
-                    .ask(ConsumeToken {
-                        token: token.clone(),
-                    })
+                    .ask(ConsumeToken { token })
                     .await
                     .map_err(|e| {
                         error!(?e, "Failed to consume bootstrap token");

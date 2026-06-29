@@ -1,6 +1,6 @@
 use crate::{
     actors::vault::{CreateNew, Decrypt, Vault},
-    crypto::integrity,
+    crypto::integrity::{self, Integrable},
     db::{
         DatabaseError, DatabasePool,
         models::{self},
@@ -25,13 +25,34 @@ use diesel::{
 use diesel_async::RunQueryDsl;
 use kameo::{Actor, actor::ActorRef, messages};
 use rand::{SeedableRng, rng, rngs::StdRng};
+use tracing::error;
 
 pub use crate::evm::safe_signer;
+
+/// Integrity guard that binds a wallet's encrypted key ID to its Ethereum address.
+/// Both fields are included in the HMAC — swapping `aead_encrypted_id` in the DB
+/// invalidates the envelope MAC, and the AEAD ciphertext is also bound to `address`
+/// as AAD, so decryption fails too.
+#[derive(arbiter_macros::Hashable)]
+struct EvmWalletIntegrity {
+    aead_encrypted_id: i32,
+    address: Address,
+}
+
+impl Integrable for EvmWalletIntegrity {
+    const KIND: &'static str = "evm_wallet";
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum SignTransactionError {
     #[error("Wallet not found")]
     WalletNotFound,
+
+    #[error("Decrypted key does not match requested wallet address")]
+    KeyAddressMismatch,
+
+    #[error("Internal signing error")]
+    Internal,
 
     #[error("Database error: {0}")]
     Database(#[from] DatabaseError),
@@ -62,6 +83,12 @@ pub enum Error {
 
     #[error("Integrity violation: {0}")]
     Integrity(#[from] integrity::Error),
+}
+
+impl From<diesel::result::Error> for Error {
+    fn from(e: diesel::result::Error) -> Self {
+        Self::Database(DatabaseError::from(e))
+    }
 }
 
 #[derive(Actor)]
@@ -97,20 +124,39 @@ impl EvmActor {
 
         let aead_id: i32 = self
             .vault
-            .ask(CreateNew { plaintext })
+            .ask(CreateNew {
+                plaintext,
+                aad: address.as_slice().to_vec(),
+            })
             .await
             .map_err(|_| Error::VaultSend)?;
 
         let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
-        let wallet_id = insert_into(schema::evm_wallet::table)
-            .values(&models::NewEvmWallet {
-                address: address.as_slice().to_vec(),
-                aead_encrypted_id: aead_id,
+        let wallet_id = conn
+            .exclusive_transaction(async |conn| {
+                let wallet_id: i32 = insert_into(schema::evm_wallet::table)
+                    .values(&models::NewEvmWallet {
+                        address: address.as_slice().to_vec(),
+                        aead_encrypted_id: aead_id,
+                    })
+                    .returning(schema::evm_wallet::id)
+                    .get_result(conn)
+                    .await
+                    .map_err(DatabaseError::from)
+                    .map_err(Error::Database)?;
+
+                integrity::sign_entity(
+                    conn,
+                    &self.vault,
+                    &EvmWalletIntegrity { address, aead_encrypted_id: aead_id },
+                    wallet_id,
+                )
+                .await
+                .map_err(Error::Integrity)?;
+
+                Ok::<i32, Error>(wallet_id)
             })
-            .returning(schema::evm_wallet::id)
-            .get_result(&mut conn)
-            .await
-            .map_err(DatabaseError::from)?;
+            .await?;
 
         Ok((wallet_id, address))
     }
@@ -241,15 +287,50 @@ impl EvmActor {
             .ok_or(SignTransactionError::WalletNotFound)?;
         drop(conn);
 
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
+        let attestation = integrity::verify_entity(
+            &mut conn,
+            &self.vault,
+            &EvmWalletIntegrity {
+                address: wallet_address,
+                aead_encrypted_id: wallet.aead_encrypted_id,
+            },
+            wallet.id,
+        )
+        .await
+        .map_err(|e| {
+            error!(?e, wallet_id = wallet.id, "EVM wallet integrity check failed");
+            SignTransactionError::Internal
+        })?;
+        drop(conn);
+
+        if attestation != integrity::AttestationStatus::Attested {
+            error!(
+                wallet_id = wallet.id,
+                "EVM wallet integrity unavailable; refusing to sign"
+            );
+            return Err(SignTransactionError::Internal);
+        }
+
         let raw_key: SafeCell<Vec<u8>> = self
             .vault
             .ask(Decrypt {
                 aead_id: wallet.aead_encrypted_id,
+                aad: wallet.address.clone(),
             })
             .await
             .map_err(|_| SignTransactionError::VaultSend)?;
 
         let signer = safe_signer::SafeSigner::from_cell(raw_key)?;
+
+        if signer.address() != wallet_address {
+            error!(
+                expected = %wallet_address,
+                actual = %signer.address(),
+                "Decrypted private key address does not match requested wallet"
+            );
+            return Err(SignTransactionError::KeyAddressMismatch);
+        }
 
         self.engine
             .evaluate_transaction(wallet_access, transaction.clone(), RunKind::Execution)
