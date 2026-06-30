@@ -11,7 +11,7 @@ use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use state::State;
 
 use chacha20poly1305::{AeadInPlace, KeyInit as _, XChaCha20Poly1305, XNonce};
-use kameo::{Actor, error::SendError, messages, prelude::Message};
+use kameo::{Actor, error::SendError, messages, prelude::{Context, Message}};
 use kameo_actors::message_bus::Register;
 use tokio::sync::oneshot;
 use tracing::{error, info};
@@ -143,12 +143,13 @@ impl VaultGate {
         })
     }
 
-    #[message]
+    #[message(ctx)]
     pub async fn handle_unseal_encrypted_key(
         &mut self,
         nonce: Vec<u8>,
         ciphertext: Vec<u8>,
         associated_data: Vec<u8>,
+        ctx: &mut Context<Self, Result<(), Error>>,
     ) -> Result<(), Error> {
         let State::ReadyForExchange { secret, .. } = &self.state else {
             return Err(Error::State);
@@ -172,7 +173,12 @@ impl VaultGate {
                 Ok(())
             }
             Err(SendError::HandlerError(vault::Error::InvalidKey)) => Err(Error::InvalidKey),
-            Err(SendError::HandlerError(vault::Error::LockedOut)) => Err(Error::LockedOut),
+            Err(SendError::HandlerError(vault::Error::LockedOut)) => {
+                // Vault is permanently locked — terminate this gate so the
+                // run_vault_gate loop breaks and the connection is closed.
+                ctx.stop();
+                Err(Error::LockedOut)
+            }
             Err(SendError::HandlerError(err)) => {
                 error!(?err, "Vault failed to unseal key");
                 Err(Error::InvalidKey)
@@ -245,7 +251,7 @@ impl Message<events::Bootstrapped> for VaultGate {
     async fn handle(
         &mut self,
         _: events::Bootstrapped,
-        ctx: &mut kameo::prelude::Context<Self, Self::Reply>,
+        ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         let result = async {
             let mut conn = self
@@ -281,7 +287,7 @@ impl Message<events::Unsealed> for VaultGate {
     async fn handle(
         &mut self,
         _: events::Unsealed,
-        ctx: &mut kameo::prelude::Context<Self, Self::Reply>,
+        ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         if let Some(tx) = self.promotion_tx.take() {
             let _ = tx.send(Ok(()));

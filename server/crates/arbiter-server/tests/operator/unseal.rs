@@ -140,6 +140,47 @@ pub async fn unseal_corrupted_ciphertext() {
     ));
 }
 
+/// After MAX_UNSEAL_ATTEMPTS wrong keys, the vault locks and the VaultGate
+/// must stop itself so the connection is dropped.
+#[tokio::test]
+#[test_log::test]
+pub async fn lockout_stops_vault_gate() {
+    use kameo::error::SendError;
+
+    let seal_key = b"real-seal-key";
+    let (_db, gate, _promotion_rx) = setup_sealed_gate(seal_key).await;
+
+    // Exhaust all MAX_UNSEAL_ATTEMPTS (5) with wrong keys; each returns InvalidKey.
+    for _ in 0..5 {
+        let encrypted_key = client_dh_encrypt(&gate, b"wrong-key").await;
+        assert!(matches!(
+            gate.ask(encrypted_key).await,
+            Err(SendError::HandlerError(VaultGateError::InvalidKey))
+        ));
+    }
+
+    // Sixth attempt: vault is now locked, returns LockedOut, and the gate stops itself.
+    let encrypted_key = client_dh_encrypt(&gate, b"wrong-key").await;
+    assert!(matches!(
+        gate.ask(encrypted_key).await,
+        Err(SendError::HandlerError(VaultGateError::LockedOut))
+    ));
+
+    // Give the actor scheduler time to process the stop signal.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    // Any subsequent message must be rejected because the gate is stopped.
+    let client_secret = EphemeralSecret::random();
+    let client_public = PublicKey::from(&client_secret);
+    assert!(
+        matches!(
+            gate.ask(HandleHandshake { client_pubkey: client_public }).await,
+            Err(SendError::ActorNotRunning(_))
+        ),
+        "VaultGate must be stopped after LockedOut"
+    );
+}
+
 #[tokio::test]
 #[test_log::test]
 pub async fn unseal_retry_after_invalid_key() {
