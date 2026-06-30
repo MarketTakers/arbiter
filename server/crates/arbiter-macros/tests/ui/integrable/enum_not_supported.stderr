@@ -1,0 +1,5 @@
+error: #[derive(Integrable)] is only supported on structs
+ --> tests/ui/integrable/enum_not_supported.rs:3:6
+  |
+3 | enum MyEnum {
+  |      ^^^^^^

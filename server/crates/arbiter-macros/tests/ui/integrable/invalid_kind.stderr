@@ -1,0 +1,5 @@
+error: kind must be a valid schema name: start with a letter, contain only [a-zA-Z0-9_]
+ --> tests/ui/integrable/invalid_kind.rs:2:21
+  |
+2 | #[integrable(kind = "bad kind!")]
+  |                     ^^^^^^^^^^^

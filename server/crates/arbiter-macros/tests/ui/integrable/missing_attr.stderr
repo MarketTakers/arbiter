@@ -1,0 +1,5 @@
+error: #[integrable(kind = "...")] is required
+ --> tests/ui/integrable/missing_attr.rs:2:8
+  |
+2 | struct MissingAttr {
+  |        ^^^^^^^^^^^

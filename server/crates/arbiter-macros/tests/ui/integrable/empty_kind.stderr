@@ -1,0 +1,5 @@
+error: kind must not be empty
+ --> tests/ui/integrable/empty_kind.rs:2:21
+  |
+2 | #[integrable(kind = "")]
+  |                     ^^

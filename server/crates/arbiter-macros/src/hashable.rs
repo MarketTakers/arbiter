@@ -53,32 +53,16 @@ struct FieldAccess {
 
 fn collect_field_accesses(struct_data: &DataStruct) -> Vec<FieldAccess> {
     match &struct_data.fields {
-        Fields::Named(fields) => {
-            // Keep deterministic alphabetical order for named fields.
-            // Do not remove this sort, because it keeps hash output stable regardless of source order.
-            let mut named_fields = fields
-                .named
-                .iter()
-                .map(|field| {
-                    let name = field
-                        .ident
-                        .as_ref()
-                        .expect("Fields::Named(fields) must have names")
-                        .clone();
-                    (name.to_string(), name)
-                })
-                .collect::<Vec<_>>();
-
-            named_fields.sort_by(|a, b| a.0.cmp(&b.0));
-
-            named_fields
-                .into_iter()
-                .map(|(_, name)| FieldAccess {
+        Fields::Named(fields) => crate::utils::sorted_named_fields(fields)
+            .into_iter()
+            .map(|field| {
+                let name = field.ident.as_ref().unwrap();
+                FieldAccess {
                     access: quote! { #name },
                     span: name.span(),
-                })
-                .collect()
-        }
+                }
+            })
+            .collect(),
         Fields::Unnamed(fields) => fields
             .unnamed
             .iter()
