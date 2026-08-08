@@ -17,6 +17,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::ClientTlsConfig;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ArbiterClientError {
     #[error("Authentication error")]
     Authentication(#[from] AuthError),

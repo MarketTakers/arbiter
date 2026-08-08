@@ -31,13 +31,11 @@ pub enum Error {
     #[error("State transition failed")]
     State,
 
+    /// Reaches the operator verbatim via `Status::internal`, so the payload is
+    /// `&'static str`: the type makes it impossible to interpolate an inner
+    /// error. Log the cause, send the constant.
     #[error("Internal error: {0}")]
-    Internal(String),
-}
-impl Error {
-    fn internal(message: impl Into<String>) -> Self {
-        Self::Internal(message.into())
-    }
+    Internal(&'static str),
 }
 
 pub struct HandshakeResponse {
@@ -179,7 +177,7 @@ impl VaultGate {
             }
             Err(err) => {
                 error!(?err, "Failed to send unseal request to vault");
-                Err(Error::internal("Vault actor error"))
+                Err(Error::Internal("Vault actor error"))
             }
         }
     }
@@ -221,7 +219,7 @@ impl VaultGate {
             }
             Err(err) => {
                 error!(?err, "Failed to send bootstrap request to vault");
-                Err(Error::internal("Vault error"))
+                Err(Error::Internal("Vault error"))
             }
         }
     }
@@ -233,7 +231,10 @@ impl VaultGate {
             .vault
             .ask(GetState {})
             .await
-            .map_err(|_| Error::internal("failed to query vault"))?;
+            .map_err(|err| {
+                error!(?err, "Failed to query vault state");
+                Error::Internal("failed to query vault")
+            })?;
 
         Ok(answer)
     }
@@ -252,7 +253,10 @@ impl Message<events::Bootstrapped> for VaultGate {
                 .db
                 .get()
                 .await
-                .map_err(|_| Error::internal("DB unavailable"))?;
+                .map_err(|err| {
+                    error!(error = %crate::utils::error_chain(&err), "DB unavailable on bootstrap");
+                    Error::Internal("DB unavailable")
+                })?;
             integrity::sign_entity(
                 &mut conn,
                 &self.actors.vault,
@@ -260,9 +264,12 @@ impl Message<events::Bootstrapped> for VaultGate {
                 self.auth_creds.id,
             )
             .await
-            .map_err(|e| {
-                error!(?e, "Failed to sign integrity envelope on bootstrap");
-                Error::internal("Integrity sign failed")
+            .map_err(|err| {
+                error!(
+                    error = %crate::utils::error_chain(&err),
+                    "Failed to sign integrity envelope on bootstrap"
+                );
+                Error::Internal("Integrity sign failed")
             })?;
             Ok(())
         }

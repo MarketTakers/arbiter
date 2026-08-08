@@ -26,21 +26,22 @@ pub enum Error {
     UnregisteredPublicKey,
     InvalidChallengeSolution,
     InvalidBootstrapToken,
-    Internal { details: String },
+    /// Reaches the operator verbatim via `Status::internal`, so the payload is
+    /// `&'static str`: the type makes it impossible to interpolate an inner
+    /// error. Log the cause, send the constant.
+    Internal { details: &'static str },
     Transport,
 }
 
 impl Error {
-    fn internal(details: impl Into<String>) -> Self {
-        Self::Internal {
-            details: details.into(),
-        }
+    const fn internal(details: &'static str) -> Self {
+        Self::Internal { details }
     }
 }
 
 impl From<diesel::result::Error> for Error {
     fn from(e: diesel::result::Error) -> Self {
-        error!(?e, "Database error");
+        error!(error = %crate::utils::error_chain(&e), "Database error");
         Self::internal("Database error")
     }
 }

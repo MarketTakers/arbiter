@@ -30,6 +30,7 @@ impl Display for ArbiterUrl {
 }
 
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
+#[non_exhaustive]
 pub enum Error {
     #[error("Invalid URL scheme, expected '{ARBITER_URL_SCHEME}://'")]
     #[diagnostic(

@@ -13,6 +13,7 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use hmac::Hmac;
 use kameo::{actor::ActorRef, error::SendError};
 use sha2::{Digest as _, Sha256};
+use tracing::error;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -121,7 +122,10 @@ pub async fn sign_entity<E: Integrable>(
             .await
             .map_err(|err| match err {
                 SendError::HandlerError(inner) => Error::Vault(inner),
-                _ => Error::VaultSend,
+                other => {
+                    error!(?other, "Vault unreachable while signing integrity envelope");
+                    Error::VaultSend
+                }
             })?;
 
     insert_into(integrity_envelope::table)
@@ -195,12 +199,18 @@ pub async fn verify_entity<E: Integrable>(
         Err(SendError::HandlerError(
             vault::Error::Sealed | vault::Error::KeyVersionMismatch { .. },
         )) => Ok(AttestationStatus::Unavailable),
-        Err(_) => Err(Error::VaultSend),
+        Err(other) => {
+            error!(?other, "Vault unreachable while verifying integrity envelope");
+            Err(Error::VaultSend)
+        }
     }
 }
 
 pub async fn is_signing_available(vault: &ActorRef<Vault>) -> Result<bool, Error> {
-    let state = vault.ask(GetState).await.map_err(|_| Error::VaultSend)?;
+    let state = vault.ask(GetState).await.map_err(|err| {
+        error!(?err, "Vault unreachable while querying signing availability");
+        Error::VaultSend
+    })?;
     Ok(matches!(state, vault::VaultState::Unsealed))
 }
 

@@ -15,7 +15,10 @@ k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"] }
 kameo = {git = "https://github.com/hdbg/kameo.git", rev = "805b417"}
 kameo_actors = {git = "https://github.com/hdbg/kameo.git", rev = "805b417"}
 hmac = "0.13.0"
-miette = { version = "7.6.0", features = ["fancy", "serde"] }
+# `derive` only: nothing renders a miette Report yet, so `fancy` would drag the
+# terminal-formatting stack (owo-colors, supports-color, textwrap, terminal_size)
+# into the headless daemon. A CLI that wants pretty output enables `fancy` itself.
+miette = "7.6.0"
 ml-dsa = { version = "0.1.0-rc.9", features = ["zeroize"] }
 mutants = "0.0.4"
 prost = "0.14.3"

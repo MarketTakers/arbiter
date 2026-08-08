@@ -23,6 +23,7 @@ use arbiter_proto::{
 use chrono::DateTime;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum AuthError {
     #[error("Server sent invalid auth challenge")]
     InvalidChallenge,

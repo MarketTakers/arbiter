@@ -4,6 +4,7 @@ use arbiter_proto::home_path;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum StorageError {
     #[error("Invalid signing key length in storage: expected {expected} bytes, got {actual} bytes")]
     InvalidKeyLength { expected: usize, actual: usize },

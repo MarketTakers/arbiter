@@ -11,6 +11,7 @@ pub fn next_request_id() -> i32 {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ClientSignError {
     #[error("Transport channel closed")]
     ChannelClosed,
