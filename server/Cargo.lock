@@ -3028,8 +3028,8 @@ dependencies = [
 
 [[package]]
 name = "kameo"
-version = "0.20.0"
-source = "git+https://github.com/hdbg/kameo.git?rev=3e18ba2#3e18ba24023d0422034e60ff2ea1ecd49e8c3c93"
+version = "0.22.2"
+source = "git+https://github.com/hdbg/kameo.git?rev=17af90e3#17af90e3ae95fc6f89fa31a2f1b9506ac127f0b7"
 dependencies = [
  "downcast-rs",
  "dyn-clone",
@@ -3042,8 +3042,8 @@ dependencies = [
 
 [[package]]
 name = "kameo_actors"
-version = "0.5.0"
-source = "git+https://github.com/hdbg/kameo.git?rev=3e18ba2#3e18ba24023d0422034e60ff2ea1ecd49e8c3c93"
+version = "0.8.1"
+source = "git+https://github.com/hdbg/kameo.git?rev=17af90e3#17af90e3ae95fc6f89fa31a2f1b9506ac127f0b7"
 dependencies = [
  "futures",
  "glob",
@@ -3054,13 +3054,13 @@ dependencies = [
 
 [[package]]
 name = "kameo_macros"
-version = "0.20.0"
-source = "git+https://github.com/hdbg/kameo.git?rev=3e18ba2#3e18ba24023d0422034e60ff2ea1ecd49e8c3c93"
+version = "0.21.1"
+source = "git+https://github.com/hdbg/kameo.git?rev=17af90e3#17af90e3ae95fc6f89fa31a2f1b9506ac127f0b7"
 dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -5092,6 +5092,17 @@ name = "syn"
 version = "2.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e665b8803e7b1d2a727f4023456bbbbe74da67099c585258af0ad9c5013b9b99"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "syn"
+version = "3.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6275cddf4610d1775e6d1fe9469b2e77d0f39fd98fb7450901b821e0c53649f"
 dependencies = [
  "proc-macro2",
  "quote",

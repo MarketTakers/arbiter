@@ -12,8 +12,8 @@ base64 = "0.22.1"
 chrono = { version = "0.4.44", features = ["serde"] }
 futures = "0.3.32"
 k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"] }
-kameo = {git = "https://github.com/hdbg/kameo.git", rev = "3e18ba2"}
-kameo_actors = {git = "https://github.com/hdbg/kameo.git", rev = "3e18ba2"}
+kameo = {git = "https://github.com/hdbg/kameo.git", rev = "17af90e3"}
+kameo_actors = {git = "https://github.com/hdbg/kameo.git", rev = "17af90e3"}
 hmac = "0.13.0"
 miette = { version = "7.6.0", features = ["fancy", "serde"] }
 ml-dsa = { version = "0.1.0-rc.9", features = ["zeroize"] }
