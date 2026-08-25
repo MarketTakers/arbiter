@@ -167,3 +167,4 @@ nursery = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 
 type_repetition_in_bounds = "allow"   # sometimes, it's better for readability this way
+unused_async_trait_impl = "allow"
