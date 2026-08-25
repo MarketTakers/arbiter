@@ -14,7 +14,7 @@ mod state;
 pub enum Inbound {
     AuthChallengeRequest {
         pubkey: authn::PublicKey,
-        bootstrap_token: Option<String>,
+        bootstrap_token: Option<Vec<u8>>,
     },
     AuthChallengeSolution {
         signature: Vec<u8>,

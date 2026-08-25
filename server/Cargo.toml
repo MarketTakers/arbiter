@@ -21,6 +21,7 @@ mutants = "0.0.4"
 prost = "0.14.3"
 prost-types = { version = "0.14.3", features = ["chrono"] }
 rand = "0.10.1"
+rand_core = "0.10.1"
 rcgen = { version = "0.14.7", features = [ "aws_lc_rs",  "pem", "x509-parser", "zeroize" ], default-features = false }
 rstest = "0.26.1"
 rustls = { version = "0.23.40", features = ["aws-lc-rs", "logging", "prefer-post-quantum", "std"], default-features = false }
@@ -76,6 +77,7 @@ needless_pass_by_ref_mut = "allow"
 pub_underscore_fields = "allow"
 redundant_pub_crate = "allow" 
 uninhabited_references = "allow" # safe with unsafe_code = "forbid" and standard uninhabited pattern (match *self {})
+too-many-lines = "allow" # this is a very common pattern in server code, and it's not always possible to break it down into smaller modules without hurting readability
 
 # restriction lints
 alloc_instead_of_core = "warn"

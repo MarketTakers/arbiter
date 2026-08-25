@@ -100,7 +100,7 @@ async fn send_auth_challenge_solution(
     key: &SigningKey,
     challenge: AuthChallenge,
 ) -> Result<(), AuthError> {
-    let timestamp = DateTime::from_timestamp_nanos(challenge.timestamp_nanos as i64);
+    let timestamp = DateTime::from_timestamp_nanos(challenge.timestamp_nanos.cast_signed());
     let challenge = authn::AuthChallenge {
         nonce: *challenge
             .random

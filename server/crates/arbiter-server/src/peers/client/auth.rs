@@ -8,7 +8,7 @@ use crate::{
     crypto::integrity::{self, AttestationStatus},
     db::{
         self,
-        models::{ProgramClientMetadata, SqliteTimestamp},
+        models::ProgramClientMetadata,
         schema::program_client,
     },
 };
@@ -18,14 +18,13 @@ use arbiter_proto::{
     transport::{Bi, expect_message},
 };
 
-use chrono::Utc;
 use diesel::{
     ExpressionMethods as _, OptionalExtension as _, QueryDsl as _, SelectableHelper as _,
-    dsl::insert_into, update,
+    dsl::insert_into,
 };
 use diesel_async::RunQueryDsl as _;
 use kameo::{actor::ActorRef, error::SendError};
-use tracing::error;
+use tracing::{error, warn};
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -211,71 +210,47 @@ async fn insert_client(
     .await
 }
 
-async fn sync_client_metadata(
+/// Compares stored metadata against what a reconnecting client presents.
+/// Metadata is frozen after initial operator approval and must not be silently
+/// overwritten. Doing so would let an approved client forge its displayed
+/// identity in later approval prompts. Drift is logged and ignored.
+async fn check_metadata_drift(
     db: &db::DatabasePool,
     client_id: i32,
-    metadata: &ClientMetadata,
+    presented: &ClientMetadata,
 ) -> Result<(), Error> {
-    use crate::db::schema::{client_metadata, client_metadata_history};
-
-    let now = SqliteTimestamp(Utc::now());
+    use crate::db::schema::client_metadata;
 
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
         Error::DatabasePoolUnavailable
     })?;
 
-    conn.exclusive_transaction(async |conn| {
-        let (current_metadata_id, current): (i32, ProgramClientMetadata) = program_client::table
-            .find(client_id)
-            .inner_join(client_metadata::table)
-            .select((
-                program_client::metadata_id,
-                ProgramClientMetadata::as_select(),
-            ))
-            .first(&mut *conn)
-            .await?;
+    let current: ProgramClientMetadata = program_client::table
+        .find(client_id)
+        .inner_join(client_metadata::table)
+        .select(ProgramClientMetadata::as_select())
+        .first(&mut conn)
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "Database error");
+            Error::DatabaseOperationFailed
+        })?;
 
-        let unchanged = current.name == metadata.name
-            && current.description == metadata.description
-            && current.version == metadata.version;
-        if unchanged {
-            return Ok(());
-        }
+    let changed = current.name != presented.name
+        || current.description != presented.description
+        || current.version != presented.version;
 
-        insert_into(client_metadata_history::table)
-            .values((
-                client_metadata_history::metadata_id.eq(current_metadata_id),
-                client_metadata_history::client_id.eq(client_id),
-            ))
-            .execute(&mut *conn)
-            .await?;
+    if changed {
+        warn!(
+            client_id,
+            stored_name = %current.name,
+            presented_name = %presented.name,
+            "reconnecting client presented different metadata; ignoring - metadata is frozen after operator approval"
+        );
+    }
 
-        let metadata_id = insert_into(client_metadata::table)
-            .values((
-                client_metadata::name.eq(&metadata.name),
-                client_metadata::description.eq(&metadata.description),
-                client_metadata::version.eq(&metadata.version),
-            ))
-            .returning(client_metadata::id)
-            .get_result::<i32>(&mut *conn)
-            .await?;
-
-        update(program_client::table.find(client_id))
-            .set((
-                program_client::metadata_id.eq(metadata_id),
-                program_client::updated_at.eq(now),
-            ))
-            .execute(&mut *conn)
-            .await?;
-
-        Ok::<(), diesel::result::Error>(())
-    })
-    .await
-    .map_err(|e| {
-        error!(error = ?e, "Database error");
-        Error::DatabaseOperationFailed
-    })
+    Ok(())
 }
 
 async fn challenge_client<T>(
@@ -298,7 +273,7 @@ where
 
     let signature = expect_message(transport, |req: Inbound| match req {
         Inbound::AuthChallengeSolution { signature } => Some(signature),
-        _ => None,
+        Inbound::AuthChallengeRequest { .. } => None,
     })
     .await
     .map_err(|e| {
@@ -324,6 +299,7 @@ where
 
     let client_id = if let Some(id) = get_client_id(&props.db, &pubkey).await? {
         verify_integrity(&props.db, &props.actors.vault, &pubkey).await?;
+        check_metadata_drift(&props.db, id, &metadata).await?;
         id
     } else {
         approve_new_client(
@@ -336,8 +312,6 @@ where
         .await?;
         insert_client(&props.db, &props.actors.vault, &pubkey, &metadata).await?
     };
-
-    sync_client_metadata(&props.db, client_id, &metadata).await?;
 
     let challenge = AuthChallenge::generate(&mut rand::rng());
     challenge_client(transport, pubkey, challenge).await?;

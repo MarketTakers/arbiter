@@ -12,9 +12,11 @@ use arbiter_server::{
 use diesel::{QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
 
+const TEST_AAD: &[u8] = b"test-aad";
+
 #[tokio::test]
 #[test_log::test]
-async fn test_bootstrap() {
+async fn bootstrap() {
     let db = db::create_test_pool().await;
     let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
         .await
@@ -39,7 +41,7 @@ async fn test_bootstrap() {
 
 #[tokio::test]
 #[test_log::test]
-async fn test_bootstrap_rejects_double() {
+async fn bootstrap_rejects_double() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
 
@@ -50,14 +52,14 @@ async fn test_bootstrap_rejects_double() {
 
 #[tokio::test]
 #[test_log::test]
-async fn test_create_new_before_bootstrap_fails() {
+async fn create_new_before_bootstrap_fails() {
     let db = db::create_test_pool().await;
     let mut actor = Vault::new(db, GlobalActors::spawn_message_bus())
         .await
         .unwrap();
 
     let err = actor
-        .create_new(SafeCell::new(b"data".to_vec()))
+        .create_new(SafeCell::new(b"data".to_vec()), TEST_AAD.to_vec())
         .await
         .unwrap_err();
     assert!(matches!(err, Error::NotBootstrapped));
@@ -65,19 +67,19 @@ async fn test_create_new_before_bootstrap_fails() {
 
 #[tokio::test]
 #[test_log::test]
-async fn test_decrypt_before_bootstrap_fails() {
+async fn decrypt_before_bootstrap_fails() {
     let db = db::create_test_pool().await;
     let mut actor = Vault::new(db, GlobalActors::spawn_message_bus())
         .await
         .unwrap();
 
-    let err = actor.decrypt(1).await.unwrap_err();
+    let err = actor.decrypt(1, TEST_AAD.to_vec()).await.unwrap_err();
     assert!(matches!(err, Error::NotBootstrapped));
 }
 
 #[tokio::test]
 #[test_log::test]
-async fn test_new_restores_sealed_state() {
+async fn new_restores_sealed_state() {
     let db = db::create_test_pool().await;
     let actor = common::bootstrapped_vault(&db).await;
     drop(actor);
@@ -85,19 +87,19 @@ async fn test_new_restores_sealed_state() {
     let mut actor2 = Vault::new(db, GlobalActors::spawn_message_bus())
         .await
         .unwrap();
-    let err = actor2.decrypt(1).await.unwrap_err();
+    let err = actor2.decrypt(1, TEST_AAD.to_vec()).await.unwrap_err();
     assert!(matches!(err, Error::Sealed));
 }
 
 #[tokio::test]
 #[test_log::test]
-async fn test_unseal_correct_password() {
+async fn unseal_correct_password() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
 
     let plaintext = b"survive a restart";
     let aead_id = actor
-        .create_new(SafeCell::new(plaintext.to_vec()))
+        .create_new(SafeCell::new(plaintext.to_vec()), TEST_AAD.to_vec())
         .await
         .unwrap();
     drop(actor);
@@ -108,19 +110,19 @@ async fn test_unseal_correct_password() {
     let seal_key = SafeCell::new(b"test-seal-key".to_vec());
     actor.try_unseal(seal_key).await.unwrap();
 
-    let mut decrypted = actor.decrypt(aead_id).await.unwrap();
+    let mut decrypted = actor.decrypt(aead_id, TEST_AAD.to_vec()).await.unwrap();
     assert_eq!(*decrypted.read(), plaintext);
 }
 
 #[tokio::test]
 #[test_log::test]
-async fn test_unseal_wrong_then_correct_password() {
+async fn unseal_wrong_then_correct_password() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
 
     let plaintext = b"important data";
     let aead_id = actor
-        .create_new(SafeCell::new(plaintext.to_vec()))
+        .create_new(SafeCell::new(plaintext.to_vec()), TEST_AAD.to_vec())
         .await
         .unwrap();
     drop(actor);
@@ -136,6 +138,6 @@ async fn test_unseal_wrong_then_correct_password() {
     let good_key = SafeCell::new(b"test-seal-key".to_vec());
     actor.try_unseal(good_key).await.unwrap();
 
-    let mut decrypted = actor.decrypt(aead_id).await.unwrap();
+    let mut decrypted = actor.decrypt(aead_id, TEST_AAD.to_vec()).await.unwrap();
     assert_eq!(*decrypted.read(), plaintext);
 }
