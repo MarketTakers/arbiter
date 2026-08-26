@@ -285,7 +285,7 @@ impl OperatorSession {
     #[message]
     pub(crate) async fn handle_create_proposal(
         &mut self,
-        kind: crate::actors::proposal_manager::ProposalKind,
+        kind: crate::db::models::ProposalKind,
         ttl_secs: Option<i64>,
     ) -> Result<i32, Error> {
         use crate::actors::proposal_manager::CreateProposal;

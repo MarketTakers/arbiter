@@ -1,5 +1,6 @@
 use crate::{
-    actors::proposal_manager::{Error as ProposalError, ProposalKind, VoteOutcome},
+    actors::proposal_manager::{Error as ProposalError, VoteOutcome},
+    db::models::ProposalKind,
     peers::operator::{
         OperatorSession,
         session::handlers::{HandleCastVote, HandleCreateProposal, HandleQueryPending},
@@ -133,7 +134,7 @@ async fn handle_query(
         .into_iter()
         .map(|s| proto_gov::ProposalSummary {
             id: s.id,
-            kind: s.kind,
+            kind: <&'static str>::from(s.kind).to_owned(),
             initiator_id: s.initiator_id,
             expires_at: s.expires_at.0.timestamp(),
             approve_count: s.approve_count,

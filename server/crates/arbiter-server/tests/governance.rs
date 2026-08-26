@@ -4,12 +4,11 @@ use arbiter_server::{
         GlobalActors,
         proposal_manager::{
             CancelRecoveryWakeup, CastRecoveryVote, CastVote, CreateProposal,
-            Error as ProposalError, ProposalKind, QueryPending,
-            RequestRecoveryWakeup, VoteOutcome,
+            Error as ProposalError, QueryPending, RequestRecoveryWakeup, VoteOutcome,
         },
     },
     crypto::KeyCell,
-    db,
+    db::{self, models::ProposalKind},
 };
 use arbiter_server::actors::vault::Bootstrap;
 use arbiter_server::db::schema::{

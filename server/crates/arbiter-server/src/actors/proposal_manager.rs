@@ -8,7 +8,7 @@ use crate::{
         self,
         models::{
             NewProposal, NewProposalVote, NewRecoveryProposalVote, NewRecoveryWakeupRequest,
-            Proposal, ProposalStatus, SqliteTimestamp,
+            Proposal, ProposalKind, ProposalKindTag, ProposalStatus, SqliteTimestamp,
         },
         schema,
     },
@@ -17,128 +17,10 @@ use chrono::Utc;
 use diesel::{ExpressionMethods as _, QueryDsl};
 use diesel_async::RunQueryDsl;
 use kameo::{Actor, actor::ActorRef, messages};
-use strum::{Display, EnumDiscriminants, EnumString, IntoDiscriminant as _, IntoStaticStr};
+use strum::IntoDiscriminant as _;
 use tracing::{error, warn};
 
 pub const DEFAULT_TTL_SECS: i64 = 7 * 24 * 60 * 60; // 7 days
-
-/// A governance proposal and the parameters it carries.
-#[derive(Debug, Clone, EnumDiscriminants)]
-#[strum_discriminants(
-    name(ProposalKindTag),
-    vis(pub),
-    derive(Display, EnumString, IntoStaticStr),
-    strum(serialize_all = "snake_case")
-)]
-pub enum ProposalKind {
-    ApproveSdkClient {
-        client_id: i32,
-    },
-    GrantWalletAccess {
-        wallet_id: i32,
-        client_id: i32,
-    },
-    ReplaceOperator {
-        old_operator_id: i32,
-        new_pubkey: Vec<u8>,
-    },
-    TriggerRekey,
-    ApprovePersistentGrant {
-        payload_bytes: Vec<u8>,
-    },
-    ApproveOneOffTransaction {
-        payload_bytes: Vec<u8>,
-    },
-}
-
-impl ProposalKind {
-    pub fn encode_payload(&self) -> Vec<u8> {
-        match self {
-            Self::ApproveSdkClient { client_id } => client_id.to_be_bytes().to_vec(),
-            Self::GrantWalletAccess {
-                wallet_id,
-                client_id,
-            } => {
-                let mut buf = Vec::with_capacity(8);
-                buf.extend_from_slice(&wallet_id.to_be_bytes());
-                buf.extend_from_slice(&client_id.to_be_bytes());
-                buf
-            }
-            Self::ReplaceOperator {
-                old_operator_id,
-                new_pubkey,
-            } => {
-                let len = u32::try_from(new_pubkey.len()).expect("pubkey len fits in u32");
-                let mut buf = Vec::with_capacity(4 + 4 + new_pubkey.len());
-                buf.extend_from_slice(&old_operator_id.to_be_bytes());
-                buf.extend_from_slice(&len.to_be_bytes());
-                buf.extend_from_slice(new_pubkey);
-                buf
-            }
-            Self::TriggerRekey => vec![],
-            Self::ApprovePersistentGrant { payload_bytes }
-            | Self::ApproveOneOffTransaction { payload_bytes } => payload_bytes.clone(),
-        }
-    }
-
-    /// Key-rotation proposals require every operator to approve (§3.3).
-    #[must_use]
-    pub fn requires_full_quorum(kind: &str) -> bool {
-        matches!(
-            kind.parse::<ProposalKindTag>(),
-            Ok(ProposalKindTag::ReplaceOperator | ProposalKindTag::TriggerRekey)
-        )
-    }
-
-    pub fn decode(kind: &str, payload: &[u8]) -> Result<Self, String> {
-        let tag = kind
-            .parse::<ProposalKindTag>()
-            .map_err(|_| format!("unknown proposal kind: {kind}"))?;
-        match tag {
-            ProposalKindTag::ApproveSdkClient => {
-                let bytes = <[u8; 4]>::try_from(payload)
-                    .map_err(|_| "invalid payload for approve_sdk_client".to_owned())?;
-                Ok(Self::ApproveSdkClient {
-                    client_id: i32::from_be_bytes(bytes),
-                })
-            }
-            ProposalKindTag::GrantWalletAccess => {
-                let bytes = <[u8; 8]>::try_from(payload)
-                    .map_err(|_| "invalid payload for grant_wallet_access".to_owned())?;
-                Ok(Self::GrantWalletAccess {
-                    wallet_id: i32::from_be_bytes(bytes[..4].try_into().unwrap()),
-                    client_id: i32::from_be_bytes(bytes[4..].try_into().unwrap()),
-                })
-            }
-            ProposalKindTag::ReplaceOperator => {
-                let (id_bytes, rest) = payload
-                    .split_first_chunk::<4>()
-                    .ok_or_else(|| "replace_operator payload too short".to_owned())?;
-                let old_operator_id = i32::from_be_bytes(*id_bytes);
-                let (len_bytes, rest) = rest
-                    .split_first_chunk::<4>()
-                    .ok_or_else(|| "replace_operator payload too short".to_owned())?;
-                let len = u32::from_be_bytes(*len_bytes);
-                let len = usize::try_from(len).unwrap_or(usize::MAX);
-                let new_pubkey = rest
-                    .get(..len)
-                    .ok_or_else(|| "replace_operator payload truncated".to_owned())?
-                    .to_vec();
-                Ok(Self::ReplaceOperator {
-                    old_operator_id,
-                    new_pubkey,
-                })
-            }
-            ProposalKindTag::TriggerRekey => Ok(Self::TriggerRekey),
-            ProposalKindTag::ApprovePersistentGrant => Ok(Self::ApprovePersistentGrant {
-                payload_bytes: payload.to_vec(),
-            }),
-            ProposalKindTag::ApproveOneOffTransaction => Ok(Self::ApproveOneOffTransaction {
-                payload_bytes: payload.to_vec(),
-            }),
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VoteOutcome {
@@ -180,7 +62,7 @@ pub enum Error {
 #[derive(Debug)]
 pub struct ProposalSummary {
     pub id: i32,
-    pub kind: String,
+    pub kind: ProposalKindTag,
     pub initiator_id: i32,
     pub expires_at: SqliteTimestamp,
     pub approve_count: i64,
@@ -224,7 +106,7 @@ impl ProposalManager {
         let expires_at = SqliteTimestamp::from(Utc::now() + chrono::Duration::seconds(ttl));
 
         let new_proposal = NewProposal {
-            kind: <&'static str>::from(kind.discriminant()).to_owned(),
+            kind: kind.discriminant(),
             payload: kind.encode_payload(),
             initiator_id,
             expires_at,
@@ -395,7 +277,7 @@ impl ProposalManager {
             clippy::as_conversions,
             reason = "operator count is always a small positive integer"
         )]
-        let threshold = if ProposalKind::requires_full_quorum(&proposal.kind) {
+        let threshold = if proposal.kind.requires_full_quorum() {
             // §3.3: key-rotation proposals require every eligible voter to approve
             // §3.5: when recovery is active, recovery operators also vote on replace_operator
             (total_operators + total_recovery) as usize
@@ -519,7 +401,7 @@ impl ProposalManager {
                 other => Error::DatabaseQuery(other),
             })?;
 
-        if proposal.kind.parse::<ProposalKindTag>() != Ok(ProposalKindTag::ReplaceOperator) {
+        if proposal.kind != ProposalKindTag::ReplaceOperator {
             return Err(Error::NotAllowedForRecoveryOperator);
         }
 
@@ -672,7 +554,7 @@ impl ProposalManager {
     }
 
     async fn execute_proposal(&self, proposal: &Proposal) -> Result<(), Error> {
-        let kind = ProposalKind::decode(&proposal.kind, &proposal.payload)
+        let kind = ProposalKind::decode(proposal.kind, &proposal.payload)
             .map_err(Error::ExecutionFailed)?;
         match kind {
             ProposalKind::ApproveSdkClient { client_id } => {
