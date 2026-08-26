@@ -62,7 +62,7 @@ enum CoordinatorState {
         ordinary_passphrases: HashMap<i32, Vec<u8>>,
         recovery_passphrases: HashMap<i32, Vec<u8>>,
     },
-    /// Shamir re-key after `replace_operator` or `update_shamir_parameters` is approved (§3.3).
+    /// Shamir re-key after `replace_operator` or `trigger_rekey` is approved (§3.3).
     /// Collects new passphrases from all current operators, then generates a fresh seal key,
     /// re-splits it, and re-encrypts the vault root key.
     Rekeying {
@@ -297,7 +297,7 @@ async fn finalize_unseal(
 }
 
 /// §3.3: Generate a fresh seal key, split across current operators, re-encrypt the vault root key.
-/// Called after `replace_operator` or `update_shamir_parameters` is approved and all contributors submit.
+/// Called after `replace_operator` or `trigger_rekey` is approved and all contributors submit.
 async fn finalize_rekey(
     db: db::DatabasePool,
     vault: ActorRef<Vault>,

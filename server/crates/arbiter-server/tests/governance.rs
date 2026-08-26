@@ -827,7 +827,7 @@ async fn replace_operator_updates_pubkey_and_starts_rekey() {
 }
 
 #[tokio::test]
-async fn update_shamir_parameters_reaches_quorum() {
+async fn trigger_rekey_reaches_quorum() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
@@ -842,7 +842,7 @@ async fn update_shamir_parameters_reaches_quorum() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::UpdateShamirParameters { new_n: 5 },
+            kind: ProposalKind::TriggerRekey,
             initiator_id: op_id,
             ttl_secs: None,
         })

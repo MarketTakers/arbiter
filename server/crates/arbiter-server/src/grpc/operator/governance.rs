@@ -56,14 +56,7 @@ async fn handle_create(
             old_operator_id: p.old_operator_id,
             new_pubkey: p.new_pubkey,
         },
-        Some(ProtoKind::UpdateShamirParameters(p)) => ProposalKind::UpdateShamirParameters {
-            #[expect(
-                clippy::cast_possible_truncation,
-                clippy::as_conversions,
-                reason = "new_n is always a small operator count"
-            )]
-            new_n: p.new_n as u8,
-        },
+        Some(ProtoKind::TriggerRekey(())) => ProposalKind::TriggerRekey,
         Some(ProtoKind::ApprovePersistentGrant(p)) => {
             use prost::Message as _;
             ProposalKind::ApprovePersistentGrant {

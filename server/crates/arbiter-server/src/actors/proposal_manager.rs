@@ -42,9 +42,7 @@ pub enum ProposalKind {
         old_operator_id: i32,
         new_pubkey: Vec<u8>,
     },
-    UpdateShamirParameters {
-        new_n: u8,
-    },
+    TriggerRekey,
     ApprovePersistentGrant {
         payload_bytes: Vec<u8>,
     },
@@ -77,7 +75,7 @@ impl ProposalKind {
                 buf.extend_from_slice(new_pubkey);
                 buf
             }
-            Self::UpdateShamirParameters { new_n } => vec![*new_n],
+            Self::TriggerRekey => vec![],
             Self::ApprovePersistentGrant { payload_bytes }
             | Self::ApproveOneOffTransaction { payload_bytes } => payload_bytes.clone(),
         }
@@ -88,7 +86,7 @@ impl ProposalKind {
     pub fn requires_full_quorum(kind: &str) -> bool {
         matches!(
             kind.parse::<ProposalKindTag>(),
-            Ok(ProposalKindTag::ReplaceOperator | ProposalKindTag::UpdateShamirParameters)
+            Ok(ProposalKindTag::ReplaceOperator | ProposalKindTag::TriggerRekey)
         )
     }
 
@@ -131,12 +129,7 @@ impl ProposalKind {
                     new_pubkey,
                 })
             }
-            ProposalKindTag::UpdateShamirParameters => {
-                let &[new_n] = payload else {
-                    return Err("invalid payload for update_shamir_parameters".to_owned());
-                };
-                Ok(Self::UpdateShamirParameters { new_n })
-            }
+            ProposalKindTag::TriggerRekey => Ok(Self::TriggerRekey),
             ProposalKindTag::ApprovePersistentGrant => Ok(Self::ApprovePersistentGrant {
                 payload_bytes: payload.to_vec(),
             }),
@@ -696,9 +689,7 @@ impl ProposalManager {
                 self.execute_replace_operator(old_operator_id, new_pubkey)
                     .await
             }
-            ProposalKind::UpdateShamirParameters { new_n } => {
-                self.execute_update_shamir_parameters(new_n).await
-            }
+            ProposalKind::TriggerRekey => self.execute_trigger_rekey().await,
             ProposalKind::ApprovePersistentGrant { payload_bytes } => {
                 self.execute_approve_persistent_grant(payload_bytes).await
             }
@@ -764,7 +755,7 @@ impl ProposalManager {
     }
 
     /// Triggers a Shamir re-key with the current operator set (§3.3).
-    async fn execute_update_shamir_parameters(&self, _new_n: u8) -> Result<(), Error> {
+    async fn execute_trigger_rekey(&self) -> Result<(), Error> {
         self.vault_coordinator
             .ask(StartRekey {})
             .await

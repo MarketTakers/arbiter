@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package arbiter.operator.governance;
 
+import "google/protobuf/empty.proto";
+
 message Request {
   oneof payload {
     CreateProposalRequest create = 1;
@@ -13,22 +15,18 @@ message Request {
 message CreateProposalRequest {
   oneof kind {
     ApproveSdkClientPayload         approve_sdk_client          = 1;
-    GrantWalletAccessPayload        grant_wallet_access         = 3;
-    ReplaceOperatorPayload          replace_operator            = 5;
-    UpdateShamirParametersPayload   update_shamir_parameters    = 6;
-    ApprovePersistentGrantPayload   approve_persistent_grant    = 7;
-    ApproveOneOffTransactionPayload approve_one_off_transaction = 8;
+    GrantWalletAccessPayload        grant_wallet_access         = 2;
+    ReplaceOperatorPayload          replace_operator            = 3;
+    google.protobuf.Empty           trigger_rekey               = 4;
+    ApprovePersistentGrantPayload   approve_persistent_grant    = 5;
+    ApproveOneOffTransactionPayload approve_one_off_transaction = 6;
   }
-  optional uint32 ttl_secs = 2;
+  optional uint32 ttl_secs = 7;
 }
 
 message ReplaceOperatorPayload {
   int32 old_operator_id = 1;
   bytes new_pubkey      = 2;
-}
-
-message UpdateShamirParametersPayload {
-  uint32 new_n = 1;
 }
 
 message ApproveSdkClientPayload {
