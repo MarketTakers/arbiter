@@ -52,7 +52,6 @@ async fn handle_create(
             wallet_id: p.wallet_id,
             client_id: p.client_id,
         },
-        Some(ProtoKind::ApproveServerUpdate(_)) => ProposalKind::ApproveServerUpdate,
         Some(ProtoKind::ReplaceOperator(p)) => ProposalKind::ReplaceOperator {
             old_operator_id: p.old_operator_id,
             new_pubkey: p.new_pubkey,

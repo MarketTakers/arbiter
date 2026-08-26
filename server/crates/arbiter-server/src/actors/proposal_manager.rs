@@ -38,7 +38,6 @@ pub enum ProposalKind {
         wallet_id: i32,
         client_id: i32,
     },
-    ApproveServerUpdate,
     ReplaceOperator {
         old_operator_id: i32,
         new_pubkey: Vec<u8>,
@@ -67,7 +66,6 @@ impl ProposalKind {
                 buf.extend_from_slice(&client_id.to_be_bytes());
                 buf
             }
-            Self::ApproveServerUpdate => vec![],
             Self::ReplaceOperator {
                 old_operator_id,
                 new_pubkey,
@@ -114,7 +112,6 @@ impl ProposalKind {
                     client_id: i32::from_be_bytes(bytes[4..].try_into().unwrap()),
                 })
             }
-            ProposalKindTag::ApproveServerUpdate => Ok(Self::ApproveServerUpdate),
             ProposalKindTag::ReplaceOperator => {
                 let (id_bytes, rest) = payload
                     .split_first_chunk::<4>()
@@ -692,7 +689,6 @@ impl ProposalManager {
                 wallet_id,
                 client_id,
             } => self.execute_grant_wallet_access(wallet_id, client_id).await,
-            ProposalKind::ApproveServerUpdate => Ok(()),
             ProposalKind::ReplaceOperator {
                 old_operator_id,
                 new_pubkey,

@@ -14,7 +14,6 @@ message CreateProposalRequest {
   oneof kind {
     ApproveSdkClientPayload         approve_sdk_client          = 1;
     GrantWalletAccessPayload        grant_wallet_access         = 3;
-    ApproveServerUpdatePayload      approve_server_update       = 4;
     ReplaceOperatorPayload          replace_operator            = 5;
     UpdateShamirParametersPayload   update_shamir_parameters    = 6;
     ApprovePersistentGrantPayload   approve_persistent_grant    = 7;
@@ -31,8 +30,6 @@ message ReplaceOperatorPayload {
 message UpdateShamirParametersPayload {
   uint32 new_n = 1;
 }
-
-message ApproveServerUpdatePayload {}
 
 message ApproveSdkClientPayload {
   int32 client_id = 1;

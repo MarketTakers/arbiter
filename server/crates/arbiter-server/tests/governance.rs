@@ -917,47 +917,6 @@ async fn key_rotation_requires_full_quorum() {
     assert_eq!(cast(op3, &key3).await, VoteOutcome::QuorumApproved);
 }
 
-#[tokio::test]
-async fn approve_server_update_reaches_quorum() {
-    let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
-    actors
-        .vault
-        .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
-        .await
-        .unwrap();
-
-    let signing_key = authn::SigningKey::generate();
-    let op_id = register_operator(&db, &signing_key.public_key()).await;
-
-    let proposal_id = actors
-        .proposal_manager
-        .ask(CreateProposal {
-            kind: ProposalKind::ApproveServerUpdate,
-            initiator_id: op_id,
-            ttl_secs: None,
-        })
-        .await
-        .unwrap();
-
-    let msg = make_vote_message(proposal_id, true);
-    let sig = signing_key
-        .sign_message(&msg, SigningContext::GovernanceVote)
-        .unwrap();
-    let outcome = actors
-        .proposal_manager
-        .ask(CastVote {
-            proposal_id,
-            operator_id: op_id,
-            approve: true,
-            signature: sig.to_bytes(),
-        })
-        .await
-        .unwrap();
-
-    assert_eq!(outcome, VoteOutcome::QuorumApproved);
-}
-
 // ─── §3.5 / §3.6 Recovery Operator tests ──────────────────────────────────
 
 #[tokio::test]
