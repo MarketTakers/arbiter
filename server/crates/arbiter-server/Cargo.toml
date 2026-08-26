@@ -37,7 +37,7 @@ kameo.workspace = true
 chacha20poly1305 = { version = "0.10.1", features = ["std"] }
 argon2 = { version = "0.5.3", features = ["zeroize"] }
 restructed = "0.2.2"
-strum = { version = "0.28.0", features = ["derive"] }
+strum.workspace = true
 pem = "3.0.6"
 sha2.workspace = true
 hmac.workspace = true

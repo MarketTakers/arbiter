@@ -5,10 +5,25 @@ use ml_dsa::{
     SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey, signature::Keypair as _,
 };
 use rand::RngExt;
+use strum::IntoStaticStr;
 
-pub static CLIENT_CONTEXT: &[u8] = b"arbiter_client";
-pub static OPERATOR_CONTEXT: &[u8] = b"arbiter_operator";
-pub static GOVERNANCE_CONTEXT: &[u8] = b"arbiter_governance_vote";
+/// Domain separation tag mixed into every ML-DSA signature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, IntoStaticStr)]
+pub enum SigningContext {
+    #[strum(serialize = "arbiter_client")]
+    Client,
+    #[strum(serialize = "arbiter_operator")]
+    Operator,
+    #[strum(serialize = "arbiter_governance_vote")]
+    GovernanceVote,
+}
+
+impl SigningContext {
+    #[must_use]
+    pub fn as_bytes(self) -> &'static [u8] {
+        <&'static str>::from(self).as_bytes()
+    }
+}
 
 const NONCE_SIZE: usize = 32;
 
@@ -86,15 +101,26 @@ impl PublicKey {
     }
 
     #[must_use]
-    pub fn verify(&self, challenge: &AuthChallenge, context: &[u8], signature: &Signature) -> bool {
+    pub fn verify(
+        &self,
+        challenge: &AuthChallenge,
+        context: SigningContext,
+        signature: &Signature,
+    ) -> bool {
         let challenge = challenge.format();
         self.0
-            .verify_with_context(&challenge, context, &signature.0)
+            .verify_with_context(&challenge, context.as_bytes(), &signature.0)
     }
 
     #[must_use]
-    pub fn verify_message(&self, message: &[u8], context: &[u8], signature: &Signature) -> bool {
-        self.0.verify_with_context(message, context, &signature.0)
+    pub fn verify_message(
+        &self,
+        message: &[u8],
+        context: SigningContext,
+        signature: &Signature,
+    ) -> bool {
+        self.0
+            .verify_with_context(message, context.as_bytes(), &signature.0)
     }
 }
 
@@ -121,17 +147,21 @@ impl SigningKey {
         self.0.verifying_key().into()
     }
 
-    pub fn sign_message(&self, message: &[u8], context: &[u8]) -> Result<Signature, Error> {
+    pub fn sign_message(
+        &self,
+        message: &[u8],
+        context: SigningContext,
+    ) -> Result<Signature, Error> {
         self.0
             .signing_key()
-            .sign_deterministic(message, context)
+            .sign_deterministic(message, context.as_bytes())
             .map(Into::into)
     }
 
     pub fn sign_challenge(
         &self,
         challenge: &AuthChallenge,
-        context: &[u8],
+        context: SigningContext,
     ) -> Result<Signature, Error> {
         let challenge = challenge.format();
 
@@ -198,7 +228,7 @@ mod tests {
 
     use crate::authn::AuthChallenge;
 
-    use super::{CLIENT_CONTEXT, PublicKey, Signature, SigningKey, OPERATOR_CONTEXT};
+    use super::{PublicKey, Signature, SigningContext, SigningKey};
 
     #[test]
     fn public_key_round_trip_decodes() {
@@ -214,7 +244,7 @@ mod tests {
     fn signature_round_trip_decodes() {
         let key = SigningKey::generate();
         let signature = key
-            .sign_message(b"challenge", CLIENT_CONTEXT)
+            .sign_message(b"challenge", SigningContext::Client)
             .expect("signature should be created");
 
         let decoded =
@@ -229,11 +259,11 @@ mod tests {
         let public_key = key.public_key();
         let challenge = AuthChallenge::generate(&mut rand::rng());
         let signature = key
-            .sign_challenge(&challenge, CLIENT_CONTEXT)
+            .sign_challenge(&challenge, SigningContext::Client)
             .expect("signature should be created");
 
-        assert!(public_key.verify(&challenge, CLIENT_CONTEXT, &signature));
-        assert!(!public_key.verify(&challenge, OPERATOR_CONTEXT, &signature));
+        assert!(public_key.verify(&challenge, SigningContext::Client, &signature));
+        assert!(!public_key.verify(&challenge, SigningContext::Operator, &signature));
     }
 
     #[test]
@@ -246,13 +276,13 @@ mod tests {
         let challenge = AuthChallenge::generate(&mut rand::rng());
 
         let signature = restored
-            .sign_challenge(&challenge, CLIENT_CONTEXT)
+            .sign_challenge(&challenge, SigningContext::Client)
             .expect("signature should be created");
 
         assert!(
             restored
                 .public_key()
-                .verify(&challenge, CLIENT_CONTEXT, &signature)
+                .verify(&challenge, SigningContext::Client, &signature)
         );
     }
 }

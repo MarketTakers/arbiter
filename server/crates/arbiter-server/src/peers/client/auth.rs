@@ -12,7 +12,7 @@ use crate::{
         schema::program_client,
     },
 };
-use arbiter_crypto::authn::{self, AuthChallenge, CLIENT_CONTEXT};
+use arbiter_crypto::authn::{self, AuthChallenge, SigningContext};
 use arbiter_proto::{
     ClientMetadata,
     transport::{Bi, expect_message},
@@ -306,7 +306,7 @@ where
         Error::Transport
     })?;
 
-    if !pubkey.verify(&challenge, CLIENT_CONTEXT, &signature) {
+    if !pubkey.verify(&challenge, SigningContext::Client, &signature) {
         error!("Challenge solution verification failed");
         return Err(Error::InvalidChallengeSolution);
     }

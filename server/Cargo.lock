@@ -707,6 +707,7 @@ dependencies = [
  "memsafe",
  "ml-dsa",
  "rand 0.10.1",
+ "strum 0.28.0",
  "thiserror",
  "x-wing",
 ]

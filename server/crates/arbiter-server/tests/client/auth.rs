@@ -1,5 +1,5 @@
 use super::common::ChannelTransport;
-use arbiter_crypto::authn::{self, AuthChallenge, CLIENT_CONTEXT};
+use arbiter_crypto::authn::{self, AuthChallenge, SigningContext};
 use arbiter_proto::{
     ClientMetadata,
     transport::{Receiver, Sender},
@@ -71,7 +71,7 @@ async fn insert_registered_client(
 fn sign_client_challenge(key: &SigningKey<MlDsa87>, challenge: &AuthChallenge) -> authn::Signature {
     let challenge = challenge.format();
     key.signing_key()
-        .sign_deterministic(&challenge, CLIENT_CONTEXT)
+        .sign_deterministic(&challenge, SigningContext::Client.as_bytes())
         .unwrap()
         .into()
 }

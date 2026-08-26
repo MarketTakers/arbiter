@@ -1,4 +1,4 @@
-use arbiter_crypto::authn::{self, GOVERNANCE_CONTEXT};
+use arbiter_crypto::authn::{self, SigningContext};
 use arbiter_server::{
     actors::{
         GlobalActors,
@@ -159,7 +159,9 @@ async fn single_operator_vote_reaches_quorum() {
         .unwrap();
 
     let msg = make_vote_message(proposal_id, true);
-    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = signing_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
 
     let outcome = actors
         .proposal_manager
@@ -203,7 +205,9 @@ async fn two_operator_first_vote_is_pending() {
         .unwrap();
 
     let msg = make_vote_message(proposal_id, true);
-    let sig = key1.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = key1
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
 
     let outcome = actors
         .proposal_manager
@@ -246,7 +250,9 @@ async fn duplicate_vote_rejected() {
         .unwrap();
 
     let msg = make_vote_message(proposal_id, true);
-    let sig = key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     actors
         .proposal_manager
         .ask(CastVote {
@@ -259,7 +265,9 @@ async fn duplicate_vote_rejected() {
         .unwrap();
 
     // Second vote same operator
-    let sig2 = key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig2 = key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let result = actors
         .proposal_manager
         .ask(CastVote {
@@ -357,7 +365,9 @@ async fn query_pending_excludes_already_voted() {
 
     // Vote on p1 — with 1 operator this reaches quorum (QuorumApproved)
     let msg = make_vote_message(p1, true);
-    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = signing_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let outcome = actors
         .proposal_manager
         .ask(CastVote {
@@ -418,7 +428,9 @@ async fn expired_proposal_is_hidden_and_unvotable() {
 
     // And the write path must refuse it rather than rely on a status flip.
     let msg = make_vote_message(proposal_id, true);
-    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = signing_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let result = actors
         .proposal_manager
         .ask(CastVote {
@@ -464,7 +476,9 @@ async fn approve_sdk_client_writes_integrity_envelope() {
         .unwrap();
 
     let msg = make_vote_message(proposal_id, true);
-    let sig = op_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = op_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let outcome = actors
         .proposal_manager
         .ask(CastVote {
@@ -516,7 +530,9 @@ async fn grant_wallet_access_on_quorum_approval() {
         .unwrap();
 
     let msg = make_vote_message(proposal_id, true);
-    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = signing_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let outcome = actors
         .proposal_manager
         .ask(CastVote {
@@ -605,7 +621,9 @@ async fn approve_persistent_grant_creates_basic_grant_row() {
         .unwrap();
 
     let msg = make_vote_message(proposal_id, true);
-    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = signing_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let outcome = actors
         .proposal_manager
         .ask(CastVote {
@@ -720,7 +738,9 @@ async fn approve_one_off_transaction_stores_result() {
         .unwrap();
 
     let msg = make_vote_message(proposal_id, true);
-    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = signing_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let outcome = actors
         .proposal_manager
         .ask(CastVote {
@@ -771,7 +791,9 @@ async fn replace_operator_updates_pubkey_and_starts_rekey() {
         .unwrap();
 
     let msg = make_vote_message(proposal_id, true);
-    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = signing_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let outcome = actors
         .proposal_manager
         .ask(CastVote {
@@ -828,7 +850,9 @@ async fn update_shamir_parameters_reaches_quorum() {
         .unwrap();
 
     let msg = make_vote_message(proposal_id, true);
-    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = signing_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let outcome = actors
         .proposal_manager
         .ask(CastVote {
@@ -874,7 +898,9 @@ async fn key_rotation_requires_full_quorum() {
 
     let cast = |op_id, key: &authn::SigningKey| {
         let actors = actors.clone();
-        let sig = key.sign_message(&make_vote_message(proposal_id, true), GOVERNANCE_CONTEXT).unwrap();
+        let sig = key
+            .sign_message(&make_vote_message(proposal_id, true), SigningContext::GovernanceVote)
+            .unwrap();
         async move {
             actors
                 .proposal_manager
@@ -915,7 +941,9 @@ async fn approve_server_update_reaches_quorum() {
         .unwrap();
 
     let msg = make_vote_message(proposal_id, true);
-    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = signing_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let outcome = actors
         .proposal_manager
         .ask(CastVote {
@@ -955,7 +983,9 @@ async fn recovery_vote_rejected_when_sleeping() {
         .unwrap();
 
     let msg = make_vote_message(proposal_id, true);
-    let sig = rec_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = rec_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let err = actors
         .proposal_manager
         .ask(CastRecoveryVote {
@@ -999,7 +1029,9 @@ async fn recovery_vote_blocked_on_non_replace_proposal() {
         .unwrap();
 
     let msg = make_vote_message(proposal_id, true);
-    let sig = rec_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = rec_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let err = actors
         .proposal_manager
         .ask(CastRecoveryVote {
@@ -1103,7 +1135,9 @@ async fn recovery_operator_vote_contributes_to_replace_quorum() {
 
     // Ordinary operator approves — still pending (needs recovery too)
     let msg = make_vote_message(proposal_id, true);
-    let sig = op_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = op_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let outcome = actors
         .proposal_manager
         .ask(CastVote {
@@ -1117,7 +1151,9 @@ async fn recovery_operator_vote_contributes_to_replace_quorum() {
     assert_eq!(outcome, VoteOutcome::Pending);
 
     // Recovery operator approves — now quorum is reached
-    let sig = rec_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let sig = rec_key
+        .sign_message(&msg, SigningContext::GovernanceVote)
+        .unwrap();
     let outcome = actors
         .proposal_manager
         .ask(CastRecoveryVote {

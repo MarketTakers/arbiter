@@ -1,5 +1,5 @@
 use super::common::ChannelTransport;
-use arbiter_crypto::authn::{self, AuthChallenge, OPERATOR_CONTEXT};
+use arbiter_crypto::authn::{self, AuthChallenge, SigningContext};
 use arbiter_proto::transport::{Error as TransportError, Receiver, Sender};
 use arbiter_server::{
     actors::{GlobalActors, bootstrap::GetToken, vault::Bootstrap},
@@ -24,7 +24,7 @@ fn sign_operator_challenge(
 ) -> authn::Signature {
     let challenge = challenge.format();
     key.signing_key()
-        .sign_deterministic(&challenge, OPERATOR_CONTEXT)
+        .sign_deterministic(&challenge, SigningContext::Operator.as_bytes())
         .unwrap()
         .into()
 }

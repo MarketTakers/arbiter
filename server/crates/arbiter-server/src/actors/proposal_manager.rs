@@ -336,7 +336,7 @@ impl ProposalManager {
         approve: bool,
         signature: Vec<u8>,
     ) -> Result<VoteOutcome, Error> {
-        use arbiter_crypto::authn::{self, GOVERNANCE_CONTEXT};
+        use arbiter_crypto::authn::{self, SigningContext};
 
         let mut conn = self.db.get().await?;
 
@@ -391,7 +391,7 @@ impl ProposalManager {
         let auth_sig = authn::Signature::try_from(signature.as_slice())
             .map_err(|()| Error::InvalidSignature)?;
 
-        if !pubkey.verify_message(&vote_msg, GOVERNANCE_CONTEXT, &auth_sig) {
+        if !pubkey.verify_message(&vote_msg, SigningContext::GovernanceVote, &auth_sig) {
             return Err(Error::InvalidSignature);
         }
 
@@ -537,7 +537,7 @@ impl ProposalManager {
         approve: bool,
         signature: Vec<u8>,
     ) -> Result<VoteOutcome, Error> {
-        use arbiter_crypto::authn::{self, GOVERNANCE_CONTEXT};
+        use arbiter_crypto::authn::{self, SigningContext};
 
         let mut conn = self.db.get().await?;
 
@@ -596,7 +596,7 @@ impl ProposalManager {
         let auth_sig = authn::Signature::try_from(signature.as_slice())
             .map_err(|()| Error::InvalidSignature)?;
 
-        if !pubkey.verify_message(&vote_msg, GOVERNANCE_CONTEXT, &auth_sig) {
+        if !pubkey.verify_message(&vote_msg, SigningContext::GovernanceVote, &auth_sig) {
             return Err(Error::InvalidSignature);
         }
 

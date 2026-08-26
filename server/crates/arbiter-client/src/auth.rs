@@ -2,7 +2,7 @@ use crate::{
     storage::StorageError,
     transport::{ClientTransport, next_request_id},
 };
-use arbiter_crypto::authn::{self, CLIENT_CONTEXT, SigningKey};
+use arbiter_crypto::authn::{self, SigningContext, SigningKey};
 use arbiter_proto::{
     ClientMetadata,
     proto::{
@@ -110,7 +110,7 @@ async fn send_auth_challenge_solution(
     };
     let challenge_payload: Vec<u8> = challenge.format();
     let signature = key
-        .sign_message(&challenge_payload, CLIENT_CONTEXT)
+        .sign_message(&challenge_payload, SigningContext::Client)
         .map_err(|_| AuthError::UnexpectedAuthResponse)?
         .to_bytes();
 

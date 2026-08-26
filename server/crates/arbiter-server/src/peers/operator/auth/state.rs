@@ -7,7 +7,7 @@ use crate::{
     db::{DatabasePool, schema::operator_identity},
     peers::operator::auth::Outbound,
 };
-use arbiter_crypto::authn::{self, AuthChallenge, OPERATOR_CONTEXT};
+use arbiter_crypto::authn::{self, AuthChallenge, SigningContext};
 use arbiter_proto::transport::Bi;
 
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl};
@@ -141,7 +141,7 @@ where
             Error::InvalidChallengeSolution
         })?;
 
-        let valid = pubkey.verify(challenge, OPERATOR_CONTEXT, &signature);
+        let valid = pubkey.verify(challenge, SigningContext::Operator, &signature);
 
         if !valid {
             self.transport
