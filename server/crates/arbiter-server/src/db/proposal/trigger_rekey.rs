@@ -1,0 +1,28 @@
+//! A Shamir re-key over the current operator set (§3.3).
+
+use super::{Proposal, ProposalKindTag};
+use crate::db::DatabaseConnection;
+use diesel::QueryResult;
+
+pub struct TriggerRekey;
+
+impl Proposal for TriggerRekey {
+    const KIND: ProposalKindTag = ProposalKindTag::TriggerRekey;
+
+    type Settings = ();
+
+    async fn insert(
+        _proposal_id: i32,
+        _settings: &Self::Settings,
+        _conn: &mut DatabaseConnection,
+    ) -> QueryResult<()> {
+        Ok(())
+    }
+
+    async fn load(
+        _proposal_id: i32,
+        _conn: &mut DatabaseConnection,
+    ) -> QueryResult<Self::Settings> {
+        Ok(())
+    }
+}

@@ -9,6 +9,7 @@ use crate::db::schema::{
     integrity_envelope, root_key_history, tls_history,
 };
 
+use crate::db::proposal::ProposalKindTag;
 use diesel::{prelude::*, sqlite::Sqlite};
 use restructed::Models;
 
@@ -22,7 +23,6 @@ pub mod types {
         sql_types::{Integer, Text},
         sqlite::{Sqlite, SqliteType},
     };
-    use strum::{Display, EnumDiscriminants, EnumString, IntoStaticStr};
 
     #[derive(Debug, FromSqlRow, AsExpression, Clone)]
     #[diesel(sql_type = Integer)]
@@ -175,141 +175,6 @@ pub mod types {
                 "rejected" => Ok(Self::Rejected),
                 other => Err(format!("Unknown proposal status: {other}").into()),
             }
-        }
-    }
-
-    /// A governance proposal and the parameters it carries.
-    #[derive(Debug, Clone, EnumDiscriminants)]
-    #[strum_discriminants(
-        name(ProposalKindTag),
-        vis(pub),
-        derive(Display, EnumString, IntoStaticStr, AsExpression, FromSqlRow),
-        diesel(sql_type = Text),
-        strum(serialize_all = "snake_case")
-    )]
-    pub enum ProposalKind {
-        ApproveSdkClient {
-            client_id: i32,
-        },
-        GrantWalletAccess {
-            wallet_id: i32,
-            client_id: i32,
-        },
-        ReplaceOperator {
-            old_operator_id: i32,
-            new_pubkey: Vec<u8>,
-        },
-        TriggerRekey,
-        ApprovePersistentGrant {
-            payload_bytes: Vec<u8>,
-        },
-        ApproveOneOffTransaction {
-            payload_bytes: Vec<u8>,
-        },
-    }
-
-    impl ProposalKind {
-        pub fn encode_payload(&self) -> Vec<u8> {
-            match self {
-                Self::ApproveSdkClient { client_id } => client_id.to_be_bytes().to_vec(),
-                Self::GrantWalletAccess {
-                    wallet_id,
-                    client_id,
-                } => {
-                    let mut buf = Vec::with_capacity(8);
-                    buf.extend_from_slice(&wallet_id.to_be_bytes());
-                    buf.extend_from_slice(&client_id.to_be_bytes());
-                    buf
-                }
-                Self::ReplaceOperator {
-                    old_operator_id,
-                    new_pubkey,
-                } => {
-                    let len = u32::try_from(new_pubkey.len()).expect("pubkey len fits in u32");
-                    let mut buf = Vec::with_capacity(4 + 4 + new_pubkey.len());
-                    buf.extend_from_slice(&old_operator_id.to_be_bytes());
-                    buf.extend_from_slice(&len.to_be_bytes());
-                    buf.extend_from_slice(new_pubkey);
-                    buf
-                }
-                Self::TriggerRekey => vec![],
-                Self::ApprovePersistentGrant { payload_bytes }
-                | Self::ApproveOneOffTransaction { payload_bytes } => payload_bytes.clone(),
-            }
-        }
-
-        /// Key-rotation proposals require every operator to approve (§3.3).
-        pub fn decode(tag: ProposalKindTag, payload: &[u8]) -> Result<Self, String> {
-            match tag {
-                ProposalKindTag::ApproveSdkClient => {
-                    let bytes = <[u8; 4]>::try_from(payload)
-                        .map_err(|_| "invalid payload for approve_sdk_client".to_owned())?;
-                    Ok(Self::ApproveSdkClient {
-                        client_id: i32::from_be_bytes(bytes),
-                    })
-                }
-                ProposalKindTag::GrantWalletAccess => {
-                    let bytes = <[u8; 8]>::try_from(payload)
-                        .map_err(|_| "invalid payload for grant_wallet_access".to_owned())?;
-                    Ok(Self::GrantWalletAccess {
-                        wallet_id: i32::from_be_bytes(bytes[..4].try_into().unwrap()),
-                        client_id: i32::from_be_bytes(bytes[4..].try_into().unwrap()),
-                    })
-                }
-                ProposalKindTag::ReplaceOperator => {
-                    let (id_bytes, rest) = payload
-                        .split_first_chunk::<4>()
-                        .ok_or_else(|| "replace_operator payload too short".to_owned())?;
-                    let old_operator_id = i32::from_be_bytes(*id_bytes);
-                    let (len_bytes, rest) = rest
-                        .split_first_chunk::<4>()
-                        .ok_or_else(|| "replace_operator payload too short".to_owned())?;
-                    let len = u32::from_be_bytes(*len_bytes);
-                    let len = usize::try_from(len).unwrap_or(usize::MAX);
-                    let new_pubkey = rest
-                        .get(..len)
-                        .ok_or_else(|| "replace_operator payload truncated".to_owned())?
-                        .to_vec();
-                    Ok(Self::ReplaceOperator {
-                        old_operator_id,
-                        new_pubkey,
-                    })
-                }
-                ProposalKindTag::TriggerRekey => Ok(Self::TriggerRekey),
-                ProposalKindTag::ApprovePersistentGrant => Ok(Self::ApprovePersistentGrant {
-                    payload_bytes: payload.to_vec(),
-                }),
-                ProposalKindTag::ApproveOneOffTransaction => Ok(Self::ApproveOneOffTransaction {
-                    payload_bytes: payload.to_vec(),
-                }),
-            }
-        }
-    }
-
-    impl ProposalKindTag {
-        /// Key-rotation proposals require every operator to approve (§3.3).
-        #[must_use]
-        pub const fn requires_full_quorum(self) -> bool {
-            matches!(self, Self::ReplaceOperator | Self::TriggerRekey)
-        }
-    }
-
-    impl ToSql<Text, Sqlite> for ProposalKindTag {
-        fn to_sql<'b>(
-            &'b self,
-            out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
-        ) -> diesel::serialize::Result {
-            <str as ToSql<Text, Sqlite>>::to_sql(<&'static str>::from(*self), out)
-        }
-    }
-
-    impl FromSql<Text, Sqlite> for ProposalKindTag {
-        fn from_sql(
-            bytes: <Sqlite as Backend>::RawValue<'_>,
-        ) -> diesel::deserialize::Result<Self> {
-            let s = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-            s.parse()
-                .map_err(|_| format!("Unknown proposal kind: {s}").into())
         }
     }
 }
@@ -615,7 +480,6 @@ pub struct IntegrityEnvelope {
 pub struct Proposal {
     pub id: i32,
     pub kind: ProposalKindTag,
-    pub payload: Vec<u8>,
     pub initiator_id: i32,
     pub created_at: SqliteTimestamp,
     pub expires_at: SqliteTimestamp,
@@ -626,7 +490,6 @@ pub struct Proposal {
 #[diesel(table_name = schema::proposal, check_for_backend(Sqlite))]
 pub struct NewProposal {
     pub kind: ProposalKindTag,
-    pub payload: Vec<u8>,
     pub initiator_id: i32,
     // status defaults to 'pending' at the DB layer
     pub expires_at: SqliteTimestamp,
@@ -651,7 +514,6 @@ pub struct NewProposalVote {
     pub approve: bool,
     pub signature: Vec<u8>,
 }
-
 
 #[derive(Debug, Insertable)]
 #[diesel(table_name = schema::proposal_result, check_for_backend(Sqlite))]

@@ -176,11 +176,96 @@ diesel::table! {
     proposal (id) {
         id -> Integer,
         kind -> Text,
-        payload -> Binary,
         initiator_id -> Integer,
         created_at -> Integer,
         expires_at -> Integer,
         status -> Text,
+    }
+}
+
+diesel::table! {
+    proposal_approve_sdk_client (proposal_id) {
+        proposal_id -> Integer,
+        client_id -> Integer,
+    }
+}
+
+diesel::table! {
+    proposal_grant_wallet_access (proposal_id) {
+        proposal_id -> Integer,
+        wallet_id -> Integer,
+        client_id -> Integer,
+    }
+}
+
+diesel::table! {
+    proposal_replace_operator (proposal_id) {
+        proposal_id -> Integer,
+        old_operator_id -> Integer,
+        new_pubkey -> Binary,
+    }
+}
+
+diesel::table! {
+    proposal_one_off_transaction (proposal_id) {
+        proposal_id -> Integer,
+        client_id -> Integer,
+        wallet_address -> Binary,
+        chain_id -> BigInt,
+        nonce -> BigInt,
+        gas_limit -> BigInt,
+        max_fee_per_gas -> Binary,
+        max_priority_fee_per_gas -> Binary,
+        to_address -> Binary,
+        value -> Binary,
+        input -> Binary,
+    }
+}
+
+diesel::table! {
+    proposal_persistent_grant (proposal_id) {
+        proposal_id -> Integer,
+        wallet_access_id -> Integer,
+        chain_id -> BigInt,
+        valid_from -> Nullable<BigInt>,
+        valid_until -> Nullable<BigInt>,
+        max_gas_fee_per_gas -> Nullable<Binary>,
+        max_priority_fee_per_gas -> Nullable<Binary>,
+        rate_limit_count -> Nullable<Integer>,
+        rate_limit_window_secs -> Nullable<BigInt>,
+    }
+}
+
+diesel::table! {
+    proposal_persistent_grant_ether (proposal_id) {
+        proposal_id -> Integer,
+        window_secs -> BigInt,
+        max_volume -> Binary,
+    }
+}
+
+diesel::table! {
+    proposal_persistent_grant_ether_target (id) {
+        id -> Integer,
+        proposal_id -> Integer,
+        address -> Binary,
+    }
+}
+
+diesel::table! {
+    proposal_persistent_grant_token (proposal_id) {
+        proposal_id -> Integer,
+        token_contract -> Binary,
+        receiver -> Nullable<Binary>,
+    }
+}
+
+diesel::table! {
+    proposal_persistent_grant_token_limit (id) {
+        id -> Integer,
+        proposal_id -> Integer,
+        window_secs -> BigInt,
+        max_volume -> Binary,
     }
 }
 
@@ -299,6 +384,13 @@ diesel::joinable!(operator -> operator_identity (id));
 diesel::joinable!(program_client -> client_metadata (metadata_id));
 diesel::joinable!(proposal -> operator_identity (initiator_id));
 diesel::joinable!(proposal_result -> proposal (proposal_id));
+diesel::joinable!(proposal_approve_sdk_client -> proposal (proposal_id));
+diesel::joinable!(proposal_grant_wallet_access -> proposal (proposal_id));
+diesel::joinable!(proposal_replace_operator -> proposal (proposal_id));
+diesel::joinable!(proposal_one_off_transaction -> proposal (proposal_id));
+diesel::joinable!(proposal_persistent_grant -> proposal (proposal_id));
+diesel::joinable!(proposal_persistent_grant_ether -> proposal_persistent_grant (proposal_id));
+diesel::joinable!(proposal_persistent_grant_token -> proposal_persistent_grant (proposal_id));
 diesel::joinable!(proposal_vote -> proposal (proposal_id));
 diesel::joinable!(proposal_vote -> operator_identity (operator_id));
 diesel::joinable!(recovery_operator -> recovery_operator_identity (id));
@@ -309,6 +401,15 @@ diesel::joinable!(recovery_wakeup_request -> operator_identity (requested_by));
 diesel::allow_tables_to_appear_in_same_query!(
     aead_encrypted,
     proposal_result,
+    proposal_approve_sdk_client,
+    proposal_grant_wallet_access,
+    proposal_replace_operator,
+    proposal_one_off_transaction,
+    proposal_persistent_grant,
+    proposal_persistent_grant_ether,
+    proposal_persistent_grant_ether_target,
+    proposal_persistent_grant_token,
+    proposal_persistent_grant_token_limit,
     recovery_operator,
     recovery_operator_identity,
     recovery_wakeup_request,

@@ -9,6 +9,7 @@ use thiserror::Error;
 use tracing::info;
 
 pub mod models;
+pub mod proposal;
 pub mod schema;
 
 pub type DatabaseConnection = SyncConnectionWrapper<SqliteConnection>;

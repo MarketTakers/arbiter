@@ -8,14 +8,15 @@ use crate::{
         self,
         models::{
             NewProposal, NewProposalVote, NewRecoveryProposalVote, NewRecoveryWakeupRequest,
-            Proposal, ProposalKind, ProposalKindTag, ProposalStatus, SqliteTimestamp,
+            Proposal, ProposalStatus, SqliteTimestamp,
         },
+        proposal::{ProposalKind, ProposalKindTag, one_off_transaction, persistent_grant},
         schema,
     },
 };
 use chrono::Utc;
 use diesel::{ExpressionMethods as _, QueryDsl};
-use diesel_async::RunQueryDsl;
+use diesel_async::{AsyncConnection as _, RunQueryDsl};
 use kameo::{Actor, actor::ActorRef, messages};
 use strum::IntoDiscriminant as _;
 use tracing::{error, warn};
@@ -112,18 +113,23 @@ impl ProposalManager {
         let expires_at =
             SqliteTimestamp::from(Utc::now() + chrono::Duration::seconds(i64::from(ttl)));
 
-        let new_proposal = NewProposal {
-            kind: kind.discriminant(),
-            payload: kind.encode_payload(),
-            initiator_id,
-            expires_at,
-        };
-
-        let mut conn = self.db.get().await?;
-        let id: i32 = diesel::insert_into(schema::proposal::table)
-            .values(&new_proposal)
-            .returning(schema::proposal::id)
-            .get_result(&mut conn)
+        let id: i32 = self
+            .db
+            .get()
+            .await?
+            .transaction(async |conn| {
+                let id: i32 = diesel::insert_into(schema::proposal::table)
+                    .values(&NewProposal {
+                        kind: kind.discriminant(),
+                        initiator_id,
+                        expires_at,
+                    })
+                    .returning(schema::proposal::id)
+                    .get_result(conn)
+                    .await?;
+                db::proposal::insert_kind(conn, id, &kind).await?;
+                Ok::<_, diesel::result::Error>(id)
+            })
             .await?;
 
         Ok(id)
@@ -561,29 +567,26 @@ impl ProposalManager {
     }
 
     async fn execute_proposal(&self, proposal: &Proposal) -> Result<(), Error> {
-        let kind = ProposalKind::decode(proposal.kind, &proposal.payload)
-            .map_err(Error::ExecutionFailed)?;
+        let mut conn = self.db.get().await?;
+        let kind = db::proposal::load_kind(&mut conn, proposal.id, proposal.kind).await?;
+        drop(conn);
+
         match kind {
-            ProposalKind::ApproveSdkClient { client_id } => {
-                self.execute_approve_sdk_client(client_id).await
+            ProposalKind::ApproveSdkClient(s) => self.execute_approve_sdk_client(s.client_id).await,
+            ProposalKind::GrantWalletAccess(s) => {
+                self.execute_grant_wallet_access(s.wallet_id, s.client_id)
+                    .await
             }
-            ProposalKind::GrantWalletAccess {
-                wallet_id,
-                client_id,
-            } => self.execute_grant_wallet_access(wallet_id, client_id).await,
-            ProposalKind::ReplaceOperator {
-                old_operator_id,
-                new_pubkey,
-            } => {
-                self.execute_replace_operator(old_operator_id, new_pubkey)
+            ProposalKind::ReplaceOperator(s) => {
+                self.execute_replace_operator(s.old_operator_id, s.new_pubkey)
                     .await
             }
             ProposalKind::TriggerRekey => self.execute_trigger_rekey().await,
-            ProposalKind::ApprovePersistentGrant { payload_bytes } => {
-                self.execute_approve_persistent_grant(payload_bytes).await
+            ProposalKind::ApprovePersistentGrant(grant) => {
+                self.execute_approve_persistent_grant(*grant).await
             }
-            ProposalKind::ApproveOneOffTransaction { payload_bytes } => {
-                self.execute_approve_one_off_transaction(proposal.id, payload_bytes)
+            ProposalKind::ApproveOneOffTransaction(tx) => {
+                self.execute_approve_one_off_transaction(proposal.id, *tx)
                     .await
             }
         }
@@ -655,7 +658,7 @@ impl ProposalManager {
     async fn execute_approve_one_off_transaction(
         &self,
         proposal_id: i32,
-        payload_bytes: Vec<u8>,
+        tx: one_off_transaction::Settings,
     ) -> Result<(), Error> {
         use crate::actors::evm::ClientSignTransaction;
         use crate::db::models::NewProposalResult;
@@ -664,44 +667,24 @@ impl ProposalManager {
             eips::eip2930::AccessList,
             primitives::{Address, Bytes, TxKind, U256},
         };
-        use arbiter_proto::proto::operator::governance::ApproveOneOffTransactionPayload;
-        use prost::Message as _;
-
-        let p = ApproveOneOffTransactionPayload::decode(payload_bytes.as_slice())
-            .map_err(|e| Error::ExecutionFailed(format!("decode one-off tx payload: {e}")))?;
-
-        let wallet_address = Address::from_slice(p.wallet_address.as_slice());
-        let to = Address::from_slice(p.to.as_slice());
 
         let transaction = TxEip1559 {
-            chain_id: p.chain_id,
-            nonce: p.nonce,
-            gas_limit: p.gas_limit,
-            max_fee_per_gas: u128::from_be_bytes(
-                p.max_fee_per_gas
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| Error::ExecutionFailed("invalid max_fee_per_gas".to_owned()))?,
-            ),
-            max_priority_fee_per_gas: u128::from_be_bytes(
-                p.max_priority_fee_per_gas
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| {
-                        Error::ExecutionFailed("invalid max_priority_fee_per_gas".to_owned())
-                    })?,
-            ),
-            to: TxKind::Call(to),
-            value: U256::from_be_slice(p.value.as_slice()),
-            input: Bytes::from(p.input),
+            chain_id: tx.chain_id,
+            nonce: tx.nonce,
+            gas_limit: tx.gas_limit,
+            max_fee_per_gas: tx.max_fee_per_gas,
+            max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
+            to: TxKind::Call(Address::from(tx.to)),
+            value: U256::from_be_bytes(tx.value),
+            input: Bytes::from(tx.input),
             access_list: AccessList::default(),
         };
 
         let sig = self
             .evm
             .ask(ClientSignTransaction {
-                client_id: p.client_id,
-                wallet_address,
+                client_id: tx.client_id,
+                wallet_address: Address::from(tx.wallet_address),
                 transaction,
             })
             .await
@@ -720,7 +703,10 @@ impl ProposalManager {
         Ok(())
     }
 
-    async fn execute_approve_persistent_grant(&self, payload_bytes: Vec<u8>) -> Result<(), Error> {
+    async fn execute_approve_persistent_grant(
+        &self,
+        grant: persistent_grant::Settings,
+    ) -> Result<(), Error> {
         use crate::{
             actors::evm::OperatorCreateGrant,
             evm::policies::{
@@ -729,72 +715,46 @@ impl ProposalManager {
             },
         };
         use alloy::primitives::{Address, U256};
-        use arbiter_proto::proto::operator::governance::{
-            ApprovePersistentGrantPayload, approve_persistent_grant_payload::Specific,
-        };
         use chrono::Duration;
-        use prost::Message as _;
 
-        let payload = ApprovePersistentGrantPayload::decode(payload_bytes.as_slice())
-            .map_err(|e| Error::ExecutionFailed(format!("decode grant payload: {e}")))?;
+        let volume = |limit: persistent_grant::VolumeLimit| VolumeRateLimit {
+            max_volume: U256::from_be_bytes(limit.max_volume),
+            window: Duration::seconds(limit.window_secs),
+        };
 
         let basic = SharedGrantSettings {
-            wallet_access_id: payload.wallet_access_id,
-            chain: payload.chain_id,
-            valid_from: payload
+            wallet_access_id: grant.wallet_access_id,
+            chain: grant.chain_id,
+            valid_from: grant
                 .valid_from_secs
                 .and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
-            valid_until: payload
+            valid_until: grant
                 .valid_until_secs
                 .and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
-            max_gas_fee_per_gas: payload
-                .max_gas_fee_per_gas
-                .map(|b| U256::from_be_slice(b.as_slice())),
-            max_priority_fee_per_gas: payload
-                .max_priority_fee_per_gas
-                .map(|b| U256::from_be_slice(b.as_slice())),
-            rate_limit: payload.rate_limit.map(|r| TransactionRateLimit {
+            max_gas_fee_per_gas: grant.max_gas_fee_per_gas.map(U256::from_be_bytes),
+            max_priority_fee_per_gas: grant.max_priority_fee_per_gas.map(U256::from_be_bytes),
+            rate_limit: grant.rate_limit.map(|r| TransactionRateLimit {
                 count: r.count,
                 window: Duration::seconds(r.window_secs),
             }),
         };
 
-        let grant = match payload.specific {
-            Some(Specific::EtherTransfer(spec)) => {
-                let target: Vec<Address> = spec
-                    .targets
-                    .iter()
-                    .map(|b| Address::from_slice(b.as_slice()))
-                    .collect();
-                let limit = spec
-                    .limit
-                    .map(|l| VolumeRateLimit {
-                        max_volume: U256::from_be_slice(l.max_volume.as_slice()),
-                        window: Duration::seconds(l.window_secs),
-                    })
-                    .ok_or_else(|| {
-                        Error::ExecutionFailed("missing ether transfer limit".to_owned())
-                    })?;
-                SpecificGrant::EtherTransfer(ether_transfer::Settings { target, limit })
-            }
-            Some(Specific::TokenTransfer(spec)) => {
-                let token_contract = Address::from_slice(spec.token_contract.as_slice());
-                let target = spec.target.map(|b| Address::from_slice(b.as_slice()));
-                let volume_limits: Vec<VolumeRateLimit> = spec
-                    .volume_limits
-                    .iter()
-                    .map(|l| VolumeRateLimit {
-                        max_volume: U256::from_be_slice(l.max_volume.as_slice()),
-                        window: Duration::seconds(l.window_secs),
-                    })
-                    .collect();
-                SpecificGrant::TokenTransfer(token_transfers::Settings {
-                    token_contract,
-                    target,
-                    volume_limits,
+        let grant = match grant.specific {
+            persistent_grant::Specific::EtherTransfer { targets, limit } => {
+                SpecificGrant::EtherTransfer(ether_transfer::Settings {
+                    target: targets.into_iter().map(Address::from).collect(),
+                    limit: volume(limit),
                 })
             }
-            None => return Err(Error::ExecutionFailed("missing grant specific".to_owned())),
+            persistent_grant::Specific::TokenTransfer {
+                token_contract,
+                receiver,
+                volume_limits,
+            } => SpecificGrant::TokenTransfer(token_transfers::Settings {
+                token_contract: Address::from(token_contract),
+                target: receiver.map(Address::from),
+                volume_limits: volume_limits.into_iter().map(volume).collect(),
+            }),
         };
 
         self.evm

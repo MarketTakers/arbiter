@@ -8,7 +8,13 @@ use arbiter_server::{
         },
     },
     crypto::KeyCell,
-    db::{self, models::ProposalKind},
+    db::{
+        self,
+        proposal::{
+            ProposalKind, approve_sdk_client, grant_wallet_access, one_off_transaction,
+            persistent_grant, replace_operator,
+        },
+    },
 };
 use arbiter_server::actors::vault::Bootstrap;
 use arbiter_server::db::schema::{
@@ -121,7 +127,7 @@ async fn create_proposal_returns_id() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ApproveSdkClient { client_id: 42 },
+            kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id: 42 }),
             initiator_id: 1,
             ttl_secs: None,
         })
@@ -150,7 +156,7 @@ async fn create_proposal_caps_the_ttl() {
         actors
             .proposal_manager
             .ask(CreateProposal {
-                kind: ProposalKind::ApproveSdkClient { client_id: 1 },
+                kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id: 1 }),
                 initiator_id: op,
                 ttl_secs: Some(ttl),
             })
@@ -165,7 +171,7 @@ async fn create_proposal_caps_the_ttl() {
     assert!(matches!(
         create(MAX_TTL_SECS + 1).await,
         Err(kameo::error::SendError::HandlerError(
-            ProposalError::TtlTooLong { .. }
+            ProposalError::TtlTooLong
         ))
     ));
 }
@@ -189,7 +195,7 @@ async fn single_operator_vote_reaches_quorum() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ApproveSdkClient { client_id },
+            kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id }),
             initiator_id: op_id,
             ttl_secs: None,
         })
@@ -235,7 +241,7 @@ async fn two_operator_first_vote_is_pending() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ApproveSdkClient { client_id },
+            kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id }),
             initiator_id: op1,
             ttl_secs: None,
         })
@@ -280,7 +286,7 @@ async fn duplicate_vote_rejected() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ApproveSdkClient { client_id },
+            kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id }),
             initiator_id: op,
             ttl_secs: None,
         })
@@ -340,7 +346,7 @@ async fn invalid_signature_rejected() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ApproveSdkClient { client_id },
+            kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id }),
             initiator_id: op,
             ttl_secs: None,
         })
@@ -384,7 +390,7 @@ async fn query_pending_excludes_already_voted() {
     let p1 = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ApproveSdkClient { client_id: client_id1 },
+            kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id: client_id1 }),
             initiator_id: op,
             ttl_secs: None,
         })
@@ -394,7 +400,7 @@ async fn query_pending_excludes_already_voted() {
     let p2 = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ApproveSdkClient { client_id: client_id2 },
+            kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id: client_id2 }),
             initiator_id: op,
             ttl_secs: None,
         })
@@ -449,7 +455,7 @@ async fn expired_proposal_is_hidden_and_unvotable() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ApproveSdkClient { client_id },
+            kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id }),
             initiator_id: op,
             ttl_secs: Some(0),
         })
@@ -506,7 +512,7 @@ async fn approve_sdk_client_writes_integrity_envelope() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ApproveSdkClient { client_id },
+            kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id }),
             initiator_id: op_id,
             ttl_secs: None,
         })
@@ -560,7 +566,7 @@ async fn grant_wallet_access_on_quorum_approval() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::GrantWalletAccess { wallet_id, client_id },
+            kind: ProposalKind::GrantWalletAccess(grant_wallet_access::Settings { wallet_id, client_id }),
             initiator_id: op_id,
             ttl_secs: None,
         })
@@ -597,12 +603,6 @@ async fn grant_wallet_access_on_quorum_approval() {
 
 #[tokio::test]
 async fn approve_persistent_grant_creates_basic_grant_row() {
-    use arbiter_proto::proto::operator::governance::{
-        ApprovePersistentGrantPayload, EtherTransferSpecProto, VolumeLimitProto,
-        approve_persistent_grant_payload::Specific,
-    };
-    use prost::Message as _;
-
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
@@ -631,7 +631,7 @@ async fn approve_persistent_grant_creates_basic_grant_row() {
         .unwrap();
     drop(conn);
 
-    let payload = ApprovePersistentGrantPayload {
+    let grant = persistent_grant::Settings {
         wallet_access_id,
         chain_id: 1,
         valid_from_secs: None,
@@ -639,19 +639,19 @@ async fn approve_persistent_grant_creates_basic_grant_row() {
         max_gas_fee_per_gas: None,
         max_priority_fee_per_gas: None,
         rate_limit: None,
-        specific: Some(Specific::EtherTransfer(EtherTransferSpecProto {
-            targets: vec![vec![0u8; 20]],
-            limit: Some(VolumeLimitProto {
-                max_volume: alloy::primitives::U256::from(1_000_000u64).to_be_bytes_vec(),
+        specific: persistent_grant::Specific::EtherTransfer {
+            targets: vec![[0u8; 20]],
+            limit: persistent_grant::VolumeLimit {
+                max_volume: alloy::primitives::U256::from(1_000_000u64).to_be_bytes(),
                 window_secs: 86400,
-            }),
-        })),
+            },
+        },
     };
 
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ApprovePersistentGrant { payload_bytes: payload.encode_to_vec() },
+            kind: ProposalKind::ApprovePersistentGrant(Box::new(grant)),
             initiator_id: op_id,
             ttl_secs: None,
         })
@@ -687,14 +687,12 @@ async fn approve_persistent_grant_creates_basic_grant_row() {
 
 #[tokio::test]
 async fn approve_one_off_transaction_stores_result() {
-    use arbiter_proto::proto::operator::governance::ApproveOneOffTransactionPayload;
+    use alloy::primitives::{Address, U256};
     use arbiter_server::actors::evm::{Generate, OperatorCreateGrant};
     use arbiter_server::evm::policies::{
         SharedGrantSettings, SpecificGrant, VolumeRateLimit, ether_transfer,
     };
-    use alloy::primitives::{Address, U256};
     use chrono::Duration;
-    use prost::Message as _;
 
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
@@ -751,24 +749,23 @@ async fn approve_one_off_transaction_stores_result() {
         .await
         .unwrap();
 
-    // Encode the one-off transaction payload
-    let payload = ApproveOneOffTransactionPayload {
+    let transaction = one_off_transaction::Settings {
         client_id,
-        wallet_address: wallet_address.as_slice().to_vec(),
+        wallet_address: wallet_address.into(),
         chain_id: 1,
         nonce: 0,
         gas_limit: 21000,
-        max_fee_per_gas: 1u128.to_be_bytes().to_vec(),
-        max_priority_fee_per_gas: 1u128.to_be_bytes().to_vec(),
-        to: to_address.as_slice().to_vec(),
-        value: U256::from(1u64).to_be_bytes_vec(),
+        max_fee_per_gas: 1,
+        max_priority_fee_per_gas: 1,
+        to: to_address.into(),
+        value: U256::from(1u64).to_be_bytes(),
         input: vec![],
     };
 
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ApproveOneOffTransaction { payload_bytes: payload.encode_to_vec() },
+            kind: ProposalKind::ApproveOneOffTransaction(Box::new(transaction)),
             initiator_id: op_id,
             ttl_secs: None,
         })
@@ -821,7 +818,10 @@ async fn replace_operator_updates_pubkey_and_starts_rekey() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ReplaceOperator { old_operator_id: op_id, new_pubkey: new_pubkey.clone() },
+            kind: ProposalKind::ReplaceOperator(replace_operator::Settings {
+                old_operator_id: op_id,
+                new_pubkey: new_pubkey.clone(),
+            }),
             initiator_id: op_id,
             ttl_secs: None,
         })
@@ -927,7 +927,10 @@ async fn key_rotation_requires_full_quorum() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ReplaceOperator { old_operator_id: 1, new_pubkey },
+            kind: ProposalKind::ReplaceOperator(replace_operator::Settings {
+                old_operator_id: 1,
+                new_pubkey,
+            }),
             initiator_id: op1,
             ttl_secs: None,
         })
@@ -972,7 +975,10 @@ async fn recovery_vote_rejected_when_sleeping() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ReplaceOperator { old_operator_id: 1, new_pubkey },
+            kind: ProposalKind::ReplaceOperator(replace_operator::Settings {
+                old_operator_id: 1,
+                new_pubkey,
+            }),
             initiator_id: op_id,
             ttl_secs: None,
         })
@@ -1018,7 +1024,7 @@ async fn recovery_vote_blocked_on_non_replace_proposal() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ApproveSdkClient { client_id },
+            kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id }),
             initiator_id: op_id,
             ttl_secs: None,
         })
@@ -1123,7 +1129,10 @@ async fn recovery_operator_vote_contributes_to_replace_quorum() {
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ReplaceOperator { old_operator_id: 1, new_pubkey },
+            kind: ProposalKind::ReplaceOperator(replace_operator::Settings {
+                old_operator_id: 1,
+                new_pubkey,
+            }),
             initiator_id: op_id,
             ttl_secs: None,
         })

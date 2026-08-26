@@ -1,6 +1,9 @@
 use crate::{
     actors::proposal_manager::{Error as ProposalError, VoteOutcome},
-    db::models::ProposalKind,
+    db::proposal::{
+        ProposalKind, approve_sdk_client, grant_wallet_access, one_off_transaction,
+        persistent_grant, replace_operator,
+    },
     peers::operator::{
         OperatorSession,
         session::handlers::{HandleCastVote, HandleCreateProposal, HandleQueryPending},
@@ -46,29 +49,29 @@ async fn handle_create(
     req: CreateProposalRequest,
 ) -> Result<Option<OperatorResponsePayload>, Status> {
     let kind = match req.kind {
-        Some(ProtoKind::ApproveSdkClient(p)) => ProposalKind::ApproveSdkClient {
-            client_id: p.client_id,
-        },
-        Some(ProtoKind::GrantWalletAccess(p)) => ProposalKind::GrantWalletAccess {
-            wallet_id: p.wallet_id,
-            client_id: p.client_id,
-        },
-        Some(ProtoKind::ReplaceOperator(p)) => ProposalKind::ReplaceOperator {
-            old_operator_id: p.old_operator_id,
-            new_pubkey: p.new_pubkey,
-        },
+        Some(ProtoKind::ApproveSdkClient(p)) => {
+            ProposalKind::ApproveSdkClient(approve_sdk_client::Settings {
+                client_id: p.client_id,
+            })
+        }
+        Some(ProtoKind::GrantWalletAccess(p)) => {
+            ProposalKind::GrantWalletAccess(grant_wallet_access::Settings {
+                wallet_id: p.wallet_id,
+                client_id: p.client_id,
+            })
+        }
+        Some(ProtoKind::ReplaceOperator(p)) => {
+            ProposalKind::ReplaceOperator(replace_operator::Settings {
+                old_operator_id: p.old_operator_id,
+                new_pubkey: p.new_pubkey,
+            })
+        }
         Some(ProtoKind::TriggerRekey(())) => ProposalKind::TriggerRekey,
         Some(ProtoKind::ApprovePersistentGrant(p)) => {
-            use prost::Message as _;
-            ProposalKind::ApprovePersistentGrant {
-                payload_bytes: p.encode_to_vec(),
-            }
+            ProposalKind::ApprovePersistentGrant(Box::new(parse_persistent_grant(p)?))
         }
         Some(ProtoKind::ApproveOneOffTransaction(p)) => {
-            use prost::Message as _;
-            ProposalKind::ApproveOneOffTransaction {
-                payload_bytes: p.encode_to_vec(),
-            }
+            ProposalKind::ApproveOneOffTransaction(Box::new(parse_one_off_transaction(p)?))
         }
         None => return Err(Status::invalid_argument("Missing proposal kind")),
     };
@@ -86,6 +89,104 @@ async fn handle_create(
     Ok(Some(wrap(GovResponsePayload::Created(
         proto_gov::CreateProposalResponse { proposal_id },
     ))))
+}
+
+/// Validates the grant where the request enters, so a malformed one is refused before
+/// any operator votes on it instead of failing after quorum.
+fn parse_persistent_grant(
+    p: proto_gov::ApprovePersistentGrantPayload,
+) -> Result<persistent_grant::Settings, Status> {
+    use proto_gov::approve_persistent_grant_payload::Specific;
+
+    let volume =
+        |l: proto_gov::VolumeLimitProto| -> Result<persistent_grant::VolumeLimit, Status> {
+            Ok(persistent_grant::VolumeLimit {
+                max_volume: fixed(&l.max_volume, "max_volume must be 32 bytes")?,
+                window_secs: l.window_secs,
+            })
+        };
+
+    let specific = match p.specific {
+        Some(Specific::EtherTransfer(spec)) => {
+            let targets = spec
+                .targets
+                .iter()
+                .map(|target| fixed(target, "ether transfer target must be 20 bytes"))
+                .collect::<Result<Vec<_>, _>>()?;
+            let limit = spec
+                .limit
+                .ok_or_else(|| Status::invalid_argument("missing ether transfer limit"))?;
+            persistent_grant::Specific::EtherTransfer {
+                targets,
+                limit: volume(limit)?,
+            }
+        }
+        Some(Specific::TokenTransfer(spec)) => {
+            let volume_limits = spec
+                .volume_limits
+                .into_iter()
+                .map(volume)
+                .collect::<Result<Vec<_>, _>>()?;
+            persistent_grant::Specific::TokenTransfer {
+                token_contract: fixed(&spec.token_contract, "token_contract must be 20 bytes")?,
+                receiver: spec
+                    .target
+                    .map(|t| fixed(&t, "token transfer target must be 20 bytes"))
+                    .transpose()?,
+                volume_limits,
+            }
+        }
+        None => return Err(Status::invalid_argument("missing grant specific")),
+    };
+
+    Ok(persistent_grant::Settings {
+        wallet_access_id: p.wallet_access_id,
+        chain_id: p.chain_id,
+        valid_from_secs: p.valid_from_secs,
+        valid_until_secs: p.valid_until_secs,
+        max_gas_fee_per_gas: p
+            .max_gas_fee_per_gas
+            .map(|v| fixed(&v, "max_gas_fee_per_gas must be 32 bytes"))
+            .transpose()?,
+        max_priority_fee_per_gas: p
+            .max_priority_fee_per_gas
+            .map(|v| fixed(&v, "max_priority_fee_per_gas must be 32 bytes"))
+            .transpose()?,
+        rate_limit: p.rate_limit.map(|r| persistent_grant::RateLimit {
+            count: r.count,
+            window_secs: r.window_secs,
+        }),
+        specific,
+    })
+}
+
+fn fixed<const N: usize>(bytes: &[u8], message: &'static str) -> Result<[u8; N], Status> {
+    <[u8; N]>::try_from(bytes).map_err(|_| Status::invalid_argument(message))
+}
+
+/// Validates the transaction where the request enters, so a malformed one is refused
+/// before any operator votes on it instead of failing after quorum.
+fn parse_one_off_transaction(
+    p: proto_gov::ApproveOneOffTransactionPayload,
+) -> Result<one_off_transaction::Settings, Status> {
+    Ok(one_off_transaction::Settings {
+        client_id: p.client_id,
+        wallet_address: fixed(&p.wallet_address, "wallet_address must be 20 bytes")?,
+        chain_id: p.chain_id,
+        nonce: p.nonce,
+        gas_limit: p.gas_limit,
+        max_fee_per_gas: u128::from_be_bytes(fixed(
+            &p.max_fee_per_gas,
+            "max_fee_per_gas must be 16 bytes",
+        )?),
+        max_priority_fee_per_gas: u128::from_be_bytes(fixed(
+            &p.max_priority_fee_per_gas,
+            "max_priority_fee_per_gas must be 16 bytes",
+        )?),
+        to: fixed(&p.to, "to must be 20 bytes")?,
+        value: fixed(&p.value, "value must be 32 bytes")?,
+        input: p.input,
+    })
 }
 
 async fn handle_vote(

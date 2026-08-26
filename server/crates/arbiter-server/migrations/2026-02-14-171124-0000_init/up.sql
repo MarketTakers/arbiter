@@ -220,12 +220,87 @@ create unique index if not exists uniq_integrity_envelope_entity on integrity_en
 create table if not exists proposal (
     id           integer not null primary key,
     kind         text    not null,
-    payload      blob    not null,
     initiator_id integer not null references operator_identity(id) on delete restrict,
     created_at   integer not null default(unixepoch('now')),
     expires_at   integer not null,
     status       text    not null default 'pending'
         check (status in ('pending', 'approved', 'rejected'))
+) STRICT;
+
+-- Parameters of an approved-or-pending proposal
+create table if not exists proposal_approve_sdk_client (
+    proposal_id integer not null primary key references proposal(id) on delete cascade,
+    client_id   integer not null references program_client(id) on delete restrict
+) STRICT;
+
+create table if not exists proposal_grant_wallet_access (
+    proposal_id integer not null primary key references proposal(id) on delete cascade,
+    wallet_id   integer not null references evm_wallet(id) on delete restrict,
+    client_id   integer not null references program_client(id) on delete restrict
+) STRICT;
+
+create table if not exists proposal_replace_operator (
+    proposal_id     integer not null primary key references proposal(id) on delete cascade,
+    old_operator_id integer not null references operator_identity(id) on delete restrict,
+    new_pubkey      blob    not null
+) STRICT;
+
+-- The transaction an operator votes to sign.
+create table if not exists proposal_one_off_transaction (
+    proposal_id              integer not null primary key references proposal(id) on delete cascade,
+    client_id                integer not null references program_client(id) on delete restrict,
+    wallet_address           blob    not null check (length(wallet_address) = 20),
+    chain_id                 integer not null,
+    nonce                    integer not null,
+    gas_limit                integer not null,
+    max_fee_per_gas          blob    not null check (length(max_fee_per_gas) = 16),
+    max_priority_fee_per_gas blob    not null check (length(max_priority_fee_per_gas) = 16),
+    to_address               blob    not null check (length(to_address) = 20),
+    value                    blob    not null check (length(value) = 32),
+    input                    blob    not null
+) STRICT;
+
+-- The grant an operator votes to creat
+create table if not exists proposal_persistent_grant (
+    proposal_id              integer not null primary key references proposal (id) on delete cascade,
+    wallet_access_id         integer not null references evm_wallet_access (id) on delete restrict,
+    chain_id                 integer not null, -- EIP-155 chain ID
+    valid_from               integer, -- unix timestamp (seconds), null = no lower bound
+    valid_until              integer, -- unix timestamp (seconds), null = no upper bound
+    max_gas_fee_per_gas      blob check (max_gas_fee_per_gas is null or length(max_gas_fee_per_gas) = 32),
+    max_priority_fee_per_gas blob check (max_priority_fee_per_gas is null or length(max_priority_fee_per_gas) = 32),
+    rate_limit_count         integer, -- max transactions in window, null = unlimited
+    rate_limit_window_secs   integer, -- window duration in seconds, null = unlimited
+    check ((rate_limit_count is null) = (rate_limit_window_secs is null))
+) STRICT;
+
+-- `specific = ether_transfer`
+create table if not exists proposal_persistent_grant_ether (
+    proposal_id integer not null primary key references proposal_persistent_grant (proposal_id) on delete cascade,
+    window_secs integer not null,
+    max_volume  blob    not null check (length(max_volume) = 32)
+) STRICT;
+
+create table if not exists proposal_persistent_grant_ether_target (
+    id          integer not null primary key,
+    proposal_id integer not null references proposal_persistent_grant_ether (proposal_id) on delete cascade,
+    address     blob    not null check (length(address) = 20)
+) STRICT;
+
+create unique index if not exists uniq_proposal_ether_target on proposal_persistent_grant_ether_target (proposal_id, address);
+
+-- `specific = token_transfer`
+create table if not exists proposal_persistent_grant_token (
+    proposal_id    integer not null primary key references proposal_persistent_grant (proposal_id) on delete cascade,
+    token_contract blob    not null check (length(token_contract) = 20),
+    receiver       blob check (receiver is null or length(receiver) = 20)
+) STRICT;
+
+create table if not exists proposal_persistent_grant_token_limit (
+    id          integer not null primary key,
+    proposal_id integer not null references proposal_persistent_grant_token (proposal_id) on delete cascade,
+    window_secs integer not null,
+    max_volume  blob    not null check (length(max_volume) = 32)
 ) STRICT;
 
 create table if not exists proposal_vote (
