@@ -225,7 +225,7 @@ create table if not exists proposal (
     created_at   integer not null default(unixepoch('now')),
     expires_at   integer not null,
     status       text    not null default 'pending'
-        check (status in ('pending', 'approved', 'rejected', 'expired'))
+        check (status in ('pending', 'approved', 'rejected'))
 ) STRICT;
 
 create table if not exists proposal_vote (

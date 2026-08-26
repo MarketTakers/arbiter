@@ -16,7 +16,7 @@ use crate::{
 use chrono::Utc;
 use diesel::{ExpressionMethods as _, QueryDsl};
 use diesel_async::RunQueryDsl;
-use kameo::{actor::ActorRef, messages};
+use kameo::{Actor, actor::ActorRef, messages};
 use strum::{Display, EnumString, IntoStaticStr};
 use tracing::{error, warn};
 
@@ -184,6 +184,8 @@ pub enum Error {
     ProposalNotFound,
     #[error("Proposal is not pending")]
     ProposalNotPending,
+    #[error("Proposal has expired")]
+    ProposalExpired,
     #[error("Operator already voted on this proposal")]
     AlreadyVoted,
     #[error("Invalid vote signature")]
@@ -216,6 +218,7 @@ pub struct ProposalSummary {
     pub reject_count: i64,
 }
 
+#[derive(Actor)]
 pub struct ProposalManager {
     pub(crate) db: db::DatabasePool,
     pub(crate) vault: ActorRef<Vault>,
@@ -236,27 +239,6 @@ impl ProposalManager {
             evm,
             vault_coordinator,
         }
-    }
-}
-
-impl kameo::Actor for ProposalManager {
-    type Args = Self;
-    type Error = ();
-
-    async fn on_start(args: Self::Args, actor_ref: ActorRef<Self>) -> Result<Self, Self::Error> {
-        let weak = actor_ref.downgrade();
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_hours(1)).await;
-                match weak.upgrade() {
-                    Some(r) => {
-                        let _ = r.ask(ExpireStale).await;
-                    }
-                    None => break,
-                }
-            }
-        });
-        Ok(args)
     }
 }
 
@@ -347,29 +329,6 @@ impl ProposalManager {
     }
 
     #[message]
-    pub async fn expire_stale(&mut self) -> usize {
-        #[expect(
-            clippy::cast_possible_truncation,
-            clippy::as_conversions,
-            reason = "fixme! #84; this will break in 2038"
-        )]
-        let now_ts = Utc::now().timestamp() as i32;
-
-        let Ok(mut conn) = self.db.get().await else {
-            warn!("expire_stale: failed to acquire DB connection");
-            return 0;
-        };
-
-        diesel::update(schema::proposal::table)
-            .filter(schema::proposal::status.eq(ProposalStatus::Pending))
-            .filter(schema::proposal::expires_at.lt(now_ts))
-            .set(schema::proposal::status.eq(ProposalStatus::Expired))
-            .execute(&mut conn)
-            .await
-            .unwrap_or(0)
-    }
-
-    #[message]
     pub async fn cast_vote(
         &mut self,
         proposal_id: i32,
@@ -404,6 +363,10 @@ impl ProposalManager {
 
         if proposal.status != ProposalStatus::Pending {
             return Err(Error::ProposalNotPending);
+        }
+
+        if proposal.expires_at.0 <= Utc::now() {
+            return Err(Error::ProposalExpired);
         }
 
         // Load operator public key from operator_identity
@@ -607,6 +570,10 @@ impl ProposalManager {
 
         if proposal.status != ProposalStatus::Pending {
             return Err(Error::ProposalNotPending);
+        }
+
+        if proposal.expires_at.0 <= Utc::now() {
+            return Err(Error::ProposalExpired);
         }
 
         let pubkey_bytes: Vec<u8> = schema::recovery_operator_identity::table

@@ -4,7 +4,7 @@ use arbiter_server::{
         GlobalActors,
         proposal_manager::{
             CancelRecoveryWakeup, CastRecoveryVote, CastVote, CreateProposal,
-            Error as ProposalError, ExpireStale, ProposalKind, QueryPending,
+            Error as ProposalError, ProposalKind, QueryPending,
             RequestRecoveryWakeup, VoteOutcome,
         },
     },
@@ -382,7 +382,7 @@ async fn query_pending_excludes_already_voted() {
 }
 
 #[tokio::test]
-async fn expire_stale_marks_old_proposals_expired() {
+async fn expired_proposal_is_hidden_and_unvotable() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
     actors
@@ -398,7 +398,7 @@ async fn expire_stale_marks_old_proposals_expired() {
     let client_id = insert_unapproved_client(&db, &client_key.public_key()).await;
 
     // Create proposal with ttl_secs = -1 so it's immediately expired
-    let _proposal_id = actors
+    let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
             kind: ProposalKind::ApproveSdkClient { client_id },
@@ -408,19 +408,31 @@ async fn expire_stale_marks_old_proposals_expired() {
         .await
         .unwrap();
 
-    let expired = actors
-        .proposal_manager
-        .ask(ExpireStale)
-        .await
-        .unwrap();
-    assert_eq!(expired, 1);
-
+    // The row keeps status 'pending' (nothing sweeps it), but reads must skip it.
     let pending = actors
         .proposal_manager
         .ask(QueryPending { operator_id: op })
         .await
         .unwrap();
     assert!(pending.is_empty());
+
+    // And the write path must refuse it rather than rely on a status flip.
+    let msg = make_vote_message(proposal_id, true);
+    let sig = signing_key.sign_message(&msg, GOVERNANCE_CONTEXT).unwrap();
+    let result = actors
+        .proposal_manager
+        .ask(CastVote {
+            proposal_id,
+            operator_id: op,
+            approve: true,
+            signature: sig.to_bytes(),
+        })
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(kameo::error::SendError::HandlerError(ProposalError::ProposalExpired))
+    ));
 }
 
 #[tokio::test]

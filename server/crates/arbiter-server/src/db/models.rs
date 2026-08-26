@@ -149,7 +149,6 @@ pub mod types {
         Pending,
         Approved,
         Rejected,
-        Expired,
     }
 
     impl ToSql<Text, Sqlite> for ProposalStatus {
@@ -161,7 +160,6 @@ pub mod types {
                 Self::Pending => "pending",
                 Self::Approved => "approved",
                 Self::Rejected => "rejected",
-                Self::Expired => "expired",
             };
             <str as ToSql<Text, Sqlite>>::to_sql(s, out)
         }
@@ -176,7 +174,6 @@ pub mod types {
                 "pending" => Ok(Self::Pending),
                 "approved" => Ok(Self::Approved),
                 "rejected" => Ok(Self::Rejected),
-                "expired" => Ok(Self::Expired),
                 other => Err(format!("Unknown proposal status: {other}").into()),
             }
         }
