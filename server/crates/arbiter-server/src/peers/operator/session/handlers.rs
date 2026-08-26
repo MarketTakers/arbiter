@@ -286,7 +286,7 @@ impl OperatorSession {
     pub(crate) async fn handle_create_proposal(
         &mut self,
         kind: crate::db::models::ProposalKind,
-        ttl_secs: Option<i64>,
+        ttl_secs: Option<u32>,
     ) -> Result<i32, Error> {
         use crate::actors::proposal_manager::CreateProposal;
         let initiator_id = self.credentials.id;

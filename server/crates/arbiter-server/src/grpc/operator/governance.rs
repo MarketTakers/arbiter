@@ -72,10 +72,11 @@ async fn handle_create(
         }
         None => return Err(Status::invalid_argument("Missing proposal kind")),
     };
-    let ttl_secs = req.ttl_secs.map(i64::from);
-
     let proposal_id = actor
-        .ask(HandleCreateProposal { kind, ttl_secs })
+        .ask(HandleCreateProposal {
+            kind,
+            ttl_secs: req.ttl_secs,
+        })
         .await
         .map_err(|e| {
             warn!(?e, "create_proposal failed");

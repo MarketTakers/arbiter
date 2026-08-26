@@ -4,7 +4,7 @@ use arbiter_server::{
         GlobalActors,
         proposal_manager::{
             CancelRecoveryWakeup, CastRecoveryVote, CastVote, CreateProposal,
-            Error as ProposalError, QueryPending, RequestRecoveryWakeup, VoteOutcome,
+            Error as ProposalError, MAX_TTL_SECS, QueryPending, RequestRecoveryWakeup, VoteOutcome,
         },
     },
     crypto::KeyCell,
@@ -129,6 +129,45 @@ async fn create_proposal_returns_id() {
         .unwrap();
 
     assert!(proposal_id > 0);
+}
+
+#[tokio::test]
+async fn create_proposal_caps_the_ttl() {
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors
+        .vault
+        .ask(Bootstrap {
+            seal_key: KeyCell::from([0u8; 32]),
+        })
+        .await
+        .unwrap();
+
+    let key = authn::SigningKey::generate();
+    let op = register_operator(&db, &key.public_key()).await;
+
+    let create = async |ttl: u32| {
+        actors
+            .proposal_manager
+            .ask(CreateProposal {
+                kind: ProposalKind::ApproveSdkClient { client_id: 1 },
+                initiator_id: op,
+                ttl_secs: Some(ttl),
+            })
+            .await
+    };
+
+    // The boundary itself must still be accepted: the check is `>`, not `>=`.
+    create(MAX_TTL_SECS)
+        .await
+        .expect("a TTL at the ceiling must be accepted");
+
+    assert!(matches!(
+        create(MAX_TTL_SECS + 1).await,
+        Err(kameo::error::SendError::HandlerError(
+            ProposalError::TtlTooLong { .. }
+        ))
+    ));
 }
 
 #[tokio::test]
@@ -406,13 +445,13 @@ async fn expired_proposal_is_hidden_and_unvotable() {
     let client_key = authn::SigningKey::generate();
     let client_id = insert_unapproved_client(&db, &client_key.public_key()).await;
 
-    // Create proposal with ttl_secs = -1 so it's immediately expired
+    // Create proposal with ttl_secs = 0 so it's immediately expired
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
             kind: ProposalKind::ApproveSdkClient { client_id },
             initiator_id: op,
-            ttl_secs: Some(-1),
+            ttl_secs: Some(0),
         })
         .await
         .unwrap();

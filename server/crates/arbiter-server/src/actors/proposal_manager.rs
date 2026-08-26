@@ -20,7 +20,8 @@ use kameo::{Actor, actor::ActorRef, messages};
 use strum::IntoDiscriminant as _;
 use tracing::{error, warn};
 
-pub const DEFAULT_TTL_SECS: i64 = 7 * 24 * 60 * 60; // 7 days
+pub const DEFAULT_TTL_SECS: u32 = 7 * 24 * 60 * 60; // 7 days
+pub const MAX_TTL_SECS: u32 = DEFAULT_TTL_SECS;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VoteOutcome {
@@ -37,6 +38,8 @@ pub enum Error {
     ProposalNotPending,
     #[error("Proposal has expired")]
     ProposalExpired,
+    #[error("Requested TTL exceeds the maximum of {} seconds", MAX_TTL_SECS)]
+    TtlTooLong,
     #[error("Operator already voted on this proposal")]
     AlreadyVoted,
     #[error("Invalid vote signature")]
@@ -100,10 +103,14 @@ impl ProposalManager {
         &mut self,
         kind: ProposalKind,
         initiator_id: i32,
-        ttl_secs: Option<i64>,
+        ttl_secs: Option<u32>,
     ) -> Result<i32, Error> {
         let ttl = ttl_secs.unwrap_or(DEFAULT_TTL_SECS);
-        let expires_at = SqliteTimestamp::from(Utc::now() + chrono::Duration::seconds(ttl));
+        if ttl > MAX_TTL_SECS {
+            return Err(Error::TtlTooLong);
+        }
+        let expires_at =
+            SqliteTimestamp::from(Utc::now() + chrono::Duration::seconds(i64::from(ttl)));
 
         let new_proposal = NewProposal {
             kind: kind.discriminant(),
