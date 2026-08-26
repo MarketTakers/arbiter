@@ -17,24 +17,19 @@ use chrono::Utc;
 use diesel::{ExpressionMethods as _, QueryDsl};
 use diesel_async::RunQueryDsl;
 use kameo::{Actor, actor::ActorRef, messages};
-use strum::{Display, EnumString, IntoStaticStr};
+use strum::{Display, EnumDiscriminants, EnumString, IntoDiscriminant as _, IntoStaticStr};
 use tracing::{error, warn};
 
 pub const DEFAULT_TTL_SECS: i64 = 7 * 24 * 60 * 60; // 7 days
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Display, EnumString, IntoStaticStr)]
-#[strum(serialize_all = "snake_case")]
-pub enum ProposalKindTag {
-    ApproveSdkClient,
-    GrantWalletAccess,
-    ApproveServerUpdate,
-    ReplaceOperator,
-    UpdateShamirParameters,
-    ApprovePersistentGrant,
-    ApproveOneOffTransaction,
-}
-
-#[derive(Debug, Clone)]
+/// A governance proposal and the parameters it carries.
+#[derive(Debug, Clone, EnumDiscriminants)]
+#[strum_discriminants(
+    name(ProposalKindTag),
+    vis(pub),
+    derive(Display, EnumString, IntoStaticStr),
+    strum(serialize_all = "snake_case")
+)]
 pub enum ProposalKind {
     ApproveSdkClient {
         client_id: i32,
@@ -60,22 +55,6 @@ pub enum ProposalKind {
 }
 
 impl ProposalKind {
-    pub const fn tag(&self) -> ProposalKindTag {
-        match self {
-            Self::ApproveSdkClient { .. } => ProposalKindTag::ApproveSdkClient,
-            Self::GrantWalletAccess { .. } => ProposalKindTag::GrantWalletAccess,
-            Self::ApproveServerUpdate => ProposalKindTag::ApproveServerUpdate,
-            Self::ReplaceOperator { .. } => ProposalKindTag::ReplaceOperator,
-            Self::UpdateShamirParameters { .. } => ProposalKindTag::UpdateShamirParameters,
-            Self::ApprovePersistentGrant { .. } => ProposalKindTag::ApprovePersistentGrant,
-            Self::ApproveOneOffTransaction { .. } => ProposalKindTag::ApproveOneOffTransaction,
-        }
-    }
-
-    pub fn kind_str(&self) -> &'static str {
-        self.tag().into()
-    }
-
     pub fn encode_payload(&self) -> Vec<u8> {
         match self {
             Self::ApproveSdkClient { client_id } => client_id.to_be_bytes().to_vec(),
@@ -255,7 +234,7 @@ impl ProposalManager {
         let expires_at = SqliteTimestamp::from(Utc::now() + chrono::Duration::seconds(ttl));
 
         let new_proposal = NewProposal {
-            kind: kind.kind_str().to_owned(),
+            kind: <&'static str>::from(kind.discriminant()).to_owned(),
             payload: kind.encode_payload(),
             initiator_id,
             expires_at,
