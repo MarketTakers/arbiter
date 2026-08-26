@@ -174,7 +174,7 @@ async fn single_operator_vote_reaches_quorum() {
         .await
         .unwrap();
 
-    assert_eq!(outcome, VoteOutcome::QuorumApproved);
+    assert_eq!(outcome, VoteOutcome::Approved);
 }
 
 #[tokio::test]
@@ -363,7 +363,7 @@ async fn query_pending_excludes_already_voted() {
         .await
         .unwrap();
 
-    // Vote on p1 — with 1 operator this reaches quorum (QuorumApproved)
+    // Vote on p1 — with 1 operator this reaches quorum (Approved)
     let msg = make_vote_message(p1, true);
     let sig = signing_key
         .sign_message(&msg, SigningContext::GovernanceVote)
@@ -378,7 +378,7 @@ async fn query_pending_excludes_already_voted() {
         })
         .await
         .unwrap();
-    assert_eq!(outcome, VoteOutcome::QuorumApproved);
+    assert_eq!(outcome, VoteOutcome::Approved);
 
     // QueryPending should return only p2
     let pending = actors
@@ -490,7 +490,7 @@ async fn approve_sdk_client_writes_integrity_envelope() {
         .await
         .unwrap();
 
-    assert_eq!(outcome, VoteOutcome::QuorumApproved);
+    assert_eq!(outcome, VoteOutcome::Approved);
 
     let mut conn = db.get().await.unwrap();
     let count: i64 = integrity_envelope::table
@@ -544,7 +544,7 @@ async fn grant_wallet_access_on_quorum_approval() {
         .await
         .unwrap();
 
-    assert_eq!(outcome, VoteOutcome::QuorumApproved);
+    assert_eq!(outcome, VoteOutcome::Approved);
 
     let mut conn = db.get().await.unwrap();
     let count: i64 = evm_wallet_access::table
@@ -635,7 +635,7 @@ async fn approve_persistent_grant_creates_basic_grant_row() {
         .await
         .unwrap();
 
-    assert_eq!(outcome, VoteOutcome::QuorumApproved);
+    assert_eq!(outcome, VoteOutcome::Approved);
 
     let mut conn = db.get().await.unwrap();
     let count: i64 = evm_basic_grant::table
@@ -752,7 +752,7 @@ async fn approve_one_off_transaction_stores_result() {
         .await
         .unwrap();
 
-    assert_eq!(outcome, VoteOutcome::QuorumApproved);
+    assert_eq!(outcome, VoteOutcome::Approved);
 
     let mut conn = db.get().await.unwrap();
     let count: i64 = proposal_result::table
@@ -805,7 +805,7 @@ async fn replace_operator_updates_pubkey_and_starts_rekey() {
         .await
         .unwrap();
 
-    assert_eq!(outcome, VoteOutcome::QuorumApproved);
+    assert_eq!(outcome, VoteOutcome::Approved);
 
     let mut conn = db.get().await.unwrap();
     // The old identity row is updated in-place; count stays the same.
@@ -864,7 +864,7 @@ async fn trigger_rekey_reaches_quorum() {
         .await
         .unwrap();
 
-    assert_eq!(outcome, VoteOutcome::QuorumApproved);
+    assert_eq!(outcome, VoteOutcome::Approved);
 }
 
 #[tokio::test]
@@ -914,7 +914,7 @@ async fn key_rotation_requires_full_quorum() {
     // For key rotation, they must not.
     assert_eq!(cast(op1, &key1).await, VoteOutcome::Pending);
     assert_eq!(cast(op2, &key2).await, VoteOutcome::Pending);
-    assert_eq!(cast(op3, &key3).await, VoteOutcome::QuorumApproved);
+    assert_eq!(cast(op3, &key3).await, VoteOutcome::Approved);
 }
 
 // ─── §3.5 / §3.6 Recovery Operator tests ──────────────────────────────────
@@ -1123,5 +1123,5 @@ async fn recovery_operator_vote_contributes_to_replace_quorum() {
         })
         .await
         .unwrap();
-    assert_eq!(outcome, VoteOutcome::QuorumApproved);
+    assert_eq!(outcome, VoteOutcome::Approved);
 }

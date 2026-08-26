@@ -143,8 +143,8 @@ impl ProposalKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VoteOutcome {
     Pending,
-    QuorumApproved,
-    QuorumRejected,
+    Approved,
+    Rejected,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -445,7 +445,7 @@ impl ProposalManager {
                 .await?;
             drop(conn); // release connection before async execution
             self.execute_proposal(&proposal).await?;
-            return Ok(VoteOutcome::QuorumApproved);
+            return Ok(VoteOutcome::Approved);
         }
 
         let total_eligible = total_operators + total_recovery;
@@ -454,7 +454,7 @@ impl ProposalManager {
                 .set(schema::proposal::status.eq(ProposalStatus::Rejected))
                 .execute(&mut conn)
                 .await?;
-            return Ok(VoteOutcome::QuorumRejected);
+            return Ok(VoteOutcome::Rejected);
         }
 
         Ok(VoteOutcome::Pending)
@@ -611,7 +611,7 @@ impl ProposalManager {
                 .await?;
             drop(conn);
             self.execute_proposal(&proposal).await?;
-            return Ok(VoteOutcome::QuorumApproved);
+            return Ok(VoteOutcome::Approved);
         }
 
         let recovery_reject: i64 = schema::recovery_proposal_vote::table
@@ -633,7 +633,7 @@ impl ProposalManager {
                 .set(schema::proposal::status.eq(ProposalStatus::Rejected))
                 .execute(&mut conn)
                 .await?;
-            return Ok(VoteOutcome::QuorumRejected);
+            return Ok(VoteOutcome::Rejected);
         }
 
         Ok(VoteOutcome::Pending)

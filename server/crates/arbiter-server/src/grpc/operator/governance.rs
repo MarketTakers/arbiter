@@ -100,8 +100,8 @@ async fn handle_vote(
 
     let outcome = match result {
         Ok(VoteOutcome::Pending) => ProtoVoteOutcome::Pending,
-        Ok(VoteOutcome::QuorumApproved) => ProtoVoteOutcome::Approved,
-        Ok(VoteOutcome::QuorumRejected) => ProtoVoteOutcome::Rejected,
+        Ok(VoteOutcome::Approved) => ProtoVoteOutcome::Approved,
+        Ok(VoteOutcome::Rejected) => ProtoVoteOutcome::Rejected,
         Err(kameo::error::SendError::HandlerError(ProposalError::AlreadyVoted)) => {
             return Err(Status::invalid_argument("Already voted on this proposal"));
         }
