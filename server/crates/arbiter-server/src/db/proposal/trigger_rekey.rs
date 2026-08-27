@@ -1,7 +1,7 @@
 //! A Shamir re-key over the current operator set (§3.3).
 
 use super::{Proposal, ProposalKindTag};
-use crate::db::DatabaseConnection;
+use crate::db::{DatabaseConnection, models::ProposalId};
 use diesel::QueryResult;
 
 pub struct TriggerRekey;
@@ -12,7 +12,7 @@ impl Proposal for TriggerRekey {
     type Settings = ();
 
     async fn insert(
-        _proposal_id: i32,
+        _proposal_id: ProposalId,
         _settings: &Self::Settings,
         _conn: &mut DatabaseConnection,
     ) -> QueryResult<()> {
@@ -20,7 +20,7 @@ impl Proposal for TriggerRekey {
     }
 
     async fn load(
-        _proposal_id: i32,
+        _proposal_id: ProposalId,
         _conn: &mut DatabaseConnection,
     ) -> QueryResult<Self::Settings> {
         Ok(())

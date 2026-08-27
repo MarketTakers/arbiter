@@ -1,5 +1,6 @@
 use crate::{
     actors::proposal_manager::{Error as ProposalError, VoteOutcome},
+    db::models::{OperatorIdentityId, ProposalId},
     db::proposal::{
         ProposalKind, approve_sdk_client, grant_wallet_access, one_off_transaction,
         persistent_grant, replace_operator,
@@ -62,7 +63,7 @@ async fn handle_create(
         }
         Some(ProtoKind::ReplaceOperator(p)) => {
             ProposalKind::ReplaceOperator(replace_operator::Settings {
-                old_operator_id: p.old_operator_id,
+                old_operator_id: OperatorIdentityId::from_raw(p.old_operator_id),
                 new_pubkey: p.new_pubkey,
             })
         }
@@ -87,7 +88,9 @@ async fn handle_create(
         })?;
 
     Ok(Some(wrap(GovResponsePayload::Created(
-        proto_gov::CreateProposalResponse { proposal_id },
+        proto_gov::CreateProposalResponse {
+            proposal_id: proposal_id.to_raw(),
+        },
     ))))
 }
 
@@ -195,7 +198,7 @@ async fn handle_vote(
 ) -> Result<Option<OperatorResponsePayload>, Status> {
     let result = actor
         .ask(HandleCastVote {
-            proposal_id: req.proposal_id,
+            proposal_id: ProposalId::from_raw(req.proposal_id),
             approve: req.approve,
             signature: req.signature,
         })
@@ -235,9 +238,9 @@ async fn handle_query(
     let proposals = summaries
         .into_iter()
         .map(|s| proto_gov::ProposalSummary {
-            id: s.id,
+            id: s.id.to_raw(),
             kind: <&'static str>::from(s.kind).to_owned(),
-            initiator_id: s.initiator_id,
+            initiator_id: s.initiator_id.to_raw(),
             expires_at: s.expires_at.0.timestamp(),
             approve_count: s.approve_count,
             reject_count: s.reject_count,

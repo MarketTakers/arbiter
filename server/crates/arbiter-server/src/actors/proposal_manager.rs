@@ -8,7 +8,8 @@ use crate::{
         self,
         models::{
             NewProposal, NewProposalVote, NewRecoveryProposalVote, NewRecoveryWakeupRequest,
-            Proposal, ProposalStatus, SqliteTimestamp,
+            OperatorIdentityId, Proposal, ProposalId, ProposalStatus, RecoveryOperatorIdentityId,
+            SqliteTimestamp,
         },
         proposal::{ProposalKind, ProposalKindTag, one_off_transaction, persistent_grant},
         schema,
@@ -65,9 +66,9 @@ pub enum Error {
 
 #[derive(Debug)]
 pub struct ProposalSummary {
-    pub id: i32,
+    pub id: ProposalId,
     pub kind: ProposalKindTag,
-    pub initiator_id: i32,
+    pub initiator_id: OperatorIdentityId,
     pub expires_at: SqliteTimestamp,
     pub approve_count: i64,
     pub reject_count: i64,
@@ -103,9 +104,9 @@ impl ProposalManager {
     pub async fn create_proposal(
         &mut self,
         kind: ProposalKind,
-        initiator_id: i32,
+        initiator_id: OperatorIdentityId,
         ttl_secs: Option<u32>,
-    ) -> Result<i32, Error> {
+    ) -> Result<ProposalId, Error> {
         let ttl = ttl_secs.unwrap_or(DEFAULT_TTL_SECS);
         if ttl > MAX_TTL_SECS {
             return Err(Error::TtlTooLong);
@@ -113,12 +114,12 @@ impl ProposalManager {
         let expires_at =
             SqliteTimestamp::from(Utc::now() + chrono::Duration::seconds(i64::from(ttl)));
 
-        let id: i32 = self
+        let id: ProposalId = self
             .db
             .get()
             .await?
             .transaction(async |conn| {
-                let id: i32 = diesel::insert_into(schema::proposal::table)
+                let id: ProposalId = diesel::insert_into(schema::proposal::table)
                     .values(&NewProposal {
                         kind: kind.discriminant(),
                         initiator_id,
@@ -136,7 +137,7 @@ impl ProposalManager {
     }
 
     #[message]
-    pub async fn query_pending(&mut self, operator_id: i32) -> Vec<ProposalSummary> {
+    pub async fn query_pending(&mut self, operator_id: OperatorIdentityId) -> Vec<ProposalSummary> {
         #[expect(
             clippy::cast_possible_truncation,
             clippy::as_conversions,
@@ -149,7 +150,7 @@ impl ProposalManager {
             return vec![];
         };
 
-        let voted_ids: Vec<i32> = schema::proposal_vote::table
+        let voted_ids: Vec<ProposalId> = schema::proposal_vote::table
             .filter(schema::proposal_vote::operator_id.eq(operator_id))
             .select(schema::proposal_vote::proposal_id)
             .load(&mut conn)
@@ -195,8 +196,8 @@ impl ProposalManager {
     #[message]
     pub async fn cast_vote(
         &mut self,
-        proposal_id: i32,
-        operator_id: i32,
+        proposal_id: ProposalId,
+        operator_id: OperatorIdentityId,
         approve: bool,
         signature: Vec<u8>,
     ) -> Result<VoteOutcome, Error> {
@@ -249,7 +250,7 @@ impl ProposalManager {
 
         // Canonical vote message: proposal_id (i64 big-endian) || approve (u8)
         let mut vote_msg = Vec::with_capacity(9);
-        vote_msg.extend_from_slice(&i64::from(proposal_id).to_be_bytes());
+        vote_msg.extend_from_slice(&i64::from(proposal_id.to_raw()).to_be_bytes());
         vote_msg.push(u8::from(approve));
 
         let auth_sig = authn::Signature::try_from(signature.as_slice())
@@ -358,7 +359,10 @@ impl ProposalManager {
     /// §3.6: Any ordinary operator may request recovery wake-up.
     /// Fails if a wake-up is already pending or active.
     #[message]
-    pub async fn request_recovery_wakeup(&mut self, operator_id: i32) -> Result<(), Error> {
+    pub async fn request_recovery_wakeup(
+        &mut self,
+        operator_id: OperatorIdentityId,
+    ) -> Result<(), Error> {
         let mut conn = self.db.get().await?;
         if Self::has_uncancelled_wakeup(&mut conn).await? {
             return Err(Error::WakeupAlreadyPending);
@@ -375,7 +379,10 @@ impl ProposalManager {
     /// §3.6: Any ordinary operator may cancel a pending wake-up request.
     /// Fails if there is no uncancelled request.
     #[message]
-    pub async fn cancel_recovery_wakeup(&mut self, operator_id: i32) -> Result<(), Error> {
+    pub async fn cancel_recovery_wakeup(
+        &mut self,
+        operator_id: OperatorIdentityId,
+    ) -> Result<(), Error> {
         let mut conn = self.db.get().await?;
         let rows_updated = diesel::update(schema::recovery_wakeup_request::table)
             .filter(schema::recovery_wakeup_request::cancelled_at.is_null())
@@ -396,8 +403,8 @@ impl ProposalManager {
     #[message]
     pub async fn cast_recovery_vote(
         &mut self,
-        proposal_id: i32,
-        recovery_operator_id: i32,
+        proposal_id: ProposalId,
+        recovery_operator_id: RecoveryOperatorIdentityId,
         approve: bool,
         signature: Vec<u8>,
     ) -> Result<VoteOutcome, Error> {
@@ -454,7 +461,7 @@ impl ProposalManager {
             .map_err(|()| Error::InvalidSignature)?;
 
         let mut vote_msg = Vec::with_capacity(9);
-        vote_msg.extend_from_slice(&i64::from(proposal_id).to_be_bytes());
+        vote_msg.extend_from_slice(&i64::from(proposal_id.to_raw()).to_be_bytes());
         vote_msg.push(u8::from(approve));
 
         let auth_sig = authn::Signature::try_from(signature.as_slice())
@@ -617,7 +624,7 @@ impl ProposalManager {
     /// removes their old Shamir share, then begins a coordinated re-key (§3.3).
     async fn execute_replace_operator(
         &self,
-        old_operator_id: i32,
+        old_operator_id: OperatorIdentityId,
         new_pubkey: Vec<u8>,
     ) -> Result<(), Error> {
         let mut conn = self.db.get().await.map_err(Error::DatabaseConnection)?;
@@ -657,7 +664,7 @@ impl ProposalManager {
 
     async fn execute_approve_one_off_transaction(
         &self,
-        proposal_id: i32,
+        proposal_id: ProposalId,
         tx: one_off_transaction::Settings,
     ) -> Result<(), Error> {
         use crate::actors::evm::ClientSignTransaction;

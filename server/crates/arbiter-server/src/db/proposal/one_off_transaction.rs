@@ -3,6 +3,7 @@
 use super::{Proposal, ProposalKindTag, as_i64, as_u64, fixed};
 use crate::db::{
     DatabaseConnection,
+    models::ProposalId,
     schema::{proposal_one_off_transaction, proposal_one_off_transaction_result},
 };
 use diesel::{
@@ -28,7 +29,7 @@ pub struct Settings {
 #[derive(Debug, Queryable, Selectable, Insertable)]
 #[diesel(table_name = proposal_one_off_transaction, check_for_backend(Sqlite))]
 struct Row {
-    proposal_id: i32,
+    proposal_id: ProposalId,
     client_id: i32,
     wallet_address: Vec<u8>,
     chain_id: i64,
@@ -42,7 +43,7 @@ struct Row {
 }
 
 impl Row {
-    fn new(proposal_id: i32, settings: &Settings) -> QueryResult<Self> {
+    fn new(proposal_id: ProposalId, settings: &Settings) -> QueryResult<Self> {
         Ok(Self {
             proposal_id,
             client_id: settings.client_id,
@@ -82,7 +83,7 @@ impl Proposal for OneOffTransaction {
     type Settings = Settings;
 
     async fn insert(
-        proposal_id: i32,
+        proposal_id: ProposalId,
         settings: &Self::Settings,
         conn: &mut DatabaseConnection,
     ) -> QueryResult<()> {
@@ -93,7 +94,10 @@ impl Proposal for OneOffTransaction {
             .map(drop)
     }
 
-    async fn load(proposal_id: i32, conn: &mut DatabaseConnection) -> QueryResult<Self::Settings> {
+    async fn load(
+        proposal_id: ProposalId,
+        conn: &mut DatabaseConnection,
+    ) -> QueryResult<Self::Settings> {
         let row: Row = proposal_one_off_transaction::table
             .find(proposal_id)
             .select(Row::as_select())
@@ -108,7 +112,7 @@ impl Proposal for OneOffTransaction {
 #[derive(Debug, Insertable)]
 #[diesel(table_name = proposal_one_off_transaction_result, check_for_backend(Sqlite))]
 struct SignatureRow {
-    proposal_id: i32,
+    proposal_id: ProposalId,
     r: Vec<u8>,
     s: Vec<u8>,
     y_parity: i32,
@@ -117,7 +121,7 @@ struct SignatureRow {
 /// Records the signature produced for an approved transaction, by component, so what
 /// came back is as readable as what was signed.
 pub async fn store_signature(
-    proposal_id: i32,
+    proposal_id: ProposalId,
     signature: &alloy::signers::Signature,
     conn: &mut DatabaseConnection,
 ) -> QueryResult<()> {

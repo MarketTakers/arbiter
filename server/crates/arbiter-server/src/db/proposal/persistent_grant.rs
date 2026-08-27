@@ -2,6 +2,7 @@
 use super::{Proposal, ProposalKindTag, as_i64, as_u64, fixed};
 use crate::db::{
     DatabaseConnection,
+    models::ProposalId,
     schema::{
         proposal_persistent_grant, proposal_persistent_grant_ether,
         proposal_persistent_grant_ether_target, proposal_persistent_grant_token,
@@ -55,7 +56,7 @@ pub enum Specific {
 #[derive(Debug, Queryable, Selectable, Insertable)]
 #[diesel(table_name = proposal_persistent_grant, check_for_backend(Sqlite))]
 struct BaseRow {
-    proposal_id: i32,
+    proposal_id: ProposalId,
     wallet_access_id: i32,
     chain_id: i64,
     valid_from: Option<i64>,
@@ -69,7 +70,7 @@ struct BaseRow {
 #[derive(Debug, Queryable, Selectable, Insertable)]
 #[diesel(table_name = proposal_persistent_grant_ether, check_for_backend(Sqlite))]
 struct EtherRow {
-    proposal_id: i32,
+    proposal_id: ProposalId,
     window_secs: i64,
     max_volume: Vec<u8>,
 }
@@ -77,14 +78,14 @@ struct EtherRow {
 #[derive(Debug, Insertable)]
 #[diesel(table_name = proposal_persistent_grant_ether_target, check_for_backend(Sqlite))]
 struct NewEtherTarget {
-    proposal_id: i32,
+    proposal_id: ProposalId,
     address: Vec<u8>,
 }
 
 #[derive(Debug, Queryable, Selectable, Insertable)]
 #[diesel(table_name = proposal_persistent_grant_token, check_for_backend(Sqlite))]
 struct TokenRow {
-    proposal_id: i32,
+    proposal_id: ProposalId,
     token_contract: Vec<u8>,
     receiver: Option<Vec<u8>>,
 }
@@ -92,13 +93,13 @@ struct TokenRow {
 #[derive(Debug, Insertable)]
 #[diesel(table_name = proposal_persistent_grant_token_limit, check_for_backend(Sqlite))]
 struct NewTokenLimit {
-    proposal_id: i32,
+    proposal_id: ProposalId,
     window_secs: i64,
     max_volume: Vec<u8>,
 }
 
 impl BaseRow {
-    fn new(proposal_id: i32, settings: &Settings) -> QueryResult<Self> {
+    fn new(proposal_id: ProposalId, settings: &Settings) -> QueryResult<Self> {
         Ok(Self {
             proposal_id,
             wallet_access_id: settings.wallet_access_id,
@@ -141,7 +142,7 @@ impl Proposal for PersistentGrant {
     type Settings = Settings;
 
     async fn insert(
-        proposal_id: i32,
+        proposal_id: ProposalId,
         settings: &Self::Settings,
         conn: &mut DatabaseConnection,
     ) -> QueryResult<()> {
@@ -201,7 +202,10 @@ impl Proposal for PersistentGrant {
         Ok(())
     }
 
-    async fn load(proposal_id: i32, conn: &mut DatabaseConnection) -> QueryResult<Self::Settings> {
+    async fn load(
+        proposal_id: ProposalId,
+        conn: &mut DatabaseConnection,
+    ) -> QueryResult<Self::Settings> {
         let base: BaseRow = proposal_persistent_grant::table
             .find(proposal_id)
             .select(BaseRow::as_select())

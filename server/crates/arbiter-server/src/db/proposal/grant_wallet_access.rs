@@ -1,7 +1,9 @@
 //! Granting an SDK client visibility of a wallet.
 
 use super::{Proposal, ProposalKindTag};
-use crate::db::{DatabaseConnection, schema::proposal_grant_wallet_access as table};
+use crate::db::{
+    DatabaseConnection, models::ProposalId, schema::proposal_grant_wallet_access as table,
+};
 use diesel::{
     ExpressionMethods as _, Insertable, QueryDsl as _, QueryResult, Queryable, Selectable,
     SelectableHelper as _, sqlite::Sqlite,
@@ -23,7 +25,7 @@ impl Proposal for GrantWalletAccess {
     type Settings = Settings;
 
     async fn insert(
-        proposal_id: i32,
+        proposal_id: ProposalId,
         settings: &Self::Settings,
         conn: &mut DatabaseConnection,
     ) -> QueryResult<()> {
@@ -34,7 +36,10 @@ impl Proposal for GrantWalletAccess {
             .map(drop)
     }
 
-    async fn load(proposal_id: i32, conn: &mut DatabaseConnection) -> QueryResult<Self::Settings> {
+    async fn load(
+        proposal_id: ProposalId,
+        conn: &mut DatabaseConnection,
+    ) -> QueryResult<Self::Settings> {
         table::table
             .find(proposal_id)
             .select(Settings::as_select())

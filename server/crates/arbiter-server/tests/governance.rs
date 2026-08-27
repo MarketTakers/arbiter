@@ -10,6 +10,7 @@ use arbiter_server::{
     crypto::KeyCell,
     db::{
         self,
+        models::{OperatorIdentityId, ProposalId, RecoveryOperatorIdentityId},
         proposal::{
             ProposalKind, approve_sdk_client, grant_wallet_access, one_off_transaction,
             persistent_grant, replace_operator,
@@ -24,41 +25,45 @@ use arbiter_server::db::schema::{
 use diesel::{ExpressionMethods, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
 
-async fn register_operator(db: &db::DatabasePool, pubkey: &authn::PublicKey) -> i32 {
+async fn register_operator(db: &db::DatabasePool, pubkey: &authn::PublicKey) -> OperatorIdentityId {
     let mut conn = db.get().await.unwrap();
     insert_into(operator_identity::table)
         .values(operator_identity::public_key.eq(pubkey.to_bytes()))
         .returning(operator_identity::id)
-        .get_result::<i32>(&mut conn)
+        .get_result::<OperatorIdentityId>(&mut conn)
         .await
         .unwrap()
 }
 
-async fn register_recovery_operator(db: &db::DatabasePool, pubkey: &authn::PublicKey) -> i32 {
+async fn register_recovery_operator(
+    db: &db::DatabasePool,
+    pubkey: &authn::PublicKey,
+) -> RecoveryOperatorIdentityId {
     let mut conn = db.get().await.unwrap();
     insert_into(recovery_operator_identity::table)
         .values(recovery_operator_identity::public_key.eq(pubkey.to_bytes()))
         .returning(recovery_operator_identity::id)
-        .get_result::<i32>(&mut conn)
+        .get_result::<RecoveryOperatorIdentityId>(&mut conn)
         .await
         .unwrap()
 }
 
 /// Backdates a wakeup request so it appears to have passed the 14-day window.
-async fn insert_active_wakeup(db: &db::DatabasePool, operator_id: i32) {
+async fn insert_active_wakeup(db: &db::DatabasePool, operator_id: OperatorIdentityId) {
     let mut conn = db.get().await.unwrap();
     diesel::sql_query(format!(
         "INSERT INTO recovery_wakeup_request (requested_by, requested_at) \
-         VALUES ({operator_id}, unixepoch('now') - 14*24*3600 - 1)"
+         VALUES ({}, unixepoch('now') - 14*24*3600 - 1)",
+        operator_id.to_raw()
     ))
     .execute(&mut conn)
     .await
     .unwrap();
 }
 
-fn make_vote_message(proposal_id: i32, approve: bool) -> Vec<u8> {
+fn make_vote_message(proposal_id: ProposalId, approve: bool) -> Vec<u8> {
     let mut msg = Vec::with_capacity(9);
-    msg.extend_from_slice(&(proposal_id as i64).to_be_bytes());
+    msg.extend_from_slice(&i64::from(proposal_id.to_raw()).to_be_bytes());
     msg.push(u8::from(approve));
     msg
 }
@@ -128,13 +133,13 @@ async fn create_proposal_returns_id() {
         .proposal_manager
         .ask(CreateProposal {
             kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id: 42 }),
-            initiator_id: 1,
+            initiator_id: OperatorIdentityId::from_raw(1),
             ttl_secs: None,
         })
         .await
         .unwrap();
 
-    assert!(proposal_id > 0);
+    assert!(proposal_id.to_raw() > 0);
 }
 
 #[tokio::test]
@@ -935,7 +940,7 @@ async fn key_rotation_requires_full_quorum() {
         .proposal_manager
         .ask(CreateProposal {
             kind: ProposalKind::ReplaceOperator(replace_operator::Settings {
-                old_operator_id: 1,
+                old_operator_id: OperatorIdentityId::from_raw(1),
                 new_pubkey,
             }),
             initiator_id: op1,
@@ -983,7 +988,7 @@ async fn recovery_vote_rejected_when_sleeping() {
         .proposal_manager
         .ask(CreateProposal {
             kind: ProposalKind::ReplaceOperator(replace_operator::Settings {
-                old_operator_id: 1,
+                old_operator_id: OperatorIdentityId::from_raw(1),
                 new_pubkey,
             }),
             initiator_id: op_id,
@@ -1137,7 +1142,7 @@ async fn recovery_operator_vote_contributes_to_replace_quorum() {
         .proposal_manager
         .ask(CreateProposal {
             kind: ProposalKind::ReplaceOperator(replace_operator::Settings {
-                old_operator_id: 1,
+                old_operator_id: OperatorIdentityId::from_raw(1),
                 new_pubkey,
             }),
             initiator_id: op_id,

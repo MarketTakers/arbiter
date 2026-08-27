@@ -143,6 +143,8 @@ pub mod types {
     declare_id!(TlsHistoryId);
     declare_id!(EvmWalletId);
     declare_id!(ClientId);
+    declare_id!(ProposalId);
+    declare_id!(RecoveryOperatorIdentityId);
 
     #[derive(Debug, Clone, PartialEq, Eq, AsExpression, FromSqlRow)]
     #[diesel(sql_type = Text)]
@@ -478,9 +480,9 @@ pub struct IntegrityEnvelope {
 #[derive(Debug, Queryable, Selectable, Identifiable)]
 #[diesel(table_name = schema::proposal, check_for_backend(Sqlite))]
 pub struct Proposal {
-    pub id: i32,
+    pub id: ProposalId,
     pub kind: ProposalKindTag,
-    pub initiator_id: i32,
+    pub initiator_id: OperatorIdentityId,
     pub created_at: SqliteTimestamp,
     pub expires_at: SqliteTimestamp,
     pub status: ProposalStatus,
@@ -490,7 +492,7 @@ pub struct Proposal {
 #[diesel(table_name = schema::proposal, check_for_backend(Sqlite))]
 pub struct NewProposal {
     pub kind: ProposalKindTag,
-    pub initiator_id: i32,
+    pub initiator_id: OperatorIdentityId,
     // status defaults to 'pending' at the DB layer
     pub expires_at: SqliteTimestamp,
 }
@@ -499,8 +501,8 @@ pub struct NewProposal {
 #[diesel(table_name = schema::proposal_vote, check_for_backend(Sqlite))]
 pub struct ProposalVote {
     pub id: i32,
-    pub proposal_id: i32,
-    pub operator_id: i32,
+    pub proposal_id: ProposalId,
+    pub operator_id: OperatorIdentityId,
     pub approve: bool,
     pub signature: Vec<u8>,
     pub voted_at: SqliteTimestamp,
@@ -509,8 +511,8 @@ pub struct ProposalVote {
 #[derive(Debug, Insertable)]
 #[diesel(table_name = schema::proposal_vote, check_for_backend(Sqlite))]
 pub struct NewProposalVote {
-    pub proposal_id: i32,
-    pub operator_id: i32,
+    pub proposal_id: ProposalId,
+    pub operator_id: OperatorIdentityId,
     pub approve: bool,
     pub signature: Vec<u8>,
 }
@@ -518,8 +520,8 @@ pub struct NewProposalVote {
 #[derive(Debug, Insertable)]
 #[diesel(table_name = schema::recovery_proposal_vote, check_for_backend(Sqlite))]
 pub struct NewRecoveryProposalVote {
-    pub proposal_id: i32,
-    pub recovery_operator_id: i32,
+    pub proposal_id: ProposalId,
+    pub recovery_operator_id: RecoveryOperatorIdentityId,
     pub approve: bool,
     pub signature: Vec<u8>,
 }
@@ -527,5 +529,5 @@ pub struct NewRecoveryProposalVote {
 #[derive(Debug, Insertable)]
 #[diesel(table_name = schema::recovery_wakeup_request, check_for_backend(Sqlite))]
 pub struct NewRecoveryWakeupRequest {
-    pub requested_by: i32,
+    pub requested_by: OperatorIdentityId,
 }

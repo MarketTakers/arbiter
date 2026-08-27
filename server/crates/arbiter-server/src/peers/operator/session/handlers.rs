@@ -1,4 +1,5 @@
 use super::{Error, OperatorSession};
+use crate::db::models::{OperatorIdentityId, ProposalId};
 use crate::{
     actors::{
         evm::{
@@ -287,9 +288,9 @@ impl OperatorSession {
         &mut self,
         kind: crate::db::proposal::ProposalKind,
         ttl_secs: Option<u32>,
-    ) -> Result<i32, Error> {
+    ) -> Result<ProposalId, Error> {
         use crate::actors::proposal_manager::CreateProposal;
-        let initiator_id = self.credentials.id;
+        let initiator_id = OperatorIdentityId::from_raw(self.credentials.id);
         self.props
             .actors
             .proposal_manager
@@ -304,12 +305,12 @@ impl OperatorSession {
     #[message]
     pub(crate) async fn handle_cast_vote(
         &mut self,
-        proposal_id: i32,
+        proposal_id: ProposalId,
         approve: bool,
         signature: Vec<u8>,
     ) -> Result<crate::actors::proposal_manager::VoteOutcome, crate::actors::proposal_manager::Error> {
         use crate::actors::proposal_manager::CastVote;
-        let operator_id = self.credentials.id;
+        let operator_id = OperatorIdentityId::from_raw(self.credentials.id);
         self.props
             .actors
             .proposal_manager
@@ -326,7 +327,7 @@ impl OperatorSession {
         &mut self,
     ) -> Vec<crate::actors::proposal_manager::ProposalSummary> {
         use crate::actors::proposal_manager::QueryPending;
-        let operator_id = self.credentials.id;
+        let operator_id = OperatorIdentityId::from_raw(self.credentials.id);
         self.props
             .actors
             .proposal_manager

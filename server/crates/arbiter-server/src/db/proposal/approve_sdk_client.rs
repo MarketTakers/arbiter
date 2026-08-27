@@ -1,7 +1,9 @@
 //! Approving an SDK client so it may authenticate against the vault.
 
 use super::{Proposal, ProposalKindTag};
-use crate::db::{DatabaseConnection, schema::proposal_approve_sdk_client as table};
+use crate::db::{
+    DatabaseConnection, models::ProposalId, schema::proposal_approve_sdk_client as table,
+};
 use diesel::{
     ExpressionMethods as _, Insertable, QueryDsl as _, QueryResult, Queryable, Selectable,
     SelectableHelper as _, sqlite::Sqlite,
@@ -22,7 +24,7 @@ impl Proposal for ApproveSdkClient {
     type Settings = Settings;
 
     async fn insert(
-        proposal_id: i32,
+        proposal_id: ProposalId,
         settings: &Self::Settings,
         conn: &mut DatabaseConnection,
     ) -> QueryResult<()> {
@@ -33,7 +35,10 @@ impl Proposal for ApproveSdkClient {
             .map(drop)
     }
 
-    async fn load(proposal_id: i32, conn: &mut DatabaseConnection) -> QueryResult<Self::Settings> {
+    async fn load(
+        proposal_id: ProposalId,
+        conn: &mut DatabaseConnection,
+    ) -> QueryResult<Self::Settings> {
         table::table
             .find(proposal_id)
             .select(Settings::as_select())

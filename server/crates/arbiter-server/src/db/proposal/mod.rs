@@ -6,7 +6,7 @@
 //! new kind is a new module plus one arm in each dispatcher -- nothing else in the
 //! codebase has to learn about it.
 
-use crate::db::DatabaseConnection;
+use crate::db::{DatabaseConnection, models::ProposalId};
 use diesel::{
     QueryResult,
     backend::Backend,
@@ -42,7 +42,7 @@ pub trait Proposal: Sized {
 
     /// Writes the child row carrying `settings`.
     fn insert(
-        proposal_id: i32,
+        proposal_id: ProposalId,
         settings: &Self::Settings,
         conn: &mut DatabaseConnection,
     ) -> impl Future<Output = QueryResult<()>> + Send;
@@ -50,7 +50,7 @@ pub trait Proposal: Sized {
     /// Reads the child row back. A missing row surfaces as [`diesel::result::Error::NotFound`],
     /// which is what a proposal without its parameters is.
     fn load(
-        proposal_id: i32,
+        proposal_id: ProposalId,
         conn: &mut DatabaseConnection,
     ) -> impl Future<Output = QueryResult<Self::Settings>> + Send;
 }
@@ -126,7 +126,7 @@ const _: () = {
 /// to the implementation that owns the table.
 pub async fn insert_kind(
     conn: &mut DatabaseConnection,
-    proposal_id: i32,
+    proposal_id: ProposalId,
     kind: &ProposalKind,
 ) -> QueryResult<()> {
     match kind {
@@ -146,7 +146,7 @@ pub async fn insert_kind(
 /// Reads the parameters back for a `proposal.kind` that is only known at runtime.
 pub async fn load_kind(
     conn: &mut DatabaseConnection,
-    proposal_id: i32,
+    proposal_id: ProposalId,
     tag: ProposalKindTag,
 ) -> QueryResult<ProposalKind> {
     Ok(match tag {
