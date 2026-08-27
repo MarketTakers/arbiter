@@ -314,9 +314,17 @@ create table if not exists proposal_vote (
 ) STRICT;
 
 
-create table if not exists proposal_result (
-    proposal_id integer not null primary key references proposal(id) on delete cascade,
-    data        blob    not null,
+-- The signature the vault produced for an approved transaction, by component.
+--
+-- secp256k1 signatures have three common encodings (Electrum v=27/28, raw parity,
+-- ERC-2098 compact); a single blob would not say which one it holds. `y_parity` is
+-- the raw bit -- add 27 to rebuild the Electrum form `Signature::as_bytes` emits.
+create table if not exists proposal_one_off_transaction_result (
+    proposal_id integer not null primary key
+        references proposal_one_off_transaction (proposal_id) on delete cascade,
+    r           blob    not null check (length(r) = 32),
+    s           blob    not null check (length(s) = 32),
+    y_parity    integer not null check (y_parity in (0, 1)),
     created_at  integer not null default(unixepoch('now'))
 ) STRICT;
 

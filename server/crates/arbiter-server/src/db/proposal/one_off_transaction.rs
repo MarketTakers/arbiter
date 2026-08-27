@@ -1,7 +1,10 @@
 //! Signing a single EIP-1559 transaction.
 
 use super::{Proposal, ProposalKindTag, as_i64, as_u64, fixed};
-use crate::db::{DatabaseConnection, schema::proposal_one_off_transaction};
+use crate::db::{
+    DatabaseConnection,
+    schema::{proposal_one_off_transaction, proposal_one_off_transaction_result},
+};
 use diesel::{
     Insertable, QueryDsl as _, QueryResult, Queryable, Selectable, SelectableHelper as _,
     sqlite::Sqlite,
@@ -99,4 +102,33 @@ impl Proposal for OneOffTransaction {
 
         row.into_settings()
     }
+}
+
+/// The signature the vault produced for an approved transaction.
+#[derive(Debug, Insertable)]
+#[diesel(table_name = proposal_one_off_transaction_result, check_for_backend(Sqlite))]
+struct SignatureRow {
+    proposal_id: i32,
+    r: Vec<u8>,
+    s: Vec<u8>,
+    y_parity: i32,
+}
+
+/// Records the signature produced for an approved transaction, by component, so what
+/// came back is as readable as what was signed.
+pub async fn store_signature(
+    proposal_id: i32,
+    signature: &alloy::signers::Signature,
+    conn: &mut DatabaseConnection,
+) -> QueryResult<()> {
+    diesel::insert_into(proposal_one_off_transaction_result::table)
+        .values(&SignatureRow {
+            proposal_id,
+            r: signature.r().to_be_bytes::<32>().to_vec(),
+            s: signature.s().to_be_bytes::<32>().to_vec(),
+            y_parity: i32::from(signature.v()),
+        })
+        .execute(conn)
+        .await
+        .map(drop)
 }

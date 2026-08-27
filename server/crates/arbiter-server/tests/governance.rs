@@ -19,7 +19,7 @@ use arbiter_server::{
 use arbiter_server::actors::vault::Bootstrap;
 use arbiter_server::db::schema::{
     aead_encrypted, evm_basic_grant, evm_wallet, evm_wallet_access, operator_identity,
-    proposal_result, recovery_operator_identity,
+    proposal_one_off_transaction_result, recovery_operator_identity,
 };
 use diesel::{ExpressionMethods, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
@@ -790,13 +790,20 @@ async fn approve_one_off_transaction_stores_result() {
     assert_eq!(outcome, VoteOutcome::Approved);
 
     let mut conn = db.get().await.unwrap();
-    let count: i64 = proposal_result::table
-        .filter(proposal_result::proposal_id.eq(proposal_id))
-        .count()
-        .get_result(&mut conn)
+    let (r, s, y_parity): (Vec<u8>, Vec<u8>, i32) = proposal_one_off_transaction_result::table
+        .find(proposal_id)
+        .select((
+            proposal_one_off_transaction_result::r,
+            proposal_one_off_transaction_result::s,
+            proposal_one_off_transaction_result::y_parity,
+        ))
+        .first(&mut conn)
         .await
-        .unwrap();
-    assert_eq!(count, 1);
+        .expect("an approved transaction must leave its signature");
+
+    assert_eq!(r.len(), 32, "r must be a 32-byte scalar");
+    assert_eq!(s.len(), 32, "s must be a 32-byte scalar");
+    assert!(y_parity == 0 || y_parity == 1, "y_parity must be a bit");
 }
 
 #[tokio::test]

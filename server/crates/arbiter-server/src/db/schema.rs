@@ -270,9 +270,11 @@ diesel::table! {
 }
 
 diesel::table! {
-    proposal_result (proposal_id) {
+    proposal_one_off_transaction_result (proposal_id) {
         proposal_id -> Integer,
-        data -> Binary,
+        r -> Binary,
+        s -> Binary,
+        y_parity -> Integer,
         created_at -> Integer,
     }
 }
@@ -383,7 +385,7 @@ diesel::joinable!(evm_wallet_access -> program_client (client_id));
 diesel::joinable!(operator -> operator_identity (id));
 diesel::joinable!(program_client -> client_metadata (metadata_id));
 diesel::joinable!(proposal -> operator_identity (initiator_id));
-diesel::joinable!(proposal_result -> proposal (proposal_id));
+diesel::joinable!(proposal_one_off_transaction_result -> proposal_one_off_transaction (proposal_id));
 diesel::joinable!(proposal_approve_sdk_client -> proposal (proposal_id));
 diesel::joinable!(proposal_grant_wallet_access -> proposal (proposal_id));
 diesel::joinable!(proposal_replace_operator -> proposal (proposal_id));
@@ -400,7 +402,7 @@ diesel::joinable!(recovery_wakeup_request -> operator_identity (requested_by));
 
 diesel::allow_tables_to_appear_in_same_query!(
     aead_encrypted,
-    proposal_result,
+    proposal_one_off_transaction_result,
     proposal_approve_sdk_client,
     proposal_grant_wallet_access,
     proposal_replace_operator,

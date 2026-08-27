@@ -516,13 +516,6 @@ pub struct NewProposalVote {
 }
 
 #[derive(Debug, Insertable)]
-#[diesel(table_name = schema::proposal_result, check_for_backend(Sqlite))]
-pub struct NewProposalResult {
-    pub proposal_id: i32,
-    pub data: Vec<u8>,
-}
-
-#[derive(Debug, Insertable)]
 #[diesel(table_name = schema::recovery_proposal_vote, check_for_backend(Sqlite))]
 pub struct NewRecoveryProposalVote {
     pub proposal_id: i32,

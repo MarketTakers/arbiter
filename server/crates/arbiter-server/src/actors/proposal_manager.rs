@@ -661,7 +661,6 @@ impl ProposalManager {
         tx: one_off_transaction::Settings,
     ) -> Result<(), Error> {
         use crate::actors::evm::ClientSignTransaction;
-        use crate::db::models::NewProposalResult;
         use alloy::{
             consensus::TxEip1559,
             eips::eip2930::AccessList,
@@ -691,12 +690,7 @@ impl ProposalManager {
             .map_err(|e| Error::ExecutionFailed(format!("sign one-off tx: {e}")))?;
 
         let mut conn = self.db.get().await.map_err(Error::DatabaseConnection)?;
-        diesel::insert_into(schema::proposal_result::table)
-            .values(NewProposalResult {
-                proposal_id,
-                data: sig.as_bytes().to_vec(),
-            })
-            .execute(&mut conn)
+        one_off_transaction::store_signature(proposal_id, &sig, &mut conn)
             .await
             .map_err(|e| Error::ExecutionFailed(format!("store proposal result: {e}")))?;
 
