@@ -318,7 +318,7 @@ impl OperatorSession {
             .await
             .map_err(|err| match err {
                 SendError::HandlerError(e) => e,
-                _ => crate::actors::proposal_manager::Error::ExecutionFailed("actor unavailable".to_owned()),
+                _ => crate::actors::proposal_manager::Error::Unavailable,
             })
     }
 

@@ -1,12 +1,14 @@
 use crate::{
+    actors::proposal_manager::events::ProposalApproved,
     crypto::{
         KeyCell,
         encryption::v1::{self, Nonce},
-        integrity::v1::HmacSha256,
+        integrity::{self, v1::HmacSha256},
     },
     db::{
         self,
         models::{self, RootKeyHistory, RootKeyHistoryId},
+        proposal::ProposalKind,
         schema,
     },
 };
@@ -19,7 +21,7 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use hmac::{KeyInit as _, Mac as _};
-use kameo::{Actor, Reply, actor::ActorRef, messages};
+use kameo::{Actor, Reply, actor::ActorRef, messages, prelude::Message};
 use kameo_actors::message_bus::{MessageBus, Publish};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use tracing::{error, info};
@@ -458,6 +460,62 @@ impl Vault {
         hmac.update(&mac_input);
 
         Ok(hmac.verify_slice(&expected_mac).is_ok())
+    }
+}
+
+impl Message<ProposalApproved> for Vault {
+    type Reply = ();
+
+    /// Every subscriber sees every approval and acts only on the kinds it owns.
+    async fn handle(
+        &mut self,
+        msg: ProposalApproved,
+        _ctx: &mut kameo::prelude::Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        let ProposalKind::ApproveSdkClient(settings) = msg.kind else {
+            return;
+        };
+
+        if let Err(error) = self.approve_sdk_client(settings.client_id).await {
+            error!(
+                ?error,
+                proposal_id = msg.id.to_raw(),
+                "Failed to execute an approved proposal"
+            );
+        }
+    }
+}
+
+impl Vault {
+    /// Attests an approved SDK client with the root key.
+    ///
+    /// Builds the envelope from its parts rather than calling `integrity::sign_entity`,
+    /// which would have this actor ask itself for a signature and deadlock.
+    async fn approve_sdk_client(&mut self, client_id: i32) -> Result<(), Error> {
+        use crate::peers::client::ClientCredentials;
+        use arbiter_crypto::authn;
+
+        // Cloned so the connection does not hold a borrow of `self` across `sign_integrity`.
+        let db = self.db.clone();
+        let mut conn = db.get().await?;
+
+        let pubkey_bytes: Vec<u8> = schema::program_client::table
+            .find(client_id)
+            .select(schema::program_client::public_key)
+            .first(&mut conn)
+            .await?;
+
+        let pubkey =
+            authn::PublicKey::try_from(pubkey_bytes.as_slice()).map_err(|()| Error::InvalidKey)?;
+        let credentials = ClientCredentials { pubkey };
+
+        let (entity_id, mac_input) = integrity::envelope_input(&credentials, client_id);
+        let (key_version, mac) = self.sign_integrity(mac_input)?;
+
+        integrity::store_envelope::<ClientCredentials>(&mut conn, entity_id, key_version, mac)
+            .await?;
+
+        Ok(())
     }
 }
 

@@ -2,7 +2,7 @@ use crate::{
     actors::vault::{self, GetState, SignIntegrity, Vault, VerifyIntegrity},
     db::{
         self,
-        models::{IntegrityEnvelope, NewIntegrityEnvelope},
+        models::{IntegrityEnvelope, NewIntegrityEnvelope, RootKeyHistoryId},
         schema::integrity_envelope,
     },
 };
@@ -109,11 +109,7 @@ pub async fn sign_entity<E: Integrable>(
     entity: &E,
     entity_id: impl IntoId,
 ) -> Result<(), Error> {
-    let payload_hash = payload_hash(&entity);
-
-    let entity_id = entity_id.into_id();
-
-    let mac_input = build_mac_input(E::KIND, &entity_id, E::VERSION, &payload_hash);
+    let (entity_id, mac_input) = envelope_input::<E>(entity, entity_id);
 
     let (key_version, mac) =
         vault
@@ -124,6 +120,31 @@ pub async fn sign_entity<E: Integrable>(
                 _ => Error::VaultSend,
             })?;
 
+    store_envelope::<E>(conn, entity_id, key_version, mac)
+        .await
+        .map_err(db::DatabaseError::from)?;
+
+    Ok(())
+}
+
+/// The entity id and the bytes the root key covers, as a pair.
+///
+/// Split out of [`sign_entity`] so the `Vault` actor can build an envelope from inside a
+/// message handler, where asking itself for a signature would deadlock.
+pub fn envelope_input<E: Integrable>(entity: &E, entity_id: impl IntoId) -> (Vec<u8>, Vec<u8>) {
+    let payload_hash = payload_hash(entity);
+    let entity_id = entity_id.into_id();
+    let mac_input = build_mac_input(E::KIND, &entity_id, E::VERSION, &payload_hash);
+    (entity_id, mac_input)
+}
+
+/// Stores the integrity envelope for one entity, replacing any envelope it already has.
+pub async fn store_envelope<E: Integrable>(
+    conn: &mut impl AsyncConnection<Backend = Sqlite>,
+    entity_id: Vec<u8>,
+    key_version: RootKeyHistoryId,
+    mac: Vec<u8>,
+) -> Result<(), diesel::result::Error> {
     insert_into(integrity_envelope::table)
         .values(NewIntegrityEnvelope {
             entity_kind: E::KIND.to_owned(),
@@ -143,8 +164,7 @@ pub async fn sign_entity<E: Integrable>(
             integrity_envelope::mac.eq(mac),
         ))
         .execute(conn)
-        .await
-        .map_err(db::DatabaseError::from)?;
+        .await?;
 
     Ok(())
 }

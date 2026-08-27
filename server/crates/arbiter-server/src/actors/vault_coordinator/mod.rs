@@ -3,14 +3,21 @@ use std::collections::HashMap;
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use diesel::{ExpressionMethods as _, QueryDsl};
 use diesel_async::RunQueryDsl;
-use kameo::{Actor, actor::ActorRef, messages};
+use kameo::{Actor, actor::ActorRef, messages, prelude::Message};
 use rand_core::{OsRng, RngCore as _};
 use tracing::error;
 
 use crate::{
-    actors::vault::{Bootstrap, RekeyRootKey, TryUnseal, Vault},
+    actors::{
+        proposal_manager::events::ProposalApproved,
+        vault::{Bootstrap, RekeyRootKey, TryUnseal, Vault},
+    },
     crypto::{KeyCell, derive_key, encryption::v1::Nonce, shamir, shamir::shamir_threshold},
-    db::{self, models, schema},
+    db::{
+        self, models,
+        proposal::{ProposalKind, replace_operator},
+        schema,
+    },
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -717,5 +724,57 @@ impl VaultCoordinator {
         }
 
         self.do_finalize_rekey().await
+    }
+}
+
+impl Message<ProposalApproved> for VaultCoordinator {
+    type Reply = ();
+
+    /// Every subscriber sees every approval and acts only on the kinds it owns.
+    async fn handle(
+        &mut self,
+        msg: ProposalApproved,
+        _ctx: &mut kameo::prelude::Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        let result = match msg.kind {
+            ProposalKind::ReplaceOperator(settings) => self.replace_operator(&settings).await,
+            ProposalKind::TriggerRekey => self.start_rekey().await,
+            _ => return,
+        };
+
+        if let Err(error) = result {
+            error!(
+                ?error,
+                proposal_id = msg.id.to_raw(),
+                "Failed to execute an approved proposal"
+            );
+        }
+    }
+}
+
+impl VaultCoordinator {
+    /// Replaces the operator's public key in place, keeping their id and history, drops the
+    /// share that key no longer matches, then begins a coordinated re-key (§3.3).
+    async fn replace_operator(
+        &mut self,
+        settings: &replace_operator::Settings,
+    ) -> Result<(), Error> {
+        let mut conn = self.db.get().await?;
+
+        diesel::update(schema::operator_identity::table)
+            .filter(schema::operator_identity::id.eq(settings.old_operator_id))
+            .set(schema::operator_identity::public_key.eq(&settings.new_pubkey))
+            .execute(&mut conn)
+            .await?;
+
+        // Drop the stale Shamir share; finalize_rekey stores a fresh one.
+        diesel::delete(schema::operator::table)
+            .filter(schema::operator::id.eq(Some(settings.old_operator_id)))
+            .execute(&mut conn)
+            .await?;
+
+        drop(conn);
+
+        self.start_rekey().await
     }
 }

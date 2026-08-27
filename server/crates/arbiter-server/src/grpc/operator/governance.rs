@@ -217,6 +217,9 @@ async fn handle_vote(
         Err(kameo::error::SendError::HandlerError(ProposalError::ProposalNotFound)) => {
             return Err(Status::not_found("Proposal not found"));
         }
+        Err(kameo::error::SendError::HandlerError(ProposalError::Unavailable)) => {
+            return Err(Status::unavailable("Proposal manager is unavailable"));
+        }
         Err(e) => {
             warn!(?e, "cast_vote failed");
             return Err(Status::internal("Failed to cast vote"));

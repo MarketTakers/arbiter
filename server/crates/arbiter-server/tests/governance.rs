@@ -26,6 +26,26 @@ use arbiter_server::db::schema::{
 };
 use diesel::{ExpressionMethods, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
+use std::future::Future;
+
+/// Retries `probe` until it yields a value, then returns it.
+///
+/// Outcome execution is asynchronous: `CastVote` answers as soon as the quorum is
+/// recorded, and the actor that owns the kind runs afterwards off the message bus. Tests
+/// therefore wait for the effect instead of reading the database straight after the vote.
+async fn eventually<T, F, Fut>(what: &str, mut probe: F) -> T
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Option<T>>,
+{
+    for _ in 0..100 {
+        if let Some(value) = probe().await {
+            return value;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("{what} did not happen within 2s");
+}
 
 async fn register_operator(db: &db::DatabasePool, pubkey: &authn::PublicKey) -> OperatorIdentityId {
     let mut conn = db.get().await.unwrap();
@@ -628,14 +648,20 @@ async fn approve_sdk_client_writes_integrity_envelope() {
 
     assert_eq!(outcome, VoteOutcome::Approved);
 
-    let mut conn = db.get().await.unwrap();
-    let count: i64 = integrity_envelope::table
-        .filter(integrity_envelope::entity_kind.eq("client_credentials"))
-        .count()
-        .get_result(&mut conn)
-        .await
-        .unwrap();
-    assert_eq!(count, 1);
+    eventually("the client's integrity envelope", || {
+        let db = db.clone();
+        async move {
+            let mut conn = db.get().await.unwrap();
+            let count: i64 = integrity_envelope::table
+                .filter(integrity_envelope::entity_kind.eq("client_credentials"))
+                .count()
+                .get_result(&mut conn)
+                .await
+                .unwrap();
+            (count == 1).then_some(())
+        }
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -682,15 +708,21 @@ async fn grant_wallet_access_on_quorum_approval() {
 
     assert_eq!(outcome, VoteOutcome::Approved);
 
-    let mut conn = db.get().await.unwrap();
-    let count: i64 = evm_wallet_access::table
-        .filter(evm_wallet_access::wallet_id.eq(wallet_id))
-        .filter(evm_wallet_access::client_id.eq(client_id))
-        .count()
-        .get_result(&mut conn)
-        .await
-        .unwrap();
-    assert_eq!(count, 1);
+    eventually("the wallet access row", || {
+        let db = db.clone();
+        async move {
+            let mut conn = db.get().await.unwrap();
+            let count: i64 = evm_wallet_access::table
+                .filter(evm_wallet_access::wallet_id.eq(wallet_id))
+                .filter(evm_wallet_access::client_id.eq(client_id))
+                .count()
+                .get_result(&mut conn)
+                .await
+                .unwrap();
+            (count == 1).then_some(())
+        }
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -767,14 +799,20 @@ async fn approve_persistent_grant_creates_basic_grant_row() {
 
     assert_eq!(outcome, VoteOutcome::Approved);
 
-    let mut conn = db.get().await.unwrap();
-    let count: i64 = evm_basic_grant::table
-        .filter(evm_basic_grant::wallet_access_id.eq(wallet_access_id))
-        .count()
-        .get_result(&mut conn)
-        .await
-        .unwrap();
-    assert_eq!(count, 1);
+    eventually("the basic grant row", || {
+        let db = db.clone();
+        async move {
+            let mut conn = db.get().await.unwrap();
+            let count: i64 = evm_basic_grant::table
+                .filter(evm_basic_grant::wallet_access_id.eq(wallet_access_id))
+                .count()
+                .get_result(&mut conn)
+                .await
+                .unwrap();
+            (count == 1).then_some(())
+        }
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -881,17 +919,23 @@ async fn approve_one_off_transaction_stores_result() {
 
     assert_eq!(outcome, VoteOutcome::Approved);
 
-    let mut conn = db.get().await.unwrap();
-    let (r, s, y_parity): (Vec<u8>, Vec<u8>, i32) = proposal_one_off_transaction_result::table
-        .find(proposal_id)
-        .select((
-            proposal_one_off_transaction_result::r,
-            proposal_one_off_transaction_result::s,
-            proposal_one_off_transaction_result::y_parity,
-        ))
-        .first(&mut conn)
-        .await
-        .expect("an approved transaction must leave its signature");
+    let (r, s, y_parity): (Vec<u8>, Vec<u8>, i32) = eventually("the transaction signature", || {
+        let db = db.clone();
+        async move {
+            let mut conn = db.get().await.unwrap();
+            proposal_one_off_transaction_result::table
+                .find(proposal_id)
+                .select((
+                    proposal_one_off_transaction_result::r,
+                    proposal_one_off_transaction_result::s,
+                    proposal_one_off_transaction_result::y_parity,
+                ))
+                .first(&mut conn)
+                .await
+                .ok()
+        }
+    })
+    .await;
 
     assert_eq!(r.len(), 32, "r must be a 32-byte scalar");
     assert_eq!(s.len(), 32, "s must be a 32-byte scalar");
@@ -944,23 +988,30 @@ async fn replace_operator_updates_pubkey_and_starts_rekey() {
 
     assert_eq!(outcome, VoteOutcome::Approved);
 
+    eventually("the operator's public key to be replaced", || {
+        let db = db.clone();
+        let new_pubkey = new_pubkey.clone();
+        async move {
+            let mut conn = db.get().await.unwrap();
+            let stored: Vec<u8> = operator_identity::table
+                .filter(operator_identity::id.eq(op_id))
+                .select(operator_identity::public_key)
+                .first(&mut conn)
+                .await
+                .unwrap();
+            (stored == new_pubkey).then_some(())
+        }
+    })
+    .await;
+
+    // The old identity row is updated in place, so no second operator appears.
     let mut conn = db.get().await.unwrap();
-    // The old identity row is updated in-place; count stays the same.
     let count: i64 = operator_identity::table
         .count()
         .get_result(&mut conn)
         .await
         .unwrap();
     assert_eq!(count, 1);
-
-    // Verify the public key was updated to the new one.
-    let stored_pubkey: Vec<u8> = operator_identity::table
-        .filter(operator_identity::id.eq(op_id))
-        .select(operator_identity::public_key)
-        .first(&mut conn)
-        .await
-        .unwrap();
-    assert_eq!(stored_pubkey, new_pubkey.clone());
 }
 
 #[tokio::test]

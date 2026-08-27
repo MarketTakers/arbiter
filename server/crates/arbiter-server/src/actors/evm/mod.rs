@@ -1,9 +1,13 @@
 use crate::{
-    actors::vault::{CreateNew, Decrypt, Vault},
+    actors::{
+        proposal_manager::events::ProposalApproved,
+        vault::{CreateNew, Decrypt, Vault},
+    },
     crypto::integrity,
     db::{
         DatabaseError, DatabasePool,
-        models::{self, EvmWalletId},
+        models::{self, EvmWalletId, ProposalId},
+        proposal::{ProposalKind, grant_wallet_access, one_off_transaction, persistent_grant},
         schema,
     },
     evm::{
@@ -23,8 +27,9 @@ use diesel::{
     ExpressionMethods, OptionalExtension as _, QueryDsl, SelectableHelper as _, dsl::insert_into,
 };
 use diesel_async::RunQueryDsl;
-use kameo::{Actor, actor::ActorRef, messages};
+use kameo::{Actor, actor::ActorRef, messages, prelude::Message};
 use rand::{SeedableRng, rng, rngs::StdRng};
+use tracing::error;
 
 pub use crate::evm::safe_signer;
 
@@ -62,6 +67,9 @@ pub enum Error {
 
     #[error("Integrity violation: {0}")]
     Integrity(#[from] integrity::Error),
+
+    #[error("Signing error: {0}")]
+    Sign(#[from] SignTransactionError),
 }
 
 #[derive(Actor)]
@@ -265,5 +273,144 @@ impl EvmActor {
             .await?;
 
         Ok(signer.sign_transaction_sync(&mut transaction)?)
+    }
+}
+
+impl Message<ProposalApproved> for EvmActor {
+    type Reply = ();
+
+    /// Every subscriber sees every approval and acts only on the kinds it owns.
+    async fn handle(
+        &mut self,
+        msg: ProposalApproved,
+        _ctx: &mut kameo::prelude::Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        let result = match msg.kind {
+            ProposalKind::GrantWalletAccess(settings) => self.grant_wallet_access(&settings).await,
+            ProposalKind::ApprovePersistentGrant(settings) => {
+                self.create_persistent_grant(*settings).await
+            }
+            ProposalKind::ApproveOneOffTransaction(settings) => {
+                self.sign_one_off_transaction(msg.id, *settings).await
+            }
+            _ => return,
+        };
+
+        if let Err(error) = result {
+            error!(
+                ?error,
+                proposal_id = msg.id.to_raw(),
+                "Failed to execute an approved proposal"
+            );
+        }
+    }
+}
+
+impl EvmActor {
+    async fn grant_wallet_access(
+        &mut self,
+        settings: &grant_wallet_access::Settings,
+    ) -> Result<(), Error> {
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
+
+        insert_into(schema::evm_wallet_access::table)
+            .values((
+                schema::evm_wallet_access::wallet_id.eq(EvmWalletId::from_raw(settings.wallet_id)),
+                schema::evm_wallet_access::client_id.eq(settings.client_id),
+            ))
+            .execute(&mut conn)
+            .await
+            .map_err(DatabaseError::from)?;
+
+        Ok(())
+    }
+
+    async fn create_persistent_grant(
+        &mut self,
+        grant: persistent_grant::Settings,
+    ) -> Result<(), Error> {
+        use crate::evm::policies::{
+            TransactionRateLimit, VolumeRateLimit, ether_transfer, token_transfers,
+        };
+        use alloy::primitives::U256;
+        use chrono::Duration;
+
+        let volume = |limit: persistent_grant::VolumeLimit| VolumeRateLimit {
+            max_volume: U256::from_be_bytes(limit.max_volume),
+            window: Duration::seconds(limit.window_secs),
+        };
+
+        let basic = SharedGrantSettings {
+            wallet_access_id: grant.wallet_access_id,
+            chain: grant.chain_id,
+            valid_from: grant
+                .valid_from_secs
+                .and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
+            valid_until: grant
+                .valid_until_secs
+                .and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
+            max_gas_fee_per_gas: grant.max_gas_fee_per_gas.map(U256::from_be_bytes),
+            max_priority_fee_per_gas: grant.max_priority_fee_per_gas.map(U256::from_be_bytes),
+            rate_limit: grant.rate_limit.map(|r| TransactionRateLimit {
+                count: r.count,
+                window: Duration::seconds(r.window_secs),
+            }),
+        };
+
+        let specific = match grant.specific {
+            persistent_grant::Specific::EtherTransfer { targets, limit } => {
+                SpecificGrant::EtherTransfer(ether_transfer::Settings {
+                    target: targets.into_iter().map(Address::from).collect(),
+                    limit: volume(limit),
+                })
+            }
+            persistent_grant::Specific::TokenTransfer {
+                token_contract,
+                receiver,
+                volume_limits,
+            } => SpecificGrant::TokenTransfer(token_transfers::Settings {
+                token_contract: Address::from(token_contract),
+                target: receiver.map(Address::from),
+                volume_limits: volume_limits.into_iter().map(volume).collect(),
+            }),
+        };
+
+        self.operator_create_grant(basic, specific).await?;
+
+        Ok(())
+    }
+
+    async fn sign_one_off_transaction(
+        &mut self,
+        proposal_id: ProposalId,
+        tx: one_off_transaction::Settings,
+    ) -> Result<(), Error> {
+        use alloy::{
+            eips::eip2930::AccessList,
+            primitives::{Bytes, TxKind, U256},
+        };
+
+        let transaction = TxEip1559 {
+            chain_id: tx.chain_id,
+            nonce: tx.nonce,
+            gas_limit: tx.gas_limit,
+            max_fee_per_gas: tx.max_fee_per_gas,
+            max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
+            to: TxKind::Call(Address::from(tx.to)),
+            value: U256::from_be_bytes(tx.value),
+            input: Bytes::from(tx.input),
+            access_list: AccessList::default(),
+        };
+
+        let signature = self
+            .client_sign_transaction(tx.client_id, Address::from(tx.wallet_address), transaction)
+            .await?;
+
+        let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
+        one_off_transaction::store_signature(proposal_id, &signature, &mut conn)
+            .await
+            .map_err(DatabaseError::from)?;
+
+        Ok(())
     }
 }

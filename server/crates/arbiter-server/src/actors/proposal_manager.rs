@@ -1,9 +1,5 @@
 use crate::{
-    actors::{
-        evm::EvmActor,
-        vault::Vault,
-        vault_coordinator::{StartRekey, VaultCoordinator},
-    },
+    actors::proposal_manager::events::ProposalApproved,
     crypto::governance,
     db::{
         self,
@@ -13,7 +9,7 @@ use crate::{
             OperatorIdentityId, Proposal, ProposalId, ProposalStatus, RecoveryOperatorIdentityId,
             SqliteTimestamp,
         },
-        proposal::{ProposalKind, ProposalKindTag, one_off_transaction, persistent_grant},
+        proposal::{ProposalKind, ProposalKindTag},
         schema,
     },
 };
@@ -24,9 +20,12 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection as _, RunQueryDsl};
 use kameo::{Actor, actor::ActorRef, messages};
+use kameo_actors::message_bus::{MessageBus, Publish};
 use std::collections::HashMap;
 use strum::IntoDiscriminant as _;
-use tracing::{error, warn};
+use tracing::warn;
+
+pub mod events;
 
 pub const DEFAULT_TTL_SECS: u32 = 7 * 24 * 60 * 60; // 7 days
 pub const MAX_TTL_SECS: u32 = DEFAULT_TTL_SECS;
@@ -58,8 +57,8 @@ pub enum Error {
     DatabaseConnection(#[from] db::PoolError),
     #[error("Database query error: {0}")]
     DatabaseQuery(#[from] diesel::result::Error),
-    #[error("Execution failed: {0}")]
-    ExecutionFailed(String),
+    #[error("Proposal manager is unavailable")]
+    Unavailable,
     #[error("Recovery operators are sleeping")]
     RecoveryNotActive,
     #[error("Recovery operators may only vote on operator replacement")]
@@ -83,24 +82,12 @@ pub struct ProposalSummary {
 #[derive(Actor)]
 pub struct ProposalManager {
     pub(crate) db: db::DatabasePool,
-    pub(crate) vault: ActorRef<Vault>,
-    pub(crate) evm: ActorRef<EvmActor>,
-    pub(crate) vault_coordinator: ActorRef<VaultCoordinator>,
+    pub(crate) events: ActorRef<MessageBus>,
 }
 
 impl ProposalManager {
-    pub const fn new(
-        db: db::DatabasePool,
-        vault: ActorRef<Vault>,
-        evm: ActorRef<EvmActor>,
-        vault_coordinator: ActorRef<VaultCoordinator>,
-    ) -> Self {
-        Self {
-            db,
-            vault,
-            evm,
-            vault_coordinator,
-        }
+    pub const fn new(db: db::DatabasePool, events: ActorRef<MessageBus>) -> Self {
+        Self { db, events }
     }
 }
 
@@ -343,12 +330,7 @@ impl ProposalManager {
         let threshold_i64 = threshold as i64;
 
         if approve_count >= threshold_i64 {
-            diesel::update(schema::proposal::table.find(proposal_id))
-                .set(schema::proposal::status.eq(ProposalStatus::Approved))
-                .execute(&mut conn)
-                .await?;
-            drop(conn); // release connection before async execution
-            self.execute_proposal(&proposal).await?;
+            self.announce_approval(&mut conn, &proposal).await?;
             return Ok(VoteOutcome::Approved);
         }
 
@@ -505,12 +487,7 @@ impl ProposalManager {
         let approve_count = ordinary_approve + recovery_approve;
 
         if approve_count >= threshold_i64 {
-            diesel::update(schema::proposal::table.find(proposal_id))
-                .set(schema::proposal::status.eq(ProposalStatus::Approved))
-                .execute(&mut conn)
-                .await?;
-            drop(conn);
-            self.execute_proposal(&proposal).await?;
+            self.announce_approval(&mut conn, &proposal).await?;
             return Ok(VoteOutcome::Approved);
         }
 
@@ -568,222 +545,30 @@ impl ProposalManager {
         .map_err(Error::from)
     }
 
-    async fn execute_proposal(&self, proposal: &Proposal) -> Result<(), Error> {
-        let mut conn = self.db.get().await?;
-        let kind = db::proposal::load_kind(&mut conn, proposal.id, proposal.kind).await?;
-        drop(conn);
-
-        match kind {
-            ProposalKind::ApproveSdkClient(s) => self.execute_approve_sdk_client(s.client_id).await,
-            ProposalKind::GrantWalletAccess(s) => {
-                self.execute_grant_wallet_access(s.wallet_id, s.client_id)
-                    .await
-            }
-            ProposalKind::ReplaceOperator(s) => {
-                self.execute_replace_operator(s.old_operator_id, s.new_pubkey)
-                    .await
-            }
-            ProposalKind::TriggerRekey => self.execute_trigger_rekey().await,
-            ProposalKind::ApprovePersistentGrant(grant) => {
-                self.execute_approve_persistent_grant(*grant).await
-            }
-            ProposalKind::ApproveOneOffTransaction(tx) => {
-                self.execute_approve_one_off_transaction(proposal.id, *tx)
-                    .await
-            }
-        }
-    }
-
-    async fn execute_grant_wallet_access(
+    /// Marks the proposal approved and hands the outcome to whoever owns that kind.
+    ///
+    /// The outcome is published, not executed: this actor coordinates voting and nothing
+    /// else. Executors subscribe on the bus, so a vote is answered once the quorum is
+    /// recorded rather than once the effect has landed.
+    async fn announce_approval(
         &self,
-        wallet_id: i32,
-        client_id: i32,
+        conn: &mut db::DatabaseConnection,
+        proposal: &Proposal,
     ) -> Result<(), Error> {
-        use crate::db::models::EvmWalletId;
+        diesel::update(schema::proposal::table.find(proposal.id))
+            .set(schema::proposal::status.eq(ProposalStatus::Approved))
+            .execute(conn)
+            .await?;
 
-        let mut conn = self.db.get().await.map_err(Error::DatabaseConnection)?;
-
-        diesel::insert_into(schema::evm_wallet_access::table)
-            .values((
-                schema::evm_wallet_access::wallet_id.eq(EvmWalletId::from_raw(wallet_id)),
-                schema::evm_wallet_access::client_id.eq(client_id),
-            ))
-            .execute(&mut conn)
-            .await
-            .map_err(|e| Error::ExecutionFailed(format!("grant wallet access: {e}")))?;
-
-        Ok(())
-    }
-
-    /// Updates the old operator's public key in-place (preserving their DB id and history),
-    /// removes their old Shamir share, then begins a coordinated re-key (§3.3).
-    async fn execute_replace_operator(
-        &self,
-        old_operator_id: OperatorIdentityId,
-        new_pubkey: Vec<u8>,
-    ) -> Result<(), Error> {
-        let mut conn = self.db.get().await.map_err(Error::DatabaseConnection)?;
-
-        diesel::update(schema::operator_identity::table)
-            .filter(schema::operator_identity::id.eq(old_operator_id))
-            .set(schema::operator_identity::public_key.eq(&new_pubkey))
-            .execute(&mut conn)
-            .await
-            .map_err(|e| Error::ExecutionFailed(format!("update operator pubkey: {e}")))?;
-
-        // Remove the old Shamir share; finalize_rekey will store a fresh one.
-        diesel::delete(schema::operator::table)
-            .filter(schema::operator::id.eq(Some(old_operator_id)))
-            .execute(&mut conn)
-            .await
-            .map_err(|e| Error::ExecutionFailed(format!("remove old operator share: {e}")))?;
-
-        drop(conn);
-
-        self.vault_coordinator
-            .ask(StartRekey {})
-            .await
-            .map_err(|e| Error::ExecutionFailed(format!("start rekey: {e}")))?;
+        let kind = db::proposal::load_kind(conn, proposal.id, proposal.kind).await?;
+        let _ = self
+            .events
+            .tell(Publish(ProposalApproved {
+                id: proposal.id,
+                kind,
+            }))
+            .await;
 
         Ok(())
-    }
-
-    /// Triggers a Shamir re-key with the current operator set (§3.3).
-    async fn execute_trigger_rekey(&self) -> Result<(), Error> {
-        self.vault_coordinator
-            .ask(StartRekey {})
-            .await
-            .map_err(|e| Error::ExecutionFailed(format!("start rekey: {e}")))?;
-        Ok(())
-    }
-
-    async fn execute_approve_one_off_transaction(
-        &self,
-        proposal_id: ProposalId,
-        tx: one_off_transaction::Settings,
-    ) -> Result<(), Error> {
-        use crate::actors::evm::ClientSignTransaction;
-        use alloy::{
-            consensus::TxEip1559,
-            eips::eip2930::AccessList,
-            primitives::{Address, Bytes, TxKind, U256},
-        };
-
-        let transaction = TxEip1559 {
-            chain_id: tx.chain_id,
-            nonce: tx.nonce,
-            gas_limit: tx.gas_limit,
-            max_fee_per_gas: tx.max_fee_per_gas,
-            max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
-            to: TxKind::Call(Address::from(tx.to)),
-            value: U256::from_be_bytes(tx.value),
-            input: Bytes::from(tx.input),
-            access_list: AccessList::default(),
-        };
-
-        let sig = self
-            .evm
-            .ask(ClientSignTransaction {
-                client_id: tx.client_id,
-                wallet_address: Address::from(tx.wallet_address),
-                transaction,
-            })
-            .await
-            .map_err(|e| Error::ExecutionFailed(format!("sign one-off tx: {e}")))?;
-
-        let mut conn = self.db.get().await.map_err(Error::DatabaseConnection)?;
-        one_off_transaction::store_signature(proposal_id, &sig, &mut conn)
-            .await
-            .map_err(|e| Error::ExecutionFailed(format!("store proposal result: {e}")))?;
-
-        Ok(())
-    }
-
-    async fn execute_approve_persistent_grant(
-        &self,
-        grant: persistent_grant::Settings,
-    ) -> Result<(), Error> {
-        use crate::{
-            actors::evm::OperatorCreateGrant,
-            evm::policies::{
-                SharedGrantSettings, SpecificGrant, TransactionRateLimit, VolumeRateLimit,
-                ether_transfer, token_transfers,
-            },
-        };
-        use alloy::primitives::{Address, U256};
-        use chrono::Duration;
-
-        let volume = |limit: persistent_grant::VolumeLimit| VolumeRateLimit {
-            max_volume: U256::from_be_bytes(limit.max_volume),
-            window: Duration::seconds(limit.window_secs),
-        };
-
-        let basic = SharedGrantSettings {
-            wallet_access_id: grant.wallet_access_id,
-            chain: grant.chain_id,
-            valid_from: grant
-                .valid_from_secs
-                .and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
-            valid_until: grant
-                .valid_until_secs
-                .and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
-            max_gas_fee_per_gas: grant.max_gas_fee_per_gas.map(U256::from_be_bytes),
-            max_priority_fee_per_gas: grant.max_priority_fee_per_gas.map(U256::from_be_bytes),
-            rate_limit: grant.rate_limit.map(|r| TransactionRateLimit {
-                count: r.count,
-                window: Duration::seconds(r.window_secs),
-            }),
-        };
-
-        let grant = match grant.specific {
-            persistent_grant::Specific::EtherTransfer { targets, limit } => {
-                SpecificGrant::EtherTransfer(ether_transfer::Settings {
-                    target: targets.into_iter().map(Address::from).collect(),
-                    limit: volume(limit),
-                })
-            }
-            persistent_grant::Specific::TokenTransfer {
-                token_contract,
-                receiver,
-                volume_limits,
-            } => SpecificGrant::TokenTransfer(token_transfers::Settings {
-                token_contract: Address::from(token_contract),
-                target: receiver.map(Address::from),
-                volume_limits: volume_limits.into_iter().map(volume).collect(),
-            }),
-        };
-
-        self.evm
-            .ask(OperatorCreateGrant { basic, grant })
-            .await
-            .map_err(|e| Error::ExecutionFailed(format!("create grant: {e}")))?;
-
-        Ok(())
-    }
-
-    async fn execute_approve_sdk_client(&self, client_id: i32) -> Result<(), Error> {
-        use crate::{crypto::integrity, peers::client::ClientCredentials};
-        use arbiter_crypto::authn;
-
-        let mut conn = self.db.get().await.map_err(Error::DatabaseConnection)?;
-
-        let pubkey_bytes: Vec<u8> = schema::program_client::table
-            .find(client_id)
-            .select(schema::program_client::public_key)
-            .first(&mut conn)
-            .await
-            .map_err(|e| Error::ExecutionFailed(format!("client not found: {e}")))?;
-
-        let pubkey = authn::PublicKey::try_from(pubkey_bytes.as_slice())
-            .map_err(|()| Error::ExecutionFailed("invalid client public key".to_owned()))?;
-
-        let creds = ClientCredentials { pubkey };
-
-        integrity::sign_entity(&mut conn, &self.vault, &creds, client_id)
-            .await
-            .map_err(|e| {
-                error!(?e, "Failed to sign integrity envelope for client");
-                Error::ExecutionFailed(e.to_string())
-            })
     }
 }

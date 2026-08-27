@@ -1,14 +1,21 @@
 use crate::{
     actors::{
-        bootstrap::Bootstrapper, evm::EvmActor, flow_coordinator::FlowCoordinator,
-        operator_registry::OperatorRegistry, proposal_manager::ProposalManager, vault::Vault,
+        bootstrap::Bootstrapper,
+        evm::EvmActor,
+        flow_coordinator::FlowCoordinator,
+        operator_registry::OperatorRegistry,
+        proposal_manager::{ProposalManager, events::ProposalApproved},
+        vault::Vault,
         vault_coordinator::VaultCoordinator,
     },
     db,
 };
 
 use kameo::actor::{ActorRef, Spawn};
-use kameo_actors::{DeliveryStrategy, message_bus::MessageBus};
+use kameo_actors::{
+    DeliveryStrategy,
+    message_bus::{MessageBus, Register},
+};
 use thiserror::Error;
 
 pub mod bootstrap;
@@ -55,14 +62,18 @@ impl GlobalActors {
             db.clone(),
             key_holder.clone(),
         ));
+        // Approved proposals are executed by whoever owns the kind, not by ProposalManager.
+        for recipient in [
+            evm.clone().recipient::<ProposalApproved>(),
+            vault_coordinator.clone().recipient::<ProposalApproved>(),
+            key_holder.clone().recipient::<ProposalApproved>(),
+        ] {
+            let _ = message_bus.tell(Register(recipient)).await;
+        }
+
         Ok(Self {
             bootstrapper: Bootstrapper::spawn(Bootstrapper::new(&db).await?),
-            proposal_manager: ProposalManager::spawn(ProposalManager::new(
-                db,
-                key_holder.clone(),
-                evm.clone(),
-                vault_coordinator.clone(),
-            )),
+            proposal_manager: ProposalManager::spawn(ProposalManager::new(db, message_bus.clone())),
             vault: key_holder,
             vault_coordinator,
             flow_coordinator: FlowCoordinator::spawn(FlowCoordinator::new(
