@@ -12,6 +12,7 @@ use rand::{
 };
 
 pub mod encryption;
+pub mod governance;
 pub mod integrity;
 pub mod shamir;
 

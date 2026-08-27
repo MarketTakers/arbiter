@@ -1,4 +1,6 @@
 use arbiter_crypto::authn::{self, SigningContext};
+// The tests must sign exactly what the server verifies, so they share the encoder.
+use arbiter_server::crypto::governance::vote_message as make_vote_message;
 use arbiter_server::{
     actors::{
         GlobalActors,
@@ -10,7 +12,7 @@ use arbiter_server::{
     crypto::KeyCell,
     db::{
         self,
-        models::{OperatorIdentityId, ProposalId, RecoveryOperatorIdentityId},
+        models::{OperatorIdentityId, RecoveryOperatorIdentityId},
         proposal::{
             ProposalKind, approve_sdk_client, grant_wallet_access, one_off_transaction,
             persistent_grant, replace_operator,
@@ -59,13 +61,6 @@ async fn insert_active_wakeup(db: &db::DatabasePool, operator_id: OperatorIdenti
     .execute(&mut conn)
     .await
     .unwrap();
-}
-
-fn make_vote_message(proposal_id: ProposalId, approve: bool) -> Vec<u8> {
-    let mut msg = Vec::with_capacity(9);
-    msg.extend_from_slice(&i64::from(proposal_id.to_raw()).to_be_bytes());
-    msg.push(u8::from(approve));
-    msg
 }
 
 async fn insert_evm_wallet(db: &db::DatabasePool) -> i32 {

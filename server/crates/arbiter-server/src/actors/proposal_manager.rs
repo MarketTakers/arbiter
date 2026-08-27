@@ -4,6 +4,7 @@ use crate::{
         vault::Vault,
         vault_coordinator::{StartRekey, VaultCoordinator},
     },
+    crypto::governance,
     db::{
         self,
         functions::unixepoch,
@@ -221,8 +222,6 @@ impl ProposalManager {
         approve: bool,
         signature: Vec<u8>,
     ) -> Result<VoteOutcome, Error> {
-        use arbiter_crypto::authn::{self, SigningContext};
-
         let mut conn = self.db.get().await?;
 
         // Load proposal — must exist
@@ -266,20 +265,8 @@ impl ProposalManager {
                 other => Error::DatabaseQuery(other),
             })?;
 
-        let pubkey = authn::PublicKey::try_from(pubkey_bytes.as_slice())
-            .map_err(|()| Error::InvalidSignature)?;
-
-        // Canonical vote message: proposal_id (i64 big-endian) || approve (u8)
-        let mut vote_msg = Vec::with_capacity(9);
-        vote_msg.extend_from_slice(&i64::from(proposal_id.to_raw()).to_be_bytes());
-        vote_msg.push(u8::from(approve));
-
-        let auth_sig = authn::Signature::try_from(signature.as_slice())
-            .map_err(|()| Error::InvalidSignature)?;
-
-        if !pubkey.verify_message(&vote_msg, SigningContext::GovernanceVote, &auth_sig) {
-            return Err(Error::InvalidSignature);
-        }
+        governance::verify_vote(&pubkey_bytes, proposal_id, approve, &signature)
+            .map_err(|_| Error::InvalidSignature)?;
 
         // Insert vote
         diesel::insert_into(schema::proposal_vote::table)
@@ -429,8 +416,6 @@ impl ProposalManager {
         approve: bool,
         signature: Vec<u8>,
     ) -> Result<VoteOutcome, Error> {
-        use arbiter_crypto::authn::{self, SigningContext};
-
         let mut conn = self.db.get().await?;
 
         let proposal: Proposal = schema::proposal::table
@@ -481,19 +466,8 @@ impl ProposalManager {
                 other => Error::DatabaseQuery(other),
             })?;
 
-        let pubkey = authn::PublicKey::try_from(pubkey_bytes.as_slice())
-            .map_err(|()| Error::InvalidSignature)?;
-
-        let mut vote_msg = Vec::with_capacity(9);
-        vote_msg.extend_from_slice(&i64::from(proposal_id.to_raw()).to_be_bytes());
-        vote_msg.push(u8::from(approve));
-
-        let auth_sig = authn::Signature::try_from(signature.as_slice())
-            .map_err(|()| Error::InvalidSignature)?;
-
-        if !pubkey.verify_message(&vote_msg, SigningContext::GovernanceVote, &auth_sig) {
-            return Err(Error::InvalidSignature);
-        }
+        governance::verify_vote(&pubkey_bytes, proposal_id, approve, &signature)
+            .map_err(|_| Error::InvalidSignature)?;
 
         diesel::insert_into(schema::recovery_proposal_vote::table)
             .values(&NewRecoveryProposalVote {
