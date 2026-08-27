@@ -16,7 +16,10 @@ use crate::{
     },
 };
 use chrono::Utc;
-use diesel::{ExpressionMethods as _, QueryDsl};
+use diesel::{
+    ExpressionMethods as _, QueryDsl,
+    dsl::{exists, select},
+};
 use diesel_async::{AsyncConnection as _, RunQueryDsl};
 use kameo::{Actor, actor::ActorRef, messages};
 use strum::IntoDiscriminant as _;
@@ -216,13 +219,14 @@ impl ProposalManager {
             })?;
 
         // Check for duplicate vote before status check so AlreadyVoted takes priority
-        let existing: i64 = schema::proposal_vote::table
-            .filter(schema::proposal_vote::proposal_id.eq(proposal_id))
-            .filter(schema::proposal_vote::operator_id.eq(operator_id))
-            .count()
-            .get_result(&mut conn)
-            .await?;
-        if existing > 0 {
+        let already_voted: bool = select(exists(
+            schema::proposal_vote::table
+                .filter(schema::proposal_vote::proposal_id.eq(proposal_id))
+                .filter(schema::proposal_vote::operator_id.eq(operator_id)),
+        ))
+        .get_result(&mut conn)
+        .await?;
+        if already_voted {
             return Err(Error::AlreadyVoted);
         }
 
@@ -429,13 +433,16 @@ impl ProposalManager {
             return Err(Error::RecoveryNotActive);
         }
 
-        let existing: i64 = schema::recovery_proposal_vote::table
-            .filter(schema::recovery_proposal_vote::proposal_id.eq(proposal_id))
-            .filter(schema::recovery_proposal_vote::recovery_operator_id.eq(recovery_operator_id))
-            .count()
-            .get_result(&mut conn)
-            .await?;
-        if existing > 0 {
+        let already_voted: bool = select(exists(
+            schema::recovery_proposal_vote::table
+                .filter(schema::recovery_proposal_vote::proposal_id.eq(proposal_id))
+                .filter(
+                    schema::recovery_proposal_vote::recovery_operator_id.eq(recovery_operator_id),
+                ),
+        ))
+        .get_result(&mut conn)
+        .await?;
+        if already_voted {
             return Err(Error::AlreadyVoted);
         }
 
@@ -547,30 +554,29 @@ impl ProposalManager {
 
     /// Returns true when an uncancelled wakeup request has passed the 14-day dispute window.
     async fn is_recovery_active_conn(conn: &mut db::DatabaseConnection) -> Result<bool, Error> {
-        let count: i64 = schema::recovery_wakeup_request::table
-            .filter(schema::recovery_wakeup_request::cancelled_at.is_null())
-            .filter(
-                schema::recovery_wakeup_request::requested_at.le(diesel::dsl::sql::<
-                    diesel::sql_types::Integer,
-                >(&format!(
-                    "unixepoch('now') - {}",
-                    Self::WAKEUP_DELAY_SECS
-                ))),
-            )
-            .count()
-            .get_result(conn)
-            .await?;
-        Ok(count > 0)
+        let cutoff = diesel::dsl::sql::<diesel::sql_types::Integer>(&format!(
+            "unixepoch('now') - {}",
+            Self::WAKEUP_DELAY_SECS
+        ));
+
+        select(exists(
+            schema::recovery_wakeup_request::table
+                .filter(schema::recovery_wakeup_request::cancelled_at.is_null())
+                .filter(schema::recovery_wakeup_request::requested_at.le(cutoff)),
+        ))
+        .get_result(conn)
+        .await
+        .map_err(Error::from)
     }
 
     /// Returns true when there is any uncancelled wakeup request (pending or active).
     async fn has_uncancelled_wakeup(conn: &mut db::DatabaseConnection) -> Result<bool, Error> {
-        let count: i64 = schema::recovery_wakeup_request::table
-            .filter(schema::recovery_wakeup_request::cancelled_at.is_null())
-            .count()
-            .get_result(conn)
-            .await?;
-        Ok(count > 0)
+        select(exists(schema::recovery_wakeup_request::table.filter(
+            schema::recovery_wakeup_request::cancelled_at.is_null(),
+        )))
+        .get_result(conn)
+        .await
+        .map_err(Error::from)
     }
 
     async fn execute_proposal(&self, proposal: &Proposal) -> Result<(), Error> {
