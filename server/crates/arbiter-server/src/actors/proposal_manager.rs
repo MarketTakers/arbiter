@@ -6,6 +6,7 @@ use crate::{
     },
     db::{
         self,
+        functions::unixepoch,
         models::{
             NewProposal, NewProposalVote, NewRecoveryProposalVote, NewRecoveryWakeupRequest,
             OperatorIdentityId, Proposal, ProposalId, ProposalStatus, RecoveryOperatorIdentityId,
@@ -570,15 +571,13 @@ impl ProposalManager {
 
     /// Returns true when an uncancelled wakeup request has passed the 14-day dispute window.
     async fn is_recovery_active_conn(conn: &mut db::DatabaseConnection) -> Result<bool, Error> {
-        let cutoff = diesel::dsl::sql::<diesel::sql_types::Integer>(&format!(
-            "unixepoch('now') - {}",
-            Self::WAKEUP_DELAY_SECS
-        ));
-
         select(exists(
             schema::recovery_wakeup_request::table
                 .filter(schema::recovery_wakeup_request::cancelled_at.is_null())
-                .filter(schema::recovery_wakeup_request::requested_at.le(cutoff)),
+                .filter(
+                    schema::recovery_wakeup_request::requested_at
+                        .le(unixepoch("now") - Self::WAKEUP_DELAY_SECS),
+                ),
         ))
         .get_result(conn)
         .await

@@ -8,6 +8,7 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use thiserror::Error;
 use tracing::info;
 
+pub mod functions;
 pub mod models;
 pub mod proposal;
 pub mod schema;
