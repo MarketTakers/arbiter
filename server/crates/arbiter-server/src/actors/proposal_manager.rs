@@ -22,6 +22,7 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection as _, RunQueryDsl};
 use kameo::{Actor, actor::ActorRef, messages};
+use std::collections::HashMap;
 use strum::IntoDiscriminant as _;
 use tracing::{error, warn};
 
@@ -168,32 +169,47 @@ impl ProposalManager {
             .await
             .unwrap_or_default();
 
-        let mut summaries = Vec::with_capacity(proposals.len());
-        for p in proposals {
-            let approve_count: i64 = schema::proposal_vote::table
-                .filter(schema::proposal_vote::proposal_id.eq(p.id))
-                .filter(schema::proposal_vote::approve.eq(true))
-                .count()
-                .get_result(&mut conn)
-                .await
-                .unwrap_or(0);
-            let reject_count: i64 = schema::proposal_vote::table
-                .filter(schema::proposal_vote::proposal_id.eq(p.id))
-                .filter(schema::proposal_vote::approve.eq(false))
-                .count()
-                .get_result(&mut conn)
-                .await
-                .unwrap_or(0);
-            summaries.push(ProposalSummary {
-                id: p.id,
-                kind: p.kind,
-                initiator_id: p.initiator_id,
-                expires_at: p.expires_at,
-                approve_count,
-                reject_count,
-            });
+        let ids: Vec<ProposalId> = proposals.iter().map(|p| p.id).collect();
+        let tallies: Vec<(ProposalId, bool, i64)> = schema::proposal_vote::table
+            .filter(schema::proposal_vote::proposal_id.eq_any(&ids))
+            .group_by((
+                schema::proposal_vote::proposal_id,
+                schema::proposal_vote::approve,
+            ))
+            .select((
+                schema::proposal_vote::proposal_id,
+                schema::proposal_vote::approve,
+                diesel::dsl::count_star(),
+            ))
+            .load(&mut conn)
+            .await
+            .unwrap_or_default();
+
+        let mut by_proposal: HashMap<ProposalId, (i64, i64)> = HashMap::new();
+        for (proposal_id, approve, count) in tallies {
+            let entry = by_proposal.entry(proposal_id).or_insert((0, 0));
+            if approve {
+                entry.0 += count;
+            } else {
+                entry.1 += count;
+            }
         }
-        summaries
+
+        proposals
+            .into_iter()
+            .map(|p| {
+                let (approve_count, reject_count) =
+                    by_proposal.get(&p.id).copied().unwrap_or((0, 0));
+                ProposalSummary {
+                    id: p.id,
+                    kind: p.kind,
+                    initiator_id: p.initiator_id,
+                    expires_at: p.expires_at,
+                    approve_count,
+                    reject_count,
+                }
+            })
+            .collect()
     }
 
     #[message]

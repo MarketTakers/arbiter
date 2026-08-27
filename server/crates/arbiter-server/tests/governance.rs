@@ -375,6 +375,98 @@ async fn invalid_signature_rejected() {
 }
 
 #[tokio::test]
+async fn query_pending_reports_a_tally_per_proposal() {
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    actors
+        .vault
+        .ask(Bootstrap {
+            seal_key: KeyCell::from([0u8; 32]),
+        })
+        .await
+        .unwrap();
+
+    // Three operators, so one vote stays below the 2-of-3 threshold and every
+    // proposal is still pending when it is queried.
+    let approver = authn::SigningKey::generate();
+    let rejecter = authn::SigningKey::generate();
+    let watcher = authn::SigningKey::generate();
+    let approver_id = register_operator(&db, &approver.public_key()).await;
+    let rejecter_id = register_operator(&db, &rejecter.public_key()).await;
+    let watcher_id = register_operator(&db, &watcher.public_key()).await;
+
+    let cast = async |proposal_id, voter_id, key: &authn::SigningKey, approve| {
+        let sig = key
+            .sign_message(
+                &make_vote_message(proposal_id, approve),
+                SigningContext::GovernanceVote,
+            )
+            .unwrap();
+        actors
+            .proposal_manager
+            .ask(CastVote {
+                proposal_id,
+                operator_id: voter_id,
+                approve,
+                signature: sig.to_bytes(),
+            })
+            .await
+            .unwrap()
+    };
+
+    let mut ids = Vec::new();
+    for client_id in 1..=3 {
+        let id = actors
+            .proposal_manager
+            .ask(CreateProposal {
+                kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id }),
+                initiator_id: watcher_id,
+                ttl_secs: None,
+            })
+            .await
+            .unwrap();
+        ids.push(id);
+    }
+
+    // First proposal: one approval. Second: one rejection. Third: neither.
+    assert_eq!(
+        cast(ids[0], approver_id, &approver, true).await,
+        VoteOutcome::Pending
+    );
+    assert_eq!(
+        cast(ids[1], rejecter_id, &rejecter, false).await,
+        VoteOutcome::Pending
+    );
+
+    let summaries = actors
+        .proposal_manager
+        .ask(QueryPending {
+            operator_id: watcher_id,
+        })
+        .await
+        .unwrap();
+    assert_eq!(summaries.len(), 3, "the watcher has voted on nothing");
+
+    for summary in summaries {
+        let (approve, reject) = match summary.id {
+            id if id == ids[0] => (1, 0),
+            id if id == ids[1] => (0, 1),
+            _ => (0, 0),
+        };
+        assert_eq!(
+            summary.approve_count, approve,
+            "approvals of {:?}",
+            summary.id
+        );
+        assert_eq!(
+            summary.reject_count, reject,
+            "rejections of {:?}",
+            summary.id
+        );
+    }
+}
+
+#[tokio::test]
 async fn query_pending_excludes_already_voted() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
