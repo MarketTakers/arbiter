@@ -26,7 +26,6 @@ use arbiter_server::db::schema::{
 };
 use diesel::{ExpressionMethods, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
-use std::future::Future;
 
 /// Retries `probe` until it yields a value, then returns it.
 ///
