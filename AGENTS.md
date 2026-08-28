@@ -1,13 +1,16 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+Guidance for coding agents (Claude Code, Codex, …) working in this repository.
 
 ## Project Overview
 
-Arbiter is a **permissioned signing service** for cryptocurrency wallets. It consists of:
+Arbiter is a **permissioned signing service** for cryptocurrency wallets:
+
 - **`server/`** — Rust gRPC daemon that holds encrypted keys and enforces policies
-- **`operator/`** — Flutter desktop app (macOS/Windows) with a Rust backend via Rinf
-- **`protobufs/`** — Protocol Buffer definitions shared between server and client
+- **`useragent/`** — Flutter app (desktop + mobile + web targets) with a Rust core via `flutter_rust_bridge`
+- **`protobufs/`** — Protocol Buffer definitions shared between server and clients
+- **`docs/`** — `ARCHITECTURE.md` (peer types, flows, threat model) and `IMPLEMENTATION.md`; treat them as the design source of truth and update them when behaviour changes
+- **`scripts/`** — helper scripts, e.g. `gen_erc20_registry.py`
 
 The vault never exposes key material; it only produces signatures when requests satisfy configured policies.
 
@@ -18,7 +21,7 @@ Tools are managed via [mise](https://mise.jdx.dev/). Install all required tools:
 mise install
 ```
 
-Key versions: Rust 1.93.0 (with clippy), Flutter 3.38.9-stable, protoc 29.6, diesel_cli 2.3.6 (sqlite).
+Key versions live in `mise.toml` (currently Rust 1.95.0 with clippy, Flutter 3.41.7-stable, protoc 29.6, diesel_cli 2.3.7 with `sqlite-bundled`, Python 3.14). Also provided there: `cargo-nextest`, `cargo-audit`, `cargo-vet`, `cargo-shear`, `cargo-mutants`, `cargo-features-manager`, `cargo-edit`, `ast-grep`, `flutter_rust_bridge_codegen`.
 
 ## Server (Rust workspace at `server/`)
 
@@ -26,10 +29,14 @@ Key versions: Rust 1.93.0 (with clippy), Flutter 3.38.9-stable, protoc 29.6, die
 
 | Crate | Purpose |
 |---|---|
-| `arbiter-proto` | Generated gRPC stubs + protobuf types; compiled from `protobufs/*.proto` via `tonic-prost-build` |
-| `arbiter-server` | Main daemon — actors, DB, EVM policy engine, gRPC service implementation |
-| `arbiter-operator` | Rust client library for the operator side of the gRPC protocol |
-| `arbiter-client` | Rust client library for SDK clients |
+| `arbiter-proto` | Generated gRPC stubs + protobuf types (`tonic-prost-build`); also `ArbiterUrl`, `home_path()`, `BOOTSTRAP_PATH` |
+| `arbiter-crypto` | Shared crypto primitives: `authn` (ML-DSA), `safecell` (hardened memory), `hashing::Hashable`, re-exported `x-wing` |
+| `arbiter-macros` | `#[derive(Hashable)]` — canonical hashing of structs for the DB integrity layer |
+| `arbiter-server` | Main daemon — actors, peers, DB, EVM policy engine, gRPC service implementation |
+| `arbiter-client` | Rust client library for SDK clients (`ArbiterClient`, EVM wallet, key storage) |
+| `arbiter-tokens-registry` | Generated ERC-20 token registry used by token-transfer policies |
+
+Workspace lints (`server/Cargo.toml`) are strict: most of clippy `pedantic`/`nursery` plus a large restriction set. `as` casts, indexing/slicing, `dbg!`, float arithmetic and undocumented `unsafe` are denied or warned — expect to add an `#[expect(..., reason = "...")]` rather than to silence a lint globally.
 
 ### Common Commands
 
@@ -42,52 +49,76 @@ cargo build
 # Run the server daemon
 cargo run -p arbiter-server
 
-# Run all tests (preferred over cargo test)
+# Run all tests (preferred over cargo test; CI uses --all-features)
 cargo nextest run
 
 # Run a single test
 cargo nextest run <test_name>
 
-# Lint
-cargo clippy
+# Lint (CI runs it with -D warnings)
+cargo clippy --all -- -D warnings
 
 # Security audit
 cargo audit
 
+# Supply-chain review (config in server/supply-chain/)
+cargo vet
+
 # Check unused dependencies
 cargo shear
 
-# Run snapshot tests and update snapshots
-cargo insta review
+# Mutation testing
+cargo mutants
 ```
+
+### CI
+
+Woodpecker pipelines in `.woodpecker/` run on `server/**` changes: `server-lint` (clippy), `server-test` (nextest, `--all-features`), `server-audit`, `server-vet`, plus `useragent-analyze` for the Flutter app.
 
 ### Architecture
 
-The server is actor-based using the **kameo** crate. All long-lived state lives in `GlobalActors`:
+The server is actor-based using the **kameo** crate. Long-lived state lives in `GlobalActors` (`src/actors/mod.rs`):
 
-- **`Bootstrapper`** — Manages the one-time bootstrap token written to `~/.arbiter/bootstrap_token` on first run.
-- **`Vault`** — Holds the encrypted root key and manages the Sealed/Unsealed vault state machine. On unseal, decrypts the root key into a `memsafe` hardened memory cell.
-- **`FlowCoordinator`** — Coordinates cross-connection flow between operators and SDK clients.
-- **`EvmActor`** — Handles EVM transaction policy enforcement and signing.
+- **`Bootstrapper`** — one-time bootstrap token, written to `~/.arbiter/bootstrap_token` on first run
+- **`Vault`** — encrypted root key and the Sealed/Unsealed state machine; on unseal decrypts the root key into a `memsafe`-backed `SafeCell`
+- **`FlowCoordinator`** — cross-connection flow between operators and SDK clients
+- **`OperatorRegistry`** — tracks currently connected operators
+- **`EvmActor`** — EVM transaction policy enforcement and signing
+- **`events`** — a `kameo_actors::MessageBus` (`DeliveryStrategy::Guaranteed`) for cross-actor notifications
 
-Per-connection actors live under `actors/operator/` and `actors/client/`, each with `auth` (challenge-response authentication) and `session` (post-auth operations) sub-modules.
+Per-connection state lives under **`src/peers/`**, not `actors/`: `peers/client/` and `peers/operator/`, each with `auth` (challenge-response) and `session` (post-auth) sub-modules; the operator side additionally has `vault_gate/` for the unseal handshake.
 
-**Database:** SQLite via `diesel-async` + `bb8` connection pool. Schema managed by embedded Diesel migrations in `crates/arbiter-server/migrations/`. DB file lives at `~/.arbiter/arbiter.sqlite`. Tests use a temp-file DB via `db::create_test_pool()`.
+The gRPC surface lives in **`src/grpc/`**, split per peer (`client/`, `operator/`, `common/`) and per direction (`inbound.rs` — requests to the daemon, `outbound.rs` — server-initiated streams), with `request_tracker.rs` correlating the two.
+
+EVM logic is in `src/evm/`: `policies/ether_transfer/`, `policies/token_transfers/`, `abi.rs`, `safe_signer.rs`.
+
+**Database:** SQLite via `diesel-async` + `bb8`. Schema in `src/db/schema.rs`, models in `src/db/models.rs`, embedded migrations in `crates/arbiter-server/migrations/`. DB file lives at `~/.arbiter/arbiter.sqlite`; tests use a temp-file DB via `db::create_test_pool()`.
+
+Entity ids are newtypes generated by the `declare_id!` macro in `db::models` (`OperatorId`, `ChainId`, …), each a `#[repr(transparent)]` wrapper over `i32` with `to_raw`/`from_raw`. Pass these around instead of bare `i32`.
+
+**Row integrity:** sensitive rows are covered by an HMAC-SHA256 envelope (`src/crypto/integrity/`, table `integrity_envelope`), keyed from the vault root key. A struct becomes coverable by deriving `arbiter_macros::Hashable` and implementing `Integrable` (`KIND` + `VERSION`). When adding or changing a covered entity, keep the derive and the payload version in sync — a mismatch surfaces as `PayloadVersionMismatch` or `MacMismatch` at runtime.
 
 **Cryptography:**
-- Authentication: ed25519 (challenge-response, nonce-tracked per peer)
-- Encryption at rest: XChaCha20-Poly1305 (versioned via `scheme` field for transparent migration on unseal)
+- Authentication: **ML-DSA-87** (post-quantum, `arbiter-crypto::authn::v1`), challenge-response with per-peer nonce tracking
+- Encryption at rest: XChaCha20-Poly1305, versioned modules (`crypto/encryption/v1.rs`) with a `schema_version` column for transparent migration on unseal
 - Password KDF: Argon2
-- Unseal transport: X25519 ephemeral key exchange
-- TLS: self-signed certificate (aws-lc-rs backend), fingerprint distributed via `ArbiterUrl`
+- Unseal transport: X25519 ephemeral key exchange (`peers/operator/vault_gate/`); `x-wing` (hybrid PQ KEM) is available via `arbiter-crypto`
+- TLS: self-signed certificate (rustls + aws-lc-rs, `prefer-post-quantum`), fingerprint distributed via `ArbiterUrl`
 
-**Protocol:** gRPC with Protocol Buffers. The `ArbiterUrl` type encodes host, port, CA cert, and bootstrap token into a single shareable string (printed to console on first run).
+Crypto modules are versioned by convention: `mod.rs` re-exports the current `vN`. Add a `v(N+1)` rather than editing an existing version in place.
+
+**Protocol:** gRPC with Protocol Buffers. `ArbiterUrl` encodes host, port, CA cert and bootstrap token into a single shareable string (printed to console on first run).
 
 ### Proto Regeneration
 
-When `.proto` files in `protobufs/` change, rebuild to regenerate:
+`arbiter-proto/build.rs` compiles `arbiter.proto`, `operator.proto`, `client.proto` and `evm.proto` (with their `shared/`, `operator/`, `client/` includes) on build:
 ```sh
 cd server && cargo build -p arbiter-proto
+```
+
+Dart protobuf stubs are generated separately, from the repo root:
+```sh
+mise run codegen   # protoc --dart_out=grpc:useragent/lib/proto
 ```
 
 ### Database Migrations
@@ -99,6 +130,8 @@ diesel migration generate <name> --migration-dir crates/arbiter-server/migration
 # Run migrations manually (server also runs them on startup)
 diesel migration run --migration-dir crates/arbiter-server/migrations
 ```
+
+Pre-release policy: there is a single `init` migration and no deployed databases yet, so schema changes are made by editing that migration directly instead of stacking new ones. Regenerate `src/db/schema.rs` after changing it.
 
 ### Code Conventions
 
@@ -121,29 +154,23 @@ pub fn verify(&self, nonce: i32, context: &[u8], signature: &Signature) -> bool 
 
 This forces callers to either use the return value or explicitly ignore it with `let _ = ...;`, preventing silent failures.
 
-## Operator (Flutter + Rinf at `operator/`)
+## User Agent (Flutter + flutter_rust_bridge at `useragent/`)
 
-The Flutter app uses [Rinf](https://rinf.cunarist.org) to call Rust code. The Rust logic lives in `operator/native/hub/` as a separate crate that uses `arbiter-operator` for the gRPC client.
-
-Communication between Dart and Rust uses typed **signals** defined in `operator/native/hub/src/signals/`. After modifying signal structs, regenerate Dart bindings:
-
-```sh
-cd operator && rinf gen
-```
+The Flutter app calls Rust through [flutter_rust_bridge](https://cjycode.com/flutter_rust_bridge/) 2.12.0. The Rust side is the `rust_lib_arbiter` crate at `useragent/rust/`; everything exposed to Dart is declared in `useragent/rust/src/api/` and lands in `useragent/lib/src/rust/` (see `useragent/flutter_rust_bridge.yaml`). Dart UI code is organised as `lib/features/`, `lib/screens/`, `lib/widgets/`, `lib/providers/`, `lib/theme/`, with routing in `lib/router.dart` (`router.gr.dart` is generated).
 
 ### Common Commands
 
 ```sh
-cd operator
+cd useragent
 
-# Run the app (macOS or Windows)
+# Run the app
 flutter run
 
-# Regenerate Rust↔Dart signal bindings
-rinf gen
+# Regenerate Rust↔Dart bindings after editing rust/src/api/
+mise run codegen        # flutter_rust_bridge_codegen generate
 
-# Analyze Dart code
+# Analyze Dart code (also run in CI)
 flutter analyze
 ```
 
-The Rinf Rust entry point is `operator/native/hub/src/lib.rs`. It spawns actors defined in `operator/native/hub/src/actors/` which handle Dart↔server communication via signals.
+Note: `app/` contains only stale generated Flutter artifacts and is not the application source.
