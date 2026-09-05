@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+package arbiter.operator.governance;
+
+message Request {
+  oneof payload {
+    CreateProposalRequest create = 1;
+    CastVoteRequest       vote   = 2;
+    QueryPendingRequest   query  = 3;
+  }
+}
+
+message CreateProposalRequest {
+  oneof kind {
+    ApproveSdkClientPayload         approve_sdk_client          = 1;
+    GrantWalletAccessPayload        grant_wallet_access         = 3;
+    ApproveServerUpdatePayload      approve_server_update       = 4;
+    ReplaceOperatorPayload          replace_operator            = 5;
+    UpdateShamirParametersPayload   update_shamir_parameters    = 6;
+    ApprovePersistentGrantPayload   approve_persistent_grant    = 7;
+    ApproveOneOffTransactionPayload approve_one_off_transaction = 8;
+  }
+  optional uint32 ttl_secs = 2;
+}
+
+message ReplaceOperatorPayload {
+  int32 old_operator_id = 1;
+  bytes new_pubkey      = 2;
+}
+
+message UpdateShamirParametersPayload {
+  uint32 new_n = 1;
+}
+
+message ApproveServerUpdatePayload {}
+
+message ApproveSdkClientPayload {
+  int32 client_id = 1;
+}
+
+message GrantWalletAccessPayload {
+  int32 wallet_id = 1;
+  int32 client_id = 2;
+}
+
+message CastVoteRequest {
+  int32 proposal_id = 1;
+  bool  approve     = 2;
+  bytes signature   = 3;
+}
+
+message QueryPendingRequest {}
+
+message Response {
+  oneof payload {
+    CreateProposalResponse created = 1;
+    VoteResponse           voted   = 2;
+    QueryPendingResponse   pending = 3;
+  }
+}
+
+message CreateProposalResponse {
+  int32 proposal_id = 1;
+}
+
+message VoteResponse {
+  VoteOutcome outcome = 1;
+}
+
+enum VoteOutcome {
+  VOTE_OUTCOME_UNSPECIFIED = 0;
+  VOTE_OUTCOME_PENDING     = 1;
+  VOTE_OUTCOME_APPROVED    = 2;
+  VOTE_OUTCOME_REJECTED    = 3;
+}
+
+message ProposalSummary {
+  int32  id            = 1;
+  string kind          = 2;
+  int32  initiator_id  = 3;
+  int64  expires_at    = 4;
+  int64  approve_count = 5;
+  int64  reject_count  = 6;
+}
+
+message QueryPendingResponse {
+  repeated ProposalSummary proposals = 1;
+}
+
+message TransactionRateLimitProto {
+  uint32 count       = 1;
+  int64  window_secs = 2;
+}
+
+message VolumeLimitProto {
+  bytes max_volume  = 1;
+  int64 window_secs = 2;
+}
+
+message EtherTransferSpecProto {
+  repeated bytes   targets = 1;
+  VolumeLimitProto limit   = 2;
+}
+
+message TokenTransferSpecProto {
+  bytes                     token_contract = 1;
+  optional bytes            target         = 2;
+  repeated VolumeLimitProto volume_limits  = 3;
+}
+
+message ApproveOneOffTransactionPayload {
+  int32  client_id                = 1;
+  bytes  wallet_address           = 2;
+  uint64 chain_id                 = 3;
+  uint64 nonce                    = 4;
+  uint64 gas_limit                = 5;
+  bytes  max_fee_per_gas          = 6;
+  bytes  max_priority_fee_per_gas = 7;
+  bytes  to                       = 8;
+  bytes  value                    = 9;
+  bytes  input                    = 10;
+}
+
+message ApprovePersistentGrantPayload {
+  int32                              wallet_access_id         = 1;
+  uint64                             chain_id                 = 2;
+  optional int64                     valid_from_secs          = 3;
+  optional int64                     valid_until_secs         = 4;
+  optional bytes                     max_gas_fee_per_gas      = 5;
+  optional bytes                     max_priority_fee_per_gas = 6;
+  optional TransactionRateLimitProto rate_limit               = 7;
+  oneof specific {
+    EtherTransferSpecProto ether_transfer = 8;
+    TokenTransferSpecProto token_transfer = 9;
+  }
+}
