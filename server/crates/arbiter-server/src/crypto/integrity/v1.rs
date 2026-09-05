@@ -192,7 +192,9 @@ pub async fn verify_entity<E: Integrable>(
         Ok(false) => Err(Error::MacMismatch {
             entity_kind: E::KIND,
         }),
-        Err(SendError::HandlerError(vault::Error::Sealed)) => Ok(AttestationStatus::Unavailable),
+        Err(SendError::HandlerError(
+            vault::Error::Sealed | vault::Error::KeyVersionMismatch { .. },
+        )) => Ok(AttestationStatus::Unavailable),
         Err(_) => Err(Error::VaultSend),
     }
 }
@@ -330,5 +332,48 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, Error::MacMismatch { .. }));
+    }
+
+    #[tokio::test]
+    async fn key_version_mismatch_returns_unavailable_not_mac_mismatch() {
+        use crate::db::schema::integrity_envelope;
+        use super::AttestationStatus;
+
+        const ENTITY_ID: &[u8] = b"entity-id-rotation-test";
+
+        let db = db::create_test_pool().await;
+        let vault = bootstrapped_vault(&db).await;
+        let mut conn = db.get().await.unwrap();
+
+        let entity = DummyEntity {
+            payload_version: 1,
+            payload: b"payload-v1".to_vec(),
+        };
+
+        sign_entity(&mut conn, &vault, &entity, ENTITY_ID)
+            .await
+            .unwrap();
+
+        // Simulate key rotation: update the stored key_version to a stale value.
+        // After real rotation the vault's root_key_history_id would advance, but
+        // here we achieve the same mismatch by back-dating the envelope's key_version.
+        diesel::update(integrity_envelope::table)
+            .filter(integrity_envelope::entity_kind.eq("dummy_entity"))
+            .filter(integrity_envelope::entity_id.eq(ENTITY_ID))
+            .set(integrity_envelope::key_version.eq(0))
+            .execute(&mut conn)
+            .await
+            .unwrap();
+
+        // Must NOT error — version mismatch is Unavailable, not tampered.
+        let status = verify_entity(&mut conn, &vault, &entity, ENTITY_ID)
+            .await
+            .expect("key version mismatch must not be treated as an error");
+
+        assert_eq!(
+            status,
+            AttestationStatus::Unavailable,
+            "stale key_version must yield Unavailable, not MacMismatch"
+        );
     }
 }

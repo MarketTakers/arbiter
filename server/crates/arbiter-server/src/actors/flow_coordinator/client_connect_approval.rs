@@ -11,7 +11,9 @@ use kameo::{
     prelude::{ActorId, ActorRef, ActorStopReason, Context, WeakActorRef},
     reply::ReplySender,
 };
-use std::ops::ControlFlow;
+use std::{ops::ControlFlow, time::Duration};
+
+const APPROVAL_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct Args {
     pub client: ClientProfile,
@@ -64,6 +66,14 @@ impl Actor for ClientApprovalController {
                 .await;
         }
 
+        let weak = actor_ref.downgrade();
+        tokio::spawn(async move {
+            tokio::time::sleep(APPROVAL_TIMEOUT).await;
+            if let Some(r) = weak.upgrade() {
+                let _ = r.tell(OnApprovalTimeout {}).await;
+            }
+        });
+
         Ok(this)
     }
 
@@ -101,6 +111,16 @@ impl ClientApprovalController {
         if self.pending == 0 {
             // Every connected operator approved.
             self.send_reply(Ok(true));
+            ctx.stop();
+        }
+    }
+
+    /// Fired after `APPROVAL_TIMEOUT` elapses. Any operator that hasn't responded
+    /// by then is treated as a denial to prevent zombie sessions from blocking the flow.
+    #[message(ctx)]
+    pub fn on_approval_timeout(&mut self, ctx: &mut Context<Self, ()>) {
+        if self.pending > 0 {
+            self.send_reply(Ok(false));
             ctx.stop();
         }
     }

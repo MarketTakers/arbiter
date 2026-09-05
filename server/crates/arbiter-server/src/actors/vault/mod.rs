@@ -22,7 +22,7 @@ use hmac::{KeyInit as _, Mac as _};
 use kameo::{Actor, Reply, actor::ActorRef, messages};
 use kameo_actors::message_bus::{MessageBus, Publish};
 use strum::{EnumDiscriminants, IntoDiscriminant};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub mod events {
     #[derive(Clone, Copy)]
@@ -45,6 +45,8 @@ pub enum Error {
     Sealed,
     #[error("Invalid key provided")]
     InvalidKey,
+    #[error("Vault locked: too many failed unseal attempts")]
+    LockedOut,
 
     #[error("Requested aead entry not found")]
     NotFound,
@@ -60,6 +62,9 @@ pub enum Error {
 
     #[error("Broken database")]
     BrokenDatabase,
+
+    #[error("Integrity key version mismatch: envelope uses key {envelope:?}, current key is {current:?}")]
+    KeyVersionMismatch { envelope: RootKeyHistoryId, current: RootKeyHistoryId },
 }
 
 struct Unsealed {
@@ -79,6 +84,8 @@ enum State {
     Unsealed(Unsealed),
 }
 
+const MAX_UNSEAL_ATTEMPTS: u32 = 5;
+
 /// Manages vault root key and tracks current state of the vault (bootstrapped/unbootstrapped, sealed/unsealed).
 ///
 /// Provides API for encrypting and decrypting data using the vault root key.
@@ -88,6 +95,7 @@ pub struct Vault {
     db: db::DatabasePool,
     state: State,
     events: ActorRef<MessageBus>,
+    unseal_failures: u32,
 }
 
 #[messages]
@@ -110,7 +118,7 @@ impl Vault {
             }
         };
 
-        Ok(Self { db, state, events })
+        Ok(Self { db, state, events, unseal_failures: 0 })
     }
 
     // Exclusive transaction to avoid race condtions if multiple vaults write
@@ -224,6 +232,10 @@ impl Vault {
 
     #[message]
     pub async fn try_unseal(&mut self, seal_key_raw: SafeCell<Vec<u8>>) -> Result<(), Error> {
+        if self.unseal_failures >= MAX_UNSEAL_ATTEMPTS {
+            return Err(Error::LockedOut);
+        }
+
         let State::Sealed {
             root_key_history_id,
         } = &self.state
@@ -256,13 +268,27 @@ impl Vault {
                 Error::BrokenDatabase
             })?;
 
-        seal_key
+        if seal_key
             .decrypt_in_place(&nonce, v1::ROOT_KEY_TAG, &mut root_key)
-            .map_err(|err| {
-                error!(?err, "Failed to unseal root key: invalid seal key");
-                Error::InvalidKey
-            })?;
+            .is_err()
+        {
+            self.unseal_failures += 1;
+            if self.unseal_failures >= MAX_UNSEAL_ATTEMPTS {
+                error!(
+                    attempts = self.unseal_failures,
+                    "Vault locked: maximum failed unseal attempts reached"
+                );
+            } else {
+                warn!(
+                    attempts = self.unseal_failures,
+                    remaining = MAX_UNSEAL_ATTEMPTS - self.unseal_failures,
+                    "Failed unseal attempt"
+                );
+            }
+            return Err(Error::InvalidKey);
+        }
 
+        self.unseal_failures = 0;
         self.state = State::Unsealed(Unsealed {
             root_key_history_id: current_key.id,
             root_key: KeyCell::try_from(root_key).map_err(|err| {
@@ -277,8 +303,10 @@ impl Vault {
         Ok(())
     }
 
+    /// Decrypts an AEAD entry. The `aad` must match the value used at encryption time;
+    /// a mismatch causes authentication failure, preventing cross-wallet key swaps.
     #[message]
-    pub async fn decrypt(&mut self, aead_id: i32) -> Result<SafeCell<Vec<u8>>, Error> {
+    pub async fn decrypt(&mut self, aead_id: i32, aad: Vec<u8>) -> Result<SafeCell<Vec<u8>>, Error> {
         let Unsealed { root_key, .. } = Self::expect_unsealed(&mut self.state)?;
 
         let row: models::AeadEncrypted = {
@@ -300,13 +328,15 @@ impl Vault {
             Error::BrokenDatabase
         })?;
         let mut output = SafeCell::new(row.ciphertext);
-        root_key.decrypt_in_place(&nonce, v1::TAG, &mut output)?;
+        root_key.decrypt_in_place(&nonce, &aad, &mut output)?;
         Ok(output)
     }
 
+    /// Creates a new `aead_encrypted` entry and returns its ID.
+    /// The `aad` is bound into the ciphertext and must be reproduced exactly at decryption time.
     // Creates new `aead_encrypted` entry in the database and returns it's ID
     #[message]
-    pub async fn create_new(&mut self, mut plaintext: SafeCell<Vec<u8>>) -> Result<i32, Error> {
+    pub async fn create_new(&mut self, mut plaintext: SafeCell<Vec<u8>>, aad: Vec<u8>) -> Result<i32, Error> {
         let Unsealed {
             root_key,
             root_key_history_id,
@@ -318,7 +348,7 @@ impl Vault {
 
         let mut ciphertext_buffer = plaintext.write();
         let ciphertext_buffer: &mut Vec<u8> = ciphertext_buffer.as_mut();
-        root_key.encrypt_in_place(&nonce, v1::TAG, &mut *ciphertext_buffer)?;
+        root_key.encrypt_in_place(&nonce, &aad, &mut *ciphertext_buffer)?;
 
         let ciphertext = std::mem::take(ciphertext_buffer);
 
@@ -354,12 +384,10 @@ impl Vault {
             root_key_history_id,
         } = Self::expect_unsealed(&mut self.state)?;
 
-        let mut hmac = root_key
-            .0
-            .read_inline(|k| match HmacSha256::new_from_slice(k) {
-                Ok(v) => v,
-                Err(_) => unreachable!("HMAC accepts keys of any size"),
-            });
+        let mut hmac = root_key.0.read_inline(|k| {
+            HmacSha256::new_from_slice(k)
+                .unwrap_or_else(|_| unreachable!("HMAC accepts keys of any size"))
+        });
         hmac.update(&root_key_history_id.to_raw().to_be_bytes());
         hmac.update(&mac_input);
 
@@ -380,15 +408,16 @@ impl Vault {
         } = Self::expect_unsealed(&mut self.state)?;
 
         if *root_key_history_id != key_version {
-            return Ok(false);
+            return Err(Error::KeyVersionMismatch {
+                envelope: key_version,
+                current: *root_key_history_id,
+            });
         }
 
-        let mut hmac = root_key
-            .0
-            .read_inline(|k| match HmacSha256::new_from_slice(k) {
-                Ok(v) => v,
-                Err(_) => unreachable!("HMAC accepts keys of any size"),
-            });
+        let mut hmac = root_key.0.read_inline(|k| {
+            HmacSha256::new_from_slice(k)
+                .unwrap_or_else(|_| unreachable!("HMAC accepts keys of any size"))
+        });
         hmac.update(&key_version.to_raw().to_be_bytes());
         hmac.update(&mac_input);
 
@@ -432,12 +461,13 @@ mod tests {
     async fn nonce_monotonic_even_when_nonce_allocation_interleaves() {
         let db = db::create_test_pool().await;
         let mut actor = bootstrapped_actor(&db).await;
-        let root_key_history_id = match actor.state {
-            State::Unsealed(Unsealed {
-                root_key_history_id,
-                ..
-            }) => root_key_history_id,
-            _ => panic!("expected unsealed state"),
+
+        let State::Unsealed(Unsealed {
+            root_key_history_id,
+            ..
+        }) = actor.state
+        else {
+            panic!("expected unsealed state")
         };
 
         let n1 = Vault::get_new_nonce(&db, root_key_history_id)
@@ -457,7 +487,7 @@ mod tests {
         assert_eq!(root_row.data_encryption_nonce, n2.to_vec());
 
         let id = actor
-            .create_new(SafeCell::new(b"post-interleave".to_vec()))
+            .create_new(SafeCell::new(b"post-interleave".to_vec()), b"test-aad".to_vec())
             .await
             .unwrap();
         let row: models::AeadEncrypted = schema::aead_encrypted::table

@@ -80,7 +80,7 @@ impl Sender<Result<auth::Outbound, auth::Error>> for AuthTransportAdapter<'_> {
                         .timestamp
                         .timestamp_nanos_opt()
                         .expect("timestamp within range")
-                        as u64,
+                        .cast_unsigned(),
                     random: challenge.nonce.to_vec(),
                 })
             }
@@ -171,7 +171,7 @@ impl Receiver<auth::Inbound> for AuthTransportAdapter<'_> {
 
                 Some(auth::Inbound::AuthChallengeRequest {
                     pubkey,
-                    bootstrap_token,
+                    bootstrap_token: bootstrap_token.map(String::into_bytes),
                 })
             }
             AuthRequestPayload::ChallengeSolution(ProtoAuthChallengeSolution { signature }) => {

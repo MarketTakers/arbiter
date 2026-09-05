@@ -25,6 +25,8 @@ pub enum Error {
     AlreadyBootstrapped,
     #[error("Invalid key provided")]
     InvalidKey,
+    #[error("Vault locked: too many failed unseal attempts")]
+    LockedOut,
 
     #[error("State transition failed")]
     State,
@@ -170,6 +172,7 @@ impl VaultGate {
                 Ok(())
             }
             Err(SendError::HandlerError(vault::Error::InvalidKey)) => Err(Error::InvalidKey),
+            Err(SendError::HandlerError(vault::Error::LockedOut)) => Err(Error::LockedOut),
             Err(SendError::HandlerError(err)) => {
                 error!(?err, "Vault failed to unseal key");
                 Err(Error::InvalidKey)

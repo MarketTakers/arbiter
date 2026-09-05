@@ -10,45 +10,47 @@ use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper, dsl::update};
 use diesel_async::RunQueryDsl;
 use std::collections::HashSet;
 
+const TEST_AAD: &[u8] = b"test-aad";
+
 #[tokio::test]
 #[test_log::test]
-async fn test_create_decrypt_roundtrip() {
+async fn create_decrypt_roundtrip() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
 
     let plaintext = b"hello arbiter";
     let aead_id = actor
-        .create_new(SafeCell::new(plaintext.to_vec()))
+        .create_new(SafeCell::new(plaintext.to_vec()), TEST_AAD.to_vec())
         .await
         .unwrap();
 
-    let mut decrypted = actor.decrypt(aead_id).await.unwrap();
+    let mut decrypted = actor.decrypt(aead_id, TEST_AAD.to_vec()).await.unwrap();
     assert_eq!(*decrypted.read(), plaintext);
 }
 
 #[tokio::test]
 #[test_log::test]
-async fn test_decrypt_nonexistent_returns_not_found() {
+async fn decrypt_nonexistent_returns_not_found() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
 
-    let err = actor.decrypt(9999).await.unwrap_err();
+    let err = actor.decrypt(9999, TEST_AAD.to_vec()).await.unwrap_err();
     assert!(matches!(err, Error::NotFound));
 }
 
 #[tokio::test]
 #[test_log::test]
-async fn test_ciphertext_differs_across_entries() {
+async fn ciphertext_differs_across_entries() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
 
     let plaintext = b"same content";
     let id1 = actor
-        .create_new(SafeCell::new(plaintext.to_vec()))
+        .create_new(SafeCell::new(plaintext.to_vec()), TEST_AAD.to_vec())
         .await
         .unwrap();
     let id2 = actor
-        .create_new(SafeCell::new(plaintext.to_vec()))
+        .create_new(SafeCell::new(plaintext.to_vec()), TEST_AAD.to_vec())
         .await
         .unwrap();
 
@@ -68,22 +70,22 @@ async fn test_ciphertext_differs_across_entries() {
 
     assert_ne!(row1.ciphertext, row2.ciphertext);
 
-    let mut d1 = actor.decrypt(id1).await.unwrap();
-    let mut d2 = actor.decrypt(id2).await.unwrap();
+    let mut d1 = actor.decrypt(id1, TEST_AAD.to_vec()).await.unwrap();
+    let mut d2 = actor.decrypt(id2, TEST_AAD.to_vec()).await.unwrap();
     assert_eq!(*d1.read(), plaintext);
     assert_eq!(*d2.read(), plaintext);
 }
 
 #[tokio::test]
 #[test_log::test]
-async fn test_nonce_never_reused() {
+async fn nonce_never_reused() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
 
     let n = 5;
     for i in 0..n {
         actor
-            .create_new(SafeCell::new(format!("secret {i}").into_bytes()))
+            .create_new(SafeCell::new(format!("secret {i}").into_bytes()), TEST_AAD.to_vec())
             .await
             .unwrap();
     }
@@ -137,7 +139,7 @@ async fn broken_db_nonce_format_fails_closed() {
     drop(conn);
 
     let err = actor
-        .create_new(SafeCell::new(b"must fail".to_vec()))
+        .create_new(SafeCell::new(b"must fail".to_vec()), TEST_AAD.to_vec())
         .await
         .unwrap_err();
     assert!(matches!(err, Error::BrokenDatabase));
@@ -145,7 +147,7 @@ async fn broken_db_nonce_format_fails_closed() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
     let id = actor
-        .create_new(SafeCell::new(b"decrypt target".to_vec()))
+        .create_new(SafeCell::new(b"decrypt target".to_vec()), TEST_AAD.to_vec())
         .await
         .unwrap();
     let mut conn = db.get().await.unwrap();
@@ -156,6 +158,6 @@ async fn broken_db_nonce_format_fails_closed() {
         .unwrap();
     drop(conn);
 
-    let err = actor.decrypt(id).await.unwrap_err();
+    let err = actor.decrypt(id, TEST_AAD.to_vec()).await.unwrap_err();
     assert!(matches!(err, Error::BrokenDatabase));
 }
