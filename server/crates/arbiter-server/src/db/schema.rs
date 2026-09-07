@@ -135,6 +135,7 @@ diesel::table! {
         id -> Integer,
         wallet_id -> Integer,
         client_id -> Integer,
+        revoked_at -> Nullable<Integer>,
         created_at -> Integer,
     }
 }

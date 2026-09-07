@@ -109,6 +109,7 @@ create table if not exists evm_wallet_access (
     id integer not null primary key,
     wallet_id integer not null references evm_wallet (id) on delete cascade,
     client_id integer not null references program_client (id) on delete cascade,
+    revoked_at integer, -- unix timestamp when revoked, null = still active
     created_at integer not null default(unixepoch ('now'))
 ) STRICT;
 

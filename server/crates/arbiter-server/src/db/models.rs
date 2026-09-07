@@ -263,19 +263,22 @@ pub struct EvmWallet {
 #[view(
     NewEvmWalletAccess,
     derive(Insertable),
-    omit(id, created_at),
+    omit(id, created_at, revoked_at),
     attributes_with = "deriveless"
 )]
 #[view(
     CoreEvmWalletAccess,
     derive(Insertable),
-    omit(created_at),
+    omit(created_at, revoked_at),
     attributes_with = "deriveless"
 )]
 pub struct EvmWalletAccess {
     pub id: i32,
     pub wallet_id: EvmWalletId,
     pub client_id: i32,
+    // Grants, transaction logs, and persistent-grant proposals reference this row
+    // `on delete restrict`, so revocation cannot delete it -- it marks it revoked instead.
+    pub revoked_at: Option<SqliteTimestamp>,
     pub created_at: SqliteTimestamp,
 }
 

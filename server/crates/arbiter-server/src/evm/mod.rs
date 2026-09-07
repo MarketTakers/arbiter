@@ -381,6 +381,7 @@ mod tests {
                 id: WALLET_ACCESS_ID,
                 wallet_id: EvmWalletId::from_raw(5),
                 client_id: 20,
+                revoked_at: None,
                 created_at: SqliteTimestamp(Utc::now()),
             },
             chain: CHAIN_ID,
@@ -478,6 +479,9 @@ mod tests {
         conn: &mut DatabaseConnection,
         shared: &SharedGrantSettings,
     ) -> EvmBasicGrant {
+        // The seeded id deliberately wins over `shared.wallet_access_id`: every other field
+        // below is read from `shared`, but a caller-supplied access id would almost never
+        // reference a row that actually exists under foreign-key enforcement.
         let wallet_access_id = seed_wallet_access(conn).await;
 
         #[expect(

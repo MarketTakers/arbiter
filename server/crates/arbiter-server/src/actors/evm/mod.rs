@@ -226,6 +226,7 @@ impl EvmActor {
             .select(models::EvmWalletAccess::as_select())
             .filter(schema::evm_wallet_access::wallet_id.eq(wallet.id))
             .filter(schema::evm_wallet_access::client_id.eq(client_id))
+            .filter(schema::evm_wallet_access::revoked_at.is_null())
             .first(&mut conn)
             .await
             .optional()
@@ -261,6 +262,7 @@ impl EvmActor {
             .select(models::EvmWalletAccess::as_select())
             .filter(schema::evm_wallet_access::wallet_id.eq(wallet.id))
             .filter(schema::evm_wallet_access::client_id.eq(client_id))
+            .filter(schema::evm_wallet_access::revoked_at.is_null())
             .first(&mut conn)
             .await
             .optional()
@@ -323,11 +325,19 @@ impl EvmActor {
     ) -> Result<(), Error> {
         let mut conn = self.db.get().await.map_err(DatabaseError::from)?;
 
+        // Revives a previously revoked row instead of conflicting on it forever:
+        // `uniq_wallet_access` is a unique index on `(wallet_id, client_id)`.
         insert_into(schema::evm_wallet_access::table)
             .values((
                 schema::evm_wallet_access::wallet_id.eq(EvmWalletId::from_raw(settings.wallet_id)),
                 schema::evm_wallet_access::client_id.eq(settings.client_id),
             ))
+            .on_conflict((
+                schema::evm_wallet_access::wallet_id,
+                schema::evm_wallet_access::client_id,
+            ))
+            .do_update()
+            .set(schema::evm_wallet_access::revoked_at.eq(None::<models::SqliteTimestamp>))
             .execute(&mut conn)
             .await
             .map_err(DatabaseError::from)?;

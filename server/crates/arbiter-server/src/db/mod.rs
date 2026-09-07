@@ -164,7 +164,11 @@ pub async fn create_test_pool() -> DatabasePool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diesel::{ExpressionMethods as _, dsl::insert_into};
+    use diesel::{
+        ExpressionMethods as _,
+        dsl::insert_into,
+        result::{DatabaseErrorKind, Error as DieselError},
+    };
     use diesel_async::RunQueryDsl;
 
     /// `operator.id` references `operator_identity(id)`. Without `PRAGMA foreign_keys = ON`
@@ -184,9 +188,18 @@ mod tests {
             .execute(&mut conn)
             .await;
 
+        // Specifically a foreign-key violation, not any error: a `NOT NULL` failure or a
+        // renamed column would also make `result.is_err()` true without proving the pragma
+        // is what rejected the insert.
         assert!(
-            result.is_err(),
-            "insert with a dangling operator_identity reference was accepted"
+            matches!(
+                result,
+                Err(DieselError::DatabaseError(
+                    DatabaseErrorKind::ForeignKeyViolation,
+                    _
+                ))
+            ),
+            "expected a foreign-key violation for a dangling operator_identity reference, got {result:?}"
         );
     }
 }

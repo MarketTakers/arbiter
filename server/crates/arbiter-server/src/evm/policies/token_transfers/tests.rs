@@ -48,6 +48,7 @@ fn ctx(to: Address, calldata: Bytes) -> EvalContext {
             id: WALLET_ACCESS_ID,
             wallet_id: EvmWalletId::from_raw(10),
             client_id: 20,
+            revoked_at: None,
             created_at: SqliteTimestamp(Utc::now()),
         },
         chain: CHAIN_ID,
