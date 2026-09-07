@@ -11,6 +11,7 @@ use tracing::info;
 pub mod functions;
 pub mod models;
 pub mod proposal;
+pub mod recovery;
 pub mod schema;
 
 pub type DatabaseConnection = SyncConnectionWrapper<SqliteConnection>;

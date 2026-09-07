@@ -54,6 +54,8 @@ pub enum Error {
     BrokenDatabase,
     #[error("A committee must have at least one ordinary operator")]
     EmptyCommittee,
+    #[error("Recovery operators are sleeping")]
+    RecoveryNotActive,
 }
 
 // Passphrases stored as plain Vec<u8> (not SafeCell) so CoordinatorState is Sync.
@@ -583,6 +585,13 @@ impl VaultCoordinator {
         recovery_operator_id: i32,
         mut passphrase: SafeCell<Vec<u8>>,
     ) -> Result<bool, Error> {
+        {
+            let mut conn = self.db.get().await?;
+            if !db::recovery::is_active(&mut conn).await? {
+                return Err(Error::RecoveryNotActive);
+            }
+        }
+
         self.ensure_unsealing_state().await?;
 
         let CoordinatorState::Unsealing {

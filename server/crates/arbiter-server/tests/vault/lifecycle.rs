@@ -13,7 +13,7 @@ use arbiter_server::{
     db::{self, models, schema},
 };
 
-use diesel::{ExpressionMethods, QueryDsl, SelectableHelper, insert_into};
+use diesel::{ExpressionMethods, QueryDsl, SelectableHelper, insert_into, sql_query};
 use diesel_async::RunQueryDsl;
 use kameo::actor::Spawn as _;
 
@@ -254,6 +254,19 @@ async fn recovery_share_stored_and_used_for_unseal() {
     let state = vault_ref2.ask(GetState {}).await.unwrap();
     assert_eq!(state, VaultState::Sealed);
 
+    // §3.6: the recovery operator's share only counts once a wake-up request has stood
+    // uncancelled for the full dispute window, so back-date one here before unsealing.
+    {
+        let mut conn = db.get().await.unwrap();
+        sql_query(format!(
+            "INSERT INTO recovery_wakeup_request (requested_by, requested_at) \
+             VALUES ({ordinary_id}, unixepoch('now') - 14*24*3600 - 1)"
+        ))
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    }
+
     // §3.5: Unseal using ONLY the recovery operator share (threshold = shamir_threshold(1) = 1).
     let coordinator2 = VaultCoordinator::spawn(VaultCoordinator::new(db.clone(), vault_ref2.clone()));
     let done = coordinator2
@@ -415,5 +428,86 @@ async fn unseal_threshold_survives_a_deleted_share_row() {
     assert_eq!(
         vault_ref2.ask(GetState {}).await.unwrap(),
         VaultState::Unsealed
+    );
+}
+
+/// §3.6: recovery operators are asleep by default. Without a wake-up whose 14-day dispute
+/// window has elapsed, their share must not count towards an unseal.
+#[tokio::test]
+#[test_log::test]
+async fn sleeping_recovery_operator_cannot_contribute_to_unseal() {
+    let db = db::create_test_pool().await;
+    let bus = GlobalActors::spawn_message_bus();
+    let vault_ref = Vault::spawn(Vault::new(db.clone(), bus).await.unwrap());
+    let coordinator = VaultCoordinator::spawn(VaultCoordinator::new(db.clone(), vault_ref.clone()));
+
+    let ordinary_id: i32 = {
+        let mut conn = db.get().await.unwrap();
+        insert_into(schema::operator_identity::table)
+            .values(schema::operator_identity::public_key.eq(vec![1u8; 32]))
+            .returning(schema::operator_identity::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap()
+    };
+    let recovery_id: i32 = {
+        let mut conn = db.get().await.unwrap();
+        insert_into(schema::recovery_operator_identity::table)
+            .values(schema::recovery_operator_identity::public_key.eq(vec![2u8; 32]))
+            .returning(schema::recovery_operator_identity::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap()
+    };
+
+    coordinator
+        .ask(StartBootstrap {
+            operator_id: ordinary_id,
+            declared_count: 1,
+            recovery_count: 1,
+        })
+        .await
+        .unwrap();
+    coordinator
+        .ask(ContributeRecoveryBootstrap {
+            recovery_operator_id: recovery_id,
+            passphrase: SafeCell::new(b"recovery-pass".to_vec()),
+        })
+        .await
+        .unwrap();
+    coordinator
+        .ask(ContributeBootstrap {
+            operator_id: ordinary_id,
+            passphrase: SafeCell::new(b"ordinary-pass".to_vec()),
+        })
+        .await
+        .unwrap();
+
+    // Restart so the vault comes up Sealed.
+    drop(coordinator);
+    drop(vault_ref);
+    let bus2 = GlobalActors::spawn_message_bus();
+    let vault_ref2 = Vault::spawn(Vault::new(db.clone(), bus2).await.unwrap());
+    let coordinator2 = VaultCoordinator::spawn(VaultCoordinator::new(db.clone(), vault_ref2.clone()));
+
+    let err = coordinator2
+        .ask(ContributeRecoveryUnseal {
+            recovery_operator_id: recovery_id,
+            passphrase: SafeCell::new(b"recovery-pass".to_vec()),
+        })
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            kameo::error::SendError::HandlerError(CoordinatorError::RecoveryNotActive)
+        ),
+        "expected RecoveryNotActive, got {err:?}"
+    );
+    assert_eq!(
+        vault_ref2.ask(GetState {}).await.unwrap(),
+        VaultState::Sealed,
+        "a sleeping recovery operator unsealed the vault"
     );
 }

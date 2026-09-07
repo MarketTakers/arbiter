@@ -25,10 +25,6 @@ pub mod store;
 pub const DEFAULT_TTL_SECS: u32 = 7 * 24 * 60 * 60; // 7 days
 pub const MAX_TTL_SECS: u32 = DEFAULT_TTL_SECS;
 
-/// Recovery operators stay asleep for this long after a wake-up is requested, so the other
-/// operators have time to dispute it (§3.6).
-const WAKEUP_DELAY_SECS: i32 = 14 * 24 * 60 * 60; // 14 days
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VoteOutcome {
     Pending,

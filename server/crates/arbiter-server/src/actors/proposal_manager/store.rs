@@ -3,10 +3,9 @@
 //! The actor holds a `dyn ProposalStore` rather than a connection pool, so the quorum
 //! rules can be exercised against a mock instead of a live SQLite file.
 
-use super::{Error, ProposalSummary, WAKEUP_DELAY_SECS};
+use super::{Error, ProposalSummary};
 use crate::db::{
     self,
-    functions::unixepoch,
     models::{
         NewProposal, NewProposalVote, NewRecoveryProposalVote, NewRecoveryWakeupRequest,
         OperatorIdentityId, Proposal, ProposalId, ProposalStatus, RecoveryOperatorIdentityId,
@@ -360,17 +359,9 @@ impl ProposalStore for DieselProposalStore {
 
     async fn is_recovery_active(&self) -> Result<bool, Error> {
         let mut conn = self.db.get().await?;
-        select(exists(
-            schema::recovery_wakeup_request::table
-                .filter(schema::recovery_wakeup_request::cancelled_at.is_null())
-                .filter(
-                    schema::recovery_wakeup_request::requested_at
-                        .le(unixepoch("now") - WAKEUP_DELAY_SECS),
-                ),
-        ))
-        .get_result(&mut conn)
-        .await
-        .map_err(Error::from)
+        db::recovery::is_active(&mut conn)
+            .await
+            .map_err(Error::from)
     }
 
     async fn has_uncancelled_wakeup(&self) -> Result<bool, Error> {
