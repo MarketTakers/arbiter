@@ -3,15 +3,18 @@ use super::{
     Error,
 };
 use crate::{
-    actors::bootstrap::ConsumeToken,
-    db::{DatabasePool, schema::operator_identity},
+    actors::bootstrap::VerifyToken,
+    db::{
+        DatabasePool,
+        schema::{arbiter_settings, operator_identity},
+    },
     peers::operator::auth::Outbound,
 };
 use arbiter_crypto::authn::{self, AuthChallenge, SigningContext};
 use arbiter_proto::transport::Bi;
 
 use diesel::{ExpressionMethods as _, OptionalExtension as _, QueryDsl};
-use diesel_async::RunQueryDsl;
+use diesel_async::{AsyncConnection as _, RunQueryDsl};
 use tracing::error;
 
 pub(crate) struct ChallengeRequest {
@@ -63,17 +66,32 @@ async fn register_key(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<i3
         Error::internal("Database unavailable")
     })?;
 
-    let id: i32 = diesel::insert_into(operator_identity::table)
-        .values((operator_identity::public_key.eq(pubkey_bytes),))
-        .returning(operator_identity::id)
-        .get_result(&mut conn)
-        .await
-        .map_err(|e| {
-            error!(error = ?e, "Database error");
-            Error::internal("Database operation failed")
-        })?;
+    conn.transaction(async move |conn| {
+        // The database is authoritative on whether bootstrap has completed: `Vault::bootstrap`
+        // commits `root_key_id` before it publishes `events::Bootstrapped`, and `Bootstrapper`
+        // only learns of that two mailbox hops later. Re-checking it here, in the same
+        // transaction as the insert, closes that window deterministically instead of trusting
+        // a token that verified against `Bootstrapper`'s possibly-stale in-memory state.
+        let already_bootstrapped: bool = arbiter_settings::table
+            .select(arbiter_settings::root_key_id)
+            .first::<Option<i32>>(&mut *conn)
+            .await?
+            .is_some();
 
-    Ok(id)
+        if already_bootstrapped {
+            error!("Bootstrap token used to register after the vault was already bootstrapped");
+            return Err(Error::InvalidBootstrapToken);
+        }
+
+        let id: i32 = diesel::insert_into(operator_identity::table)
+            .values((operator_identity::public_key.eq(pubkey_bytes),))
+            .returning(operator_identity::id)
+            .get_result(&mut *conn)
+            .await?;
+
+        Ok(id)
+    })
+    .await
 }
 
 pub(super) struct AuthContext<'a, T: ?Sized> {
@@ -151,20 +169,20 @@ where
             return Err(Error::InvalidChallengeSolution);
         }
 
-        // Resolve client id: bootstrap (consume token + register) or lookup
+        // Resolve client id: bootstrap (verify token, then register) or lookup
         let id = match bootstrap_token {
             Some(token) => {
                 let token_ok: bool = self
                     .conn
                     .actors
                     .bootstrapper
-                    .ask(ConsumeToken {
+                    .ask(VerifyToken {
                         token: token.clone(),
                     })
                     .await
                     .map_err(|e| {
-                        error!(?e, "Failed to consume bootstrap token");
-                        Error::internal("Failed to consume bootstrap token")
+                        error!(?e, "Failed to verify bootstrap token");
+                        Error::internal("Failed to verify bootstrap token")
                     })?;
 
                 if !token_ok {
@@ -176,7 +194,21 @@ where
                     return Err(Error::InvalidBootstrapToken);
                 }
 
-                register_key(&self.conn.db, pubkey).await?
+                match register_key(&self.conn.db, pubkey).await {
+                    Ok(id) => id,
+                    // `register_key` refuses a token that verified here but lost the race
+                    // against bootstrap. Reported to the peer exactly like the refusal above,
+                    // so that operator sees a protocol error rather than a handshake that
+                    // stops with nothing on the wire.
+                    Err(Error::InvalidBootstrapToken) => {
+                        self.transport
+                            .send(Err(Error::InvalidBootstrapToken))
+                            .await
+                            .map_err(|_| Error::Transport)?;
+                        return Err(Error::InvalidBootstrapToken);
+                    }
+                    Err(err) => return Err(err),
+                }
             }
             None => get_client_id(&self.conn.db, pubkey)
                 .await?

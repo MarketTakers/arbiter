@@ -101,12 +101,17 @@ fn initialize_database(url: &str) -> Result<(), DatabaseSetupError> {
 /// # Panics
 /// Panics if the database path is not valid UTF-8.
 pub async fn create_pool(url: Option<&str>) -> Result<DatabasePool, DatabaseSetupError> {
-    let database_url = url.map(String::from).unwrap_or(
-        database_path()?
+    // Matched rather than `unwrap_or`, whose argument is evaluated even when `url` is `Some`:
+    // `database_path` resolves the real home directory and creates `~/.arbiter` as a side
+    // effect, so an eager call reaches the developer's home from every test that passes an
+    // explicit temp path, and fails outright wherever no home directory is writable.
+    let database_url = match url {
+        Some(url) => url.to_owned(),
+        None => database_path()?
             .to_str()
             .expect("database path is not valid UTF-8")
             .to_owned(),
-    );
+    };
 
     initialize_database(&database_url)?;
 

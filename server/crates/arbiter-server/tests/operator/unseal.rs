@@ -1,9 +1,7 @@
+use super::common::spawn_actors;
 use arbiter_crypto::authn;
 use arbiter_server::{
-    actors::{
-        GlobalActors,
-        vault::{Bootstrap, Seal},
-    },
+    actors::vault::{Bootstrap, Seal},
     db,
     peers::operator::{
         Credentials,
@@ -26,7 +24,7 @@ async fn setup_sealed_gate(
     oneshot::Receiver<Result<(), VaultGateError>>,
 ) {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
 
     actors
         .vault

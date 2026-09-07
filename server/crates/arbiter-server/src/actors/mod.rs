@@ -5,7 +5,7 @@ use crate::{
         flow_coordinator::FlowCoordinator,
         operator_registry::OperatorRegistry,
         proposal_manager::{ProposalManager, events::ProposalApproved},
-        vault::Vault,
+        vault::{Vault, events},
         vault_coordinator::VaultCoordinator,
     },
     db,
@@ -17,6 +17,7 @@ use kameo_actors::{
     message_bus::{MessageBus, Register},
 };
 use thiserror::Error;
+use tracing::error;
 
 pub mod bootstrap;
 pub mod evm;
@@ -54,6 +55,26 @@ impl GlobalActors {
     }
 
     pub async fn spawn(db: db::DatabasePool) -> Result<Self, SpawnError> {
+        let bootstrapper = Bootstrapper::new(&db).await?;
+        Self::spawn_with_bootstrapper(db, bootstrapper).await
+    }
+
+    /// Test-facing: threads an explicit directory through to `Bootstrapper` instead of letting
+    /// it resolve the real home directory, so a test spawning a full `GlobalActors` can never
+    /// reach (let alone write to) the real `~/.arbiter/bootstrap_token`. Mirrors `spawn`
+    /// exactly, aside from where the token file lives.
+    pub async fn spawn_in(
+        db: db::DatabasePool,
+        home: &std::path::Path,
+    ) -> Result<Self, SpawnError> {
+        let bootstrapper = Bootstrapper::new_in(&db, home).await?;
+        Self::spawn_with_bootstrapper(db, bootstrapper).await
+    }
+
+    async fn spawn_with_bootstrapper(
+        db: db::DatabasePool,
+        bootstrapper: Bootstrapper,
+    ) -> Result<Self, SpawnError> {
         let message_bus = Self::spawn_message_bus();
         let key_holder = Vault::spawn(Vault::new(db.clone(), message_bus.clone()).await?);
         let operator_registry = OperatorRegistry::spawn(OperatorRegistry::default());
@@ -62,6 +83,7 @@ impl GlobalActors {
             db.clone(),
             key_holder.clone(),
         ));
+        let bootstrapper = Bootstrapper::spawn(bootstrapper);
         // Approved proposals are executed by whoever owns the kind, not by ProposalManager.
         for recipient in [
             evm.clone().recipient::<ProposalApproved>(),
@@ -70,9 +92,23 @@ impl GlobalActors {
         ] {
             let _ = message_bus.tell(Register(recipient)).await;
         }
+        // The token guards bootstrap only: once the vault reports success, it must be retired.
+        // A dropped registration would leave the token valid forever with nothing else to
+        // notice, so a failure here is logged rather than silently discarded.
+        if let Err(err) = message_bus
+            .tell(Register(
+                bootstrapper.clone().recipient::<events::Bootstrapped>(),
+            ))
+            .await
+        {
+            error!(
+                ?err,
+                "Failed to register Bootstrapper for the Bootstrapped event"
+            );
+        }
 
         Ok(Self {
-            bootstrapper: Bootstrapper::spawn(Bootstrapper::new(&db).await?),
+            bootstrapper,
             proposal_manager: ProposalManager::spawn(ProposalManager::new(db, message_bus.clone())),
             vault: key_holder,
             vault_coordinator,

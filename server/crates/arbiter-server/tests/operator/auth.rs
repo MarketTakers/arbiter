@@ -1,8 +1,11 @@
-use super::common::ChannelTransport;
+use super::common::{ChannelTransport, bootstrapped_vault, eventually, spawn_actors};
 use arbiter_crypto::authn::{self, AuthChallenge, SigningContext};
 use arbiter_proto::transport::{Error as TransportError, Receiver, Sender};
 use arbiter_server::{
-    actors::{GlobalActors, bootstrap::GetToken, vault::Bootstrap},
+    actors::{
+        bootstrap::GetToken,
+        vault::{self, Bootstrap},
+    },
     crypto::integrity,
     db::{self, schema},
     peers::operator::{self, Credentials, OperatorConnection, auth, vault_gate},
@@ -150,14 +153,7 @@ impl Sender<auth::Inbound> for StartTestTransport {
 #[test_log::test]
 pub async fn bootstrap_token_auth() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
-    actors
-        .vault
-        .ask(Bootstrap {
-            seal_key: arbiter_server::crypto::KeyCell::from([0u8; 32]),
-        })
-        .await
-        .unwrap();
+    let actors = spawn_actors(db.clone()).await;
     let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
 
     let (mut server_transport, mut test_transport) = ChannelTransport::new();
@@ -211,11 +207,131 @@ pub async fn bootstrap_token_auth() {
     assert_eq!(stored_pubkey, verifying_key(&new_key).encode().0.to_vec());
 }
 
+/// A multi-operator committee must all register with the same bootstrap token before bootstrap
+/// completes, so verifying the token must not consume it. This is the reachability bug fixed by
+/// replacing `consume_token` with `verify_token`.
 #[tokio::test]
 #[test_log::test]
-pub async fn bootstrap_invalid_token_auth() {
+pub async fn bootstrap_token_registers_every_committee_member() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
+    let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
+
+    for _ in 0..2 {
+        let (mut server_transport, mut test_transport) = ChannelTransport::new();
+        let db_for_task = db.clone();
+        let actors_for_task = actors.clone();
+        let task = tokio::spawn(async move {
+            let mut props = OperatorConnection::new(db_for_task, actors_for_task);
+            auth::authenticate(&mut props, &mut server_transport).await
+        });
+
+        let new_key = MlDsa87::key_gen(&mut rand::rng());
+        test_transport
+            .send(auth::Inbound::AuthChallengeRequest {
+                pubkey: verifying_key(&new_key).into(),
+                bootstrap_token: Some(token.clone()),
+            })
+            .await
+            .unwrap();
+
+        let response = test_transport
+            .recv()
+            .await
+            .expect("should receive challenge");
+        let challenge = match response {
+            Ok(auth::Outbound::AuthChallenge { challenge }) => challenge,
+            other => panic!("Expected AuthChallenge, got {other:?}"),
+        };
+
+        let signature = sign_operator_challenge(&new_key, &challenge);
+        test_transport
+            .send(auth::Inbound::AuthChallengeSolution {
+                signature: signature.to_bytes(),
+            })
+            .await
+            .unwrap();
+
+        let response = test_transport
+            .recv()
+            .await
+            .expect("should receive auth result");
+        assert!(matches!(response, Ok(auth::Outbound::AuthSuccess)));
+
+        task.await.unwrap().unwrap();
+    }
+
+    let mut conn = db.get().await.unwrap();
+    let registered: i64 = schema::operator_identity::table
+        .count()
+        .get_result(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(registered, 2);
+
+    // Bootstrap has not completed: the token must still be valid.
+    assert_eq!(
+        actors.bootstrapper.ask(GetToken).await.unwrap(),
+        Some(token)
+    );
+}
+
+/// `GlobalActors` must subscribe `Bootstrapper` to `events::Bootstrapped` on the message bus.
+/// Without that one registration the token stays valid forever in production, which is the
+/// defect this task exists to fix, and no other test notices: the test below drives the event
+/// handler directly, and the `challenge_auth` family never re-reads the token after
+/// bootstrapping. This one goes the whole way round -- real `Vault::bootstrap`, real bus --
+/// and waits for the effect rather than reading straight after the call, because `Publish`
+/// only enqueues to the bus's mailbox.
+#[tokio::test]
+#[test_log::test]
+pub async fn bootstrapped_event_retires_the_token_through_the_message_bus() {
+    let db = db::create_test_pool().await;
+    let actors = spawn_actors(db.clone()).await;
+
+    assert!(
+        actors.bootstrapper.ask(GetToken).await.unwrap().is_some(),
+        "the token must exist before the vault is bootstrapped"
+    );
+
+    actors
+        .vault
+        .ask(Bootstrap {
+            seal_key: arbiter_server::crypto::KeyCell::from([0u8; 32]),
+        })
+        .await
+        .unwrap();
+
+    eventually("the bootstrap token to be retired", || async {
+        actors
+            .bootstrapper
+            .ask(GetToken)
+            .await
+            .unwrap()
+            .is_none()
+            .then_some(())
+    })
+    .await;
+}
+
+/// Once the vault reports `Bootstrapped`, the token is retired: further registrations must be
+/// rejected even with a token that verified successfully moments earlier.
+#[tokio::test]
+#[test_log::test]
+pub async fn bootstrap_token_rejected_after_bootstrapped_event() {
+    let db = db::create_test_pool().await;
+    let actors = spawn_actors(db.clone()).await;
+    let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
+
+    // Drive the Bootstrapper's own event handler directly rather than through
+    // `actors.vault.ask(Bootstrap { .. })` + the message bus: bus delivery is fire-and-forget,
+    // so asserting on it would be racy. The handler under test is the same either way.
+    actors
+        .bootstrapper
+        .ask(vault::events::Bootstrapped)
+        .await
+        .unwrap();
+    assert!(actors.bootstrapper.ask(GetToken).await.unwrap().is_none());
 
     let (mut server_transport, mut test_transport) = ChannelTransport::new();
     let db_for_task = db.clone();
@@ -228,7 +344,7 @@ pub async fn bootstrap_invalid_token_auth() {
     test_transport
         .send(auth::Inbound::AuthChallengeRequest {
             pubkey: verifying_key(&new_key).into(),
-            bootstrap_token: Some("invalid_token".to_owned()),
+            bootstrap_token: Some(token),
         })
         .await
         .unwrap();
@@ -264,11 +380,150 @@ pub async fn bootstrap_invalid_token_auth() {
     assert_eq!(count, 0);
 }
 
+/// `register_key`'s database gate must refuse a registration once `arbiter_settings.root_key_id`
+/// is set, even when `Bootstrapper`'s own in-memory token has not yet been retired -- exactly
+/// the two-mailbox-hop window between `Vault::bootstrap`'s commit and the `Bootstrapped` event
+/// reaching `Bootstrapper` in production. "database bootstrapped, Bootstrapper not yet notified"
+/// is reproduced deterministically by bootstrapping a throwaway `Vault` wired to its own message
+/// bus: it commits `root_key_id` in the same database without ever publishing to the bus
+/// `actors.bootstrapper` is registered on, so `actors.bootstrapper`'s token is left untouched.
+#[tokio::test]
+#[test_log::test]
+pub async fn bootstrap_token_rejected_once_the_database_is_bootstrapped() {
+    let db = db::create_test_pool().await;
+    let actors = spawn_actors(db.clone()).await;
+    let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
+
+    bootstrapped_vault(&db).await;
+
+    // From Bootstrapper's point of view the token still verifies: it never received an event.
+    assert_eq!(
+        actors.bootstrapper.ask(GetToken).await.unwrap(),
+        Some(token.clone())
+    );
+
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
+    let db_for_task = db.clone();
+    let task = tokio::spawn(async move {
+        let mut props = OperatorConnection::new(db_for_task, actors);
+        auth::authenticate(&mut props, &mut server_transport).await
+    });
+
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    test_transport
+        .send(auth::Inbound::AuthChallengeRequest {
+            pubkey: verifying_key(&new_key).into(),
+            bootstrap_token: Some(token),
+        })
+        .await
+        .unwrap();
+
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive challenge");
+    let challenge = match response {
+        Ok(auth::Outbound::AuthChallenge { challenge }) => challenge,
+        other => panic!("Expected AuthChallenge, got {other:?}"),
+    };
+
+    let signature = sign_operator_challenge(&new_key, &challenge);
+    test_transport
+        .send(auth::Inbound::AuthChallengeSolution {
+            signature: signature.to_bytes(),
+        })
+        .await
+        .unwrap();
+
+    // The refusal has to reach the peer, not just the task's return value: a registration
+    // refused after the database was bootstrapped must look like the refusal of a token that
+    // never verified, rather than a handshake that stops with nothing on the wire.
+    let refusal = test_transport
+        .recv()
+        .await
+        .expect("the refusal must be sent to the peer");
+    assert!(matches!(refusal, Err(auth::Error::InvalidBootstrapToken)));
+
+    assert!(matches!(
+        task.await.unwrap(),
+        Err(auth::Error::InvalidBootstrapToken)
+    ));
+
+    let mut conn = db.get().await.unwrap();
+    let count: i64 = schema::operator_identity::table
+        .count()
+        .get_result::<i64>(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
+#[test_log::test]
+pub async fn bootstrap_invalid_token_auth() {
+    let db = db::create_test_pool().await;
+    let actors = spawn_actors(db.clone()).await;
+
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
+    let db_for_task = db.clone();
+    let task = tokio::spawn(async move {
+        let mut props = OperatorConnection::new(db_for_task, actors);
+        auth::authenticate(&mut props, &mut server_transport).await
+    });
+
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    test_transport
+        .send(auth::Inbound::AuthChallengeRequest {
+            pubkey: verifying_key(&new_key).into(),
+            bootstrap_token: Some("invalid_token".to_owned()),
+        })
+        .await
+        .unwrap();
+
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive challenge");
+    let challenge = match response {
+        Ok(auth::Outbound::AuthChallenge { challenge }) => challenge,
+        other => panic!("Expected AuthChallenge, got {other:?}"),
+    };
+
+    let signature = sign_operator_challenge(&new_key, &challenge);
+    test_transport
+        .send(auth::Inbound::AuthChallengeSolution {
+            signature: signature.to_bytes(),
+        })
+        .await
+        .unwrap();
+
+    // The reference behaviour the refusal above has to match: a token that never verified is
+    // reported to the peer. Pinned here so the two refusal paths cannot drift apart again.
+    let refusal = test_transport
+        .recv()
+        .await
+        .expect("the refusal must be sent to the peer");
+    assert!(matches!(refusal, Err(auth::Error::InvalidBootstrapToken)));
+
+    assert!(matches!(
+        task.await.unwrap(),
+        Err(auth::Error::InvalidBootstrapToken)
+    ));
+
+    let mut conn = db.get().await.unwrap();
+    let count: i64 = schema::operator_identity::table
+        .count()
+        .get_result::<i64>(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
 #[tokio::test]
 #[test_log::test]
 pub async fn challenge_auth() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap {
@@ -353,7 +608,7 @@ pub async fn challenge_auth() {
 #[test_log::test]
 pub async fn challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
 
     actors
         .vault
@@ -427,7 +682,7 @@ pub async fn challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() {
 #[test_log::test]
 pub async fn challenge_auth_rejects_invalid_signature() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap {

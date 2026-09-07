@@ -1,4 +1,4 @@
-use super::common::ChannelTransport;
+use super::common::{ChannelTransport, spawn_actors};
 use arbiter_crypto::authn::{self, AuthChallenge, SigningContext};
 use arbiter_proto::{
     ClientMetadata,
@@ -93,7 +93,7 @@ async fn insert_bootstrap_sentinel_operator(db: &db::DatabasePool) {
 async fn spawn_test_actors(db: &db::DatabasePool) -> GlobalActors {
     insert_bootstrap_sentinel_operator(db).await;
 
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap {

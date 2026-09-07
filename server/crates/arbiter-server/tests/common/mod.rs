@@ -24,6 +24,36 @@ pub(crate) async fn bootstrapped_vault(db: &db::DatabasePool) -> Vault {
     actor
 }
 
+/// Spawns a full `GlobalActors` for a test, backing `Bootstrapper`'s token file with a
+/// throwaway temp directory rather than the real `~/.arbiter` -- a test must never be able to
+/// reach, let alone write to, the developer's real bootstrap token file.
+pub(crate) async fn spawn_actors(db: db::DatabasePool) -> GlobalActors {
+    let home = tempfile::tempdir().expect("failed to create a temp home directory for a test");
+    GlobalActors::spawn_in(db, home.path())
+        .await
+        .expect("failed to spawn GlobalActors for a test")
+}
+
+/// Retries `probe` until it yields a value, then returns it.
+///
+/// Effects that travel over the message bus are not visible the moment the publishing call
+/// returns: `Publish` only enqueues to the bus's mailbox, which then delivers to each
+/// subscriber's mailbox in turn. A test observing such an effect waits for it instead of
+/// reading straight after the call that triggered it.
+pub(crate) async fn eventually<T, F, Fut>(what: &str, mut probe: F) -> T
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Option<T>>,
+{
+    for _ in 0..100 {
+        if let Some(value) = probe().await {
+            return value;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("{what} did not happen within 2s");
+}
+
 pub(crate) async fn root_key_history_id(db: &db::DatabasePool) -> i32 {
     let mut conn = db.get().await.unwrap();
     let id = schema::arbiter_settings::table

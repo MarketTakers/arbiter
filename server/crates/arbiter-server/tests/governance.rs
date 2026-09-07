@@ -46,6 +46,16 @@ where
     panic!("{what} did not happen within 2s");
 }
 
+/// Spawns a full `GlobalActors` for a test, backing `Bootstrapper`'s token file with a
+/// throwaway temp directory rather than the real `~/.arbiter` -- a test must never be able to
+/// reach, let alone write to, the developer's real bootstrap token file.
+async fn spawn_actors(db: db::DatabasePool) -> GlobalActors {
+    let home = tempfile::tempdir().expect("failed to create a temp home directory for a test");
+    GlobalActors::spawn_in(db, home.path())
+        .await
+        .expect("failed to spawn GlobalActors for a test")
+}
+
 async fn register_operator(db: &db::DatabasePool, pubkey: &authn::PublicKey) -> OperatorIdentityId {
     let mut conn = db.get().await.unwrap();
     insert_into(operator_identity::table)
@@ -142,7 +152,7 @@ async fn insert_unapproved_client(db: &db::DatabasePool, pubkey: &authn::PublicK
 #[tokio::test]
 async fn create_proposal_returns_id() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap {
@@ -172,7 +182,7 @@ async fn create_proposal_returns_id() {
 #[tokio::test]
 async fn create_proposal_caps_the_ttl() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap {
@@ -213,7 +223,7 @@ async fn create_proposal_caps_the_ttl() {
 #[tokio::test]
 async fn single_operator_vote_reaches_quorum() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
@@ -258,7 +268,7 @@ async fn single_operator_vote_reaches_quorum() {
 #[tokio::test]
 async fn two_operator_first_vote_is_pending() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
@@ -304,7 +314,7 @@ async fn two_operator_first_vote_is_pending() {
 #[tokio::test]
 async fn duplicate_vote_rejected() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
@@ -365,7 +375,7 @@ async fn duplicate_vote_rejected() {
 #[tokio::test]
 async fn invalid_signature_rejected() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
@@ -406,7 +416,7 @@ async fn invalid_signature_rejected() {
 #[tokio::test]
 async fn query_pending_reports_a_tally_per_proposal() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap {
@@ -500,7 +510,7 @@ async fn query_pending_reports_a_tally_per_proposal() {
 #[tokio::test]
 async fn query_pending_excludes_already_voted() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
@@ -566,7 +576,7 @@ async fn query_pending_excludes_already_voted() {
 #[tokio::test]
 async fn expired_proposal_is_hidden_and_unvotable() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
@@ -624,7 +634,7 @@ async fn approve_sdk_client_writes_integrity_envelope() {
     use arbiter_server::db::schema::integrity_envelope;
 
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
@@ -683,7 +693,7 @@ async fn approve_sdk_client_writes_integrity_envelope() {
 #[tokio::test]
 async fn grant_wallet_access_on_quorum_approval() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
@@ -744,7 +754,7 @@ async fn grant_wallet_access_on_quorum_approval() {
 #[tokio::test]
 async fn approve_persistent_grant_creates_basic_grant_row() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
@@ -841,7 +851,7 @@ async fn approve_one_off_transaction_stores_result() {
     use chrono::Duration;
 
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
@@ -961,7 +971,7 @@ async fn approve_one_off_transaction_stores_result() {
 #[tokio::test]
 async fn replace_operator_updates_pubkey_and_starts_rekey() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
@@ -1033,7 +1043,7 @@ async fn replace_operator_updates_pubkey_and_starts_rekey() {
 #[tokio::test]
 async fn trigger_rekey_reaches_quorum() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
@@ -1075,7 +1085,7 @@ async fn trigger_rekey_reaches_quorum() {
 async fn key_rotation_requires_full_quorum() {
     // §3.3: ReplaceOperator needs all 3 operators to approve, not just shamir_threshold(3)=2
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors
         .vault
         .ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) })
@@ -1129,7 +1139,7 @@ async fn key_rotation_requires_full_quorum() {
 #[tokio::test]
 async fn recovery_vote_rejected_when_sleeping() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors.vault.ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) }).await.unwrap();
 
     let op_key = authn::SigningKey::generate();
@@ -1175,7 +1185,7 @@ async fn recovery_vote_rejected_when_sleeping() {
 #[tokio::test]
 async fn recovery_vote_blocked_on_non_replace_proposal() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors.vault.ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) }).await.unwrap();
 
     let op_key = authn::SigningKey::generate();
@@ -1224,7 +1234,7 @@ async fn recovery_vote_blocked_on_non_replace_proposal() {
 #[tokio::test]
 async fn recovery_wakeup_can_be_cancelled() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors.vault.ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) }).await.unwrap();
 
     let key = authn::SigningKey::generate();
@@ -1253,7 +1263,7 @@ async fn recovery_wakeup_can_be_cancelled() {
 #[tokio::test]
 async fn recovery_wakeup_prevents_duplicate_request() {
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors.vault.ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) }).await.unwrap();
 
     let key = authn::SigningKey::generate();
@@ -1281,7 +1291,7 @@ async fn recovery_wakeup_prevents_duplicate_request() {
 async fn recovery_operator_vote_contributes_to_replace_quorum() {
     // 1 ordinary operator + 1 recovery operator; replace_operator needs both.
     let db = db::create_test_pool().await;
-    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let actors = spawn_actors(db.clone()).await;
     actors.vault.ask(Bootstrap { seal_key: KeyCell::from([0u8; 32]) }).await.unwrap();
 
     let op_key = authn::SigningKey::generate();

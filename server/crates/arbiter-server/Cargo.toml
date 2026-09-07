@@ -60,6 +60,7 @@ rstest.workspace = true
 test-log = { version = "0.2", default-features = false, features = ["trace"] }
 ml-dsa.workspace = true
 mockall = "0.15.0"
+tempfile = "3.27.0"
 
 [lib]
 doctest = false

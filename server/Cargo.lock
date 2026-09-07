@@ -789,6 +789,7 @@ dependencies = [
  "smlang",
  "strum 0.28.0",
  "subtle",
+ "tempfile",
  "test-log",
  "thiserror",
  "tokio",

@@ -222,7 +222,9 @@ impl Vault {
         });
 
         info!("Vault bootstrapped successfully");
-        let _ = self.events.tell(Publish(events::Bootstrapped)).await;
+        if let Err(err) = self.events.tell(Publish(events::Bootstrapped)).await {
+            error!(?err, "Failed to publish Bootstrapped event");
+        }
 
         Ok(())
     }

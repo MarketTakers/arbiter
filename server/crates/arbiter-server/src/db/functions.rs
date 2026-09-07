@@ -1,6 +1,6 @@
 //! Typed bindings for the SQLite scalar functions used in Diesel expressions.
 
-use diesel::sql_types::{Integer, Text};
+use diesel::sql_types::Text;
 
 diesel::define_sql_function! {
     /// SQLite `unixepoch(modifier)` -- seconds since the Unix epoch.
