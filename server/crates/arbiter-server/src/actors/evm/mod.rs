@@ -70,6 +70,16 @@ pub enum Error {
 
     #[error("Signing error: {0}")]
     Sign(#[from] SignTransactionError),
+
+    #[error("Grant timestamp {0} is outside the representable range")]
+    InvalidTimestamp(i64),
+}
+
+/// Converts a grant boundary from Unix seconds. `None` in means "unbounded"; an
+/// unrepresentable value is an error, never a silently unbounded grant.
+fn grant_timestamp(secs: Option<i64>) -> Result<Option<chrono::DateTime<chrono::Utc>>, Error> {
+    secs.map(|s| chrono::DateTime::from_timestamp(s, 0).ok_or(Error::InvalidTimestamp(s)))
+        .transpose()
 }
 
 #[derive(Actor)]
@@ -343,12 +353,8 @@ impl EvmActor {
         let basic = SharedGrantSettings {
             wallet_access_id: grant.wallet_access_id,
             chain: grant.chain_id,
-            valid_from: grant
-                .valid_from_secs
-                .and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
-            valid_until: grant
-                .valid_until_secs
-                .and_then(|s| chrono::DateTime::from_timestamp(s, 0)),
+            valid_from: grant_timestamp(grant.valid_from_secs)?,
+            valid_until: grant_timestamp(grant.valid_until_secs)?,
             max_gas_fee_per_gas: grant.max_gas_fee_per_gas.map(U256::from_be_bytes),
             max_priority_fee_per_gas: grant.max_priority_fee_per_gas.map(U256::from_be_bytes),
             rate_limit: grant.rate_limit.map(|r| TransactionRateLimit {
@@ -412,5 +418,29 @@ impl EvmActor {
             .map_err(DatabaseError::from)?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Error, grant_timestamp};
+
+    #[test]
+    fn absent_timestamp_stays_absent() {
+        assert!(grant_timestamp(None).unwrap().is_none());
+    }
+
+    #[test]
+    fn in_range_timestamp_is_converted() {
+        let converted = grant_timestamp(Some(1_800_000_000)).unwrap();
+        assert_eq!(converted.unwrap().timestamp(), 1_800_000_000);
+    }
+
+    /// An unrepresentable expiry must not silently become "no expiry": that would widen the
+    /// grant beyond what was voted on.
+    #[test]
+    fn out_of_range_timestamp_is_an_error() {
+        let err = grant_timestamp(Some(i64::MAX)).unwrap_err();
+        assert!(matches!(err, Error::InvalidTimestamp(i64::MAX)));
     }
 }
