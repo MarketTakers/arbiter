@@ -277,7 +277,11 @@ impl ProposalManager {
         let threshold: i64 = if requires_full_quorum {
             total_eligible
         } else {
-            crate::crypto::shamir::shamir_threshold(tally.total_ordinary as usize) as i64
+            match crate::crypto::shamir::shamir_threshold(tally.total_ordinary as usize) {
+                Some(threshold) => threshold as i64,
+                // No ordinary operators means no electorate: nothing can settle.
+                None => return VoteOutcome::Pending,
+            }
         };
 
         if tally.approve >= threshold {

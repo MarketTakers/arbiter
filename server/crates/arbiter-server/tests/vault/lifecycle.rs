@@ -268,3 +268,45 @@ async fn recovery_share_stored_and_used_for_unseal() {
     let state = vault_ref2.ask(GetState {}).await.unwrap();
     assert_eq!(state, VaultState::Unsealed);
 }
+
+/// A committee of zero ordinary operators used to reach `shamir_threshold(0)` and panic,
+/// taking the global coordinator down with it.
+#[tokio::test]
+#[test_log::test]
+async fn empty_committee_is_rejected_without_panicking() {
+    let db = db::create_test_pool().await;
+    let bus = GlobalActors::spawn_message_bus();
+    let vault_ref = Vault::spawn(Vault::new(db.clone(), bus).await.unwrap());
+    let coordinator = VaultCoordinator::spawn(VaultCoordinator::new(db, vault_ref));
+
+    let err = coordinator
+        .ask(StartBootstrap {
+            operator_id: 1,
+            declared_count: 0,
+            recovery_count: 1,
+        })
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            kameo::error::SendError::HandlerError(CoordinatorError::EmptyCommittee)
+        ),
+        "expected EmptyCommittee, got {err:?}"
+    );
+
+    // The actor must still be alive to serve the next caller.
+    let err = coordinator
+        .ask(StartBootstrap {
+            operator_id: 1,
+            declared_count: 0,
+            recovery_count: 0,
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        kameo::error::SendError::HandlerError(CoordinatorError::EmptyCommittee)
+    ));
+}

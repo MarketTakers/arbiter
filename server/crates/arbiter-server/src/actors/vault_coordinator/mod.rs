@@ -52,6 +52,8 @@ pub enum Error {
     TwoOperatorsRequireRecovery,
     #[error("Broken database")]
     BrokenDatabase,
+    #[error("A committee must have at least one ordinary operator")]
+    EmptyCommittee,
 }
 
 // Passphrases stored as plain Vec<u8> (not SafeCell) so CoordinatorState is Sync.
@@ -153,7 +155,7 @@ async fn finalize_bootstrap(
     let ordinary_count = ordinary_passphrases.len();
     let recovery_count = recovery_passphrases.len();
     let total = ordinary_count + recovery_count;
-    let threshold = shamir_threshold(ordinary_count);
+    let threshold = shamir_threshold(ordinary_count).ok_or(Error::EmptyCommittee)?;
 
     let mut seal_key_bytes = [0u8; 32];
     OsRng.fill_bytes(&mut seal_key_bytes);
@@ -232,7 +234,8 @@ async fn finalize_unseal(
         .count()
         .get_result(&mut conn)
         .await?;
-    let threshold = shamir_threshold(ordinary_operator_count as usize);
+    let threshold =
+        shamir_threshold(ordinary_operator_count as usize).ok_or(Error::EmptyCommittee)?;
 
     let mut shares: Vec<Vec<u8>> = Vec::new();
 
@@ -314,7 +317,7 @@ async fn finalize_rekey(
     let ordinary_count = ordinary_passphrases.len();
     let recovery_count = recovery_passphrases.len();
     let total = ordinary_count + recovery_count;
-    let threshold = shamir_threshold(ordinary_count);
+    let threshold = shamir_threshold(ordinary_count).ok_or(Error::EmptyCommittee)?;
 
     let mut new_seal_key_bytes = [0u8; 32];
     OsRng.fill_bytes(&mut new_seal_key_bytes);
@@ -397,6 +400,9 @@ impl VaultCoordinator {
         let _ = operator_id; // fixme!: any authenticated operator may announce the committee size. the first call wins
         if !matches!(self.state, CoordinatorState::Idle) {
             return Err(Error::AlreadyBootstrapping);
+        }
+        if declared_count == 0 {
+            return Err(Error::EmptyCommittee);
         }
         if declared_count == 2 && recovery_count == 0 {
             return Err(Error::TwoOperatorsRequireRecovery);
@@ -584,7 +590,8 @@ impl VaultCoordinator {
                 .count()
                 .get_result(&mut conn)
                 .await?;
-            let threshold = shamir_threshold(usize::try_from(ordinary_count).unwrap_or_default());
+            let threshold = shamir_threshold(usize::try_from(ordinary_count).unwrap_or_default())
+                .ok_or(Error::EmptyCommittee)?;
             self.state = CoordinatorState::Unsealing {
                 threshold,
                 ordinary_passphrases: HashMap::new(),
