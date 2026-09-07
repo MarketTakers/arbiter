@@ -6,7 +6,7 @@ use arbiter_server::{
         vault::{Error, GetState, Vault, VaultState},
         vault_coordinator::{
             ContributeBootstrap, ContributeRecoveryBootstrap, ContributeRecoveryUnseal,
-            Error as CoordinatorError, StartBootstrap, VaultCoordinator,
+            ContributeUnseal, Error as CoordinatorError, StartBootstrap, VaultCoordinator,
         },
     },
     crypto::{KeyCell, encryption::v1::{Nonce, ROOT_KEY_TAG}},
@@ -309,4 +309,111 @@ async fn empty_committee_is_rejected_without_panicking() {
         err,
         kameo::error::SendError::HandlerError(CoordinatorError::EmptyCommittee)
     ));
+}
+
+/// An approved-but-unfinished operator replacement deletes a share row. The unseal threshold
+/// must still describe the split that is actually stored, not the surviving row count.
+///
+/// Four ordinary operators give a real 3-of-4 `vsss-rs` split (`shamir_threshold(4) == 3`).
+/// Deleting one share row leaves 3 rows, and `shamir_threshold(3) == 2` -- a *different* number
+/// from the recorded threshold. A recount-based unseal would therefore finalize one contribution
+/// early, combine only 2 shares of a 3-of-4 split, and fail to reconstruct the seal key.
+#[tokio::test]
+#[test_log::test]
+async fn unseal_threshold_survives_a_deleted_share_row() {
+    let db = db::create_test_pool().await;
+    let bus = GlobalActors::spawn_message_bus();
+    let vault_ref = Vault::spawn(Vault::new(db.clone(), bus).await.unwrap());
+    let coordinator = VaultCoordinator::spawn(VaultCoordinator::new(db.clone(), vault_ref));
+
+    // Four ordinary operators: threshold is 3-of-4.
+    let mut ids = Vec::new();
+    for n in 1..=4u8 {
+        let mut conn = db.get().await.unwrap();
+        let id: i32 = insert_into(schema::operator_identity::table)
+            .values(schema::operator_identity::public_key.eq(vec![n; 32]))
+            .returning(schema::operator_identity::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+        ids.push(id);
+    }
+
+    coordinator
+        .ask(StartBootstrap {
+            operator_id: ids[0],
+            declared_count: 4,
+            recovery_count: 0,
+        })
+        .await
+        .unwrap();
+    for (n, id) in ids.iter().enumerate() {
+        coordinator
+            .ask(ContributeBootstrap {
+                operator_id: *id,
+                passphrase: SafeCell::new(format!("pass-{n}").into_bytes()),
+            })
+            .await
+            .unwrap();
+    }
+
+    let stored: Option<i32> = {
+        let mut conn = db.get().await.unwrap();
+        schema::arbiter_settings::table
+            .select(schema::arbiter_settings::shamir_threshold)
+            .first(&mut conn)
+            .await
+            .unwrap()
+    };
+    assert_eq!(stored, Some(3), "bootstrap must record the split threshold");
+
+    // Simulate the aborted replacement: one share row is gone, leaving 3 of the 4 shares.
+    {
+        let mut conn = db.get().await.unwrap();
+        diesel::delete(schema::operator::table)
+            .filter(schema::operator::id.eq(Some(ids[3])))
+            .execute(&mut conn)
+            .await
+            .unwrap();
+    }
+
+    // Restart and unseal with the three surviving operators' original passphrases.
+    drop(coordinator);
+    let bus2 = GlobalActors::spawn_message_bus();
+    let vault_ref2 = Vault::spawn(Vault::new(db.clone(), bus2).await.unwrap());
+    let coordinator2 = VaultCoordinator::spawn(VaultCoordinator::new(db.clone(), vault_ref2.clone()));
+
+    let done = coordinator2
+        .ask(ContributeUnseal {
+            operator_id: ids[0],
+            passphrase: SafeCell::new(b"pass-0".to_vec()),
+        })
+        .await
+        .unwrap();
+    assert!(!done, "one share must not be enough for a 3-of-4 split");
+
+    let done = coordinator2
+        .ask(ContributeUnseal {
+            operator_id: ids[1],
+            passphrase: SafeCell::new(b"pass-1".to_vec()),
+        })
+        .await
+        .unwrap();
+    assert!(
+        !done,
+        "two shares must not be enough for a 3-of-4 split -- a recount would wrongly finalize here"
+    );
+
+    let done = coordinator2
+        .ask(ContributeUnseal {
+            operator_id: ids[2],
+            passphrase: SafeCell::new(b"pass-2".to_vec()),
+        })
+        .await
+        .unwrap();
+    assert!(done, "three shares must reconstruct a 3-of-4 split");
+    assert_eq!(
+        vault_ref2.ask(GetState {}).await.unwrap(),
+        VaultState::Unsealed
+    );
 }

@@ -142,6 +142,36 @@ fn decrypt_share(
     Ok(share_buffer.read().clone())
 }
 
+/// Records the threshold of the split that produced the stored shares.
+async fn store_threshold(conn: &mut db::DatabaseConnection, threshold: usize) -> Result<(), Error> {
+    // A threshold that doesn't fit in the column is a bug, not a real empty-committee refusal.
+    let threshold = i32::try_from(threshold).map_err(|_| Error::BrokenDatabase)?;
+    let rows_updated = diesel::update(schema::arbiter_settings::table)
+        .set(schema::arbiter_settings::shamir_threshold.eq(Some(threshold)))
+        .execute(conn)
+        .await?;
+    // The singleton row always exists (up.sql seeds it), so anything else means the update did
+    // not land -- bootstrap would then report success while the threshold stays NULL forever.
+    if rows_updated != 1 {
+        return Err(Error::BrokenDatabase);
+    }
+    Ok(())
+}
+
+/// Reads back the threshold recorded at bootstrap or re-key time.
+async fn load_threshold(conn: &mut db::DatabaseConnection) -> Result<usize, Error> {
+    let stored: Option<i32> = schema::arbiter_settings::table
+        .select(schema::arbiter_settings::shamir_threshold)
+        .first(conn)
+        .await?;
+
+    // A missing or out-of-range value here means the recorded threshold is corrupt, not that the
+    // committee is genuinely empty -- `EmptyCommittee` is reserved for the real domain refusal.
+    stored
+        .and_then(|threshold| usize::try_from(threshold).ok())
+        .ok_or(Error::BrokenDatabase)
+}
+
 /// §3.4: Split the seal key across ordinary + recovery operators.
 /// Threshold = `shamir_threshold(ordinary_count)`; total shares = ordinary + recovery.
 /// When `ordinary_count` == 1 (threshold = 1), vsss-rs does not support a proper split,
@@ -212,6 +242,8 @@ async fn finalize_bootstrap(
             .await?;
     }
 
+    store_threshold(&mut conn, threshold).await?;
+
     vault.ask(Bootstrap { seal_key }).await.map_err(|err| {
         error!(?err, "Vault bootstrap failed");
         Error::VaultError
@@ -230,12 +262,7 @@ async fn finalize_unseal(
     let mut conn = db.get().await?;
 
     // Determine whether shares were stored as raw keys (threshold=1) or vsss-rs splits (threshold>=2).
-    let ordinary_operator_count: i64 = schema::operator::table
-        .count()
-        .get_result(&mut conn)
-        .await?;
-    let threshold =
-        shamir_threshold(ordinary_operator_count as usize).ok_or(Error::EmptyCommittee)?;
+    let threshold = load_threshold(&mut conn).await?;
 
     let mut shares: Vec<Vec<u8>> = Vec::new();
 
@@ -371,6 +398,8 @@ async fn finalize_rekey(
             .execute(&mut conn)
             .await?;
     }
+
+    store_threshold(&mut conn, threshold).await?;
 
     drop(conn);
 
@@ -582,16 +611,12 @@ impl VaultCoordinator {
 
 impl VaultCoordinator {
     /// Initializes `CoordinatorState::Unsealing` on first call if still `Idle`.
-    /// Threshold is based on ordinary operator count only (§3.4).
+    /// Threshold comes from the recorded split parameters (§3.4), not from a live row count.
     async fn ensure_unsealing_state(&mut self) -> Result<(), Error> {
         if matches!(self.state, CoordinatorState::Idle) {
             let mut conn = self.db.get().await?;
-            let ordinary_count: i64 = schema::operator::table
-                .count()
-                .get_result(&mut conn)
-                .await?;
-            let threshold = shamir_threshold(usize::try_from(ordinary_count).unwrap_or_default())
-                .ok_or(Error::EmptyCommittee)?;
+            let threshold = load_threshold(&mut conn).await?;
+            drop(conn);
             self.state = CoordinatorState::Unsealing {
                 threshold,
                 ordinary_passphrases: HashMap::new(),

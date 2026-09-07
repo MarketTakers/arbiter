@@ -17,6 +17,7 @@ diesel::table! {
         id -> Integer,
         root_key_id -> Nullable<Integer>,
         tls_id -> Nullable<Integer>,
+        shamir_threshold -> Nullable<Integer>,
     }
 }
 
