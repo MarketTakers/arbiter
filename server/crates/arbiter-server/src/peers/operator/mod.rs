@@ -33,6 +33,37 @@ impl Integrable for Credentials {
     const KIND: &'static str = "operator_credentials";
 }
 
+/// §3.5: recovery operators are a separate peer type with their own identity table. Their
+/// attestation kind differs from an ordinary operator's so the two id spaces cannot collide.
+#[derive(Debug, Clone, Hashable)]
+pub struct RecoveryCredentials {
+    pub id: i32,
+    pub pubkey: authn::PublicKey,
+}
+
+impl Integrable for RecoveryCredentials {
+    const KIND: &'static str = "recovery_operator_credentials";
+}
+
+/// The outcome of an operator handshake. The variant, not a field, decides what the peer may
+/// do — so no call site can pass an unauthenticated recovery id.
+#[derive(Debug, Clone)]
+pub enum AuthenticatedOperator {
+    Ordinary(Credentials),
+    Recovery(RecoveryCredentials),
+}
+
+impl AuthenticatedOperator {
+    /// The peer's id within its own identity table.
+    #[must_use]
+    pub const fn id(&self) -> i32 {
+        match self {
+            Self::Ordinary(credentials) => credentials.id,
+            Self::Recovery(credentials) => credentials.id,
+        }
+    }
+}
+
 // Messages, sent by operator to connection client without having a request
 #[derive(Debug)]
 pub enum OutOfBand {
@@ -168,7 +199,16 @@ where
     T: Bi<auth::Inbound, Result<auth::Outbound, auth::Error>> + Send,
     T: Bi<vault_gate::Inbound, Result<vault_gate::Outbound, vault_gate::Error>> + Send,
 {
-    let creds = authenticate(props, &mut transport).await?;
+    let authenticated = authenticate(props, &mut transport).await?;
+
+    // A recovery operator has no session of its own yet: everything below this point is written
+    // against an ordinary operator's `Credentials`, so the handshake is refused rather than
+    // silently treated as an ordinary one.
+    let AuthenticatedOperator::Ordinary(creds) = authenticated else {
+        return Err(Error::Internal(
+            "recovery operators have no session yet".into(),
+        ));
+    };
 
     // should run vault gate only if sealed / unbootstrapped
     if should_run_gate(&props.actors.vault).await? {

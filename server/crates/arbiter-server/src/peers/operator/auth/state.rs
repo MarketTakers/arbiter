@@ -1,12 +1,12 @@
 use super::{
-    super::{Credentials, OperatorConnection},
+    super::{AuthenticatedOperator, Credentials, OperatorConnection, RecoveryCredentials},
     Error,
 };
 use crate::{
     actors::bootstrap::VerifyToken,
     db::{
         DatabasePool,
-        schema::{arbiter_settings, operator_identity},
+        schema::{arbiter_settings, operator_identity, recovery_operator_identity},
     },
     peers::operator::auth::Outbound,
 };
@@ -37,7 +37,7 @@ smlang::statemachine!(
     custom_error: true,
     transitions: {
         *Init + AuthRequest(ChallengeRequest) / async prepare_challenge = SentChallenge(ChallengeContext),
-        SentChallenge(ChallengeContext) + ReceivedSolution(ChallengeSolution) / async verify_solution = AuthOk(Credentials),
+        SentChallenge(ChallengeContext) + ReceivedSolution(ChallengeSolution) / async verify_solution = AuthOk(AuthenticatedOperator),
     }
 );
 
@@ -50,6 +50,27 @@ async fn get_client_id(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<O
     operator_identity::table
         .filter(operator_identity::public_key.eq(pubkey.to_bytes()))
         .select(operator_identity::id)
+        .first::<i32>(&mut conn)
+        .await
+        .optional()
+        .map_err(|e| {
+            error!(error = ?e, "Database error");
+            Error::internal("Database operation failed")
+        })
+}
+
+async fn get_recovery_operator_id(
+    db: &DatabasePool,
+    pubkey: &authn::PublicKey,
+) -> Result<Option<i32>, Error> {
+    let mut conn = db.get().await.map_err(|e| {
+        error!(error = ?e, "Database pool error");
+        Error::internal("Database unavailable")
+    })?;
+
+    recovery_operator_identity::table
+        .filter(recovery_operator_identity::public_key.eq(pubkey.to_bytes()))
+        .select(recovery_operator_identity::id)
         .first::<i32>(&mut conn)
         .await
         .optional()
@@ -118,12 +139,14 @@ where
             bootstrap_token,
         }: ChallengeRequest,
     ) -> Result<ChallengeContext, Self::Error> {
-        // Verify pubkey is registered (unless bootstrapping)
-        if bootstrap_token.is_none() {
-            let id = get_client_id(&self.conn.db, &pubkey).await?;
-            if id.is_none() {
-                return Err(Error::UnregisteredPublicKey);
-            }
+        // Verify pubkey is registered in either identity table (unless bootstrapping)
+        if bootstrap_token.is_none()
+            && get_client_id(&self.conn.db, &pubkey).await?.is_none()
+            && get_recovery_operator_id(&self.conn.db, &pubkey)
+                .await?
+                .is_none()
+        {
+            return Err(Error::UnregisteredPublicKey);
         }
 
         let challenge = AuthChallenge::generate(&mut rand::rng());
@@ -153,7 +176,7 @@ where
             bootstrap_token,
         }: &ChallengeContext,
         ChallengeSolution { solution }: ChallengeSolution,
-    ) -> Result<Credentials, Self::Error> {
+    ) -> Result<AuthenticatedOperator, Self::Error> {
         let signature = authn::Signature::try_from(solution.as_slice()).map_err(|()| {
             error!("Failed to decode signature in challenge solution");
             Error::InvalidChallengeSolution
@@ -169,8 +192,9 @@ where
             return Err(Error::InvalidChallengeSolution);
         }
 
-        // Resolve client id: bootstrap (verify token, then register) or lookup
-        let id = match bootstrap_token {
+        // Resolve the peer's role: bootstrap (verify token, then register as an ordinary
+        // operator) or look the key up in whichever identity table holds it.
+        let authenticated = match bootstrap_token {
             Some(token) => {
                 let token_ok: bool = self
                     .conn
@@ -194,7 +218,7 @@ where
                     return Err(Error::InvalidBootstrapToken);
                 }
 
-                match register_key(&self.conn.db, pubkey).await {
+                let id = match register_key(&self.conn.db, pubkey).await {
                     Ok(id) => id,
                     // `register_key` refuses a token that verified here but lost the race
                     // against bootstrap. Reported to the peer exactly like the refusal above,
@@ -208,11 +232,38 @@ where
                         return Err(Error::InvalidBootstrapToken);
                     }
                     Err(err) => return Err(err),
+                };
+
+                AuthenticatedOperator::Ordinary(Credentials {
+                    id,
+                    pubkey: pubkey.clone(),
+                })
+            }
+            None => {
+                if let Some(id) = get_client_id(&self.conn.db, pubkey).await? {
+                    AuthenticatedOperator::Ordinary(Credentials {
+                        id,
+                        pubkey: pubkey.clone(),
+                    })
+                } else {
+                    // `prepare_challenge` already found the key in one of the tables, so
+                    // arriving here means it was removed mid-handshake. Reported to the peer
+                    // for the same reason `InvalidBootstrapToken` is above: an operator that
+                    // has sent its solution sees a protocol error rather than a handshake that
+                    // stops with nothing on the wire.
+                    let Some(id) = get_recovery_operator_id(&self.conn.db, pubkey).await? else {
+                        self.transport
+                            .send(Err(Error::UnregisteredPublicKey))
+                            .await
+                            .map_err(|_| Error::Transport)?;
+                        return Err(Error::UnregisteredPublicKey);
+                    };
+                    AuthenticatedOperator::Recovery(RecoveryCredentials {
+                        id,
+                        pubkey: pubkey.clone(),
+                    })
                 }
             }
-            None => get_client_id(&self.conn.db, pubkey)
-                .await?
-                .ok_or(Error::UnregisteredPublicKey)?,
         };
 
         self.transport
@@ -220,9 +271,6 @@ where
             .await
             .map_err(|_| Error::Transport)?;
 
-        Ok(Credentials {
-            id,
-            pubkey: pubkey.clone(),
-        })
+        Ok(authenticated)
     }
 }

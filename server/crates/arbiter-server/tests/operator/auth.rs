@@ -8,7 +8,9 @@ use arbiter_server::{
     },
     crypto::integrity,
     db::{self, schema},
-    peers::operator::{self, Credentials, OperatorConnection, auth, vault_gate},
+    peers::operator::{
+        self, AuthenticatedOperator, Credentials, OperatorConnection, auth, vault_gate,
+    },
 };
 
 use async_trait::async_trait;
@@ -196,15 +198,29 @@ pub async fn bootstrap_token_auth() {
         .expect("should receive auth result");
     assert!(matches!(response, Ok(auth::Outbound::AuthSuccess)));
 
-    task.await.unwrap().unwrap();
+    let authenticated = task.await.unwrap().unwrap();
 
     let mut conn = db.get().await.unwrap();
-    let stored_pubkey: Vec<u8> = schema::operator_identity::table
-        .select(schema::operator_identity::public_key)
-        .first::<Vec<u8>>(&mut conn)
+    let (stored_id, stored_pubkey): (i32, Vec<u8>) = schema::operator_identity::table
+        .select((
+            schema::operator_identity::id,
+            schema::operator_identity::public_key,
+        ))
+        .first::<(i32, Vec<u8>)>(&mut conn)
         .await
         .unwrap();
     assert_eq!(stored_pubkey, verifying_key(&new_key).encode().0.to_vec());
+
+    // A key registered through the bootstrap token is an ordinary operator, carrying the id its
+    // registration wrote. Asserted here because this is the file's only bootstrap-arm check on
+    // what `authenticate` actually returns.
+    match authenticated {
+        AuthenticatedOperator::Ordinary(creds) => assert_eq!(creds.id, stored_id),
+        AuthenticatedOperator::Recovery(creds) => panic!(
+            "expected the ordinary role, got a recovery operator with id {}",
+            creds.id
+        ),
+    }
 }
 
 /// A multi-operator committee must all register with the same bootstrap token before bootstrap
@@ -756,5 +772,232 @@ pub async fn challenge_auth_rejects_invalid_signature() {
     assert!(matches!(
         expected_err,
         Err(auth::Error::InvalidChallengeSolution)
+    ));
+}
+
+/// §3.5: a recovery operator is a separate peer type. Its key resolves against
+/// `recovery_operator_identity`, and authentication reports the recovery role.
+///
+/// An ordinary operator is registered alongside it so the recovery key is not simply the only
+/// key on file: the handshake has to reach the recovery table while `operator_identity` is
+/// populated. Both tables autoincrement from 1, so the fixture also pushes the authenticating
+/// recovery operator to id 2 -- with one row in each table an id taken from the wrong table
+/// would still read as 1, and only the variant would be under test.
+#[tokio::test]
+#[test_log::test]
+pub async fn recovery_operator_authenticates_with_its_own_identity() {
+    let db = db::create_test_pool().await;
+    let actors = spawn_actors(db.clone()).await;
+
+    let ordinary_key = MlDsa87::key_gen(&mut rand::rng());
+    let other_recovery_key = MlDsa87::key_gen(&mut rand::rng());
+    let recovery_key = MlDsa87::key_gen(&mut rand::rng());
+    let recovery_pubkey_bytes = authn::PublicKey::from(verifying_key(&recovery_key)).to_bytes();
+
+    let recovery_id: i32 = {
+        let mut conn = db.get().await.unwrap();
+        insert_into(schema::operator_identity::table)
+            .values((schema::operator_identity::public_key
+                .eq(authn::PublicKey::from(verifying_key(&ordinary_key)).to_bytes()),))
+            .execute(&mut conn)
+            .await
+            .unwrap();
+        insert_into(schema::recovery_operator_identity::table)
+            .values((schema::recovery_operator_identity::public_key
+                .eq(authn::PublicKey::from(verifying_key(&other_recovery_key)).to_bytes()),))
+            .execute(&mut conn)
+            .await
+            .unwrap();
+        insert_into(schema::recovery_operator_identity::table)
+            .values((schema::recovery_operator_identity::public_key.eq(recovery_pubkey_bytes),))
+            .returning(schema::recovery_operator_identity::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap()
+    };
+    assert_eq!(
+        recovery_id, 2,
+        "the fixture must give the authenticating recovery operator an id no ordinary \
+         operator holds, or the id assertion below cannot discriminate"
+    );
+
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
+    let db_for_task = db.clone();
+    let task = tokio::spawn(async move {
+        let mut props = OperatorConnection::new(db_for_task, actors);
+        auth::authenticate(&mut props, &mut server_transport).await
+    });
+
+    test_transport
+        .send(auth::Inbound::AuthChallengeRequest {
+            pubkey: verifying_key(&recovery_key).into(),
+            bootstrap_token: None,
+        })
+        .await
+        .unwrap();
+
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive challenge");
+    let challenge = match response {
+        Ok(auth::Outbound::AuthChallenge { challenge }) => challenge,
+        other => panic!("Expected AuthChallenge, got {other:?}"),
+    };
+
+    let signature = sign_operator_challenge(&recovery_key, &challenge);
+    test_transport
+        .send(auth::Inbound::AuthChallengeSolution {
+            signature: signature.to_bytes(),
+        })
+        .await
+        .unwrap();
+
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive auth result");
+    assert!(matches!(response, Ok(auth::Outbound::AuthSuccess)));
+
+    let authenticated = task
+        .await
+        .unwrap()
+        .expect("recovery operator should authenticate");
+    match authenticated {
+        AuthenticatedOperator::Recovery(creds) => assert_eq!(creds.id, recovery_id),
+        AuthenticatedOperator::Ordinary(creds) => panic!(
+            "expected the recovery role, got the ordinary operator with id {}",
+            creds.id
+        ),
+    }
+}
+
+/// A key present in neither identity table is still rejected: accepting a key found in either
+/// table must not degrade into accepting any key at all. Both tables hold a row so the refusal
+/// cannot come from an empty lookup.
+#[tokio::test]
+#[test_log::test]
+pub async fn unknown_key_is_rejected_when_both_tables_are_populated() {
+    let db = db::create_test_pool().await;
+    let actors = spawn_actors(db.clone()).await;
+
+    let ordinary_key = MlDsa87::key_gen(&mut rand::rng());
+    let recovery_key = MlDsa87::key_gen(&mut rand::rng());
+    {
+        let mut conn = db.get().await.unwrap();
+        insert_into(schema::operator_identity::table)
+            .values((schema::operator_identity::public_key
+                .eq(authn::PublicKey::from(verifying_key(&ordinary_key)).to_bytes()),))
+            .execute(&mut conn)
+            .await
+            .unwrap();
+        insert_into(schema::recovery_operator_identity::table)
+            .values((schema::recovery_operator_identity::public_key
+                .eq(authn::PublicKey::from(verifying_key(&recovery_key)).to_bytes()),))
+            .execute(&mut conn)
+            .await
+            .unwrap();
+    }
+
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
+    let db_for_task = db.clone();
+    let task = tokio::spawn(async move {
+        let mut props = OperatorConnection::new(db_for_task, actors);
+        auth::authenticate(&mut props, &mut server_transport).await
+    });
+
+    let unknown_key = MlDsa87::key_gen(&mut rand::rng());
+    test_transport
+        .send(auth::Inbound::AuthChallengeRequest {
+            pubkey: verifying_key(&unknown_key).into(),
+            bootstrap_token: None,
+        })
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        task.await.unwrap(),
+        Err(auth::Error::UnregisteredPublicKey)
+    ));
+}
+
+/// `verify_solution` resolves the recovery id only after the peer has sent its solution, so a
+/// recovery row removed between challenge and solution reaches that refusal. It has to be sent
+/// on the transport, like the `InvalidBootstrapToken` refusals in the arm above: an operator
+/// that has answered the challenge sees a protocol error rather than a handshake that stops
+/// with nothing on the wire.
+#[tokio::test]
+#[test_log::test]
+pub async fn recovery_key_removed_mid_handshake_is_refused_on_the_wire() {
+    let db = db::create_test_pool().await;
+    let actors = spawn_actors(db.clone()).await;
+
+    let recovery_key = MlDsa87::key_gen(&mut rand::rng());
+    let recovery_pubkey_bytes = authn::PublicKey::from(verifying_key(&recovery_key)).to_bytes();
+    {
+        let mut conn = db.get().await.unwrap();
+        insert_into(schema::recovery_operator_identity::table)
+            .values((
+                schema::recovery_operator_identity::public_key.eq(recovery_pubkey_bytes.clone()),
+            ))
+            .execute(&mut conn)
+            .await
+            .unwrap();
+    }
+
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
+    let db_for_task = db.clone();
+    let task = tokio::spawn(async move {
+        let mut props = OperatorConnection::new(db_for_task, actors);
+        auth::authenticate(&mut props, &mut server_transport).await
+    });
+
+    test_transport
+        .send(auth::Inbound::AuthChallengeRequest {
+            pubkey: verifying_key(&recovery_key).into(),
+            bootstrap_token: None,
+        })
+        .await
+        .unwrap();
+
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive challenge");
+    let challenge = match response {
+        Ok(auth::Outbound::AuthChallenge { challenge }) => challenge,
+        other => panic!("Expected AuthChallenge, got {other:?}"),
+    };
+
+    // The challenge has been issued and the solution has not been sent, so the server cannot
+    // have read the table again yet: the row is gone by the time `verify_solution` looks.
+    {
+        let mut conn = db.get().await.unwrap();
+        diesel::delete(
+            schema::recovery_operator_identity::table
+                .filter(schema::recovery_operator_identity::public_key.eq(recovery_pubkey_bytes)),
+        )
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    }
+
+    let signature = sign_operator_challenge(&recovery_key, &challenge);
+    test_transport
+        .send(auth::Inbound::AuthChallengeSolution {
+            signature: signature.to_bytes(),
+        })
+        .await
+        .unwrap();
+
+    let refusal = test_transport
+        .recv()
+        .await
+        .expect("the refusal must be sent to the peer");
+    assert!(matches!(refusal, Err(auth::Error::UnregisteredPublicKey)));
+
+    assert!(matches!(
+        task.await.unwrap(),
+        Err(auth::Error::UnregisteredPublicKey)
     ));
 }

@@ -1,4 +1,4 @@
-use super::{Credentials, OperatorConnection};
+use super::{AuthenticatedOperator, OperatorConnection};
 use arbiter_crypto::authn::{self, AuthChallenge};
 use arbiter_proto::transport::Bi;
 
@@ -71,7 +71,7 @@ fn parse_auth_event(payload: Inbound) -> AuthEvents {
 pub async fn authenticate<T>(
     props: &mut OperatorConnection,
     transport: &mut T,
-) -> Result<Credentials, Error>
+) -> Result<AuthenticatedOperator, Error>
 where
     T: Bi<Inbound, Result<Outbound, Error>> + Send + ?Sized,
 {
