@@ -21,8 +21,8 @@ use arbiter_server::{
 };
 use arbiter_server::actors::vault::Bootstrap;
 use arbiter_server::db::schema::{
-    aead_encrypted, evm_basic_grant, evm_wallet, evm_wallet_access, operator_identity,
-    proposal_one_off_transaction_result, recovery_operator_identity,
+    aead_encrypted, arbiter_settings, evm_basic_grant, evm_wallet, evm_wallet_access,
+    operator_identity, proposal_one_off_transaction_result, recovery_operator_identity,
 };
 use diesel::{ExpressionMethods, QueryDsl, insert_into};
 use diesel_async::RunQueryDsl;
@@ -82,14 +82,22 @@ async fn insert_active_wakeup(db: &db::DatabasePool, operator_id: OperatorIdenti
     .unwrap();
 }
 
+/// Requires the vault to already be bootstrapped: it reads the root key row `Bootstrap`
+/// creates so the aead-encrypted wallet secret has a real parent to reference.
 async fn insert_evm_wallet(db: &db::DatabasePool) -> i32 {
     let mut conn = db.get().await.unwrap();
+    let root_key_id: i32 = arbiter_settings::table
+        .select(arbiter_settings::root_key_id)
+        .first::<Option<i32>>(&mut conn)
+        .await
+        .unwrap()
+        .expect("vault must be bootstrapped before creating an aead-encrypted row");
     let aead_id: i32 = insert_into(aead_encrypted::table)
         .values((
             aead_encrypted::current_nonce.eq(vec![0u8; 4]),
             aead_encrypted::ciphertext.eq(vec![0u8; 32]),
             aead_encrypted::tag.eq(vec![0u8; 16]),
-            aead_encrypted::associated_root_key_id.eq(0i32),
+            aead_encrypted::associated_root_key_id.eq(root_key_id),
         ))
         .returning(aead_encrypted::id)
         .get_result::<i32>(&mut conn)
@@ -143,11 +151,16 @@ async fn create_proposal_returns_id() {
         .await
         .unwrap();
 
+    let key = authn::SigningKey::generate();
+    let operator_id = register_operator(&db, &key.public_key()).await;
+    let client_key = authn::SigningKey::generate();
+    let client_id = insert_unapproved_client(&db, &client_key.public_key()).await;
+
     let proposal_id = actors
         .proposal_manager
         .ask(CreateProposal {
-            kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id: 42 }),
-            initiator_id: OperatorIdentityId::from_raw(1),
+            kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id }),
+            initiator_id: operator_id,
             ttl_secs: None,
         })
         .await
@@ -170,12 +183,14 @@ async fn create_proposal_caps_the_ttl() {
 
     let key = authn::SigningKey::generate();
     let op = register_operator(&db, &key.public_key()).await;
+    let client_key = authn::SigningKey::generate();
+    let client_id = insert_unapproved_client(&db, &client_key.public_key()).await;
 
     let create = async |ttl: u32| {
         actors
             .proposal_manager
             .ask(CreateProposal {
-                kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id: 1 }),
+                kind: ProposalKind::ApproveSdkClient(approve_sdk_client::Settings { client_id }),
                 initiator_id: op,
                 ttl_secs: Some(ttl),
             })
@@ -429,7 +444,9 @@ async fn query_pending_reports_a_tally_per_proposal() {
     };
 
     let mut ids = Vec::new();
-    for client_id in 1..=3 {
+    for _ in 1..=3 {
+        let client_key = authn::SigningKey::generate();
+        let client_id = insert_unapproved_client(&db, &client_key.public_key()).await;
         let id = actors
             .proposal_manager
             .ask(CreateProposal {

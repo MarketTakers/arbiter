@@ -123,6 +123,10 @@ pub async fn create_pool(url: Option<&str>) -> Result<DatabasePool, DatabaseSetu
             conn.batch_execute("PRAGMA journal_mode = WAL;")
                 .await
                 .map_err(diesel::ConnectionError::CouldntSetupConfiguration)?;
+            // Per-connection in SQLite: the migration connection enabling it is not enough.
+            conn.batch_execute("PRAGMA foreign_keys = ON;")
+                .await
+                .map_err(diesel::ConnectionError::CouldntSetupConfiguration)?;
 
             Ok(conn)
         })
@@ -155,4 +159,34 @@ pub async fn create_test_pool() -> DatabasePool {
     create_pool(Some(&url))
         .await
         .expect("Failed to create test database pool")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use diesel::{ExpressionMethods as _, dsl::insert_into};
+    use diesel_async::RunQueryDsl;
+
+    /// `operator.id` references `operator_identity(id)`. Without `PRAGMA foreign_keys = ON`
+    /// on the pooled connection, SQLite accepts a share row for an operator that does not exist.
+    #[tokio::test]
+    async fn pooled_connections_enforce_foreign_keys() {
+        let pool = create_test_pool().await;
+        let mut conn = pool.get().await.unwrap();
+
+        let result = insert_into(schema::operator::table)
+            .values((
+                schema::operator::id.eq(4242),
+                schema::operator::share.eq(vec![0u8; 32]),
+                schema::operator::share_nonce.eq(vec![0u8; 24]),
+                schema::operator::share_salt.eq(vec![0u8; 32]),
+            ))
+            .execute(&mut conn)
+            .await;
+
+        assert!(
+            result.is_err(),
+            "insert with a dangling operator_identity reference was accepted"
+        );
+    }
 }

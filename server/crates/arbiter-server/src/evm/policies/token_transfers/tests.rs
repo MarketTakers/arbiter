@@ -1,8 +1,9 @@
 use super::{Settings, TokenTransfer};
 use crate::{
     db::{
-        self, DatabaseConnection,
+        self, DatabaseConnection, models,
         models::{EvmBasicGrant, EvmWalletAccess, EvmWalletId, NewEvmBasicGrant, SqliteTimestamp},
+        schema,
         schema::evm_basic_grant,
     },
     evm::{
@@ -20,7 +21,7 @@ use alloy::{
     sol_types::SolCall,
 };
 use chrono::{Duration, Utc};
-use diesel::{SelectableHelper, insert_into};
+use diesel::{ExpressionMethods as _, SelectableHelper, insert_into};
 use diesel_async::RunQueryDsl;
 
 // DAI on Ethereum mainnet — present in the static token registry
@@ -58,10 +59,82 @@ fn ctx(to: Address, calldata: Bytes) -> EvalContext {
     }
 }
 
+/// Creates the parent chain a fresh `evm_wallet_access` row needs under foreign-key
+/// enforcement (a root key, an aead-encrypted secret, a wallet, and a client) and returns
+/// the new access row's id.
+async fn seed_wallet_access(conn: &mut DatabaseConnection) -> i32 {
+    let root_key_id: models::RootKeyHistoryId = insert_into(schema::root_key_history::table)
+        .values(&models::NewRootKeyHistory {
+            ciphertext: vec![0u8; 32],
+            tag: vec![0u8; 16],
+            root_key_encryption_nonce: vec![0u8; 24],
+            data_encryption_nonce: vec![0u8; 24],
+            schema_version: 1,
+            salt: vec![0u8; 16],
+        })
+        .returning(schema::root_key_history::id)
+        .get_result(conn)
+        .await
+        .unwrap();
+
+    let aead_id: i32 = insert_into(schema::aead_encrypted::table)
+        .values(&models::NewAeadEncrypted {
+            ciphertext: vec![0u8; 32],
+            tag: vec![0u8; 16],
+            current_nonce: vec![0u8; 24],
+            schema_version: 1,
+            associated_root_key_id: root_key_id,
+            created_at: Utc::now().into(),
+        })
+        .returning(schema::aead_encrypted::id)
+        .get_result(conn)
+        .await
+        .unwrap();
+
+    let wallet_id: EvmWalletId = insert_into(schema::evm_wallet::table)
+        .values((
+            schema::evm_wallet::address.eq(rand::random::<[u8; 20]>().to_vec()),
+            schema::evm_wallet::aead_encrypted_id.eq(aead_id),
+        ))
+        .returning(schema::evm_wallet::id)
+        .get_result(conn)
+        .await
+        .unwrap();
+
+    let metadata_id: i32 = insert_into(schema::client_metadata::table)
+        .values(schema::client_metadata::name.eq("test"))
+        .returning(schema::client_metadata::id)
+        .get_result(conn)
+        .await
+        .unwrap();
+
+    let client_id: i32 = insert_into(schema::program_client::table)
+        .values((
+            schema::program_client::public_key.eq(rand::random::<[u8; 32]>().to_vec()),
+            schema::program_client::metadata_id.eq(metadata_id),
+        ))
+        .returning(schema::program_client::id)
+        .get_result(conn)
+        .await
+        .unwrap();
+
+    insert_into(schema::evm_wallet_access::table)
+        .values((
+            schema::evm_wallet_access::wallet_id.eq(wallet_id),
+            schema::evm_wallet_access::client_id.eq(client_id),
+        ))
+        .returning(schema::evm_wallet_access::id)
+        .get_result(conn)
+        .await
+        .unwrap()
+}
+
 async fn insert_basic(conn: &mut DatabaseConnection, revoked: bool) -> EvmBasicGrant {
+    let wallet_access_id = seed_wallet_access(conn).await;
+
     insert_into(evm_basic_grant::table)
         .values(NewEvmBasicGrant {
-            wallet_access_id: WALLET_ACCESS_ID,
+            wallet_access_id,
             chain_id: CHAIN_ID.into(),
             valid_from: None,
             valid_until: None,
@@ -72,6 +145,27 @@ async fn insert_basic(conn: &mut DatabaseConnection, revoked: bool) -> EvmBasicG
             revoked_at: revoked.then(|| SqliteTimestamp(Utc::now())),
         })
         .returning(EvmBasicGrant::as_select())
+        .get_result(conn)
+        .await
+        .unwrap()
+}
+
+/// `evm_token_transfer_log.log_id` references the shared `evm_transaction_log` table, so
+/// tests recording a token transfer need a real row there to point at.
+async fn insert_transaction_log(
+    conn: &mut DatabaseConnection,
+    basic: &EvmBasicGrant,
+    eth_value: U256,
+) -> i32 {
+    insert_into(schema::evm_transaction_log::table)
+        .values(models::NewEvmTransactionLog {
+            grant_id: basic.id,
+            wallet_access_id: basic.wallet_access_id,
+            chain_id: CHAIN_ID.into(),
+            eth_value: utils::u256_to_bytes(eth_value).to_vec(),
+            signed_at: SqliteTimestamp(Utc::now()),
+        })
+        .returning(schema::evm_transaction_log::id)
         .get_result(conn)
         .await
         .unwrap()
@@ -241,10 +335,11 @@ async fn evaluate_passes_volume_at_exact_limit() {
         .unwrap();
 
     // Record a past transfer of 900, with current transfer 100 => exactly 1000 limit
-    insert_into(db::schema::evm_token_transfer_log::table)
-        .values(db::models::NewEvmTokenTransferLog {
+    let log_id = insert_transaction_log(&mut conn, &basic, U256::from(900u64)).await;
+    insert_into(schema::evm_token_transfer_log::table)
+        .values(models::NewEvmTokenTransferLog {
             grant_id,
-            log_id: 0,
+            log_id,
             chain_id: CHAIN_ID.into(),
             token_contract: DAI.to_vec(),
             recipient_address: RECIPIENT.to_vec(),
@@ -285,10 +380,11 @@ async fn evaluate_rejects_volume_over_limit() {
         .await
         .unwrap();
 
-    insert_into(db::schema::evm_token_transfer_log::table)
-        .values(db::models::NewEvmTokenTransferLog {
+    let log_id = insert_transaction_log(&mut conn, &basic, U256::from(1_000u64)).await;
+    insert_into(schema::evm_token_transfer_log::table)
+        .values(models::NewEvmTokenTransferLog {
             grant_id,
-            log_id: 0,
+            log_id,
             chain_id: CHAIN_ID.into(),
             token_contract: DAI.to_vec(),
             recipient_address: RECIPIENT.to_vec(),
