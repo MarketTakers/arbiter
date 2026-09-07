@@ -200,18 +200,7 @@ impl OperatorSession {
         entries: Vec<i32>,
     ) -> Result<(), Error> {
         let mut conn = self.props.db.get().await?;
-        conn.transaction(async |conn| {
-            use crate::db::schema::evm_wallet_access;
-            for entry in entries {
-                diesel::delete(evm_wallet_access::table)
-                    .filter(evm_wallet_access::wallet_id.eq(entry))
-                    .execute(&mut *conn)
-                    .await?;
-            }
-
-            Result::<_, Error>::Ok(())
-        })
-        .await?;
+        revoke_wallet_access(&mut conn, &entries).await?;
         Ok(())
     }
 
@@ -227,6 +216,20 @@ impl OperatorSession {
             .await?;
         Ok(access_entries)
     }
+}
+
+/// Deletes access rows by their own id. The wire carries `WalletAccessEntry.id` values, so
+/// filtering by `wallet_id` here would revoke every client's access to that wallet.
+pub(crate) async fn revoke_wallet_access(
+    conn: &mut crate::db::DatabaseConnection,
+    ids: &[i32],
+) -> Result<usize, diesel::result::Error> {
+    use crate::db::schema::evm_wallet_access;
+
+    diesel::delete(evm_wallet_access::table)
+        .filter(evm_wallet_access::id.eq_any(ids))
+        .execute(conn)
+        .await
 }
 
 #[messages]
@@ -377,5 +380,122 @@ impl OperatorSession {
             })
             .await
             .map_err(|_| Error::internal("VaultCoordinator unavailable"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::revoke_wallet_access;
+    use crate::db::{self, models, schema};
+
+    use diesel::{ExpressionMethods as _, QueryDsl as _, dsl::insert_into};
+    use diesel_async::RunQueryDsl;
+
+    /// Two clients share one wallet. Revoking one access row must leave the other alone.
+    #[tokio::test]
+    async fn revoking_one_access_leaves_the_other_client_alone() {
+        let pool = db::create_test_pool().await;
+        let mut conn = pool.get().await.unwrap();
+
+        let root_key_id: models::RootKeyHistoryId = insert_into(schema::root_key_history::table)
+            .values(&models::NewRootKeyHistory {
+                ciphertext: vec![0u8; 32],
+                tag: vec![0u8; 16],
+                root_key_encryption_nonce: vec![0u8; 24],
+                data_encryption_nonce: vec![0u8; 24],
+                schema_version: 1,
+                salt: vec![0u8; 16],
+            })
+            .returning(schema::root_key_history::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+
+        let aead_id: i32 = insert_into(schema::aead_encrypted::table)
+            .values(&models::NewAeadEncrypted {
+                ciphertext: vec![0u8; 32],
+                tag: vec![0u8; 16],
+                current_nonce: vec![0u8; 24],
+                schema_version: 1,
+                associated_root_key_id: root_key_id,
+                created_at: chrono::Utc::now().into(),
+            })
+            .returning(schema::aead_encrypted::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+
+        let wallet_id: models::EvmWalletId = insert_into(schema::evm_wallet::table)
+            .values((
+                schema::evm_wallet::address.eq(vec![0u8; 20]),
+                schema::evm_wallet::aead_encrypted_id.eq(aead_id),
+            ))
+            .returning(schema::evm_wallet::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+
+        let metadata_id: i32 = insert_into(schema::client_metadata::table)
+            .values(schema::client_metadata::name.eq("test"))
+            .returning(schema::client_metadata::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+
+        let first_client: i32 = insert_into(schema::program_client::table)
+            .values((
+                schema::program_client::public_key.eq(vec![1u8; 32]),
+                schema::program_client::metadata_id.eq(metadata_id),
+            ))
+            .returning(schema::program_client::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+
+        let second_client: i32 = insert_into(schema::program_client::table)
+            .values((
+                schema::program_client::public_key.eq(vec![2u8; 32]),
+                schema::program_client::metadata_id.eq(metadata_id),
+            ))
+            .returning(schema::program_client::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+
+        let first_access: i32 = insert_into(schema::evm_wallet_access::table)
+            .values((
+                schema::evm_wallet_access::wallet_id.eq(wallet_id),
+                schema::evm_wallet_access::client_id.eq(first_client),
+            ))
+            .returning(schema::evm_wallet_access::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+
+        let _second_access: i32 = insert_into(schema::evm_wallet_access::table)
+            .values((
+                schema::evm_wallet_access::wallet_id.eq(wallet_id),
+                schema::evm_wallet_access::client_id.eq(second_client),
+            ))
+            .returning(schema::evm_wallet_access::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+
+        let removed = revoke_wallet_access(&mut conn, &[first_access])
+            .await
+            .unwrap();
+        assert_eq!(removed, 1);
+
+        let survivors: Vec<i32> = schema::evm_wallet_access::table
+            .select(schema::evm_wallet_access::client_id)
+            .load(&mut conn)
+            .await
+            .unwrap();
+        assert_eq!(
+            survivors,
+            vec![second_client],
+            "revoking one access row removed another client's access"
+        );
     }
 }
