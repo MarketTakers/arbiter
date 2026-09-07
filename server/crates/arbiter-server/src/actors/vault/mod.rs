@@ -649,4 +649,23 @@ mod tests {
         // able to unseal on the next attempt.
         actor.try_unseal(KeyCell::from([7u8; 32])).await.unwrap();
     }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn integrity_envelopes_survive_a_rekey() {
+        let db = db::create_test_pool().await;
+        let mut actor = bootstrapped_actor(&db).await;
+
+        let mac_input = b"operator_credentials/1".to_vec();
+        let (key_version, mac) = actor.sign_integrity(mac_input.clone()).unwrap();
+
+        actor.rekey_root_key(KeyCell::from([9u8; 32])).await.unwrap();
+
+        assert!(
+            actor
+                .verify_integrity(mac_input, mac, key_version)
+                .unwrap(),
+            "a seal-key re-key must not invalidate existing attestations"
+        );
+    }
 }
