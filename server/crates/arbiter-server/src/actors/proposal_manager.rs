@@ -159,10 +159,7 @@ impl ProposalManager {
             .await?;
 
         let mut tally = self.store.tally(proposal_id).await?;
-        // §3.5: recovery operators only join the electorate once they are awake.
-        if !self.store.is_recovery_active().await? {
-            tally.total_recovery = 0;
-        }
+        self.narrow_electorate(&proposal, &mut tally).await?;
 
         self.settle(&proposal, &tally).await
     }
@@ -240,7 +237,9 @@ impl ProposalManager {
             })
             .await?;
 
-        let tally = self.store.tally(proposal_id).await?;
+        let mut tally = self.store.tally(proposal_id).await?;
+        self.narrow_electorate(&proposal, &mut tally).await?;
+
         self.settle(&proposal, &tally).await
     }
 }
@@ -253,6 +252,16 @@ impl ProposalManager {
         }
         if proposal.expires_at.0 <= Utc::now() {
             return Err(Error::ProposalExpired);
+        }
+        Ok(())
+    }
+
+    /// §3.5/§3.6: recovery operators join the electorate only for the kinds they may vote on,
+    /// and only once the wake-up window has elapsed. Counting them anywhere else makes the
+    /// rejection threshold unreachable and, for full-quorum kinds, approval unreachable too.
+    async fn narrow_electorate(&self, proposal: &Proposal, tally: &mut Tally) -> Result<(), Error> {
+        if !proposal.kind.recovery_may_vote() || !self.store.is_recovery_active().await? {
+            tally.total_recovery = 0;
         }
         Ok(())
     }

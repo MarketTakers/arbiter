@@ -82,6 +82,12 @@ impl ProposalKindTag {
     pub const fn requires_full_quorum(self) -> bool {
         matches!(self, Self::ReplaceOperator | Self::TriggerRekey)
     }
+
+    /// §3.5: recovery operators weigh in on operator replacement and nothing else.
+    #[must_use]
+    pub const fn recovery_may_vote(self) -> bool {
+        matches!(self, Self::ReplaceOperator)
+    }
 }
 
 /// Pins every implementation to the variant it is dispatched from. Without this a
