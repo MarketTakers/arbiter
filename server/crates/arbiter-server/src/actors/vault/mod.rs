@@ -277,8 +277,10 @@ impl Vault {
         Ok(())
     }
 
-    /// Re-encrypts the root key with `new_seal_key` and records a new root_key_history row.
-    /// Called after a Shamir re-key so the old seal key is no longer sufficient to unseal.
+    /// Re-encrypts the root key with `new_seal_key`, updating its `root_key_history` row in
+    /// place. Called after a Shamir re-key, so the old seal key is no longer sufficient to
+    /// unseal. The root key itself does not change, so its row identity (and the nonce counter
+    /// and integrity envelopes bound to it) must not change either.
     #[message]
     pub async fn rekey_root_key(&mut self, mut new_seal_key: KeyCell) -> Result<(), Error> {
         let Unsealed {
@@ -298,34 +300,31 @@ impl Vault {
                 })
         })?;
 
-        let data_encryption_nonce = Nonce::default();
-
         let mut conn = self.db.get().await?;
-        let new_root_key_history_id: i32 = conn
-            .transaction(async |conn| {
-                let new_id = insert_into(schema::root_key_history::table)
-                    .values(&models::NewRootKeyHistory {
-                        ciphertext: new_ciphertext,
-                        tag: v1::ROOT_KEY_TAG.to_vec(),
-                        root_key_encryption_nonce: new_nonce.to_vec(),
-                        data_encryption_nonce: data_encryption_nonce.to_vec(),
-                        schema_version: 1,
-                        salt: new_salt.to_vec(),
-                    })
-                    .returning(schema::root_key_history::id)
-                    .get_result::<i32>(&mut *conn)
-                    .await?;
 
-                update(schema::arbiter_settings::table)
-                    .set(schema::arbiter_settings::root_key_id.eq(new_id))
-                    .execute(&mut *conn)
-                    .await?;
-
-                Result::<_, diesel::result::Error>::Ok(new_id)
-            })
+        // The root key is unchanged, so its row keeps its identity: `data_encryption_nonce`
+        // keeps counting up, and every integrity envelope stays bound to the same key version.
+        // Only the seal-key material is replaced, retiring the previous one. `tag` and
+        // `schema_version` are deliberately left untouched: the seal-key encryption scheme
+        // itself is unchanged by a re-key, so there is nothing new for them to describe.
+        let rows_updated = update(schema::root_key_history::table)
+            .filter(schema::root_key_history::id.eq(*root_key_history_id))
+            .set((
+                schema::root_key_history::ciphertext.eq(new_ciphertext),
+                schema::root_key_history::root_key_encryption_nonce.eq(new_nonce.to_vec()),
+                schema::root_key_history::salt.eq(new_salt.to_vec()),
+            ))
+            .execute(&mut conn)
             .await?;
 
-        *root_key_history_id = RootKeyHistoryId::from_raw(new_root_key_history_id);
+        if rows_updated == 0 {
+            error!(
+                "Broken database: rekey matched no root_key_history row id={:#?}",
+                root_key_history_id
+            );
+            return Err(Error::BrokenDatabase);
+        }
+
         info!("Vault root key rekeyed successfully");
         Ok(())
     }
@@ -522,7 +521,6 @@ impl Vault {
 #[cfg(test)]
 mod tests {
     use crate::actors::GlobalActors;
-    use arbiter_crypto::safecell::SafeCellHandle as _;
 
     use super::*;
 
@@ -577,5 +575,78 @@ mod tests {
             row.current_nonce > n2.to_vec(),
             "next write must advance nonce"
         );
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn rekey_does_not_restart_the_data_nonce_counter() {
+        let db = db::create_test_pool().await;
+        let mut actor = bootstrapped_actor(&db).await;
+
+        let before = actor
+            .create_new(SafeCell::new(b"before-rekey".to_vec()))
+            .await
+            .unwrap();
+
+        actor.rekey_root_key(KeyCell::from([7u8; 32])).await.unwrap();
+
+        let after = actor
+            .create_new(SafeCell::new(b"after-rekey".to_vec()))
+            .await
+            .unwrap();
+
+        let mut conn = db.get().await.unwrap();
+
+        // One root key, one row: the root key never changed, so its history did not fork.
+        let rows: i64 = schema::root_key_history::table
+            .count()
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+        assert_eq!(rows, 1, "a seal-key re-key must not append a root key row");
+
+        // Fetch each nonce by its own id, rather than `eq_any` (whose row order is
+        // unspecified), and assert the counter strictly advanced. A weaker `assert_ne!` would
+        // still pass if the counter reset, as long as the two nonces happened to differ.
+        let before_nonce: Vec<u8> = schema::aead_encrypted::table
+            .find(before)
+            .select(schema::aead_encrypted::current_nonce)
+            .first(&mut conn)
+            .await
+            .unwrap();
+        let after_nonce: Vec<u8> = schema::aead_encrypted::table
+            .find(after)
+            .select(schema::aead_encrypted::current_nonce)
+            .first(&mut conn)
+            .await
+            .unwrap();
+        assert!(
+            after_nonce > before_nonce,
+            "nonce counter must keep advancing across a rekey, not reset"
+        );
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn rekey_invalidates_the_old_seal_key() {
+        let db = db::create_test_pool().await;
+        let mut actor = bootstrapped_actor(&db).await;
+
+        actor.rekey_root_key(KeyCell::from([7u8; 32])).await.unwrap();
+        actor.seal().await.unwrap();
+
+        // A no-op rekey would leave the old seal key working; it must not.
+        let err = actor
+            .try_unseal(KeyCell::from([0u8; 32]))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidKey),
+            "old seal key must no longer unseal after a rekey, got {err:?}"
+        );
+
+        // A failed unseal must leave the sealed state intact: the new seal key must still be
+        // able to unseal on the next attempt.
+        actor.try_unseal(KeyCell::from([7u8; 32])).await.unwrap();
     }
 }
