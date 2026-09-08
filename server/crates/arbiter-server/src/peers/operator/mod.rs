@@ -53,17 +53,6 @@ pub enum AuthenticatedOperator {
     Recovery(RecoveryCredentials),
 }
 
-impl AuthenticatedOperator {
-    /// The peer's id within its own identity table.
-    #[must_use]
-    pub const fn id(&self) -> i32 {
-        match self {
-            Self::Ordinary(credentials) => credentials.id,
-            Self::Recovery(credentials) => credentials.id,
-        }
-    }
-}
-
 // Messages, sent by operator to connection client without having a request
 #[derive(Debug)]
 pub enum OutOfBand {
@@ -93,6 +82,12 @@ pub enum Error {
     Transport,
     #[error("database error: {0}")]
     Database(DatabaseError),
+    /// §3.5: a recovery operator's authority stops at the vault gate. It has no operator
+    /// session, because a session is the whole ordinary-governance surface -- wallets, grants,
+    /// SDK clients, proposals -- which §3.5 puts out of a recovery operator's reach. Named
+    /// rather than folded into `Internal`, so a policy refusal is not logged as a fault.
+    #[error("recovery operators do not have an operator session")]
+    RecoveryOperatorHasNoSession,
     #[error("internal: {0}")]
     Internal(String),
 }
@@ -139,7 +134,7 @@ async fn should_run_gate(vault: &ActorRef<Vault>) -> Result<bool, Error> {
 async fn run_vault_gate<T>(
     props: &OperatorConnection,
     transport: &mut T,
-    auth_creds: Credentials,
+    auth_creds: AuthenticatedOperator,
 ) -> Result<(), Error>
 where
     T: Bi<vault_gate::Inbound, Result<vault_gate::Outbound, vault_gate::Error>> + Send + ?Sized,
@@ -201,26 +196,25 @@ where
 {
     let authenticated = authenticate(props, &mut transport).await?;
 
-    // A recovery operator has no session of its own yet: everything below this point is written
-    // against an ordinary operator's `Credentials`, so the handshake is refused rather than
-    // silently treated as an ordinary one.
-    let AuthenticatedOperator::Ordinary(creds) = authenticated else {
-        return Err(Error::Internal(
-            "recovery operators have no session yet".into(),
-        ));
-    };
-
     // should run vault gate only if sealed / unbootstrapped
     if should_run_gate(&props.actors.vault).await? {
-        run_vault_gate(props, &mut transport, creds.clone()).await?;
+        // §3.5 lets a recovery operator take part in unsealing, and the gate is where that
+        // happens, so both roles run it. The gate decides per message which role may send it.
+        run_vault_gate(props, &mut transport, authenticated.clone()).await?;
     }
 
+    // Past the gate the connection turns into an ordinary operator session, which a recovery
+    // operator may not have.
+    let AuthenticatedOperator::Ordinary(creds) = &authenticated else {
+        return Err(Error::RecoveryOperatorHasNoSession);
+    };
+
     // checking the integrity
-    verify_integrity(&props.db, &props.actors.vault, &creds).await?;
+    verify_integrity(&props.db, &props.actors.vault, creds).await?;
 
     Ok(OperatorSession::spawn(OperatorSession::new(
         props.clone(),
-        creds.clone(),
+        authenticated.clone(),
         oob_sender,
     )))
 }

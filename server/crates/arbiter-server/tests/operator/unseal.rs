@@ -4,7 +4,7 @@ use arbiter_server::{
     actors::vault::{Bootstrap, Seal},
     db,
     peers::operator::{
-        Credentials,
+        AuthenticatedOperator, Credentials,
         vault_gate::{
             Error as VaultGateError, HandleHandshake, HandleUnsealEncryptedKey, VaultGate,
         },
@@ -37,7 +37,7 @@ async fn setup_sealed_gate(
 
     let (promotion_tx, promotion_rx) = oneshot::channel();
     let pubkey = authn::SigningKey::generate().public_key();
-    let auth_creds = Credentials { id: 1, pubkey };
+    let auth_creds = AuthenticatedOperator::Ordinary(Credentials { id: 1, pubkey });
     let gate = VaultGate::spawn(VaultGate::new(auth_creds, actors, db.clone(), promotion_tx));
 
     (db, gate, promotion_rx)

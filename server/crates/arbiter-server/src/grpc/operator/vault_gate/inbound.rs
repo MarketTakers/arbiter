@@ -89,7 +89,6 @@ impl TryConvert for UnsealRequestPayload {
             Self::ContributeRecoveryPassphrase(crp) => Ok(
                 vault_gate::Inbound::HandleContributeRecoveryUnsealPassphrase(
                     HandleContributeRecoveryUnsealPassphrase {
-                        recovery_operator_id: crp.recovery_operator_id,
                         passphrase: crp.passphrase,
                     },
                 ),
@@ -157,7 +156,6 @@ impl TryConvert for BootstrapRequestPayload {
             Self::ContributeRecoveryPassphrase(crp) => Ok(
                 vault_gate::Inbound::HandleContributeRecoveryBootstrapPassphrase(
                     HandleContributeRecoveryBootstrapPassphrase {
-                        recovery_operator_id: crp.recovery_operator_id,
                         passphrase: crp.passphrase,
                     },
                 ),

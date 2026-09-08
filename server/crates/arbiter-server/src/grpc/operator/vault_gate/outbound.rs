@@ -103,6 +103,9 @@ impl TryConvert for vault_gate::Outbound {
                     Err(vault_gate::Error::AlreadyBootstrapped) => {
                         ProtoBootstrapResult::AlreadyBootstrapped
                     }
+                    Err(err @ vault_gate::Error::RoleNotPermitted) => {
+                        return Err(Status::permission_denied(err.to_string()));
+                    }
                     Err(err) => {
                         warn!(?err, "bootstrap failed");
                         return Err(Status::internal("Failed to bootstrap vault"));
@@ -113,6 +116,11 @@ impl TryConvert for vault_gate::Outbound {
             Self::HandleDeclareCommittee(result) => {
                 let proto_result = match result {
                     Ok(()) => ProtoBootstrapResult::Success,
+                    // A role refusal is a policy answer, not a server fault, so it leaves the
+                    // gate as `PERMISSION_DENIED` rather than as an opaque `internal`.
+                    Err(err @ vault_gate::Error::RoleNotPermitted) => {
+                        return Err(Status::permission_denied(err.to_string()));
+                    }
                     Err(err) => {
                         warn!(?err, "declare committee failed");
                         return Err(Status::internal("Failed to declare committee"));
@@ -124,6 +132,9 @@ impl TryConvert for vault_gate::Outbound {
                 let proto_result = match result {
                     Ok(true) => ProtoBootstrapResult::Success,
                     Ok(false) => ProtoBootstrapResult::AwaitingContributions,
+                    Err(err @ vault_gate::Error::RoleNotPermitted) => {
+                        return Err(Status::permission_denied(err.to_string()));
+                    }
                     Err(err) => {
                         warn!(?err, "contribute bootstrap passphrase failed");
                         return Err(Status::internal("Failed to contribute bootstrap passphrase"));
@@ -135,6 +146,9 @@ impl TryConvert for vault_gate::Outbound {
                 let proto_result = match result {
                     Ok(true) => ProtoBootstrapResult::Success,
                     Ok(false) => ProtoBootstrapResult::AwaitingContributions,
+                    Err(err @ vault_gate::Error::RoleNotPermitted) => {
+                        return Err(Status::permission_denied(err.to_string()));
+                    }
                     Err(err) => {
                         warn!(?err, "contribute recovery bootstrap passphrase failed");
                         return Err(Status::internal(
@@ -148,6 +162,9 @@ impl TryConvert for vault_gate::Outbound {
                 let proto_result = match result {
                     Ok(true) => ProtoUnsealResult::Success,
                     Ok(false) => ProtoUnsealResult::AwaitingContributions,
+                    Err(err @ vault_gate::Error::RoleNotPermitted) => {
+                        return Err(Status::permission_denied(err.to_string()));
+                    }
                     Err(err) => {
                         warn!(?err, "contribute unseal passphrase failed");
                         return Err(Status::internal("Failed to contribute unseal passphrase"));
@@ -161,6 +178,9 @@ impl TryConvert for vault_gate::Outbound {
                 let proto_result = match result {
                     Ok(true) => ProtoUnsealResult::Success,
                     Ok(false) => ProtoUnsealResult::AwaitingContributions,
+                    Err(err @ vault_gate::Error::RoleNotPermitted) => {
+                        return Err(Status::permission_denied(err.to_string()));
+                    }
                     Err(err) => {
                         warn!(?err, "contribute recovery unseal passphrase failed");
                         return Err(Status::internal(

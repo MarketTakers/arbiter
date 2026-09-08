@@ -1,4 +1,4 @@
-use super::{Credentials, OutOfBand, OperatorConnection};
+use super::{AuthenticatedOperator, OutOfBand, OperatorConnection};
 use crate::{
     actors::{
         flow_coordinator::client_connect_approval::ClientApprovalController,
@@ -18,6 +18,11 @@ use tracing::error;
 pub enum Error {
     #[error("State transition failed")]
     State,
+
+    /// §3.5: the ordinary and recovery roles reach for different handlers here. A refusal is a
+    /// policy answer, so it is named rather than folded into `Internal` beside real faults.
+    #[error("This operator role may not perform that action")]
+    RoleNotPermitted,
 
     #[error("Internal error: {message}")]
     Internal { message: Cow<'static, str> },
@@ -51,7 +56,7 @@ pub struct PendingClientApproval {
 
 pub struct OperatorSession {
     props: OperatorConnection,
-    credentials: Credentials,
+    credentials: AuthenticatedOperator,
     sender: Box<dyn Sender<OutOfBand>>,
 
     pending_client_approvals: HashMap<Vec<u8>, PendingClientApproval>,
@@ -60,12 +65,31 @@ pub struct OperatorSession {
 pub mod handlers;
 
 impl OperatorSession {
-    pub(crate) fn new(props: OperatorConnection, credentials: Credentials, sender: Box<dyn Sender<OutOfBand>>) -> Self {
+    pub(crate) fn new(props: OperatorConnection, credentials: AuthenticatedOperator, sender: Box<dyn Sender<OutOfBand>>) -> Self {
         Self {
             props,
             credentials,
             sender,
             pending_client_approvals: HashMap::default(),
+        }
+    }
+
+    /// The id of the ordinary operator on the other end, or a refusal.
+    ///
+    /// Read from the handshake, never from a request body, so a peer cannot act under an id it
+    /// did not authenticate as.
+    const fn ordinary_id(&self) -> Result<i32, Error> {
+        match &self.credentials {
+            AuthenticatedOperator::Ordinary(credentials) => Ok(credentials.id),
+            AuthenticatedOperator::Recovery(_) => Err(Error::RoleNotPermitted),
+        }
+    }
+
+    /// The id of the recovery operator on the other end, or a refusal. See `ordinary_id`.
+    const fn recovery_id(&self) -> Result<i32, Error> {
+        match &self.credentials {
+            AuthenticatedOperator::Recovery(credentials) => Ok(credentials.id),
+            AuthenticatedOperator::Ordinary(_) => Err(Error::RoleNotPermitted),
         }
     }
 }

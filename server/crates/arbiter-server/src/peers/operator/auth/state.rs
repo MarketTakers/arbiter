@@ -240,6 +240,13 @@ where
                 })
             }
             None => {
+                // The tables are searched in this order, so a key registered in both resolves
+                // as `Ordinary` and could never submit its recovery share. Nothing enforces
+                // that the two sets are disjoint: `unique` is per table, and the only writer
+                // today is `register_key` above -- `recovery_operator_identity` has no
+                // registration path yet. Whoever builds one must refuse a key that
+                // `operator_identity` already holds, and vice versa, or §3.5's "separate peer
+                // type" holds only by convention.
                 if let Some(id) = get_client_id(&self.conn.db, pubkey).await? {
                     AuthenticatedOperator::Ordinary(Credentials {
                         id,

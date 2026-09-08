@@ -2,9 +2,12 @@ use crate::{
     actors::vault::VaultState,
     peers::operator::{
         OperatorSession,
-        session::handlers::{
-            HandleContributeRecoveryRekeyPassphrase, HandleContributeRekeyPassphrase,
-            HandleQueryVaultState,
+        session::{
+            Error as SessionError,
+            handlers::{
+                HandleContributeRecoveryRekeyPassphrase, HandleContributeRekeyPassphrase,
+                HandleQueryVaultState,
+            },
         },
     },
 };
@@ -21,7 +24,7 @@ use arbiter_proto::{
     proto::shared::VaultState as ProtoVaultState,
 };
 
-use kameo::actor::ActorRef;
+use kameo::{actor::ActorRef, error::SendError};
 use tonic::Status;
 use tracing::warn;
 
@@ -50,6 +53,20 @@ pub(super) async fn dispatch(
     }
 }
 
+/// A re-key share belongs to exactly one role (§3.3), so a contribution from the wrong one is a
+/// policy answer and must not reach the peer as an opaque `internal`.
+fn rekey_status<M>(err: SendError<M, SessionError>, context: &'static str) -> Status {
+    match err {
+        SendError::HandlerError(err @ SessionError::RoleNotPermitted) => {
+            Status::permission_denied(err.to_string())
+        }
+        err => {
+            warn!(?err, "{context}");
+            Status::internal(context)
+        }
+    }
+}
+
 async fn handle_rekey(
     actor: &ActorRef<OperatorSession>,
     req: proto_rekey::Request,
@@ -66,20 +83,13 @@ async fn handle_rekey(
                 passphrase: cp.passphrase,
             })
             .await
-            .map_err(|e| {
-                warn!(?e, "rekey passphrase contribution failed");
-                Status::internal("Rekey contribution failed")
-            })?,
+            .map_err(|e| rekey_status(e, "Rekey contribution failed"))?,
         RekeyPayload::ContributeRecoveryPassphrase(crp) => actor
             .ask(HandleContributeRecoveryRekeyPassphrase {
-                recovery_operator_id: crp.recovery_operator_id,
                 passphrase: crp.passphrase,
             })
             .await
-            .map_err(|e| {
-                warn!(?e, "rekey recovery passphrase contribution failed");
-                Status::internal("Rekey recovery contribution failed")
-            })?,
+            .map_err(|e| rekey_status(e, "Rekey recovery contribution failed"))?,
     };
 
     let proto_result = if done {

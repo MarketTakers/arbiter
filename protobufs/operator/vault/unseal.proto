@@ -20,8 +20,7 @@ message ContributePassphrase {
 }
 
 message ContributeRecoveryPassphrase {
-  int32 recovery_operator_id = 1;
-  bytes passphrase            = 2;
+  bytes passphrase = 1;
 }
 
 enum UnsealResult {

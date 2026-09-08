@@ -1,5 +1,8 @@
 use crate::common;
-use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
+use arbiter_crypto::{
+    authn,
+    safecell::{SafeCell, SafeCellHandle as _},
+};
 use arbiter_server::{
     actors::{
         GlobalActors,
@@ -11,11 +14,23 @@ use arbiter_server::{
     },
     crypto::{KeyCell, encryption::v1::{Nonce, ROOT_KEY_TAG}},
     db::{self, models, schema},
+    peers::operator::{
+        AuthenticatedOperator, Credentials, RecoveryCredentials,
+        vault_gate::{
+            Error as VaultGateError, HandleBootstrapEncryptedKey,
+            HandleContributeBootstrapPassphrase, HandleContributeRecoveryBootstrapPassphrase,
+            HandleContributeRecoveryUnsealPassphrase, HandleContributeUnsealPassphrase,
+            HandleDeclareCommittee, HandleHandshake, VaultGate,
+        },
+    },
 };
 
+use chacha20poly1305::{AeadInPlace, XChaCha20Poly1305, XNonce, aead::KeyInit};
 use diesel::{ExpressionMethods, QueryDsl, SelectableHelper, insert_into, sql_query};
 use diesel_async::RunQueryDsl;
 use kameo::actor::Spawn as _;
+use tokio::sync::oneshot;
+use x25519_dalek::{EphemeralSecret, PublicKey};
 
 #[tokio::test]
 #[test_log::test]
@@ -509,5 +524,299 @@ async fn sleeping_recovery_operator_cannot_contribute_to_unseal() {
         vault_ref2.ask(GetState {}).await.unwrap(),
         VaultState::Sealed,
         "a sleeping recovery operator unsealed the vault"
+    );
+}
+
+type PromotionRx = oneshot::Receiver<Result<(), VaultGateError>>;
+
+/// One `VaultGate` per authenticated role against a shared `GlobalActors`, which is what
+/// `peers::operator::start` builds for two connected peers.
+struct RoleGates {
+    ordinary: kameo::actor::ActorRef<VaultGate>,
+    recovery: kameo::actor::ActorRef<VaultGate>,
+    ordinary_id: i32,
+    recovery_id: i32,
+    /// Held only so the gates' promotion channels stay open for the fixture's lifetime.
+    _promotions: (PromotionRx, PromotionRx),
+}
+
+/// Registers one ordinary and one recovery identity, then spawns a gate for each.
+async fn spawn_role_gates(db: &db::DatabasePool, actors: &GlobalActors) -> RoleGates {
+    let ordinary_pubkey = authn::SigningKey::generate().public_key();
+    let recovery_pubkey = authn::SigningKey::generate().public_key();
+
+    let ordinary_id: i32 = {
+        let mut conn = db.get().await.unwrap();
+        insert_into(schema::operator_identity::table)
+            .values(schema::operator_identity::public_key.eq(ordinary_pubkey.to_bytes()))
+            .returning(schema::operator_identity::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap()
+    };
+    let recovery_id: i32 = {
+        let mut conn = db.get().await.unwrap();
+        insert_into(schema::recovery_operator_identity::table)
+            .values(schema::recovery_operator_identity::public_key.eq(recovery_pubkey.to_bytes()))
+            .returning(schema::recovery_operator_identity::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap()
+    };
+
+    let (ordinary_promotion_tx, ordinary_promotion_rx) = oneshot::channel();
+    let ordinary = VaultGate::spawn(VaultGate::new(
+        AuthenticatedOperator::Ordinary(Credentials {
+            id: ordinary_id,
+            pubkey: ordinary_pubkey,
+        }),
+        actors.clone(),
+        db.clone(),
+        ordinary_promotion_tx,
+    ));
+
+    let (recovery_promotion_tx, recovery_promotion_rx) = oneshot::channel();
+    let recovery = VaultGate::spawn(VaultGate::new(
+        AuthenticatedOperator::Recovery(RecoveryCredentials {
+            id: recovery_id,
+            pubkey: recovery_pubkey,
+        }),
+        actors.clone(),
+        db.clone(),
+        recovery_promotion_tx,
+    ));
+
+    RoleGates {
+        ordinary,
+        recovery,
+        ordinary_id,
+        recovery_id,
+        _promotions: (ordinary_promotion_rx, recovery_promotion_rx),
+    }
+}
+
+/// Runs the gate's X25519 handshake and encrypts `seal_key` to the shared secret, producing the
+/// message a peer would send to bootstrap the vault. Mirrors `tests/operator/unseal.rs`'s
+/// `client_dh_encrypt`, which does the same for the unseal side.
+async fn bootstrap_key_for(
+    gate: &kameo::actor::ActorRef<VaultGate>,
+    seal_key: &[u8; 32],
+) -> HandleBootstrapEncryptedKey {
+    let client_secret = EphemeralSecret::random();
+    let client_public = PublicKey::from(&client_secret);
+
+    let response = gate
+        .ask(HandleHandshake {
+            client_pubkey: client_public,
+        })
+        .await
+        .unwrap();
+
+    let shared_secret = client_secret.diffie_hellman(&response.server_pubkey);
+    let cipher = XChaCha20Poly1305::new(shared_secret.as_bytes().into());
+    let nonce = XNonce::from([0u8; 24]);
+    let associated_data = b"bootstrap";
+    let mut ciphertext = seal_key.to_vec();
+    cipher
+        .encrypt_in_place(&nonce, associated_data, &mut ciphertext)
+        .unwrap();
+
+    HandleBootstrapEncryptedKey {
+        nonce: nonce.to_vec(),
+        ciphertext,
+        associated_data: associated_data.to_vec(),
+    }
+}
+
+/// Asserts a gate turned a request down on the peer's role rather than on anything else --
+/// notably not on coordinator state, which is what an unguarded handler would have reported.
+#[track_caller]
+fn assert_role_refused<T: std::fmt::Debug, M>(
+    what: &str,
+    result: Result<T, kameo::error::SendError<M, VaultGateError>>,
+) {
+    match result {
+        Err(kameo::error::SendError::HandlerError(VaultGateError::RoleNotPermitted)) => {}
+        other => panic!("{what}: expected RoleNotPermitted, got {other:?}"),
+    }
+}
+
+/// §3.5: which committee seat a passphrase fills is decided by the handshake, not by the
+/// request, so neither role can spend the other's slot.
+///
+/// Neither request carries an operator id, so the ordinary peer has nothing left to forge; the
+/// point of running the bootstrap to completion afterwards is that its refusal left the
+/// recovery seat empty rather than filling it under a chosen id.
+#[tokio::test]
+#[test_log::test]
+async fn ordinary_operator_cannot_contribute_a_recovery_share() {
+    let db = db::create_test_pool().await;
+    let actors = common::spawn_actors(db.clone()).await;
+    let gates = spawn_role_gates(&db, &actors).await;
+    assert_eq!(
+        gates.ordinary_id, gates.recovery_id,
+        "the two ids must collide for the attestation check at the end to mean anything"
+    );
+
+    gates
+        .ordinary
+        .ask(HandleDeclareCommittee {
+            count: 1,
+            recovery_count: 1,
+        })
+        .await
+        .unwrap();
+
+    assert_role_refused(
+        "an ordinary operator contributed a recovery share",
+        gates
+            .ordinary
+            .ask(HandleContributeRecoveryBootstrapPassphrase {
+                passphrase: b"forged-recovery-pass".to_vec(),
+            })
+            .await,
+    );
+
+    assert_role_refused(
+        "a recovery operator contributed an ordinary share",
+        gates
+            .recovery
+            .ask(HandleContributeBootstrapPassphrase {
+                passphrase: b"forged-ordinary-pass".to_vec(),
+            })
+            .await,
+    );
+
+    // The recovery seat is still empty: had the forged contribution landed, this one would come
+    // back as a duplicate instead of being accepted.
+    let done = gates
+        .recovery
+        .ask(HandleContributeRecoveryBootstrapPassphrase {
+            passphrase: b"recovery-pass".to_vec(),
+        })
+        .await
+        .unwrap();
+    assert!(!done, "the ordinary share is still outstanding");
+
+    let done = gates
+        .ordinary
+        .ask(HandleContributeBootstrapPassphrase {
+            passphrase: b"ordinary-pass".to_vec(),
+        })
+        .await
+        .unwrap();
+    assert!(done, "both seats are filled, so bootstrap must finalize");
+    assert_eq!(
+        actors.vault.ask(GetState {}).await.unwrap(),
+        VaultState::Unsealed
+    );
+
+    // Both peers hold the same id in their own table (asserted above), so only the attestation
+    // kind tells the two envelopes apart. Two rows means the recovery peer signed as itself
+    // rather than overwriting the ordinary operator's attestation.
+    let kinds = common::eventually("both bootstrap attestations are written", || {
+        let db = db.clone();
+        async move {
+            let mut conn = db.get().await.unwrap();
+            let mut kinds: Vec<String> = schema::integrity_envelope::table
+                .select(schema::integrity_envelope::entity_kind)
+                .load(&mut conn)
+                .await
+                .unwrap();
+            kinds.sort();
+            (kinds.len() == 2).then_some(kinds)
+        }
+    })
+    .await;
+    assert_eq!(
+        kinds,
+        vec![
+            "operator_credentials".to_owned(),
+            "recovery_operator_credentials".to_owned(),
+        ]
+    );
+}
+
+/// Every gate action that belongs to one role refuses the other, and refuses it before the
+/// action takes effect.
+///
+/// The vault is left unbootstrapped and the coordinator idle on purpose: an unguarded handler
+/// would reach the vault or the coordinator and come back with `State`, `NotBootstrapping` or
+/// `NotUnsealing`, so `RoleNotPermitted` can only come from the role check itself.
+///
+/// §3.4/§3.5: `HandleBootstrapEncryptedKey` matters most here. It hands the vault a root key of
+/// the peer's choosing, and the window it needs -- an unbootstrapped vault that already holds
+/// recovery identity rows -- is exactly the state committee formation has to pass through.
+#[tokio::test]
+#[test_log::test]
+async fn vault_gate_refuses_the_actions_of_the_other_role() {
+    let db = db::create_test_pool().await;
+    let actors = common::spawn_actors(db.clone()).await;
+    let gates = spawn_role_gates(&db, &actors).await;
+
+    assert_role_refused(
+        "a recovery operator declared the committee",
+        gates
+            .recovery
+            .ask(HandleDeclareCommittee {
+                count: 1,
+                recovery_count: 1,
+            })
+            .await,
+    );
+
+    // A key the vault would have accepted, negotiated through the gate's own handshake -- so
+    // the refusal comes from the role and not from a malformed request.
+    let seized_key = bootstrap_key_for(&gates.recovery, b"recovery-seized-32-byte-seal-key").await;
+    assert_role_refused(
+        "a recovery operator bootstrapped the vault",
+        gates.recovery.ask(seized_key).await,
+    );
+
+    assert_role_refused(
+        "a recovery operator contributed an ordinary bootstrap share",
+        gates
+            .recovery
+            .ask(HandleContributeBootstrapPassphrase {
+                passphrase: b"forged-ordinary-pass".to_vec(),
+            })
+            .await,
+    );
+
+    assert_role_refused(
+        "an ordinary operator contributed a recovery bootstrap share",
+        gates
+            .ordinary
+            .ask(HandleContributeRecoveryBootstrapPassphrase {
+                passphrase: b"forged-recovery-pass".to_vec(),
+            })
+            .await,
+    );
+
+    assert_role_refused(
+        "a recovery operator contributed an ordinary unseal share",
+        gates
+            .recovery
+            .ask(HandleContributeUnsealPassphrase {
+                passphrase: b"forged-ordinary-pass".to_vec(),
+            })
+            .await,
+    );
+
+    assert_role_refused(
+        "an ordinary operator contributed a recovery unseal share",
+        gates
+            .ordinary
+            .ask(HandleContributeRecoveryUnsealPassphrase {
+                passphrase: b"forged-recovery-pass".to_vec(),
+            })
+            .await,
+    );
+
+    // Nothing above took effect: the refusals came before the vault and the coordinator.
+    assert_eq!(
+        actors.vault.ask(GetState {}).await.unwrap(),
+        VaultState::Unbootstrapped,
+        "a refused request still reached the vault"
     );
 }

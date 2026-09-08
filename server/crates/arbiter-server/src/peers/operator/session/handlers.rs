@@ -312,7 +312,7 @@ impl OperatorSession {
         ttl_secs: Option<u32>,
     ) -> Result<ProposalId, Error> {
         use crate::actors::proposal_manager::CreateProposal;
-        let initiator_id = OperatorIdentityId::from_raw(self.credentials.id);
+        let initiator_id = OperatorIdentityId::from_raw(self.ordinary_id()?);
         self.props
             .actors
             .proposal_manager
@@ -332,7 +332,10 @@ impl OperatorSession {
         signature: Vec<u8>,
     ) -> Result<crate::actors::proposal_manager::VoteOutcome, crate::actors::proposal_manager::Error> {
         use crate::actors::proposal_manager::CastVote;
-        let operator_id = OperatorIdentityId::from_raw(self.credentials.id);
+        let operator_id = OperatorIdentityId::from_raw(
+            self.ordinary_id()
+                .map_err(|_| crate::actors::proposal_manager::Error::NotAllowedForRecoveryOperator)?,
+        );
         self.props
             .actors
             .proposal_manager
@@ -349,7 +352,11 @@ impl OperatorSession {
         &mut self,
     ) -> Vec<crate::actors::proposal_manager::ProposalSummary> {
         use crate::actors::proposal_manager::QueryPending;
-        let operator_id = OperatorIdentityId::from_raw(self.credentials.id);
+        let Ok(id) = self.ordinary_id() else {
+            // The pending list is per ordinary operator; a recovery operator has no view of it.
+            return Vec::new();
+        };
+        let operator_id = OperatorIdentityId::from_raw(id);
         self.props
             .actors
             .proposal_manager
@@ -369,7 +376,7 @@ impl OperatorSession {
         use crate::actors::vault_coordinator::ContributeRekey;
         use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
-        let operator_id = self.credentials.id;
+        let operator_id = self.ordinary_id()?;
         self.props
             .actors
             .vault_coordinator
@@ -381,15 +388,23 @@ impl OperatorSession {
             .map_err(|_| Error::internal("VaultCoordinator unavailable"))
     }
 
+    /// §3.3: a re-key refreshes every share, recovery shares included, so a recovery operator
+    /// has one to contribute here.
+    ///
+    /// It cannot reach this handler yet: `peers::operator::start` refuses a recovery peer an
+    /// operator session, because a session carries the whole ordinary-governance surface that
+    /// §3.5 keeps out of a recovery operator's hands. Until a recovery-scoped session exists,
+    /// this refuses every caller -- which is the safe direction, and the id it would use comes
+    /// from the handshake either way.
     #[message]
     pub(crate) async fn handle_contribute_recovery_rekey_passphrase(
         &mut self,
-        recovery_operator_id: i32,
         passphrase: Vec<u8>,
     ) -> Result<bool, Error> {
         use crate::actors::vault_coordinator::ContributeRecoveryRekey;
         use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
+        let recovery_operator_id = self.recovery_id()?;
         self.props
             .actors
             .vault_coordinator

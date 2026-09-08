@@ -129,14 +129,23 @@ pub async fn start(
     let (oob_sender, oob_receiver) = mpsc::channel(16);
     let oob_adapter = OutOfBandAdapter(oob_sender);
 
-    let actor = {
+    let started = {
         let transport = auth::AuthTransportAdapter::new(&mut bi, &mut request_tracker);
-        match crate::peers::operator::start(&mut conn, transport, Box::new(oob_adapter)).await {
-            Ok(actor) => actor,
-            Err(e) => {
-                warn!(error = ?e, "Operator connection failed");
-                return;
-            }
+        crate::peers::operator::start(&mut conn, transport, Box::new(oob_adapter)).await
+    };
+
+    let actor = match started {
+        Ok(actor) => actor,
+        // §3.5: a recovery operator is turned away from the session rather than failing. Say so
+        // on the stream, so it does not look like the server dropped the connection.
+        Err(e @ crate::peers::operator::Error::RecoveryOperatorHasNoSession) => {
+            info!("Recovery operator connection closed after the vault gate");
+            let _ = bi.send(Err(Status::permission_denied(e.to_string()))).await;
+            return;
+        }
+        Err(e) => {
+            warn!(error = ?e, "Operator connection failed");
+            return;
         }
     };
 
