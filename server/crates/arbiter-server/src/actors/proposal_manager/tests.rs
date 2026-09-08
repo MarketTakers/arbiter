@@ -20,12 +20,34 @@ use arbiter_crypto::authn::{SigningContext, SigningKey};
 use chrono::{Duration, Utc};
 use std::sync::Arc;
 
+/// A tally where every vote came from the ordinary committee.
 const fn tally(approve: i64, reject: i64, ordinary: i64, recovery: i64) -> Tally {
     Tally {
-        approve,
-        reject,
+        ordinary_approve: approve,
+        ordinary_reject: reject,
+        recovery_approve: 0,
+        recovery_reject: 0,
         total_ordinary: ordinary,
         total_recovery: recovery,
+    }
+}
+
+/// A tally with votes from both committees, in the order approve/reject per committee.
+const fn mixed_tally(
+    ordinary_approve: i64,
+    ordinary_reject: i64,
+    recovery_approve: i64,
+    recovery_reject: i64,
+    total_ordinary: i64,
+    total_recovery: i64,
+) -> Tally {
+    Tally {
+        ordinary_approve,
+        ordinary_reject,
+        recovery_approve,
+        recovery_reject,
+        total_ordinary,
+        total_recovery,
     }
 }
 
@@ -57,13 +79,29 @@ fn full_quorum_kind_needs_every_voter() {
 #[test]
 fn recovery_voters_count_towards_full_quorum() {
     assert_eq!(
-        ProposalManager::evaluate_quorum(&tally(3, 0, 2, 1), true),
+        ProposalManager::evaluate_quorum(&mixed_tally(2, 0, 1, 0, 2, 1), true),
         VoteOutcome::Approved
     );
     assert_eq!(
-        ProposalManager::evaluate_quorum(&tally(2, 0, 2, 1), true),
+        ProposalManager::evaluate_quorum(&mixed_tally(2, 0, 0, 0, 2, 1), true),
         VoteOutcome::Pending,
         "the sleeping recovery operator still owes a vote"
+    );
+}
+
+/// An empty committee cannot approve anything. Both arms have to say so: the full-quorum arm
+/// derives its threshold from the electorate, so with nobody eligible it would compare 0
+/// approvals against a threshold of 0 and call that unanimous.
+#[test]
+fn an_empty_electorate_settles_nothing() {
+    assert_eq!(
+        ProposalManager::evaluate_quorum(&tally(0, 0, 0, 0), true),
+        VoteOutcome::Pending,
+        "a full-quorum proposal must not pass with no eligible voters"
+    );
+    assert_eq!(
+        ProposalManager::evaluate_quorum(&tally(0, 0, 0, 0), false),
+        VoteOutcome::Pending
     );
 }
 
@@ -182,19 +220,18 @@ async fn a_vote_short_of_quorum_does_not_touch_the_status() {
 
 /// Drives one `cast_vote` on a proposal of the given `kind` through a mocked store and
 /// returns the outcome. `recovery_active` decides what `is_recovery_active` reports;
-/// `expected_status` is the status a settled outcome must be persisted under.
+/// `expected_status` is the status a settled outcome must be persisted under, or `None` for
+/// a caller that expects the vote to leave the proposal pending.
 ///
-/// `set_status` carries an argument matcher but no `.times()`: whichever outcome a caller
-/// asserts is either `Approved` or `Rejected` (never `Pending`), so the write must happen
-/// with the right status if it happens at all, but leaving the count unconstrained means a
-/// regression that turns the outcome into `Pending` still fails on the caller's own
-/// `assert_eq!` -- a readable diff -- rather than on a mockall cardinality panic that hides
+/// `set_status` carries an argument matcher but no `.times()`, and `None` relaxes even the
+/// matcher: the caller's own `assert_eq!` on the outcome is what pins the behaviour, so a
+/// regression fails on a readable diff rather than on a mockall cardinality panic that hides
 /// what the actor actually computed.
 async fn settle_vote_with(
     kind: ProposalKindTag,
     tally: Tally,
     recovery_active: bool,
-    expected_status: ProposalStatus,
+    expected_status: Option<ProposalStatus>,
 ) -> VoteOutcome {
     let id = ProposalId::from_raw(11);
     let voter = OperatorIdentityId::from_raw(1);
@@ -219,7 +256,11 @@ async fn settle_vote_with(
     store.expect_tally().returning(move |_| Ok(tally));
     store
         .expect_set_status()
-        .withf(move |_, status| *status == expected_status)
+        .withf(move |_, status| {
+            expected_status
+                .as_ref()
+                .is_none_or(|expected| status == expected)
+        })
         .returning(|_, _| Ok(()));
     store.expect_load_kind().returning(move |_, _| {
         Ok(match kind {
@@ -259,14 +300,9 @@ async fn settle_vote_with(
 async fn unanimous_rejection_settles_a_full_quorum_rekey_via_cast_vote() {
     let outcome = settle_vote_with(
         ProposalKindTag::TriggerRekey,
-        Tally {
-            approve: 0,
-            reject: 3,
-            total_ordinary: 3,
-            total_recovery: 2,
-        },
+        tally(0, 3, 3, 2),
         /* recovery_active */ true,
-        ProposalStatus::Rejected,
+        Some(ProposalStatus::Rejected),
     )
     .await;
 
@@ -278,14 +314,9 @@ async fn unanimous_rejection_settles_a_full_quorum_rekey_via_cast_vote() {
 async fn unanimous_ordinary_approval_approves_a_rekey_while_recovery_is_awake() {
     let outcome = settle_vote_with(
         ProposalKindTag::TriggerRekey,
-        Tally {
-            approve: 3,
-            reject: 0,
-            total_ordinary: 3,
-            total_recovery: 2,
-        },
+        tally(3, 0, 3, 2),
         /* recovery_active */ true,
-        ProposalStatus::Approved,
+        Some(ProposalStatus::Approved),
     )
     .await;
 
@@ -302,14 +333,9 @@ async fn unanimous_ordinary_approval_approves_a_rekey_while_recovery_is_awake() 
 async fn unanimous_ordinary_rejection_rejects_a_non_full_quorum_proposal_while_recovery_is_awake() {
     let outcome = settle_vote_with(
         ProposalKindTag::ApproveSdkClient,
-        Tally {
-            approve: 0,
-            reject: 3,
-            total_ordinary: 3,
-            total_recovery: 2,
-        },
+        tally(0, 3, 3, 2),
         /* recovery_active */ true,
-        ProposalStatus::Rejected,
+        Some(ProposalStatus::Rejected),
     )
     .await;
 
@@ -326,16 +352,44 @@ async fn unanimous_ordinary_rejection_rejects_a_non_full_quorum_proposal_while_r
 async fn sleeping_recovery_operators_do_not_count_towards_quorum() {
     let outcome = settle_vote_with(
         ProposalKindTag::ReplaceOperator,
-        Tally {
-            approve: 1,
-            reject: 0,
-            total_ordinary: 1,
-            total_recovery: 2,
-        },
+        tally(1, 0, 1, 2),
         /* recovery_active */ false,
-        ProposalStatus::Approved,
+        Some(ProposalStatus::Approved),
     )
     .await;
 
     assert_eq!(outcome, VoteOutcome::Approved);
+}
+
+/// The sequence the whole-branch review worked through, on a `ReplaceOperator` with 3
+/// ordinary and 2 recovery operators (§3.3: full quorum). Both recovery operators approve
+/// while awake; one ordinary operator approves; another ordinary operator then cancels the
+/// wake-up -- `cancel_wakeup` cancels an uncancelled request whether or not its window has
+/// elapsed, so the committee goes straight back to sleep with its votes on the record; a
+/// second ordinary operator approves.
+///
+/// The store now reports 4 approvals, 2 of them from a committee that is no longer eligible.
+/// Narrowing the electorate has to drop those votes along with the voters: what is left is 2
+/// of 3 ordinary approvals, and a full quorum needs all three. Counting the electorate down
+/// to 3 while keeping all 4 votes would replace an operator on two ordinary approvals.
+#[tokio::test]
+async fn recovery_votes_leave_with_the_committee_that_cast_them() {
+    let outcome = settle_vote_with(
+        ProposalKindTag::ReplaceOperator,
+        mixed_tally(
+            /* ordinary_approve */ 2, /* ordinary_reject */ 0,
+            /* recovery_approve */ 2, /* recovery_reject */ 0,
+            /* total_ordinary */ 3, /* total_recovery */ 2,
+        ),
+        /* recovery_active */ false,
+        None,
+    )
+    .await;
+
+    assert_eq!(
+        outcome,
+        VoteOutcome::Pending,
+        "two of three ordinary approvals must not carry a full-quorum proposal, whatever a \
+         sleeping recovery committee voted earlier"
+    );
 }

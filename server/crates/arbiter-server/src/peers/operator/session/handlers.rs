@@ -181,13 +181,23 @@ impl OperatorSession {
         Ok(())
     }
 
+    /// A revoke that matched fewer rows than it named did not do what the operator asked:
+    /// the id was never granted, or someone revoked it first. Answering `Ok` there tells the
+    /// operator access is cut off when nothing changed. The rows that did match stay revoked
+    /// -- rolling them back to report the shortfall would leave live access behind.
     #[message]
     pub(crate) async fn handle_revoke_evm_wallet_access(
         &mut self,
         entries: Vec<i32>,
     ) -> Result<(), Error> {
         let mut conn = self.props.db.get().await?;
-        revoke_wallet_access(&mut conn, &entries).await?;
+        let revoked = revoke_wallet_access(&mut conn, &entries).await?;
+        if revoked != entries.len() {
+            return Err(Error::PartialRevoke {
+                requested: entries.len(),
+                revoked,
+            });
+        }
         Ok(())
     }
 
@@ -209,6 +219,9 @@ impl OperatorSession {
 /// Grants access, reviving a previously revoked row rather than leaving it shadowed:
 /// `uniq_wallet_access` is a unique index on `(wallet_id, client_id)`, so a plain insert
 /// would conflict forever on a row that was revoked but never deleted.
+///
+/// Reviving restores visibility and nothing else: [`revoke_wallet_access`] closes the grants
+/// that hung off the access, so a persistent grant takes its own vote again (§3.2).
 pub(crate) async fn grant_wallet_access(
     conn: &mut crate::db::DatabaseConnection,
     entries: Vec<NewEvmWalletAccess>,
@@ -231,24 +244,51 @@ pub(crate) async fn grant_wallet_access(
     .await
 }
 
-/// Marks access rows revoked by their own id rather than deleting them. The wire carries
-/// `WalletAccessEntry.id` values, so filtering by `wallet_id` here would revoke every
-/// client's access to that wallet. Deleting is not an option: `evm_basic_grant`,
+/// Marks access rows revoked by their own id rather than deleting them, and revokes every
+/// grant that hangs off them. Returns how many access rows this call revoked.
+///
+/// The wire carries `WalletAccessEntry.id` values, so filtering by `wallet_id` here would
+/// revoke every client's access to that wallet. Deleting is not an option: `evm_basic_grant`,
 /// `evm_transaction_log`, and `proposal_persistent_grant` all reference this row
 /// `on delete restrict`, so an access that was ever granted, signed with, or proposed
 /// against can never be deleted -- only marked revoked.
+///
+/// The dependent grants have to go with it. `grant_wallet_access` revives a revoked row by
+/// its id, and grant lookup keys on `wallet_access_id` alone, so leaving the grants live
+/// would make a later re-grant restore every persistent grant the access ever held, with its
+/// original volume and rate limits. §3.2 votes visibility and a persistent grant separately;
+/// a committee that approves visibility must not silently hand back signing authority it did
+/// not vote on. The filter names every requested id, not just the rows this call flipped, so
+/// an access revoked before this fix has its orphaned grants closed too.
 pub(crate) async fn revoke_wallet_access(
     conn: &mut crate::db::DatabaseConnection,
     ids: &[i32],
 ) -> Result<usize, diesel::result::Error> {
-    use crate::db::{models::SqliteTimestamp, schema::evm_wallet_access};
+    use crate::db::{
+        models::SqliteTimestamp,
+        schema::{evm_basic_grant, evm_wallet_access},
+    };
 
-    diesel::update(evm_wallet_access::table)
-        .filter(evm_wallet_access::id.eq_any(ids))
-        .filter(evm_wallet_access::revoked_at.is_null())
-        .set(evm_wallet_access::revoked_at.eq(SqliteTimestamp::now()))
-        .execute(conn)
-        .await
+    conn.transaction(async |conn| {
+        let now = SqliteTimestamp::now();
+
+        let revoked = diesel::update(evm_wallet_access::table)
+            .filter(evm_wallet_access::id.eq_any(ids))
+            .filter(evm_wallet_access::revoked_at.is_null())
+            .set(evm_wallet_access::revoked_at.eq(now.clone()))
+            .execute(&mut *conn)
+            .await?;
+
+        diesel::update(evm_basic_grant::table)
+            .filter(evm_basic_grant::wallet_access_id.eq_any(ids))
+            .filter(evm_basic_grant::revoked_at.is_null())
+            .set(evm_basic_grant::revoked_at.eq(now))
+            .execute(&mut *conn)
+            .await?;
+
+        Ok(revoked)
+    })
+    .await
 }
 
 #[messages]
@@ -511,6 +551,18 @@ mod tests {
             .unwrap()
     }
 
+    /// The grants that grant lookup would treat as live for this access: the exact filter
+    /// `EtherTransfer::try_find_grant` and `TokenTransfer::try_find_grant` apply.
+    async fn live_grants_for(conn: &mut db::DatabaseConnection, access_id: i32) -> Vec<i32> {
+        schema::evm_basic_grant::table
+            .filter(schema::evm_basic_grant::wallet_access_id.eq(access_id))
+            .filter(schema::evm_basic_grant::revoked_at.is_null())
+            .select(schema::evm_basic_grant::id)
+            .load(conn)
+            .await
+            .unwrap()
+    }
+
     /// Two clients share one wallet. Revoking one access row must leave the other alone,
     /// and must mark the row revoked rather than deleting it.
     #[tokio::test]
@@ -552,6 +604,13 @@ mod tests {
             total, 2,
             "revoking an access row must mark it revoked, not delete it"
         );
+
+        // The count `handle_revoke_evm_wallet_access` answers on: a second revoke of the same
+        // id, like a revoke of an id that never existed, changes nothing and must say so.
+        let again = revoke_wallet_access(&mut conn, &[first_access])
+            .await
+            .unwrap();
+        assert_eq!(again, 0, "an already revoked access must report no rows");
     }
 
     /// The bug this round fixes: once an access has been used for a grant, a signed
@@ -682,8 +741,6 @@ mod tests {
         let metadata_id = seed_client_metadata(&mut conn).await;
         let client_id = seed_client(&mut conn, metadata_id).await;
         let access_id = insert_wallet_access(&mut conn, wallet_id, client_id).await;
-
-        revoke_wallet_access(&mut conn, &[access_id]).await.unwrap();
         drop(conn);
 
         let vault = Vault::spawn(
@@ -705,6 +762,28 @@ mod tests {
             access_list: AccessList::default(),
         };
         let wallet_address = Address::from_slice(&address);
+
+        // The paired positive case: while the access stands, both lookups resolve it and the
+        // calls fail further along (no grant, sealed vault) rather than at the access filter.
+        // Without this, a filter that rejected every row would pass the assertions below.
+        let live_analyze = evm_actor
+            .shared_analyze_transaction(client_id, wallet_address, transaction.clone())
+            .await;
+        assert!(
+            !matches!(live_analyze, Err(SignTransactionError::WalletNotFound)),
+            "a live access must resolve through shared_analyze_transaction: {live_analyze:?}"
+        );
+        let live_sign = evm_actor
+            .client_sign_transaction(client_id, wallet_address, transaction.clone())
+            .await;
+        assert!(
+            !matches!(live_sign, Err(SignTransactionError::WalletNotFound)),
+            "a live access must resolve through client_sign_transaction: {live_sign:?}"
+        );
+
+        let mut conn = pool.get().await.unwrap();
+        revoke_wallet_access(&mut conn, &[access_id]).await.unwrap();
+        drop(conn);
 
         // Both lookups resolve access the same way; both must reject the revoked row before
         // ever touching the vault (neither call bootstraps one).
@@ -769,6 +848,84 @@ mod tests {
         assert_eq!(
             total, 1,
             "re-granting a revoked access must revive the existing row, not add a second one"
+        );
+    }
+
+    /// §3.2 puts wallet visibility and a persistent grant to two separate votes. Reviving a
+    /// revoked access restores visibility, and must restore nothing else: grant lookup keys on
+    /// `wallet_access_id` with `revoked_at is null`, so a grant left open when the access was
+    /// cut off would come back live -- with its original volume and rate limits -- the moment
+    /// the id revives. `EvmActor::grant_wallet_access` executes an approved `GrantWalletAccess`
+    /// proposal, so that would hand signing authority back to a committee that voted only on
+    /// visibility.
+    #[tokio::test]
+    async fn regranting_an_access_does_not_revive_its_grants() {
+        let pool = db::create_test_pool().await;
+        let mut conn = pool.get().await.unwrap();
+
+        let (wallet_id, _address) = seed_wallet(&mut conn).await;
+        let metadata_id = seed_client_metadata(&mut conn).await;
+        let client_id = seed_client(&mut conn, metadata_id).await;
+
+        let entry = || models::NewEvmWalletAccess {
+            wallet_id,
+            client_id,
+        };
+        grant_wallet_access(&mut conn, vec![entry()]).await.unwrap();
+        let access_id: i32 = schema::evm_wallet_access::table
+            .filter(schema::evm_wallet_access::wallet_id.eq(wallet_id))
+            .filter(schema::evm_wallet_access::client_id.eq(client_id))
+            .select(schema::evm_wallet_access::id)
+            .first(&mut conn)
+            .await
+            .unwrap();
+
+        // The row every persistent grant hangs off: the specific ether- or token-transfer
+        // rows reference it, so liveness is decided here.
+        let grant_id: i32 = insert_into(schema::evm_basic_grant::table)
+            .values(models::NewEvmBasicGrant {
+                wallet_access_id: access_id,
+                chain_id: 1u64.into(),
+                valid_from: None,
+                valid_until: None,
+                max_gas_fee_per_gas: None,
+                max_priority_fee_per_gas: None,
+                rate_limit_count: None,
+                rate_limit_window_secs: None,
+                revoked_at: None,
+            })
+            .returning(schema::evm_basic_grant::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            live_grants_for(&mut conn, access_id).await,
+            vec![grant_id],
+            "the seeded grant must start out live, or the assertions below prove nothing"
+        );
+
+        revoke_wallet_access(&mut conn, &[access_id]).await.unwrap();
+        assert!(
+            live_grants_for(&mut conn, access_id).await.is_empty(),
+            "revoking an access must revoke the grants that hang off it"
+        );
+
+        grant_wallet_access(&mut conn, vec![entry()]).await.unwrap();
+
+        let revoked_at: Option<models::SqliteTimestamp> = schema::evm_wallet_access::table
+            .find(access_id)
+            .select(schema::evm_wallet_access::revoked_at)
+            .first(&mut conn)
+            .await
+            .unwrap();
+        assert!(
+            revoked_at.is_none(),
+            "re-granting must restore visibility for the access itself"
+        );
+        assert!(
+            live_grants_for(&mut conn, access_id).await.is_empty(),
+            "re-granting an access must not revive the grants it held before revocation"
         );
     }
 }

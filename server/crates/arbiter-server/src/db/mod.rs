@@ -59,24 +59,38 @@ fn database_path() -> Result<std::path::PathBuf, DatabaseSetupError> {
     Ok(db_path)
 }
 
+/// The pragmas `SQLite` scopes to one connection. They are defined once and run on every
+/// connection that reaches the database -- the migration connection below and each pooled
+/// connection in `create_pool` -- because a value set on one connection is invisible to the
+/// next, and every real write happens on a pooled one.
+const CONNECTION_PRAGMAS: &str = "
+    -- sleep if the database is busy; this corresponds to up to 9 seconds sleeping time.
+    -- see https://fractaledmind.github.io/2023/09/07/enhancing-rails-sqlite-fine-tuning/
+    PRAGMA busy_timeout = 9000;
+    -- fsync only in critical moments
+    PRAGMA synchronous = NORMAL;
+    -- write WAL changes back every 1000 pages, for an in average 1MB WAL file.
+    -- May affect readers if number is increased
+    PRAGMA wal_autocheckpoint = 1000;
+    -- sqlite foreign keys are disabled by default, enable them for safety
+    PRAGMA foreign_keys = ON;
+    -- overwrite freed pages instead of leaving encrypted shares, nonces and salts
+    -- readable in the file
+    PRAGMA secure_delete = ON;
+";
+
 #[tracing::instrument(level = "info", skip(conn))]
 fn db_config(conn: &mut SqliteConnection) -> Result<(), diesel::result::Error> {
-    // fsync only in critical moments
-    conn.batch_execute("PRAGMA synchronous = NORMAL;")?;
-    // write WAL changes back every 1000 pages, for an in average 1MB WAL file.
-    // May affect readers if number is increased
-    conn.batch_execute("PRAGMA wal_autocheckpoint = 1000;")?;
+    conn.batch_execute(CONNECTION_PRAGMAS)?;
+
+    // The rest belong to the database file rather than the connection, so the one-shot
+    // migration connection is the right and only place for them.
+
     // free some space by truncating possibly massive WAL files from the last run
     conn.batch_execute("PRAGMA wal_checkpoint(TRUNCATE);")?;
 
-    // sqlite foreign keys are disabled by default, enable them for safety
-    conn.batch_execute("PRAGMA foreign_keys = ON;")?;
-
     // better space reclamation
     conn.batch_execute("PRAGMA auto_vacuum = FULL;")?;
-
-    // secure delete, overwrite deleted content with zeros to prevent recovery
-    conn.batch_execute("PRAGMA secure_delete = ON;")?;
 
     Ok(())
 }
@@ -120,17 +134,13 @@ pub async fn create_pool(url: Option<&str>) -> Result<DatabasePool, DatabaseSetu
         Box::pin(async move {
             let mut conn = DatabaseConnection::establish(url).await?;
 
-            // see https://fractaledmind.github.io/2023/09/07/enhancing-rails-sqlite-fine-tuning/
-            // sleep if the database is busy, this corresponds to up to 9 seconds sleeping time.
-            conn.batch_execute("PRAGMA busy_timeout = 9000;")
-                .await
-                .map_err(diesel::ConnectionError::CouldntSetupConfiguration)?;
-            // better write-concurrency
+            // better write-concurrency; a property of the file, but harmless to reassert
             conn.batch_execute("PRAGMA journal_mode = WAL;")
                 .await
                 .map_err(diesel::ConnectionError::CouldntSetupConfiguration)?;
-            // Per-connection in SQLite: the migration connection enabling it is not enough.
-            conn.batch_execute("PRAGMA foreign_keys = ON;")
+            // The migration connection setting these is not enough: SQLite scopes them to
+            // one connection, and every real query runs on a pooled one.
+            conn.batch_execute(CONNECTION_PRAGMAS)
                 .await
                 .map_err(diesel::ConnectionError::CouldntSetupConfiguration)?;
 
@@ -207,5 +217,42 @@ mod tests {
             ),
             "expected a foreign-key violation for a dangling operator_identity reference, got {result:?}"
         );
+    }
+
+    #[derive(diesel::QueryableByName)]
+    struct PragmaValue {
+        #[diesel(sql_type = diesel::sql_types::Integer)]
+        value: i32,
+    }
+
+    async fn pragma(conn: &mut DatabaseConnection, name: &str) -> i32 {
+        diesel::sql_query(format!("select {name} as value from pragma_{name}()"))
+            .get_result::<PragmaValue>(conn)
+            .await
+            .unwrap()
+            .value
+    }
+
+    /// `foreign_keys` had to be repeated on the pooled connection because `SQLite` scopes it
+    /// there; its siblings in `CONNECTION_PRAGMAS` are scoped the same way and were being
+    /// left behind on the migration connection. `secure_delete` is the one that matters in a
+    /// key-custody database: off by default, it leaves freed pages holding encrypted shares,
+    /// nonces and salts readable in the file.
+    #[tokio::test]
+    async fn pooled_connections_carry_the_shared_pragmas() {
+        let pool = create_test_pool().await;
+        let mut conn = pool.get().await.unwrap();
+
+        assert_eq!(
+            pragma(&mut conn, "secure_delete").await,
+            1,
+            "freed pages must be overwritten on the connection that does the writing"
+        );
+        assert_eq!(
+            pragma(&mut conn, "synchronous").await,
+            1,
+            "synchronous must be NORMAL (1), not the default FULL (2)"
+        );
+        assert_eq!(pragma(&mut conn, "foreign_keys").await, 1);
     }
 }

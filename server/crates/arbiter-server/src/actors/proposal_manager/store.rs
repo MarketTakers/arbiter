@@ -26,12 +26,41 @@ use std::collections::HashMap;
 use strum::IntoDiscriminant as _;
 
 /// Everything the quorum rules need to know about one proposal's votes.
+///
+/// Votes are kept per electorate rather than pre-summed: an electorate can stop counting
+/// between the vote and the tally (§3.6 -- recovery goes back to sleep the moment a wake-up
+/// is cancelled), and the votes it already cast have to leave with it. A single `approve`
+/// field would carry them past [`Tally::drop_recovery`] into a threshold computed for the
+/// ordinary committee alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tally {
-    pub approve: i64,
-    pub reject: i64,
+    pub ordinary_approve: i64,
+    pub ordinary_reject: i64,
+    pub recovery_approve: i64,
+    pub recovery_reject: i64,
     pub total_ordinary: i64,
     pub total_recovery: i64,
+}
+
+impl Tally {
+    /// Approvals from every electorate that still counts.
+    pub const fn approve(&self) -> i64 {
+        self.ordinary_approve + self.recovery_approve
+    }
+
+    /// Rejections from every electorate that still counts.
+    pub const fn reject(&self) -> i64 {
+        self.ordinary_reject + self.recovery_reject
+    }
+
+    /// Takes the recovery committee out of the electorate, votes and all. The three numbers
+    /// go together: leaving the votes behind counts them against a threshold derived from an
+    /// electorate they are no longer part of.
+    pub const fn drop_recovery(&mut self) {
+        self.recovery_approve = 0;
+        self.recovery_reject = 0;
+        self.total_recovery = 0;
+    }
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -273,8 +302,10 @@ impl ProposalStore for DieselProposalStore {
             .await?;
 
         Ok(Tally {
-            approve: ordinary_approve + recovery_approve,
-            reject: ordinary_reject + recovery_reject,
+            ordinary_approve,
+            ordinary_reject,
+            recovery_approve,
+            recovery_reject,
             total_ordinary,
             total_recovery,
         })

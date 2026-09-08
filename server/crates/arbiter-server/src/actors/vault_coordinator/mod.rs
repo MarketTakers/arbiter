@@ -684,9 +684,7 @@ impl VaultCoordinator {
     /// then transitions to Rekeying state awaiting contributions from all of them.
     #[message]
     pub async fn start_rekey(&mut self) -> Result<(), Error> {
-        if !matches!(self.state, CoordinatorState::Idle) {
-            return Err(Error::AlreadyBootstrapping);
-        }
+        self.ensure_idle()?;
         let mut conn = self.db.get().await?;
         let ordinary_count: i64 = schema::operator_identity::table
             .count()
@@ -794,12 +792,28 @@ impl Message<ProposalApproved> for VaultCoordinator {
 }
 
 impl VaultCoordinator {
+    /// The coordinator runs one ceremony at a time; anything that starts a new one has to say
+    /// so before it changes any state the ceremony depends on.
+    const fn ensure_idle(&self) -> Result<(), Error> {
+        if matches!(self.state, CoordinatorState::Idle) {
+            Ok(())
+        } else {
+            Err(Error::AlreadyBootstrapping)
+        }
+    }
+
     /// Replaces the operator's public key in place, keeping their id and history, drops the
     /// share that key no longer matches, then begins a coordinated re-key (§3.3).
     async fn replace_operator(
         &mut self,
         settings: &replace_operator::Settings,
     ) -> Result<(), Error> {
+        // Checked before anything is written. The re-key is what gives the replaced operator
+        // a share they can use; if the coordinator is mid-ceremony, `start_rekey` refuses, and
+        // swapping the key and destroying the share first would leave that operator locked
+        // out with no re-key running and nothing to undo it -- the caller only logs the error.
+        self.ensure_idle()?;
+
         let mut conn = self.db.get().await?;
 
         diesel::update(schema::operator_identity::table)
@@ -817,5 +831,93 @@ impl VaultCoordinator {
         drop(conn);
 
         self.start_rekey().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CoordinatorState, Error, VaultCoordinator};
+    use crate::{
+        actors::{GlobalActors, vault::Vault},
+        db::{self, models::OperatorIdentityId, proposal::replace_operator, schema},
+    };
+
+    use diesel::{ExpressionMethods as _, QueryDsl as _, dsl::insert_into};
+    use diesel_async::RunQueryDsl;
+    use kameo::actor::Spawn as _;
+    use std::collections::HashMap;
+
+    /// An approved `ReplaceOperator` that arrives while another ceremony is running must
+    /// change nothing. Swapping the public key and deleting the share are only safe because a
+    /// re-key follows and hands the operator a share for the new key; when `start_rekey`
+    /// refuses, the operator would otherwise be left holding a key with no share, and the
+    /// caller does nothing with the error but log it.
+    #[tokio::test]
+    async fn a_refused_rekey_leaves_the_operator_untouched() {
+        let pool = db::create_test_pool().await;
+        let mut conn = pool.get().await.unwrap();
+
+        let old_key = rand::random::<[u8; 32]>().to_vec();
+        let operator_id: OperatorIdentityId = insert_into(schema::operator_identity::table)
+            .values(schema::operator_identity::public_key.eq(&old_key))
+            .returning(schema::operator_identity::id)
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+        insert_into(schema::operator::table)
+            .values((
+                schema::operator::id.eq(Some(operator_id)),
+                schema::operator::share.eq(vec![1u8; 32]),
+                schema::operator::share_nonce.eq(vec![2u8; 24]),
+                schema::operator::share_salt.eq(vec![3u8; 32]),
+            ))
+            .execute(&mut conn)
+            .await
+            .unwrap();
+        drop(conn);
+
+        let vault = Vault::spawn(
+            Vault::new(pool.clone(), GlobalActors::spawn_message_bus())
+                .await
+                .unwrap(),
+        );
+        let mut coordinator = VaultCoordinator::new(pool.clone(), vault);
+        coordinator.state = CoordinatorState::Rekeying {
+            ordinary_count: 2,
+            recovery_count: 0,
+            passphrases: HashMap::new(),
+            recovery_passphrases: HashMap::new(),
+        };
+
+        let result = coordinator
+            .replace_operator(&replace_operator::Settings {
+                old_operator_id: operator_id,
+                new_pubkey: vec![9u8; 32],
+            })
+            .await;
+        assert!(
+            matches!(result, Err(Error::AlreadyBootstrapping)),
+            "a busy coordinator must refuse the replacement, got {result:?}"
+        );
+
+        let mut conn = pool.get().await.unwrap();
+        let stored_key: Vec<u8> = schema::operator_identity::table
+            .find(operator_id)
+            .select(schema::operator_identity::public_key)
+            .first(&mut conn)
+            .await
+            .unwrap();
+        assert_eq!(
+            stored_key, old_key,
+            "the public key must not be swapped when no re-key can follow"
+        );
+
+        let shares: i64 = schema::operator::table
+            .filter(schema::operator::id.eq(Some(operator_id)))
+            .count()
+            .get_result(&mut conn)
+            .await
+            .unwrap();
+        assert_eq!(shares, 1, "the operator's share must not be destroyed");
     }
 }

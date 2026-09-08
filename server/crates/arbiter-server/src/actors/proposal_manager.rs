@@ -255,9 +255,15 @@ impl ProposalManager {
     /// §3.5/§3.6: recovery operators join the electorate only for the kinds they may vote on,
     /// and only once the wake-up window has elapsed. Counting them anywhere else makes the
     /// rejection threshold unreachable and, for full-quorum kinds, approval unreachable too.
+    ///
+    /// The votes go out with the voters. A wake-up can be cancelled after recovery operators
+    /// have already voted (`cancel_wakeup` cancels any uncancelled request, elapsed or not),
+    /// so a `ReplaceOperator` tally can hold recovery approvals at the moment the committee
+    /// stops being eligible. Keeping those while zeroing only the electorate size would let
+    /// them cover ordinary votes that were never cast.
     async fn narrow_electorate(&self, proposal: &Proposal, tally: &mut Tally) -> Result<(), Error> {
         if !proposal.kind.recovery_may_vote() || !self.store.is_recovery_active().await? {
-            tally.total_recovery = 0;
+            tally.drop_recovery();
         }
         Ok(())
     }
@@ -269,6 +275,13 @@ impl ProposalManager {
     #[must_use]
     pub(crate) const fn evaluate_quorum(tally: &Tally, requires_full_quorum: bool) -> VoteOutcome {
         let total_eligible = tally.total_ordinary + tally.total_recovery;
+
+        // No electorate, nothing to settle. Guarded before the branch rather than inside it:
+        // the full-quorum arm would otherwise set `threshold` to 0 and read an empty tally as
+        // unanimous approval.
+        if total_eligible <= 0 {
+            return VoteOutcome::Pending;
+        }
 
         #[expect(
             clippy::cast_possible_truncation,
@@ -289,9 +302,9 @@ impl ProposalManager {
             }
         };
 
-        if tally.approve >= threshold {
+        if tally.approve() >= threshold {
             VoteOutcome::Approved
-        } else if tally.reject > total_eligible - threshold {
+        } else if tally.reject() > total_eligible - threshold {
             VoteOutcome::Rejected
         } else {
             VoteOutcome::Pending

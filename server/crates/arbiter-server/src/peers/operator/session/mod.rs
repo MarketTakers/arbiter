@@ -24,6 +24,12 @@ pub enum Error {
     #[error("This operator role may not perform that action")]
     RoleNotPermitted,
 
+    /// Fewer access rows were revoked than the request named. Like `RoleNotPermitted` this is
+    /// an answer about the request, not a fault, so it is named rather than folded into
+    /// `Internal`.
+    #[error("Revoked {revoked} of {requested} wallet access entries")]
+    PartialRevoke { requested: usize, revoked: usize },
+
     #[error("Internal error: {message}")]
     Internal { message: Cow<'static, str> },
 }
