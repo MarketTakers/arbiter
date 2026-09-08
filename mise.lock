@@ -7,6 +7,7 @@ backend = "aqua:ast-grep/ast-grep"
 [tools.ast-grep."platforms.linux-arm64"]
 checksum = "sha256:3ba383839044cf9817929435f5ce0027f91d06931e8efb32d942e58d73d92be5"
 url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.1/app-aarch64-unknown-linux-gnu.zip"
+url_api = "https://api.github.com/repos/ast-grep/ast-grep/releases/assets/388772218"
 
 [tools.ast-grep."platforms.linux-arm64-musl"]
 checksum = "sha256:3ba383839044cf9817929435f5ce0027f91d06931e8efb32d942e58d73d92be5"
@@ -15,6 +16,7 @@ url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.1/app-aarch64
 [tools.ast-grep."platforms.linux-x64"]
 checksum = "sha256:5de8b87cba67fc8dc3e239d54b6484802ad745a7ae3de76be4fe89661dc52657"
 url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.1/app-x86_64-unknown-linux-gnu.zip"
+url_api = "https://api.github.com/repos/ast-grep/ast-grep/releases/assets/388771275"
 
 [tools.ast-grep."platforms.linux-x64-musl"]
 checksum = "sha256:5de8b87cba67fc8dc3e239d54b6484802ad745a7ae3de76be4fe89661dc52657"
@@ -23,14 +25,17 @@ url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.1/app-x86_64-
 [tools.ast-grep."platforms.macos-arm64"]
 checksum = "sha256:c3961d8e8a4ee0ce2d0d98c7beeb168bb331cdc766b53630118a7b6c4fd39015"
 url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.1/app-aarch64-apple-darwin.zip"
+url_api = "https://api.github.com/repos/ast-grep/ast-grep/releases/assets/388770234"
 
 [tools.ast-grep."platforms.macos-x64"]
 checksum = "sha256:a038965bfd7fe44257c771cdf8918dc3467dd8ec0eef673b8b14f639b144cdbd"
 url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.1/app-x86_64-apple-darwin.zip"
+url_api = "https://api.github.com/repos/ast-grep/ast-grep/releases/assets/388770498"
 
 [tools.ast-grep."platforms.windows-x64"]
 checksum = "sha256:fe34f631bb24c08ad146f92ca2a92971a53d179461b509fd8d32dc863bff9f83"
 url = "https://github.com/ast-grep/ast-grep/releases/download/0.42.1/app-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/ast-grep/ast-grep/releases/assets/388771363"
 
 [[tools."cargo:cargo-audit"]]
 version = "0.22.1"
@@ -57,7 +62,7 @@ version = "0.9.133"
 backend = "cargo:cargo-nextest"
 
 [[tools."cargo:cargo-shear"]]
-version = "1.11.2"
+version = "1.13.4"
 backend = "cargo:cargo-shear"
 
 [[tools."cargo:cargo-vet"]]
@@ -78,7 +83,27 @@ backend = "cargo:flutter_rust_bridge_codegen"
 
 [[tools.flutter]]
 version = "3.41.7-stable"
-backend = "asdf:flutter"
+backend = "http:flutter"
+
+[tools.flutter."platforms.linux-x64"]
+checksum = "sha256:f344d5057db52abc2a63cd3a7c7370957b7685d1fca5e5fbe2ce4dfe74657a79"
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.41.7-stable.tar.xz"
+
+[tools.flutter."platforms.linux-x64-musl"]
+checksum = "sha256:f344d5057db52abc2a63cd3a7c7370957b7685d1fca5e5fbe2ce4dfe74657a79"
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.41.7-stable.tar.xz"
+
+[tools.flutter."platforms.macos-arm64"]
+checksum = "sha256:2e3e6af44d1adccf695deff52e5e4c8beb10e5625066b27ad082b38b83ef805e"
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_arm64_3.41.7-stable.zip"
+
+[tools.flutter."platforms.macos-x64"]
+checksum = "sha256:a0b9af49e6e1a6800f31a408b98c1d7bd51e98650a8b9ebcd77168b48c916ff0"
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_3.41.7-stable.zip"
+
+[tools.flutter."platforms.windows-x64"]
+checksum = "sha256:de17b513b740a931c5dbc3f96b5a659c1612dfe6b5e1f910c5ad954a8bac17ee"
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.41.7-stable.zip"
 
 [[tools.protoc]]
 version = "29.6"
@@ -87,30 +112,37 @@ backend = "aqua:protocolbuffers/protobuf/protoc"
 [tools.protoc."platforms.linux-arm64"]
 checksum = "sha256:2594ff4fcae8cb57310d394d0961b236190ad9c5efbfdf1f597ea471d424fe79"
 url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-linux-aarch_64.zip"
+url_api = "https://api.github.com/repos/protocolbuffers/protobuf/releases/assets/350795076"
 
 [tools.protoc."platforms.linux-arm64-musl"]
 checksum = "sha256:2594ff4fcae8cb57310d394d0961b236190ad9c5efbfdf1f597ea471d424fe79"
 url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-linux-aarch_64.zip"
+url_api = "https://api.github.com/repos/protocolbuffers/protobuf/releases/assets/350795076"
 
 [tools.protoc."platforms.linux-x64"]
 checksum = "sha256:48785a926e73ffa3f68e2f22b14e7b849620c7a1d36809ac9249a5495e280323"
 url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-linux-x86_64.zip"
+url_api = "https://api.github.com/repos/protocolbuffers/protobuf/releases/assets/350795083"
 
 [tools.protoc."platforms.linux-x64-musl"]
 checksum = "sha256:48785a926e73ffa3f68e2f22b14e7b849620c7a1d36809ac9249a5495e280323"
 url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-linux-x86_64.zip"
+url_api = "https://api.github.com/repos/protocolbuffers/protobuf/releases/assets/350795083"
 
 [tools.protoc."platforms.macos-arm64"]
 checksum = "sha256:b9576b5fa1a1ef3fe13a8c91d9d8204b46545759bea5ae155cd6ba2ea4cdaeed"
 url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-osx-aarch_64.zip"
+url_api = "https://api.github.com/repos/protocolbuffers/protobuf/releases/assets/350795082"
 
 [tools.protoc."platforms.macos-x64"]
 checksum = "sha256:312f04713946921cc0187ef34df80241ddca1bab6f564c636885fd2cc90d3f88"
 url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-osx-x86_64.zip"
+url_api = "https://api.github.com/repos/protocolbuffers/protobuf/releases/assets/350795085"
 
 [tools.protoc."platforms.windows-x64"]
 checksum = "sha256:1ebd7c87baffb9f1c47169b640872bf5fb1e4408079c691af527be9561d8f6f7"
 url = "https://github.com/protocolbuffers/protobuf/releases/download/v29.6/protoc-29.6-win64.zip"
+url_api = "https://api.github.com/repos/protocolbuffers/protobuf/releases/assets/350795088"
 
 [[tools.python]]
 version = "3.14.4"
@@ -122,8 +154,8 @@ url = "https://github.com/astral-sh/python-build-standalone/releases/download/20
 provenance = "github-attestations"
 
 [tools.python."platforms.linux-arm64-musl"]
-checksum = "sha256:b8b597fdb2f8dccdc502c11947b60a4b65eb6bce79cfa60c7ccf9b6e8352c60a"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.14.4+20260414-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+checksum = "sha256:a10687b226e0941632569836bc1d8fa6353a8e3e8424316467ca9cdf220b983d"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.14.4+20260414-aarch64-unknown-linux-musl-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.linux-x64"]
@@ -132,12 +164,12 @@ url = "https://github.com/astral-sh/python-build-standalone/releases/download/20
 provenance = "github-attestations"
 
 [tools.python."platforms.linux-x64-musl"]
-checksum = "sha256:fe9a9c32d13870af632cbac3dfc7528ae53597e94472aa4c7d6a42e8166136cd"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.14.4+20260414-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+checksum = "sha256:d6005226cd24e780630626232c7a63243d4885fdf975dcf930a0758a0759ce14"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.14.4+20260414-x86_64-unknown-linux-musl-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.macos-arm64"]
-checksum = "blake3:0314ec66e0f33ec04959583b5900bc8edae371a396aa96b8874e750d1fe936e6"
+checksum = "sha256:6f304f4ec30854611f23316578302235fb517cd970519ecdd11a8c4db87fd843"
 url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.14.4+20260414-aarch64-apple-darwin-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
@@ -154,3 +186,6 @@ provenance = "github-attestations"
 [[tools.rust]]
 version = "1.95.0"
 backend = "core:rust"
+
+[tools.rust.options]
+components = "clippy,rust-analyzer"
