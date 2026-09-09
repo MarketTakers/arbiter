@@ -3,8 +3,8 @@ use super::{
     Error,
 };
 use crate::{
-    actors::bootstrap::ConsumeToken,
-    db::{DatabasePool, schema::operator_identity},
+    actors::bootstrap::VerifyToken,
+    db::{DatabasePool, models::OperatorId, schema::operator_identity},
     peers::operator::auth::Outbound,
 };
 use arbiter_crypto::authn::{self, AuthChallenge, OPERATOR_CONTEXT};
@@ -37,7 +37,10 @@ smlang::statemachine!(
     }
 );
 
-async fn get_client_id(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<Option<i32>, Error> {
+async fn get_client_id(
+    db: &DatabasePool,
+    pubkey: &authn::PublicKey,
+) -> Result<Option<OperatorId>, Error> {
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
         Error::internal("Database unavailable")
@@ -46,7 +49,7 @@ async fn get_client_id(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<O
     operator_identity::table
         .filter(operator_identity::public_key.eq(pubkey.to_bytes()))
         .select(operator_identity::id)
-        .first::<i32>(&mut conn)
+        .first::<OperatorId>(&mut conn)
         .await
         .optional()
         .map_err(|e| {
@@ -55,14 +58,14 @@ async fn get_client_id(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<O
         })
 }
 
-async fn register_key(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<i32, Error> {
+async fn register_key(db: &DatabasePool, pubkey: &authn::PublicKey) -> Result<OperatorId, Error> {
     let pubkey_bytes = pubkey.to_bytes();
     let mut conn = db.get().await.map_err(|e| {
         error!(error = ?e, "Database pool error");
         Error::internal("Database unavailable")
     })?;
 
-    let id: i32 = diesel::insert_into(operator_identity::table)
+    let id: OperatorId = diesel::insert_into(operator_identity::table)
         .values((operator_identity::public_key.eq(pubkey_bytes),))
         .returning(operator_identity::id)
         .get_result(&mut conn)
@@ -156,7 +159,7 @@ where
                     .conn
                     .actors
                     .bootstrapper
-                    .ask(ConsumeToken { token })
+                    .ask(VerifyToken { token })
                     .await
                     .map_err(|e| {
                         error!(?e, "Failed to consume bootstrap token");

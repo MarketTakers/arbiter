@@ -1,10 +1,15 @@
 use crate::{
     actors::{
         bootstrap::Bootstrapper, evm::EvmActor, flow_coordinator::FlowCoordinator,
-        operator_registry::OperatorRegistry, vault::Vault,
+        operator_registry::OperatorRegistry, vault::Vault, vault_coordinator::VaultCoordinator,
     },
-    db,
+    db::{
+        self,
+        custody::{CustodyStore, DieselCustodyStore},
+    },
 };
+
+use std::sync::Arc;
 
 use kameo::actor::{ActorRef, Spawn};
 use kameo_actors::{DeliveryStrategy, message_bus::MessageBus};
@@ -15,20 +20,22 @@ pub mod evm;
 pub mod flow_coordinator;
 pub mod operator_registry;
 pub mod vault;
+pub mod vault_coordinator;
 
 #[derive(Error, Debug)]
 pub enum SpawnError {
     #[error("Failed to spawn Bootstrapper actor")]
     Bootstrapper(#[from] bootstrap::Error),
-
     #[error("Failed to spawn Vault actor")]
     Vault(#[from] vault::Error),
+    #[error("Failed to spawn VaultCoordinator actor")]
+    VaultCoordinator(#[from] vault_coordinator::Error),
 }
 
-/// Long-lived actors that are shared across all connections and handle global state and operations
 #[derive(Clone)]
 pub struct GlobalActors {
     pub vault: ActorRef<Vault>,
+    pub vault_coordinator: ActorRef<VaultCoordinator>,
     pub bootstrapper: ActorRef<Bootstrapper>,
     pub flow_coordinator: ActorRef<FlowCoordinator>,
     pub operator_registry: ActorRef<OperatorRegistry>,
@@ -42,18 +49,24 @@ impl GlobalActors {
     }
 
     pub async fn spawn(db: db::DatabasePool) -> Result<Self, SpawnError> {
-        let message_bus = Self::spawn_message_bus();
-        let key_holder = Vault::spawn(Vault::new(db.clone(), message_bus.clone()).await?);
+        let events = Self::spawn_message_bus();
+        let custody: Arc<dyn CustodyStore> = Arc::new(DieselCustodyStore);
+        let vault =
+            Vault::spawn(Vault::new(db.clone(), events.clone(), Arc::clone(&custody)).await?);
+        let bootstrapper = Bootstrapper::spawn(Bootstrapper::new(&db, events.clone()).await?);
+        let vault_coordinator =
+            VaultCoordinator::spawn(VaultCoordinator::new(db.clone(), vault.clone(), custody));
         let operator_registry = OperatorRegistry::spawn(OperatorRegistry::default());
         Ok(Self {
-            bootstrapper: Bootstrapper::spawn(Bootstrapper::new(&db).await?),
-            evm: EvmActor::spawn(EvmActor::new(key_holder.clone(), db)),
-            vault: key_holder,
+            bootstrapper,
+            evm: EvmActor::spawn(EvmActor::new(vault.clone(), db.clone())),
+            vault,
+            vault_coordinator,
             flow_coordinator: FlowCoordinator::spawn(FlowCoordinator::new(
                 operator_registry.clone(),
             )),
             operator_registry,
-            events: message_bus,
+            events,
         })
     }
 }

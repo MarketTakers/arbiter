@@ -1,14 +1,17 @@
 use crate::{
+    crypto::shamir,
     grpc::{Convert, TryConvert},
     peers::operator::vault_gate::{
-        self as vault_gate, HandleBootstrapEncryptedKey, HandleHandshake, HandleUnsealEncryptedKey,
+        self as vault_gate, HandleBootstrapEncryptedKey, HandleContributeBootstrapPassphrase,
+        HandleContributeUnsealPassphrase, HandleDeclareCommittee, HandleHandshake,
+        HandleUnsealEncryptedKey,
     },
 };
 use arbiter_proto::proto::operator::{
     operator_request::Payload as OperatorRequestPayload,
     vault::{
         self as proto_vault,
-        bootstrap::{self as proto_bootstrap},
+        bootstrap::{self as proto_bootstrap, request::Payload as BootstrapRequestPayload},
         request::Payload as VaultRequestPayload,
         unseal::{self as proto_unseal, request::Payload as UnsealRequestPayload},
     },
@@ -50,6 +53,7 @@ impl TryConvert for VaultRequestPayload {
             Self::QueryState(()) => Ok(vault_gate::Inbound::HandleVaultState),
             Self::Unseal(req) => req.try_convert(),
             Self::Bootstrap(req) => req.try_convert(),
+            Self::Rekey(_) => Err(Status::unimplemented("Vault re-key is not available")),
         }
     }
 }
@@ -73,6 +77,16 @@ impl TryConvert for UnsealRequestPayload {
         match self {
             Self::Start(start) => start.try_convert(),
             Self::EncryptedKey(key) => Ok(key.convert()),
+            Self::ContributePassphrase(passphrase) => {
+                Ok(vault_gate::Inbound::HandleContributeUnsealPassphrase(
+                    HandleContributeUnsealPassphrase {
+                        passphrase: passphrase.passphrase,
+                    },
+                ))
+            }
+            Self::ContributeRecoveryPassphrase(_) => Err(Status::unimplemented(
+                "Recovery operator contributions are not available",
+            )),
         }
     }
 }
@@ -107,9 +121,49 @@ impl TryConvert for proto_bootstrap::Request {
     type Error = Status;
 
     fn try_convert(self) -> Result<vault_gate::Inbound, Status> {
-        self.encrypted_key
-            .ok_or_else(|| Status::invalid_argument("Missing bootstrap encrypted key"))?
+        self.payload
+            .ok_or_else(|| Status::invalid_argument("Missing bootstrap payload"))?
             .try_convert()
+    }
+}
+
+impl TryConvert for BootstrapRequestPayload {
+    type Output = vault_gate::Inbound;
+    type Error = Status;
+
+    fn try_convert(self) -> Result<vault_gate::Inbound, Status> {
+        match self {
+            Self::EncryptedKey(key) => key.try_convert(),
+            Self::DeclareCommittee(dc) => {
+                if dc.recovery_count != 0 {
+                    return Err(Status::unimplemented(
+                        "Recovery operator contributions are not available",
+                    ));
+                }
+                let count = usize::try_from(dc.count)
+                    .ok()
+                    .filter(|count| *count <= shamir::MAX_COMMITTEE_SIZE)
+                    .ok_or_else(|| {
+                        Status::invalid_argument(format!(
+                            "Committee count must not exceed {}",
+                            shamir::MAX_COMMITTEE_SIZE
+                        ))
+                    })?;
+                Ok(vault_gate::Inbound::HandleDeclareCommittee(
+                    HandleDeclareCommittee { count },
+                ))
+            }
+            Self::ContributePassphrase(cp) => {
+                Ok(vault_gate::Inbound::HandleContributeBootstrapPassphrase(
+                    HandleContributeBootstrapPassphrase {
+                        passphrase: cp.passphrase,
+                    },
+                ))
+            }
+            Self::ContributeRecoveryPassphrase(_) => Err(Status::unimplemented(
+                "Recovery operator contributions are not available",
+            )),
+        }
     }
 }
 

@@ -110,6 +110,18 @@ pub mod types {
                     ToSql::<Integer, Sqlite>::to_sql(&self.0, out)
                 }
             }
+
+            impl arbiter_crypto::hashing::Hashable for $name {
+                fn hash<H: arbiter_crypto::hashing::Digest>(&self, hasher: &mut H) {
+                    arbiter_crypto::hashing::Hashable::hash(&self.0, hasher);
+                }
+            }
+
+            impl crate::crypto::integrity::v1::IntoId for $name {
+                fn into_id(self) -> Vec<u8> {
+                    crate::crypto::integrity::v1::IntoId::into_id(self.0)
+                }
+            }
         };
     }
 
@@ -203,6 +215,7 @@ pub struct ArbiterSettings {
     pub id: i32,
     pub root_key_id: Option<i32>, // references root_key_history.id
     pub tls_id: Option<i32>,      // references tls_history.id
+    pub shamir_threshold: Option<i32>,
 }
 
 #[derive(Models, Queryable, Debug, Insertable, Selectable)]
@@ -285,6 +298,7 @@ pub struct Operator {
     pub id: OperatorId,
     pub share: Vec<u8>,
     pub share_nonce: Vec<u8>,
+    pub share_salt: Vec<u8>,
     pub created_at: SqliteTimestamp,
     pub updated_at: SqliteTimestamp,
 }

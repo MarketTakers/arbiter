@@ -5,12 +5,16 @@ use arbiter_server::{
         GlobalActors,
         vault::{Error, Vault},
     },
-    crypto::encryption::v1::{Nonce, ROOT_KEY_TAG},
-    db::{self, models, schema},
+    crypto::{
+        KeyCell,
+        encryption::v1::{Nonce, ROOT_KEY_TAG},
+    },
+    db::{self, custody::DieselCustodyStore, models, schema},
 };
 
 use diesel::{QueryDsl, SelectableHelper};
 use diesel_async::RunQueryDsl;
+use std::sync::Arc;
 
 const TEST_AAD: &[u8] = b"test-aad";
 
@@ -18,12 +22,16 @@ const TEST_AAD: &[u8] = b"test-aad";
 #[test_log::test]
 async fn bootstrap() {
     let db = db::create_test_pool().await;
-    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
-        .await
-        .unwrap();
+    let mut actor = Vault::new(
+        db.clone(),
+        GlobalActors::spawn_message_bus(),
+        Arc::new(DieselCustodyStore),
+    )
+    .await
+    .unwrap();
 
-    let seal_key = SafeCell::new(b"test-seal-key".to_vec());
-    actor.bootstrap(seal_key).await.unwrap();
+    let seal_key = KeyCell::from([0u8; 32]);
+    actor.bootstrap(seal_key, None).await.unwrap();
 
     let mut conn = db.get().await.unwrap();
     let row: models::RootKeyHistory = schema::root_key_history::table
@@ -45,8 +53,8 @@ async fn bootstrap_rejects_double() {
     let db = db::create_test_pool().await;
     let mut actor = common::bootstrapped_vault(&db).await;
 
-    let seal_key2 = SafeCell::new(b"test-seal-key".to_vec());
-    let err = actor.bootstrap(seal_key2).await.unwrap_err();
+    let seal_key2 = KeyCell::from([0u8; 32]);
+    let err = actor.bootstrap(seal_key2, None).await.unwrap_err();
     assert!(matches!(err, Error::AlreadyBootstrapped));
 }
 
@@ -54,9 +62,13 @@ async fn bootstrap_rejects_double() {
 #[test_log::test]
 async fn create_new_before_bootstrap_fails() {
     let db = db::create_test_pool().await;
-    let mut actor = Vault::new(db, GlobalActors::spawn_message_bus())
-        .await
-        .unwrap();
+    let mut actor = Vault::new(
+        db,
+        GlobalActors::spawn_message_bus(),
+        Arc::new(DieselCustodyStore),
+    )
+    .await
+    .unwrap();
 
     let err = actor
         .create_new(SafeCell::new(b"data".to_vec()), TEST_AAD.to_vec())
@@ -69,9 +81,13 @@ async fn create_new_before_bootstrap_fails() {
 #[test_log::test]
 async fn decrypt_before_bootstrap_fails() {
     let db = db::create_test_pool().await;
-    let mut actor = Vault::new(db, GlobalActors::spawn_message_bus())
-        .await
-        .unwrap();
+    let mut actor = Vault::new(
+        db,
+        GlobalActors::spawn_message_bus(),
+        Arc::new(DieselCustodyStore),
+    )
+    .await
+    .unwrap();
 
     let err = actor.decrypt(1, TEST_AAD.to_vec()).await.unwrap_err();
     assert!(matches!(err, Error::NotBootstrapped));
@@ -84,9 +100,13 @@ async fn new_restores_sealed_state() {
     let actor = common::bootstrapped_vault(&db).await;
     drop(actor);
 
-    let mut actor2 = Vault::new(db, GlobalActors::spawn_message_bus())
-        .await
-        .unwrap();
+    let mut actor2 = Vault::new(
+        db,
+        GlobalActors::spawn_message_bus(),
+        Arc::new(DieselCustodyStore),
+    )
+    .await
+    .unwrap();
     let err = actor2.decrypt(1, TEST_AAD.to_vec()).await.unwrap_err();
     assert!(matches!(err, Error::Sealed));
 }
@@ -104,10 +124,14 @@ async fn unseal_correct_password() {
         .unwrap();
     drop(actor);
 
-    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
-        .await
-        .unwrap();
-    let seal_key = SafeCell::new(b"test-seal-key".to_vec());
+    let mut actor = Vault::new(
+        db.clone(),
+        GlobalActors::spawn_message_bus(),
+        Arc::new(DieselCustodyStore),
+    )
+    .await
+    .unwrap();
+    let seal_key = KeyCell::from([0u8; 32]);
     actor.try_unseal(seal_key).await.unwrap();
 
     let mut decrypted = actor.decrypt(aead_id, TEST_AAD.to_vec()).await.unwrap();
@@ -127,15 +151,19 @@ async fn unseal_wrong_then_correct_password() {
         .unwrap();
     drop(actor);
 
-    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
-        .await
-        .unwrap();
+    let mut actor = Vault::new(
+        db.clone(),
+        GlobalActors::spawn_message_bus(),
+        Arc::new(DieselCustodyStore),
+    )
+    .await
+    .unwrap();
 
-    let bad_key = SafeCell::new(b"wrong-password".to_vec());
+    let bad_key = KeyCell::from([1u8; 32]);
     let err = actor.try_unseal(bad_key).await.unwrap_err();
     assert!(matches!(err, Error::InvalidKey));
 
-    let good_key = SafeCell::new(b"test-seal-key".to_vec());
+    let good_key = KeyCell::from([0u8; 32]);
     actor.try_unseal(good_key).await.unwrap();
 
     let mut decrypted = actor.decrypt(aead_id, TEST_AAD.to_vec()).await.unwrap();

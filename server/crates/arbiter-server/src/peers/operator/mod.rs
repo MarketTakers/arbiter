@@ -4,7 +4,7 @@ use crate::{
         vault::{GetState, Vault},
     },
     crypto::integrity::{self, AttestationStatus, Integrable},
-    db::{DatabaseError, DatabasePool},
+    db::{DatabaseError, DatabasePool, models::OperatorId},
     peers::client::ClientProfile,
 };
 use arbiter_crypto::authn;
@@ -25,7 +25,7 @@ pub mod vault_gate;
 
 #[derive(Debug, Clone, Hashable)]
 pub struct Credentials {
-    pub id: i32,
+    pub id: OperatorId,
     pub pubkey: authn::PublicKey,
 }
 

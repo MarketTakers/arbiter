@@ -5,13 +5,17 @@ use arbiter_server::{
         GlobalActors,
         vault::{CreateNew, Error, Vault},
     },
-    db::{self, models, schema},
+    crypto::KeyCell,
+    db::{self, custody::DieselCustodyStore, models, schema},
 };
 
 use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper, dsl::sql_query};
 use diesel_async::RunQueryDsl;
 use kameo::actor::{ActorRef, Spawn as _};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use tokio::task::JoinSet;
 
 const TEST_AAD: &[u8] = b"test-aad";
@@ -165,11 +169,15 @@ async fn decrypt_roundtrip_after_high_concurrency() {
     let writes = write_concurrently(actor, "roundtrip", 40).await;
     let expected: HashMap<i32, Vec<u8>> = writes.into_iter().collect();
 
-    let mut decryptor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
-        .await
-        .unwrap();
+    let mut decryptor = Vault::new(
+        db.clone(),
+        GlobalActors::spawn_message_bus(),
+        Arc::new(DieselCustodyStore),
+    )
+    .await
+    .unwrap();
     decryptor
-        .try_unseal(SafeCell::new(b"test-seal-key".to_vec()))
+        .try_unseal(KeyCell::from([0u8; 32]))
         .await
         .unwrap();
 

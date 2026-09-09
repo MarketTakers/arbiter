@@ -4,7 +4,7 @@
 "cargo:cargo-vet" = "0.10.2"
 flutter = "3.41.7-stable"
 protoc = "29.6"
-rust = { version = "1.95.0", components = "clippy,rust-analyzer" }
+rust = { version = "latest", components = "clippy,rust-analyzer" }
 "cargo:cargo-features-manager" = "0.12.0"
 "cargo:cargo-nextest" = "0.9.133"
 "cargo:cargo-shear" = "latest"

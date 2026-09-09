@@ -8,6 +8,7 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use thiserror::Error;
 use tracing::info;
 
+pub mod custody;
 pub mod models;
 pub mod schema;
 
@@ -153,4 +154,40 @@ pub async fn create_test_pool() -> DatabasePool {
     create_pool(Some(&url))
         .await
         .expect("Failed to create test database pool")
+}
+
+#[cfg(test)]
+mod tests {
+    use diesel::{ExpressionMethods as _, result::DatabaseErrorKind};
+    use diesel_async::RunQueryDsl as _;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn operator_share_salt_must_be_supplied_by_application() {
+        let pool = create_test_pool().await;
+        let mut conn = pool.get().await.expect("pool connection");
+
+        let operator_id = diesel::insert_into(schema::operator_identity::table)
+            .values(schema::operator_identity::public_key.eq(vec![1]))
+            .returning(schema::operator_identity::id)
+            .get_result::<i32>(&mut conn)
+            .await
+            .expect("insert operator identity");
+
+        let error = diesel::insert_into(schema::operator::table)
+            .values((
+                schema::operator::id.eq(operator_id),
+                schema::operator::share.eq(vec![2]),
+                schema::operator::share_nonce.eq(vec![3]),
+            ))
+            .execute(&mut conn)
+            .await
+            .expect_err("operator insert without an application-generated salt must fail");
+
+        assert!(matches!(
+            error,
+            diesel::result::Error::DatabaseError(DatabaseErrorKind::NotNullViolation, _)
+        ));
+    }
 }

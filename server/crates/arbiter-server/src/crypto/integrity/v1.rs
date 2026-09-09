@@ -206,6 +206,9 @@ pub async fn is_signing_available(vault: &ActorRef<Vault>) -> Result<bool, Error
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use crate::db::custody::DieselCustodyStore;
     use diesel::{ExpressionMethods as _, QueryDsl};
     use diesel_async::RunQueryDsl;
     use kameo::{actor::ActorRef, prelude::Spawn};
@@ -215,9 +218,9 @@ mod tests {
             GlobalActors,
             vault::{Bootstrap, Vault},
         },
+        crypto::KeyCell,
         db::{self, schema},
     };
-    use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 
     use super::{Error, Integrable, sign_entity, verify_entity};
     #[derive(Clone, arbiter_macros::Hashable)]
@@ -231,13 +234,18 @@ mod tests {
 
     async fn bootstrapped_vault(db: &db::DatabasePool) -> ActorRef<Vault> {
         let actor = Vault::spawn(
-            Vault::new(db.clone(), GlobalActors::spawn_message_bus())
-                .await
-                .unwrap(),
+            Vault::new(
+                db.clone(),
+                GlobalActors::spawn_message_bus(),
+                Arc::new(DieselCustodyStore),
+            )
+            .await
+            .unwrap(),
         );
         actor
             .ask(Bootstrap {
-                seal_key_raw: SafeCell::new(b"integrity-test-seal-key".to_vec()),
+                seal_key: KeyCell::from([0u8; 32]),
+                custody: None,
             })
             .await
             .unwrap();

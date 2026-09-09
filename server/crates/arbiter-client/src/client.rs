@@ -94,7 +94,6 @@ impl ArbiterClient {
     }
 
     #[cfg(feature = "evm")]
-    #[expect(clippy::unused_async, reason = "false positive")]
     pub async fn evm_wallets(&self) -> Result<Vec<ArbiterEvmWallet>, ArbiterClientError> {
         todo!("fetch EVM wallet list from server")
     }

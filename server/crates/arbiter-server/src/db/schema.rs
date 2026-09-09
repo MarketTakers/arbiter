@@ -17,6 +17,7 @@ diesel::table! {
         id -> Integer,
         root_key_id -> Nullable<Integer>,
         tls_id -> Nullable<Integer>,
+        shamir_threshold -> Nullable<Integer>,
     }
 }
 
@@ -157,6 +158,7 @@ diesel::table! {
         id -> Nullable<Integer>,
         share -> Binary,
         share_nonce -> Binary,
+        share_salt -> Binary,
         created_at -> Integer,
         updated_at -> Integer,
     }

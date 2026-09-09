@@ -501,8 +501,10 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use crate::db::custody::DieselCustodyStore;
     use alloy::primitives::{Address, Bytes, U256, address};
-    use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
     use chrono::{Duration, Utc};
     use diesel::{SelectableHelper, insert_into};
     use diesel_async::RunQueryDsl;
@@ -510,6 +512,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::actors::{GlobalActors, vault::{Bootstrap, Vault}};
+    use crate::crypto::KeyCell;
     use crate::crypto::integrity;
     use crate::db::{
         self, DatabaseConnection,
@@ -766,13 +769,18 @@ mod tests {
 
     async fn bootstrapped_vault(db: &db::DatabasePool) -> ActorRef<Vault> {
         let actor = Vault::spawn(
-            Vault::new(db.clone(), GlobalActors::spawn_message_bus())
-                .await
-                .unwrap(),
+            Vault::new(
+                db.clone(),
+                GlobalActors::spawn_message_bus(),
+                Arc::new(DieselCustodyStore),
+            )
+            .await
+            .unwrap(),
         );
         actor
             .ask(Bootstrap {
-                seal_key_raw: SafeCell::new(b"integrity-test-seal-key".to_vec()),
+                seal_key: KeyCell::from([0u8; 32]),
+                custody: None,
             })
             .await
             .unwrap();

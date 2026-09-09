@@ -1,13 +1,10 @@
 use super::common::ChannelTransport;
-use arbiter_crypto::{
-    authn::{self, AuthChallenge, OPERATOR_CONTEXT},
-    safecell::{SafeCell, SafeCellHandle as _},
-};
+use arbiter_crypto::authn::{self, AuthChallenge, OPERATOR_CONTEXT};
 use arbiter_proto::transport::{Error as TransportError, Receiver, Sender};
 use arbiter_server::{
     actors::{GlobalActors, bootstrap::GetToken, vault::Bootstrap},
-    crypto::integrity,
-    db::{self, schema},
+    crypto::{KeyCell, integrity},
+    db::{self, models::OperatorId, schema},
     peers::operator::{self, Credentials, OperatorConnection, auth, vault_gate},
 };
 
@@ -154,13 +151,6 @@ impl Sender<auth::Inbound> for StartTestTransport {
 pub async fn bootstrap_token_auth() {
     let db = db::create_test_pool().await;
     let actors = GlobalActors::spawn(db.clone()).await.unwrap();
-    actors
-        .vault
-        .ask(Bootstrap {
-            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
-        })
-        .await
-        .unwrap();
     let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
 
     let (mut server_transport, mut test_transport) = ChannelTransport::new();
@@ -275,7 +265,8 @@ pub async fn challenge_auth() {
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
+            seal_key: KeyCell::from([0u8; 32]),
+            custody: None,
         })
         .await
         .unwrap();
@@ -285,10 +276,10 @@ pub async fn challenge_auth() {
 
     {
         let mut conn = db.get().await.unwrap();
-        let id: i32 = insert_into(schema::operator_identity::table)
+        let id: OperatorId = insert_into(schema::operator_identity::table)
             .values((schema::operator_identity::public_key.eq(pubkey_bytes.clone()),))
             .returning(schema::operator_identity::id)
-            .get_result(&mut conn)
+            .get_result::<OperatorId>(&mut conn)
             .await
             .unwrap();
         integrity::sign_entity(
@@ -361,7 +352,8 @@ pub async fn challenge_auth_rejects_integrity_tag_mismatch_when_unsealed() {
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
+            seal_key: KeyCell::from([0u8; 32]),
+            custody: None,
         })
         .await
         .unwrap();
@@ -434,7 +426,8 @@ pub async fn challenge_auth_rejects_invalid_signature() {
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
+            seal_key: KeyCell::from([0u8; 32]),
+            custody: None,
         })
         .await
         .unwrap();
@@ -444,10 +437,10 @@ pub async fn challenge_auth_rejects_invalid_signature() {
 
     {
         let mut conn = db.get().await.unwrap();
-        let id: i32 = insert_into(schema::operator_identity::table)
+        let id: OperatorId = insert_into(schema::operator_identity::table)
             .values((schema::operator_identity::public_key.eq(pubkey_bytes.clone()),))
             .returning(schema::operator_identity::id)
-            .get_result(&mut conn)
+            .get_result::<OperatorId>(&mut conn)
             .await
             .unwrap();
         integrity::sign_entity(
@@ -505,4 +498,93 @@ pub async fn challenge_auth_rejects_invalid_signature() {
         expected_err,
         Err(auth::Error::InvalidChallengeSolution)
     ));
+}
+
+/// The bootstrap token authorises registering committee members *before* the
+/// vault exists. Once any bootstrap path succeeds it must stop working, or its
+/// holder could keep minting operator identities until the next restart.
+#[tokio::test]
+#[test_log::test]
+pub async fn bootstrap_token_rejected_after_bootstrap() {
+    let db = db::create_test_pool().await;
+    let actors = GlobalActors::spawn(db.clone()).await.unwrap();
+    let token = actors.bootstrapper.ask(GetToken).await.unwrap().unwrap();
+
+    actors
+        .vault
+        .ask(Bootstrap {
+            seal_key: KeyCell::from([0u8; 32]),
+            custody: None,
+        })
+        .await
+        .unwrap();
+
+    // `Bootstrapped` travels through the message bus, so the token disappears
+    // a couple of actor turns after the bootstrap call returns.
+    let mut retired = false;
+    for _ in 0..100 {
+        if actors.bootstrapper.ask(GetToken).await.unwrap().is_none() {
+            retired = true;
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert!(
+        retired,
+        "the bootstrap token must be retired once the vault is bootstrapped"
+    );
+
+    let (mut server_transport, mut test_transport) = ChannelTransport::new();
+    let db_for_task = db.clone();
+    let task = tokio::spawn(async move {
+        let mut props = OperatorConnection::new(db_for_task, actors);
+        auth::authenticate(&mut props, &mut server_transport).await
+    });
+
+    let new_key = MlDsa87::key_gen(&mut rand::rng());
+    test_transport
+        .send(auth::Inbound::AuthChallengeRequest {
+            pubkey: verifying_key(&new_key).into(),
+            bootstrap_token: Some(token.into_bytes()),
+        })
+        .await
+        .unwrap();
+
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive challenge");
+    let challenge = match response {
+        Ok(auth::Outbound::AuthChallenge { challenge }) => challenge,
+        other => panic!("Expected AuthChallenge, got {other:?}"),
+    };
+
+    let signature = sign_operator_challenge(&new_key, &challenge);
+    test_transport
+        .send(auth::Inbound::AuthChallengeSolution {
+            signature: signature.to_bytes(),
+        })
+        .await
+        .unwrap();
+
+    let response = test_transport
+        .recv()
+        .await
+        .expect("should receive auth result");
+    assert!(
+        matches!(response, Err(auth::Error::InvalidBootstrapToken)),
+        "a spent bootstrap token must not authorise a new identity, got {response:?}"
+    );
+    assert!(task.await.unwrap().is_err(), "authentication must fail");
+
+    let mut conn = db.get().await.unwrap();
+    let registered: i64 = schema::operator_identity::table
+        .count()
+        .get_result(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(
+        registered, 0,
+        "no identity may be registered after the bootstrap"
+    );
 }

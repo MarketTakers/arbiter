@@ -1,16 +1,19 @@
 use crate::{
     crypto::{
-        KeyCell, derive_key,
+        KeyCell,
         encryption::v1::{self, Nonce},
         integrity::v1::HmacSha256,
     },
     db::{
         self,
+        custody::{CustodyRecord, CustodyStore},
         models::{self, RootKeyHistory, RootKeyHistoryId},
         schema::{self},
     },
 };
+
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
+use std::sync::Arc;
 
 use chrono::Utc;
 use diesel::{
@@ -60,6 +63,9 @@ pub enum Error {
     #[error("Database transaction error: {0}")]
     DatabaseTransaction(#[from] diesel::result::Error),
 
+    #[error("Custody storage error: {0}")]
+    Custody(#[from] db::custody::Error),
+
     #[error("Broken database")]
     BrokenDatabase,
 
@@ -95,12 +101,17 @@ pub struct Vault {
     db: db::DatabasePool,
     state: State,
     events: ActorRef<MessageBus>,
+    custody: Arc<dyn CustodyStore>,
     unseal_failures: u32,
 }
 
 #[messages]
 impl Vault {
-    pub async fn new(db: db::DatabasePool, events: ActorRef<MessageBus>) -> Result<Self, Error> {
+    pub async fn new(
+        db: db::DatabasePool,
+        events: ActorRef<MessageBus>,
+        custody: Arc<dyn CustodyStore>,
+    ) -> Result<Self, Error> {
         let state = {
             let mut conn = db.get().await?;
 
@@ -118,7 +129,13 @@ impl Vault {
             }
         };
 
-        Ok(Self { db, state, events, unseal_failures: 0 })
+        Ok(Self {
+            db,
+            state,
+            events,
+            custody,
+            unseal_failures: 0,
+        })
     }
 
     // Exclusive transaction to avoid race condtions if multiple vaults write
@@ -167,13 +184,16 @@ impl Vault {
         }
     }
 
+    /// Create the root key and take the vault into the unsealed state.
     #[message]
-    pub async fn bootstrap(&mut self, seal_key_raw: SafeCell<Vec<u8>>) -> Result<(), Error> {
+    pub async fn bootstrap(
+        &mut self,
+        mut seal_key: KeyCell,
+        custody: Option<CustodyRecord>,
+    ) -> Result<(), Error> {
         if !matches!(self.state, State::Unbootstrapped) {
             return Err(Error::AlreadyBootstrapped);
         }
-        let salt = v1::generate_salt();
-        let mut seal_key = derive_key(seal_key_raw, &salt);
         let mut root_key = KeyCell::new_secure_random();
 
         // Zero nonces are fine because they are one-time
@@ -193,6 +213,7 @@ impl Vault {
         let mut conn = self.db.get().await?;
 
         let data_encryption_nonce_bytes = data_encryption_nonce.to_vec();
+        let custody_store = Arc::clone(&self.custody);
         let root_key_history_id = conn
             .transaction(async |conn| {
                 let root_key_history_id = insert_into(schema::root_key_history::table)
@@ -202,7 +223,7 @@ impl Vault {
                         root_key_encryption_nonce: root_key_nonce.to_vec(),
                         data_encryption_nonce: data_encryption_nonce_bytes.clone(),
                         schema_version: 1,
-                        salt: salt.to_vec(),
+                        salt: v1::generate_salt().to_vec(),
                     })
                     .returning(schema::root_key_history::id)
                     .get_result(&mut *conn)
@@ -213,9 +234,11 @@ impl Vault {
                     .execute(&mut *conn)
                     .await?;
 
-                Result::<_, diesel::result::Error>::Ok(RootKeyHistoryId::from_raw(
-                    root_key_history_id,
-                ))
+                if let Some(record) = custody.as_ref() {
+                    custody_store.write_record(&mut *conn, record).await?;
+                }
+
+                Result::<_, Error>::Ok(RootKeyHistoryId::from_raw(root_key_history_id))
             })
             .await?;
 
@@ -231,7 +254,7 @@ impl Vault {
     }
 
     #[message]
-    pub async fn try_unseal(&mut self, seal_key_raw: SafeCell<Vec<u8>>) -> Result<(), Error> {
+    pub async fn try_unseal(&mut self, mut seal_key: KeyCell) -> Result<(), Error> {
         if self.unseal_failures >= MAX_UNSEAL_ATTEMPTS {
             return Err(Error::LockedOut);
         }
@@ -252,13 +275,6 @@ impl Vault {
                 .first(&mut conn)
                 .await?
         };
-
-        let salt = &current_key.salt;
-        let salt = v1::Salt::try_from(salt.as_slice()).map_err(|_| {
-            error!("Broken database: invalid salt for root key");
-            Error::BrokenDatabase
-        })?;
-        let mut seal_key = derive_key(seal_key_raw, &salt);
 
         let mut root_key = SafeCell::new(current_key.ciphertext.clone());
 
@@ -441,18 +457,20 @@ impl Vault {
 
 #[cfg(test)]
 mod tests {
-    use crate::actors::GlobalActors;
-    use crate::db::models::RootKeyHistory;
-    use arbiter_crypto::safecell::SafeCellHandle as _;
+    use crate::{actors::GlobalActors, db::custody::DieselCustodyStore};
 
     use super::*;
 
     async fn bootstrapped_actor(db: &db::DatabasePool) -> Vault {
-        let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
-            .await
-            .unwrap();
-        let seal_key = SafeCell::new(b"test-seal-key".to_vec());
-        actor.bootstrap(seal_key).await.unwrap();
+        let mut actor = Vault::new(
+            db.clone(),
+            GlobalActors::spawn_message_bus(),
+            Arc::new(DieselCustodyStore),
+        )
+        .await
+        .unwrap();
+        let seal_key = KeyCell::from([0u8; 32]);
+        actor.bootstrap(seal_key, None).await.unwrap();
         actor
     }
 

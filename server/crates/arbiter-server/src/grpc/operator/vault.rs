@@ -3,7 +3,6 @@ use crate::{
     peers::operator::{OperatorSession, session::handlers::HandleQueryVaultState},
 };
 use arbiter_proto::{
-    proto::shared::VaultState as ProtoVaultState,
     proto::operator::{
         operator_response::Payload as OperatorResponsePayload,
         vault::{
@@ -11,6 +10,7 @@ use arbiter_proto::{
             response::Payload as VaultResponsePayload,
         },
     },
+    proto::shared::VaultState as ProtoVaultState,
 };
 
 use kameo::actor::ActorRef;
@@ -33,11 +33,11 @@ pub(super) async fn dispatch(
 
     match payload {
         VaultRequestPayload::QueryState(()) => handle_query_vault_state(actor).await,
-        VaultRequestPayload::Unseal(_) | VaultRequestPayload::Bootstrap(_) => {
-            Err(Status::permission_denied(
-                "Vault is already unsealed; unseal/bootstrap not permitted in session",
-            ))
-        }
+        VaultRequestPayload::Unseal(_)
+        | VaultRequestPayload::Bootstrap(_)
+        | VaultRequestPayload::Rekey(_) => Err(Status::permission_denied(
+            "Vault is already unsealed; unseal/bootstrap not permitted in session",
+        )),
     }
 }
 

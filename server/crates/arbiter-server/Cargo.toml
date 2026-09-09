@@ -51,6 +51,7 @@ subtle = "2.6.1"
 x25519-dalek.workspace = true
 k256.workspace = true
 kameo_actors.workspace = true
+vsss-rs = "6.0.1"
 
 [dev-dependencies]
 proptest = "1.11.0"

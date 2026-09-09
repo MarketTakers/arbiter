@@ -1,5 +1,5 @@
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
-use encryption::v1::{Nonce, Salt};
+use encryption::v1::Nonce;
 
 use argon2::{Algorithm, Argon2};
 use chacha20poly1305::{
@@ -13,6 +13,7 @@ use rand::{
 
 pub mod encryption;
 pub mod integrity;
+pub mod shamir;
 
 pub struct KeyCell(pub SafeCell<Key>);
 impl From<SafeCell<Key>> for KeyCell {
@@ -20,6 +21,16 @@ impl From<SafeCell<Key>> for KeyCell {
         Self(value)
     }
 }
+
+impl From<[u8; 32]> for KeyCell {
+    fn from(bytes: [u8; 32]) -> Self {
+        let cell = SafeCell::new_inline(|key: &mut Key| {
+            key.copy_from_slice(&bytes);
+        });
+        Self(cell)
+    }
+}
+
 impl TryFrom<SafeCell<Vec<u8>>> for KeyCell {
     type Error = ();
 
@@ -58,6 +69,7 @@ impl KeyCell {
         let buffer = buffer.as_mut();
         cipher.encrypt_in_place(nonce, associated_data, buffer)
     }
+
     pub fn decrypt_in_place(
         &mut self,
         nonce: &Nonce,
@@ -93,8 +105,11 @@ impl KeyCell {
     }
 }
 
-/// Derive a fixed-length key from the password using Argon2id, which is designed for password hashing and key derivation.
-pub fn derive_key(mut password: SafeCell<Vec<u8>>, salt: &Salt) -> KeyCell {
+/// Derive a fixed-length key from a passphrase using Argon2id.
+///
+/// The passphrase is borrowed so that callers can keep it in protected memory
+/// and reuse it across retries instead of handing over a copy.
+pub fn derive_key(password: &mut SafeCell<Vec<u8>>, salt: &[u8]) -> KeyCell {
     let params = {
         #[cfg(debug_assertions)]
         {
@@ -132,11 +147,11 @@ mod tests {
     #[test]
     fn encrypt_decrypt() {
         static PASSWORD: &[u8] = b"password";
-        let password = SafeCell::new(PASSWORD.to_vec());
+        let mut password = SafeCell::new(PASSWORD.to_vec());
         let salt = generate_salt();
 
-        let mut key = derive_key(password, &salt);
-        let nonce = Nonce(*b"unique nonce 123 1231233"); // 24 bytes for XChaCha20Poly1305
+        let mut key = derive_key(&mut password, &salt);
+        let nonce = Nonce(*b"unique nonce 123 1231233");
         let associated_data = b"associated data";
         let mut buffer = b"secret data".to_vec();
 

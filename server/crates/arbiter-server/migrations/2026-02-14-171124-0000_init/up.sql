@@ -37,7 +37,8 @@ create table if not exists tls_history (
 create table if not exists arbiter_settings (
     id INTEGER not null PRIMARY KEY CHECK (id = 1), -- singleton row, id must be 1
     root_key_id integer references root_key_history (id) on delete RESTRICT, -- if null, means wasn't bootstrapped yet
-    tls_id integer references tls_history (id) on delete RESTRICT
+    tls_id integer references tls_history (id) on delete RESTRICT,
+    shamir_threshold integer
 ) STRICT;
 
 insert into arbiter_settings (id) values (1) on conflict do nothing;
@@ -56,6 +57,7 @@ create table if not exists operator (
 
     share blob not null,
     share_nonce blob not null,
+    share_salt blob not null,
 
     created_at integer not null default(unixepoch ('now')),
     updated_at integer not null default(unixepoch ('now'))

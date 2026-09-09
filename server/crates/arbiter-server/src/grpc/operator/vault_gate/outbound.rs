@@ -1,10 +1,9 @@
 use crate::{
-    actors::vault::VaultState,
+    actors::{vault::VaultState, vault_coordinator},
     grpc::{Convert, TryConvert},
     peers::operator::vault_gate::{self as vault_gate},
 };
 use arbiter_proto::proto::{
-    shared::VaultState as ProtoVaultState,
     operator::{
         operator_response::Payload as OperatorResponsePayload,
         vault::{
@@ -17,6 +16,7 @@ use arbiter_proto::proto::{
             },
         },
     },
+    shared::VaultState as ProtoVaultState,
 };
 
 use tonic::Status;
@@ -32,6 +32,26 @@ const fn wrap_unseal_response(payload: UnsealResponsePayload) -> OperatorRespons
     wrap_vault_response(VaultResponsePayload::Unseal(proto_unseal::Response {
         payload: Some(payload),
     }))
+}
+
+/// Ceremony errors are the operator's own doing far more often than ours, so
+/// they travel back as a specific status instead of a blanket internal error.
+fn ceremony_status(error: &vault_coordinator::Error) -> Status {
+    match error {
+        vault_coordinator::Error::AlreadyBootstrapping
+        | vault_coordinator::Error::AlreadyUnsealing
+        | vault_coordinator::Error::NotBootstrapping
+        | vault_coordinator::Error::DuplicateContribution => {
+            Status::failed_precondition(error.to_string())
+        }
+        vault_coordinator::Error::EmptyCommittee
+        | vault_coordinator::Error::UnsupportedCommittee
+        | vault_coordinator::Error::CommitteeTooLarge => {
+            Status::invalid_argument(error.to_string())
+        }
+        vault_coordinator::Error::InvalidPassphrase => Status::unauthenticated(error.to_string()),
+        _ => Status::internal("Vault ceremony failed"),
+    }
 }
 
 fn wrap_bootstrap_response(result: ProtoBootstrapResult) -> OperatorResponsePayload {
@@ -87,7 +107,6 @@ impl TryConvert for vault_gate::Outbound {
                 let proto_result = match result {
                     Ok(()) => ProtoUnsealResult::Success,
                     Err(vault_gate::Error::InvalidKey) => ProtoUnsealResult::InvalidKey,
-                    Err(vault_gate::Error::LockedOut) => ProtoUnsealResult::LockedOut,
                     Err(err) => {
                         warn!(?err, "unseal failed");
                         return Err(Status::internal("Failed to unseal vault"));
@@ -110,6 +129,56 @@ impl TryConvert for vault_gate::Outbound {
                     }
                 };
                 Ok(wrap_bootstrap_response(proto_result))
+            }
+            Self::HandleDeclareCommittee(result) => {
+                let proto_result = match result {
+                    Ok(()) => ProtoBootstrapResult::AwaitingContributions,
+                    Err(vault_gate::Error::Ceremony(
+                        vault_coordinator::Error::AlreadyBootstrapped,
+                    )) => ProtoBootstrapResult::AlreadyBootstrapped,
+                    Err(vault_gate::Error::Ceremony(err)) => {
+                        warn!(?err, "declare committee failed");
+                        return Err(ceremony_status(&err));
+                    }
+                    Err(err) => {
+                        warn!(?err, "declare committee failed");
+                        return Err(Status::internal("Failed to declare committee"));
+                    }
+                };
+                Ok(wrap_bootstrap_response(proto_result))
+            }
+            Self::HandleContributeBootstrapPassphrase(result) => {
+                let proto_result = match result {
+                    Ok(true) => ProtoBootstrapResult::Success,
+                    Ok(false) => ProtoBootstrapResult::AwaitingContributions,
+                    Err(vault_gate::Error::Ceremony(
+                        vault_coordinator::Error::AlreadyBootstrapped,
+                    )) => ProtoBootstrapResult::AlreadyBootstrapped,
+                    Err(vault_gate::Error::Ceremony(err)) => {
+                        warn!(?err, "contribute bootstrap passphrase failed");
+                        return Err(ceremony_status(&err));
+                    }
+                    Err(err) => {
+                        warn!(?err, "contribute bootstrap passphrase failed");
+                        return Err(Status::internal(
+                            "Failed to contribute bootstrap passphrase",
+                        ));
+                    }
+                };
+                Ok(wrap_bootstrap_response(proto_result))
+            }
+            Self::HandleContributeUnsealPassphrase(result) => {
+                let proto_result = match result {
+                    Ok(true) => ProtoUnsealResult::Success,
+                    Ok(false) => ProtoUnsealResult::AwaitingContributions,
+                    Err(err) => {
+                        warn!(?err, "contribute unseal passphrase failed");
+                        return Err(Status::internal("Failed to contribute unseal passphrase"));
+                    }
+                };
+                Ok(wrap_unseal_response(UnsealResponsePayload::Result(
+                    proto_result.into(),
+                )))
             }
         }
     }

@@ -2,24 +2,30 @@
     dead_code,
     reason = "Common test utilities that may not be used in every test"
 )]
-use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
+
 use arbiter_proto::transport::{Bi, Error, Receiver, Sender};
 use arbiter_server::{
     actors::{GlobalActors, vault::Vault},
-    db::{self, schema},
+    crypto::KeyCell,
+    db::{self, custody::DieselCustodyStore, schema},
 };
 
 use async_trait::async_trait;
 use diesel::QueryDsl;
 use diesel_async::RunQueryDsl;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 pub(crate) async fn bootstrapped_vault(db: &db::DatabasePool) -> Vault {
-    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
-        .await
-        .unwrap();
+    let mut actor = Vault::new(
+        db.clone(),
+        GlobalActors::spawn_message_bus(),
+        Arc::new(DieselCustodyStore),
+    )
+    .await
+    .unwrap();
     actor
-        .bootstrap(SafeCell::new(b"test-seal-key".to_vec()))
+        .bootstrap(KeyCell::from([0u8; 32]), None)
         .await
         .unwrap();
     actor

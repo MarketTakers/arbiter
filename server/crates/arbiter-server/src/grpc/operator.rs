@@ -1,11 +1,10 @@
 use crate::{
     grpc::request_tracker::RequestTracker,
-    peers::operator::{OutOfBand, OperatorConnection, OperatorSession},
+    peers::operator::{OperatorConnection, OperatorSession, OutOfBand},
 };
 use arbiter_proto::{
     proto::operator::{
-        OperatorRequest, OperatorResponse,
-        operator_request::Payload as OperatorRequestPayload,
+        OperatorRequest, OperatorResponse, operator_request::Payload as OperatorRequestPayload,
         operator_response::Payload as OperatorResponsePayload,
     },
     transport::{Error as TransportError, Receiver, Sender, grpc::GrpcBi},
@@ -111,6 +110,9 @@ async fn dispatch_inner(
         OperatorRequestPayload::Vault(req) => vault::dispatch(actor, req).await,
         OperatorRequestPayload::Evm(req) => evm::dispatch(actor, req).await,
         OperatorRequestPayload::SdkClient(req) => sdk_client::dispatch(actor, req).await,
+        OperatorRequestPayload::Governance(_) => {
+            Err(Status::permission_denied(stringify!(Governance)))
+        }
         OperatorRequestPayload::Auth(..) => {
             warn!("Unsupported post-auth operator auth request");
             Err(Status::invalid_argument("Unsupported operator request"))

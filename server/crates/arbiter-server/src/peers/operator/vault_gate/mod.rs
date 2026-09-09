@@ -3,8 +3,9 @@ use crate::{
     actors::{
         GlobalActors,
         vault::{self, Bootstrap, GetState, TryUnseal, VaultState, events},
+        vault_coordinator::{self, ContributeBootstrap, ContributeUnseal, StartBootstrap},
     },
-    crypto::integrity::{self},
+    crypto::{KeyCell, integrity},
     db::DatabasePool,
 };
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
@@ -27,16 +28,26 @@ pub enum Error {
     InvalidKey,
     #[error("Vault locked: too many failed unseal attempts")]
     LockedOut,
-
     #[error("State transition failed")]
     State,
-
+    #[error("Vault ceremony failed: {0}")]
+    Ceremony(#[from] vault_coordinator::Error),
     #[error("Internal error: {0}")]
     Internal(String),
 }
+
 impl Error {
     fn internal(message: impl Into<String>) -> Self {
         Self::Internal(message.into())
+    }
+
+    /// Preserve the coordinator's own error so the operator learns why a
+    /// ceremony was refused instead of reading "internal error".
+    fn ceremony<M>(error: SendError<M, vault_coordinator::Error>) -> Self {
+        match error {
+            SendError::HandlerError(inner) => Self::Ceremony(inner),
+            _ => Self::internal("VaultCoordinator unavailable"),
+        }
     }
 }
 
@@ -71,7 +82,6 @@ impl VaultGate {
 
 impl Actor for VaultGate {
     type Args = Self;
-
     type Error = ();
 
     async fn on_start(
@@ -102,11 +112,8 @@ impl VaultGate {
         associated_data: &[u8],
     ) -> Result<SafeCell<Vec<u8>>, ()> {
         let nonce = XNonce::from_slice(nonce);
-
         let cipher = XChaCha20Poly1305::new(secret.as_bytes().into());
-
         let mut key_buffer = SafeCell::new(ciphertext.to_vec());
-
         let decryption_result = key_buffer.write_inline(|write_handle| {
             cipher.decrypt_in_place(nonce, associated_data, write_handle)
         });
@@ -119,9 +126,13 @@ impl VaultGate {
             }
         }
     }
+
+    fn key_cell(buffer: SafeCell<Vec<u8>>) -> Result<KeyCell, Error> {
+        KeyCell::try_from(buffer).map_err(|()| Error::InvalidKey)
+    }
 }
 
-#[messages(messages = Inbound, replies = Outbound)]
+#[messages]
 impl VaultGate {
     #[message]
     pub fn handle_handshake(
@@ -130,14 +141,11 @@ impl VaultGate {
     ) -> Result<HandshakeResponse, Error> {
         let ephemeral_secret = EphemeralSecret::random();
         let public_key = PublicKey::from(&ephemeral_secret);
-
         let secret = ephemeral_secret.diffie_hellman(&client_pubkey);
-
         self.state = State::ReadyForExchange {
             server_key: public_key,
             secret,
         };
-
         Ok(HandshakeResponse {
             server_pubkey: public_key,
         })
@@ -153,20 +161,11 @@ impl VaultGate {
         let State::ReadyForExchange { secret, .. } = &self.state else {
             return Err(Error::State);
         };
+        let seal_key = Self::decrypt_key(secret, &nonce, &ciphertext, &associated_data)
+            .map_err(|()| Error::InvalidKey)
+            .and_then(Self::key_cell)?;
 
-        let Ok(seal_key_buffer) = Self::decrypt_key(secret, &nonce, &ciphertext, &associated_data)
-        else {
-            return Err(Error::InvalidKey);
-        };
-
-        match self
-            .actors
-            .vault
-            .ask(TryUnseal {
-                seal_key_raw: seal_key_buffer,
-            })
-            .await
-        {
+        match self.actors.vault.ask(TryUnseal { seal_key }).await {
             Ok(()) => {
                 info!("Successfully unsealed key with client-provided key");
                 Ok(())
@@ -194,17 +193,16 @@ impl VaultGate {
         let State::ReadyForExchange { secret, .. } = &self.state else {
             return Err(Error::State);
         };
-
-        let Ok(seal_key_buffer) = Self::decrypt_key(secret, &nonce, &ciphertext, &associated_data)
-        else {
-            return Err(Error::InvalidKey);
-        };
+        let seal_key = Self::decrypt_key(secret, &nonce, &ciphertext, &associated_data)
+            .map_err(|()| Error::InvalidKey)
+            .and_then(Self::key_cell)?;
 
         match self
             .actors
             .vault
             .ask(Bootstrap {
-                seal_key_raw: seal_key_buffer,
+                seal_key,
+                custody: None,
             })
             .await
         {
@@ -228,14 +226,53 @@ impl VaultGate {
 
     #[message]
     pub async fn handle_vault_state(&mut self) -> Result<VaultState, Error> {
-        let answer = self
-            .actors
+        self.actors
             .vault
             .ask(GetState {})
             .await
-            .map_err(|_| Error::internal("failed to query vault"))?;
+            .map_err(|_| Error::internal("failed to query vault"))
+    }
 
-        Ok(answer)
+    #[message]
+    pub async fn handle_declare_committee(&mut self, count: usize) -> Result<(), Error> {
+        self.actors
+            .vault_coordinator
+            .ask(StartBootstrap {
+                operator_id: self.auth_creds.id,
+                declared_count: count,
+            })
+            .await
+            .map_err(Error::ceremony)
+    }
+
+    #[message]
+    pub async fn handle_contribute_bootstrap_passphrase(
+        &mut self,
+        passphrase: Vec<u8>,
+    ) -> Result<bool, Error> {
+        self.actors
+            .vault_coordinator
+            .ask(ContributeBootstrap {
+                operator_id: self.auth_creds.id,
+                passphrase: SafeCell::new(passphrase),
+            })
+            .await
+            .map_err(Error::ceremony)
+    }
+
+    #[message]
+    pub async fn handle_contribute_unseal_passphrase(
+        &mut self,
+        passphrase: Vec<u8>,
+    ) -> Result<bool, Error> {
+        self.actors
+            .vault_coordinator
+            .ask(ContributeUnseal {
+                operator_id: self.auth_creds.id,
+                passphrase: SafeCell::new(passphrase),
+            })
+            .await
+            .map_err(Error::ceremony)
     }
 }
 
@@ -287,5 +324,77 @@ impl Message<events::Unsealed> for VaultGate {
             let _ = tx.send(Ok(()));
         }
         ctx.stop();
+    }
+}
+
+pub enum Inbound {
+    HandleHandshake(HandleHandshake),
+    HandleUnsealEncryptedKey(HandleUnsealEncryptedKey),
+    HandleBootstrapEncryptedKey(HandleBootstrapEncryptedKey),
+    HandleVaultState,
+    HandleDeclareCommittee(HandleDeclareCommittee),
+    HandleContributeBootstrapPassphrase(HandleContributeBootstrapPassphrase),
+    HandleContributeUnsealPassphrase(HandleContributeUnsealPassphrase),
+}
+
+pub enum Outbound {
+    HandleHandshake(Result<HandshakeResponse, Error>),
+    HandleUnsealEncryptedKey(Result<(), Error>),
+    HandleBootstrapEncryptedKey(Result<(), Error>),
+    HandleVaultState(Result<VaultState, Error>),
+    HandleDeclareCommittee(Result<(), Error>),
+    HandleContributeBootstrapPassphrase(Result<bool, Error>),
+    HandleContributeUnsealPassphrase(Result<bool, Error>),
+}
+
+impl Message<Inbound> for VaultGate {
+    type Reply = Result<Outbound, Error>;
+
+    async fn handle(
+        &mut self,
+        msg: Inbound,
+        _ctx: &mut kameo::prelude::Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        match msg {
+            Inbound::HandleHandshake(message) => Ok(Outbound::HandleHandshake(
+                self.handle_handshake(message.client_pubkey),
+            )),
+            Inbound::HandleUnsealEncryptedKey(message) => Ok(Outbound::HandleUnsealEncryptedKey(
+                self.handle_unseal_encrypted_key(
+                    message.nonce,
+                    message.ciphertext,
+                    message.associated_data,
+                )
+                .await,
+            )),
+            Inbound::HandleBootstrapEncryptedKey(message) => {
+                Ok(Outbound::HandleBootstrapEncryptedKey(
+                    self.handle_bootstrap_encrypted_key(
+                        message.nonce,
+                        message.ciphertext,
+                        message.associated_data,
+                    )
+                    .await,
+                ))
+            }
+            Inbound::HandleVaultState => {
+                Ok(Outbound::HandleVaultState(self.handle_vault_state().await))
+            }
+            Inbound::HandleDeclareCommittee(message) => Ok(Outbound::HandleDeclareCommittee(
+                self.handle_declare_committee(message.count).await,
+            )),
+            Inbound::HandleContributeBootstrapPassphrase(message) => {
+                Ok(Outbound::HandleContributeBootstrapPassphrase(
+                    self.handle_contribute_bootstrap_passphrase(message.passphrase)
+                        .await,
+                ))
+            }
+            Inbound::HandleContributeUnsealPassphrase(message) => {
+                Ok(Outbound::HandleContributeUnsealPassphrase(
+                    self.handle_contribute_unseal_passphrase(message.passphrase)
+                        .await,
+                ))
+            }
+        }
     }
 }

@@ -20,8 +20,8 @@ impl Actor for OperatorRegistry {
 
     type Error = Infallible;
 
-    async fn on_start(args: Self::Args, _: ActorRef<Self>) -> Result<Self, Self::Error> {
-        Ok(args)
+    fn on_start(args: Self::Args, _: ActorRef<Self>) -> impl Future<Output = Result<Self, Self::Error>> {
+        std::future::ready(Ok(args))
     }
 
     async fn on_link_died(

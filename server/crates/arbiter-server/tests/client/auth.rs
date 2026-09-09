@@ -1,15 +1,12 @@
 use super::common::ChannelTransport;
-use arbiter_crypto::{
-    authn::{self, AuthChallenge, CLIENT_CONTEXT},
-    safecell::{SafeCell, SafeCellHandle as _},
-};
+use arbiter_crypto::authn::{self, AuthChallenge, CLIENT_CONTEXT};
 use arbiter_proto::{
     ClientMetadata,
     transport::{Receiver, Sender},
 };
 use arbiter_server::{
     actors::{GlobalActors, vault::Bootstrap},
-    crypto::integrity,
+    crypto::{KeyCell, integrity},
     db::{self, schema},
     peers::client::{ClientConnection, ClientCredentials, auth, connect_client},
 };
@@ -100,7 +97,8 @@ async fn spawn_test_actors(db: &db::DatabasePool) -> GlobalActors {
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new(b"test-seal-key".to_vec()),
+            seal_key: KeyCell::from([0u8; 32]),
+            custody: None,
         })
         .await
         .unwrap();
@@ -340,7 +338,10 @@ pub async fn metadata_frozen_after_approval_ignores_reconnect_changes() {
             .first::<(String, Option<String>, Option<String>)>(&mut conn)
             .await
             .unwrap();
-        assert_eq!(metadata_count, 1, "frozen: no new metadata row on reconnect");
+        assert_eq!(
+            metadata_count, 1,
+            "frozen: no new metadata row on reconnect"
+        );
         assert_eq!(history_count, 0, "frozen: no history entry on reconnect");
         assert_eq!(
             current,

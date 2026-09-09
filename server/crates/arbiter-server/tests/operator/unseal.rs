@@ -1,13 +1,11 @@
-use arbiter_crypto::{
-    authn,
-    safecell::{SafeCell, SafeCellHandle as _},
-};
+use arbiter_crypto::authn;
 use arbiter_server::{
     actors::{
         GlobalActors,
         vault::{Bootstrap, Seal},
     },
-    db,
+    crypto::KeyCell,
+    db::{self, models::OperatorId},
     peers::operator::{
         Credentials,
         vault_gate::{
@@ -22,7 +20,7 @@ use tokio::sync::oneshot;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 async fn setup_sealed_gate(
-    seal_key: &[u8],
+    seal_key: [u8; 32],
 ) -> (
     db::DatabasePool,
     kameo::actor::ActorRef<VaultGate>,
@@ -34,7 +32,8 @@ async fn setup_sealed_gate(
     actors
         .vault
         .ask(Bootstrap {
-            seal_key_raw: SafeCell::new(seal_key.to_vec()),
+            seal_key: KeyCell::from(seal_key),
+            custody: None,
         })
         .await
         .unwrap();
@@ -42,7 +41,10 @@ async fn setup_sealed_gate(
 
     let (promotion_tx, promotion_rx) = oneshot::channel();
     let pubkey = authn::SigningKey::generate().public_key();
-    let auth_creds = Credentials { id: 1, pubkey };
+    let auth_creds = Credentials {
+        id: OperatorId::from_raw(1),
+        pubkey,
+    };
     let gate = VaultGate::spawn(VaultGate::new(auth_creds, actors, db.clone(), promotion_tx));
 
     (db, gate, promotion_rx)
@@ -83,10 +85,10 @@ async fn client_dh_encrypt(
 #[tokio::test]
 #[test_log::test]
 pub async fn unseal_success() {
-    let seal_key = b"test-seal-key";
+    let seal_key = [7u8; 32];
     let (_db, gate, _promotion_rx) = setup_sealed_gate(seal_key).await;
 
-    let encrypted_key = client_dh_encrypt(&gate, seal_key).await;
+    let encrypted_key = client_dh_encrypt(&gate, &seal_key).await;
 
     let response = gate.ask(encrypted_key).await;
     assert!(matches!(response, Ok(())));
@@ -95,10 +97,10 @@ pub async fn unseal_success() {
 #[tokio::test]
 #[test_log::test]
 pub async fn unseal_wrong_seal_key() {
-    let seal_key = b"test-seal-key";
+    let seal_key = [7u8; 32];
     let (_db, gate, _promotion_rx) = setup_sealed_gate(seal_key).await;
 
-    let encrypted_key = client_dh_encrypt(&gate, b"wrong-key").await;
+    let encrypted_key = client_dh_encrypt(&gate, &[8u8; 32]).await;
 
     let response = gate.ask(encrypted_key).await;
     assert!(matches!(
@@ -112,7 +114,7 @@ pub async fn unseal_wrong_seal_key() {
 #[tokio::test]
 #[test_log::test]
 pub async fn unseal_corrupted_ciphertext() {
-    let seal_key = b"test-seal-key";
+    let seal_key = [7u8; 32];
     let (_db, gate, _promotion_rx) = setup_sealed_gate(seal_key).await;
 
     let client_secret = EphemeralSecret::random();
@@ -143,11 +145,11 @@ pub async fn unseal_corrupted_ciphertext() {
 #[tokio::test]
 #[test_log::test]
 pub async fn unseal_retry_after_invalid_key() {
-    let seal_key = b"real-seal-key";
+    let seal_key = [9u8; 32];
     let (_db, gate, _promotion_rx) = setup_sealed_gate(seal_key).await;
 
     {
-        let encrypted_key = client_dh_encrypt(&gate, b"wrong-key").await;
+        let encrypted_key = client_dh_encrypt(&gate, &[8u8; 32]).await;
 
         let response = gate.ask(encrypted_key).await;
         assert!(matches!(
@@ -159,7 +161,7 @@ pub async fn unseal_retry_after_invalid_key() {
     }
 
     {
-        let encrypted_key = client_dh_encrypt(&gate, seal_key).await;
+        let encrypted_key = client_dh_encrypt(&gate, &seal_key).await;
 
         let response = gate.ask(encrypted_key).await;
         assert!(matches!(response, Ok(())));
