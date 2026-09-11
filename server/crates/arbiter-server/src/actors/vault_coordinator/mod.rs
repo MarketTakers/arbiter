@@ -192,12 +192,14 @@ async fn finalize_bootstrap(
     let mut shares = shamir::split_key(threshold, total, &mut seal_key, UnwrapErr(SysRng))
         .map_err(|error| Error::Shamir(error.to_string()))?;
 
+    if shares.len() < total {
+        return Err(Error::Shamir("missing share for operator".to_owned()));
+    }
+
     let mut encrypted = Vec::with_capacity(total);
-    for (index, (operator_id, passphrase)) in contributions.0.iter_mut().enumerate() {
-        let share = shares
-            .read_inline(|shares| shares.get(index).cloned())
-            .ok_or_else(|| Error::Shamir("missing share for operator".to_owned()))?;
-        encrypted.push((*operator_id, encrypt_share(passphrase, &share)?));
+    for ((operator_id, passphrase), share) in contributions.0.iter_mut().zip(shares.iter_mut()) {
+        let share = share.read_inline(|share| encrypt_share(passphrase, share))?;
+        encrypted.push((*operator_id, share));
     }
 
     vault
@@ -227,12 +229,9 @@ async fn finalize_unseal(
             .await?
     };
 
-    let mut plaintext = SafeCell::new(Vec::with_capacity(stored.len()));
+    let mut plaintext = Vec::with_capacity(stored.len());
     for ((_, passphrase), share) in contributions.0.iter_mut().zip(stored) {
-        let mut decrypted = decrypt_share(passphrase, share)?;
-        decrypted.read_inline(|share| {
-            plaintext.write_inline(|shares| shares.push(share.clone()));
-        });
+        plaintext.push(decrypt_share(passphrase, share)?);
     }
 
     let seal_key = shamir::combine_shares(threshold, &mut plaintext)

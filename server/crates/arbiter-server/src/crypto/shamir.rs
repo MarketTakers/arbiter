@@ -16,10 +16,13 @@ pub enum ShamirError {
     Combine(String),
 }
 
-/// Return the required majority threshold for an ordinary operator committee.
+/// Return the required threshold for a Shamir share pool of `committee_size`.
 ///
-/// Committees of two are rejected: a majority of two is two, which gives each
-/// member a veto over every unseal without giving either one recovery.
+/// A pool of two is rejected: a majority of two is two, which gives each holder
+/// a veto over every unseal without giving either one recovery. That rejects no
+/// supported committee, because a two-operator vault must carry at least one
+/// recovery share and so never splits into a pool of two -- see
+/// `docs/ARCHITECTURE.md` 3.9.
 #[expect(
     clippy::integer_division,
     reason = "majority thresholds use integer arithmetic"
@@ -40,12 +43,21 @@ pub fn split_key(
     total: usize,
     key: &mut KeyCell,
     rng: impl CryptoRng,
-) -> Result<SafeCell<Vec<Vec<u8>>>, ShamirError> {
+) -> Result<Vec<SafeCell<Vec<u8>>>, ShamirError> {
     if total == 0 || threshold == 0 || threshold > total || total == 2 || total > MAX_COMMITTEE_SIZE
     {
         return Err(ShamirError::Split(
             "unsupported committee parameters".to_owned(),
         ));
+    }
+
+    // Nothing to interpolate when one share suffices.
+    if threshold == 1 {
+        return Ok(key.0.read_inline(|key| {
+            std::iter::repeat_with(|| SafeCell::new(key.as_slice().to_vec()))
+                .take(total)
+                .collect()
+        }));
     }
 
     key.0.read_inline(|key| {
@@ -54,14 +66,8 @@ pub fn split_key(
             .try_into()
             .map_err(|_| ShamirError::Split("unexpected seal key length".to_owned()))?;
 
-        if threshold == 1 {
-            return Ok(SafeCell::new(
-                std::iter::repeat_n(key.to_vec(), total).collect(),
-            ));
-        }
-
         Gf256::split_array(threshold, total, key, rng)
-            .map(SafeCell::new)
+            .map(|shares| shares.into_iter().map(SafeCell::new).collect())
             .map_err(|error| ShamirError::Split(format!("{error:?}")))
     })
 }
@@ -74,30 +80,43 @@ pub fn split_key(
 /// sized.
 pub fn combine_shares(
     threshold: usize,
-    shares: &mut SafeCell<Vec<Vec<u8>>>,
+    shares: &mut [SafeCell<Vec<u8>>],
 ) -> Result<KeyCell, ShamirError> {
     if threshold == 0 {
         return Err(ShamirError::Combine("threshold is zero".to_owned()));
     }
-    if shares.read().len() < threshold {
+    if shares.len() < threshold {
         return Err(ShamirError::Combine(
             "not enough shares supplied".to_owned(),
         ));
     }
 
-    let combined = shares.read_inline(|shares| {
-        if threshold == 1 {
-            let share = shares
-                .first()
-                .ok_or_else(|| ShamirError::Combine("no shares supplied".to_owned()))?;
-            return Ok(SafeCell::new(share.clone()));
-        }
-        Gf256::combine_array(shares)
+    // Mirror of the one-of-one case in [`split_key`]: the share is the key.
+    if threshold == 1 {
+        let share = shares
+            .first_mut()
+            .ok_or_else(|| ShamirError::Combine("no shares supplied".to_owned()))?;
+        return reconstructed_key(share.read_inline(|share| SafeCell::new(share.clone())));
+    }
+
+    let mut gathered = SafeCell::new(Vec::with_capacity(shares.len()));
+    for share in shares.iter_mut() {
+        share.read_inline(|share| {
+            gathered.write_inline(|gathered| gathered.push(share.clone()));
+        });
+    }
+
+    let combined = gathered.read_inline(|gathered| {
+        Gf256::combine_array(gathered.as_slice())
             .map(SafeCell::new)
             .map_err(|error| ShamirError::Combine(format!("{error:?}")))
     })?;
 
-    KeyCell::try_from(combined)
+    reconstructed_key(combined)
+}
+
+fn reconstructed_key(bytes: SafeCell<Vec<u8>>) -> Result<KeyCell, ShamirError> {
+    KeyCell::try_from(bytes)
         .map_err(|()| ShamirError::Combine("unexpected reconstructed key length".to_owned()))
 }
 
@@ -108,6 +127,7 @@ mod tests {
     use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
     use rand::rngs::SysRng;
     use rand_core::UnwrapErr;
+    use rstest::rstest;
 
     fn key_bytes(mut key: KeyCell) -> [u8; 32] {
         key.0.read_inline(|key| {
@@ -117,28 +137,29 @@ mod tests {
         })
     }
 
-    fn select(shares: &mut SafeCell<Vec<Vec<u8>>>, indexes: &[usize]) -> SafeCell<Vec<Vec<u8>>> {
-        shares.read_inline(|shares| {
-            SafeCell::new(
-                indexes
-                    .iter()
-                    .filter_map(|index| shares.get(*index).cloned())
-                    .collect(),
-            )
-        })
+    fn select(shares: &mut [SafeCell<Vec<u8>>], indexes: &[usize]) -> Vec<SafeCell<Vec<u8>>> {
+        indexes
+            .iter()
+            .filter_map(|index| {
+                shares
+                    .get_mut(*index)
+                    .map(|share| share.read_inline(|share| SafeCell::new(share.clone())))
+            })
+            .collect()
     }
 
-    #[test]
-    fn threshold_shares_reconstruct_fixed_key() {
+    #[rstest]
+    #[case(&[0, 1])]
+    #[case(&[0, 2])]
+    #[case(&[1, 2])]
+    fn threshold_shares_reconstruct_fixed_key(#[case] indexes: &[usize]) {
         let expected = [9_u8; 32];
         let mut key = KeyCell::from(expected);
         let rng = UnwrapErr(SysRng);
         let mut shares = split_key(2, 3, &mut key, rng).expect("split should succeed");
-        for indexes in [[0_usize, 1_usize], [0, 2], [1, 2]] {
-            let mut selected = select(&mut shares, &indexes);
-            let combined = combine_shares(2, &mut selected).expect("combine should succeed");
-            assert_eq!(key_bytes(combined), expected);
-        }
+        let mut selected = select(&mut shares, indexes);
+        let combined = combine_shares(2, &mut selected).expect("combine should succeed");
+        assert_eq!(key_bytes(combined), expected);
     }
 
     #[test]
@@ -163,22 +184,23 @@ mod tests {
         );
     }
 
-    #[test]
-    fn empty_committee_has_no_threshold() {
-        assert_eq!(shamir_threshold(0), None);
+    #[rstest]
+    #[case(0, None)]
+    #[case(1, Some(1))]
+    #[case(2, None)]
+    #[case(3, Some(2))]
+    #[case(4, Some(3))]
+    #[case(MAX_COMMITTEE_SIZE, Some(128))]
+    #[case(MAX_COMMITTEE_SIZE + 1, None)]
+    fn committee_threshold_is_a_majority(
+        #[case] committee_size: usize,
+        #[case] expected: Option<usize>,
+    ) {
+        assert_eq!(shamir_threshold(committee_size), expected);
     }
 
     #[test]
-    fn committee_threshold_is_majority_for_three_or_more() {
-        assert_eq!(shamir_threshold(1), Some(1));
-        assert_eq!(shamir_threshold(3), Some(2));
-        assert_eq!(shamir_threshold(4), Some(3));
-    }
-
-    #[test]
-    fn oversized_committee_has_no_threshold() {
-        assert_eq!(shamir_threshold(MAX_COMMITTEE_SIZE), Some(128));
-        assert_eq!(shamir_threshold(MAX_COMMITTEE_SIZE + 1), None);
+    fn oversized_committee_is_rejected_by_split() {
         let mut key = KeyCell::from([1_u8; 32]);
         let rng = UnwrapErr(SysRng);
         assert!(
@@ -189,7 +211,6 @@ mod tests {
 
     #[test]
     fn two_operator_committee_is_explicitly_unsupported() {
-        assert_eq!(shamir_threshold(2), None);
         let mut key = KeyCell::from([7_u8; 32]);
         let rng = UnwrapErr(SysRng);
         assert!(

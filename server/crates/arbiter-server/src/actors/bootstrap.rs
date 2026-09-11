@@ -76,6 +76,9 @@ pub enum Error {
 /// declared, so the token stays valid across several registrations and is
 /// retired by the `Bootstrapped` event rather than by first use, whichever
 /// bootstrap path fired it.
+///
+/// Every daemon start mints a fresh token and overwrites the file: a token
+/// handed out by an earlier run is dead.
 pub struct Bootstrapper {
     token: Option<SafeCell<[u8; TOKEN_LENGTH]>>,
     token_path: Option<PathBuf>,
@@ -116,38 +119,10 @@ impl Bootstrapper {
             });
         }
 
-        let registered = diesel::select(diesel::dsl::exists(
-            schema::operator_identity::table.select(schema::operator_identity::id),
-        ))
-        .get_result::<bool>(&mut conn)
-        .await?;
-
-        let token = if registered {
-            match tokio::fs::read_to_string(&path).await {
-                Ok(existing)
-                    if existing.len() == TOKEN_LENGTH
-                        && existing.chars().all(|c| c.is_ascii_alphanumeric()) =>
-                {
-                    let mut cell = SafeCell::new([0u8; TOKEN_LENGTH]);
-                    cell.write().copy_from_slice(existing.as_bytes());
-                    cell
-                }
-                Ok(_) | Err(_) => generate_token(&path).await?,
-            }
-        } else {
-            generate_token(&path).await?
-        };
-
         Ok(Self {
-            token: Some(token),
+            token: Some(generate_token(&path).await?),
             token_path: Some(path),
             events,
-        })
-    }
-
-    fn is_correct_token(&mut self, token: &[u8]) -> bool {
-        self.token.as_mut().is_some_and(|expected| {
-            expected.read_inline(|bytes| bool::from(bytes.as_ref().ct_eq(token)))
         })
     }
 
@@ -170,12 +145,14 @@ impl Message<events::Bootstrapped> for Bootstrapper {
         self.forget().await;
     }
 }
-
+    
 #[messages]
 impl Bootstrapper {
     #[message]
     pub fn verify_token(&mut self, token: Vec<u8>) -> bool {
-        self.is_correct_token(&token)
+        self.token.as_mut().is_some_and(|expected| {
+            expected.read_inline(|bytes| bool::from(bytes.as_ref().ct_eq(token.as_slice())))
+        })
     }
 
     #[message]
