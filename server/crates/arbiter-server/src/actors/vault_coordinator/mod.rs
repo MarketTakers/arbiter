@@ -2,9 +2,7 @@
 //!
 //! The coordinator collects one passphrase per committee member, then hands the
 //! assembled material to [`Vault`] in a single message. It owns no Diesel code:
-//! everything it reads or writes goes through [`CustodyStore`].
-
-use std::sync::Arc;
+//! everything it reads or writes goes through [`db::custody`].
 
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use argon2::RECOMMENDED_SALT_LEN;
@@ -17,7 +15,7 @@ use crate::{
     crypto::{KeyCell, derive_key, encryption::v1::Nonce, shamir},
     db::{
         self,
-        custody::{CustodyRecord, CustodyStore, EncryptedShare},
+        custody::{self, CustodyRecord, EncryptedShare},
         models::OperatorId,
     },
 };
@@ -52,7 +50,7 @@ pub enum Error {
     #[error("Database connection error: {0}")]
     DatabaseConnection(#[from] db::PoolError),
     #[error("Custody storage error: {0}")]
-    Custody(#[from] db::custody::Error),
+    Custody(#[from] custody::Error),
     #[error("Encryption error")]
     Encryption,
     #[error("The vault is already bootstrapped")]
@@ -111,20 +109,14 @@ enum CoordinatorState {
 pub struct VaultCoordinator {
     db: db::DatabasePool,
     vault: ActorRef<Vault>,
-    custody: Arc<dyn CustodyStore>,
     state: CoordinatorState,
 }
 
 impl VaultCoordinator {
-    pub fn new(
-        db: db::DatabasePool,
-        vault: ActorRef<Vault>,
-        custody: Arc<dyn CustodyStore>,
-    ) -> Self {
+    pub const fn new(db: db::DatabasePool, vault: ActorRef<Vault>) -> Self {
         Self {
             db,
             vault,
-            custody,
             state: CoordinatorState::Idle,
         }
     }
@@ -217,16 +209,13 @@ async fn finalize_bootstrap(
 /// Reconstruct the seal key from the contributed passphrases and unseal.
 async fn finalize_unseal(
     db: &db::DatabasePool,
-    custody: &Arc<dyn CustodyStore>,
     vault: &ActorRef<Vault>,
     threshold: usize,
     contributions: &mut Contributions,
 ) -> Result<(), Error> {
     let stored = {
         let mut conn = db.get().await?;
-        custody
-            .shares(&mut conn, &contributions.operators())
-            .await?
+        custody::shares(&mut conn, &contributions.operators()).await?
     };
 
     let mut plaintext = Vec::with_capacity(stored.len());
@@ -336,7 +325,7 @@ impl VaultCoordinator {
         if matches!(self.state, CoordinatorState::Idle) {
             let threshold = {
                 let mut conn = self.db.get().await?;
-                self.custody.threshold(&mut conn).await?
+                custody::threshold(&mut conn).await?
             };
             self.state = CoordinatorState::Unsealing {
                 threshold,
@@ -374,15 +363,7 @@ impl VaultCoordinator {
             unreachable!("state was matched as Unsealing above")
         };
 
-        match finalize_unseal(
-            &self.db,
-            &self.custody,
-            &self.vault,
-            threshold,
-            &mut contributions,
-        )
-        .await
-        {
+        match finalize_unseal(&self.db, &self.vault, threshold, &mut contributions).await {
             Ok(()) => Ok(true),
             Err(error) => {
                 self.state = CoordinatorState::Unsealing {

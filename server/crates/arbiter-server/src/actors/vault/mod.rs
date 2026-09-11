@@ -6,14 +6,13 @@ use crate::{
     },
     db::{
         self,
-        custody::{CustodyRecord, CustodyStore},
+        custody::{self, CustodyRecord},
         models::{self, RootKeyHistory, RootKeyHistoryId},
         schema::{self},
     },
 };
 
 use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
-use std::sync::Arc;
 
 use chrono::Utc;
 use diesel::{
@@ -64,7 +63,7 @@ pub enum Error {
     DatabaseTransaction(#[from] diesel::result::Error),
 
     #[error("Custody storage error: {0}")]
-    Custody(#[from] db::custody::Error),
+    Custody(#[from] custody::Error),
 
     #[error("Broken database")]
     BrokenDatabase,
@@ -101,17 +100,12 @@ pub struct Vault {
     db: db::DatabasePool,
     state: State,
     events: ActorRef<MessageBus>,
-    custody: Arc<dyn CustodyStore>,
     unseal_failures: u32,
 }
 
 #[messages]
 impl Vault {
-    pub async fn new(
-        db: db::DatabasePool,
-        events: ActorRef<MessageBus>,
-        custody: Arc<dyn CustodyStore>,
-    ) -> Result<Self, Error> {
+    pub async fn new(db: db::DatabasePool, events: ActorRef<MessageBus>) -> Result<Self, Error> {
         let state = {
             let mut conn = db.get().await?;
 
@@ -133,7 +127,6 @@ impl Vault {
             db,
             state,
             events,
-            custody,
             unseal_failures: 0,
         })
     }
@@ -213,7 +206,6 @@ impl Vault {
         let mut conn = self.db.get().await?;
 
         let data_encryption_nonce_bytes = data_encryption_nonce.to_vec();
-        let custody_store = Arc::clone(&self.custody);
         let root_key_history_id = conn
             .transaction(async |conn| {
                 let root_key_history_id = insert_into(schema::root_key_history::table)
@@ -235,7 +227,7 @@ impl Vault {
                     .await?;
 
                 if let Some(record) = custody.as_ref() {
-                    custody_store.write_record(&mut *conn, record).await?;
+                    custody::write_record(&mut *conn, record).await?;
                 }
 
                 Result::<_, Error>::Ok(RootKeyHistoryId::from_raw(root_key_history_id))
@@ -457,18 +449,14 @@ impl Vault {
 
 #[cfg(test)]
 mod tests {
-    use crate::{actors::GlobalActors, db::custody::DieselCustodyStore};
+    use crate::actors::GlobalActors;
 
     use super::*;
 
     async fn bootstrapped_actor(db: &db::DatabasePool) -> Vault {
-        let mut actor = Vault::new(
-            db.clone(),
-            GlobalActors::spawn_message_bus(),
-            Arc::new(DieselCustodyStore),
-        )
-        .await
-        .unwrap();
+        let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+            .await
+            .unwrap();
         let seal_key = KeyCell::from([0u8; 32]);
         actor.bootstrap(seal_key, None).await.unwrap();
         actor

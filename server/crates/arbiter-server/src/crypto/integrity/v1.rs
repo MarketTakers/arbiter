@@ -206,9 +206,6 @@ pub async fn is_signing_available(vault: &ActorRef<Vault>) -> Result<bool, Error
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use crate::db::custody::DieselCustodyStore;
     use diesel::{ExpressionMethods as _, QueryDsl};
     use diesel_async::RunQueryDsl;
     use kameo::{actor::ActorRef, prelude::Spawn};
@@ -234,13 +231,9 @@ mod tests {
 
     async fn bootstrapped_vault(db: &db::DatabasePool) -> ActorRef<Vault> {
         let actor = Vault::spawn(
-            Vault::new(
-                db.clone(),
-                GlobalActors::spawn_message_bus(),
-                Arc::new(DieselCustodyStore),
-            )
-            .await
-            .unwrap(),
+            Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+                .await
+                .unwrap(),
         );
         actor
             .ask(Bootstrap {
