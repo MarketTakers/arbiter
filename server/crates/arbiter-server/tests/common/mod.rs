@@ -7,23 +7,18 @@ use arbiter_proto::transport::{Bi, Error, Receiver, Sender};
 use arbiter_server::{
     actors::{GlobalActors, vault::Vault},
     crypto::KeyCell,
-    db::{self, custody::DieselCustodyStore, schema},
+    db::{self, schema},
 };
 
 use async_trait::async_trait;
 use diesel::QueryDsl;
 use diesel_async::RunQueryDsl;
-use std::sync::Arc;
 use tokio::sync::mpsc;
 
 pub(crate) async fn bootstrapped_vault(db: &db::DatabasePool) -> Vault {
-    let mut actor = Vault::new(
-        db.clone(),
-        GlobalActors::spawn_message_bus(),
-        Arc::new(DieselCustodyStore),
-    )
-    .await
-    .unwrap();
+    let mut actor = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+        .await
+        .unwrap();
     actor
         .bootstrap(KeyCell::from([0u8; 32]), None)
         .await
