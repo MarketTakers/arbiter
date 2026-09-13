@@ -4,11 +4,16 @@ use arbiter_crypto::safecell::{SafeCell, SafeCellHandle as _};
 use arbiter_server::{
     actors::{
         GlobalActors,
-        vault::{Bootstrap, GetState, Seal, VaultState},
+        vault::{Bootstrap, Error as VaultError, GetState, Seal, Vault, VaultState},
         vault_coordinator::{ContributeBootstrap, ContributeUnseal, StartBootstrap},
     },
     crypto::{KeyCell, shamir},
-    db::{self, models::OperatorId, schema},
+    db::{
+        self,
+        custody::{CustodyRecord, EncryptedShare},
+        models::OperatorId,
+        schema,
+    },
 };
 
 use diesel::{ExpressionMethods as _, QueryDsl};
@@ -173,6 +178,71 @@ async fn refused_bootstrap_stores_no_shares() {
         None,
         "a refused bootstrap must not leave a threshold behind"
     );
+}
+
+/// A failing custody write must take the whole bootstrap down with it: a vault
+/// that kept its root key but lost the shares could never be unsealed again.
+#[tokio::test]
+#[test_log::test]
+async fn custody_write_failure_rolls_back_bootstrap() {
+    let db = db::create_test_pool().await;
+    let operators = register_operators(&db, 1).await;
+    let record = CustodyRecord {
+        threshold: 1,
+        shares: operators
+            .into_iter()
+            .map(|operator_id| {
+                (
+                    operator_id,
+                    EncryptedShare {
+                        ciphertext: vec![1; 32],
+                        nonce: vec![2; 24],
+                        salt: vec![3; 16],
+                    },
+                )
+            })
+            .collect(),
+    };
+    let mut vault = Vault::new(db.clone(), GlobalActors::spawn_message_bus())
+        .await
+        .unwrap();
+
+    // The threshold update is the last statement of the custody write, so the
+    // trigger fails the transaction once the share row is already in place.
+    let mut conn = db.get().await.unwrap();
+    diesel::sql_query(
+        "CREATE TRIGGER fail_custody_threshold BEFORE UPDATE OF shamir_threshold ON arbiter_settings BEGIN SELECT RAISE(ABORT, 'forced custody failure'); END;",
+    )
+    .execute(&mut conn)
+    .await
+    .unwrap();
+    drop(conn);
+
+    let error = vault
+        .bootstrap(KeyCell::from([4u8; 32]), Some(record))
+        .await
+        .expect_err("a failing custody write must fail the bootstrap");
+    assert!(
+        matches!(error, VaultError::Custody(_)),
+        "expected a custody error, got {error:?}"
+    );
+    assert_eq!(vault.get_state(), VaultState::Unbootstrapped);
+    assert_eq!(stored_share_count(&db).await, 0);
+    assert_eq!(stored_threshold(&db).await, None);
+
+    let mut conn = db.get().await.unwrap();
+    let root_count: i64 = schema::root_key_history::table
+        .count()
+        .get_result(&mut conn)
+        .await
+        .unwrap();
+    let root_key_id: Option<i32> = schema::arbiter_settings::table
+        .select(schema::arbiter_settings::root_key_id)
+        .first(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(root_count, 0, "the root key write must roll back as well");
+    assert_eq!(root_key_id, None);
 }
 
 #[tokio::test]

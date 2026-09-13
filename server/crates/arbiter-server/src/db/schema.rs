@@ -155,7 +155,7 @@ diesel::table! {
 
 diesel::table! {
     operator (id) {
-        id -> Nullable<Integer>,
+        id -> Integer,
         share -> Binary,
         share_nonce -> Binary,
         share_salt -> Binary,

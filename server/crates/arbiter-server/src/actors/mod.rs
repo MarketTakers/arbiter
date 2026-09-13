@@ -3,13 +3,8 @@ use crate::{
         bootstrap::Bootstrapper, evm::EvmActor, flow_coordinator::FlowCoordinator,
         operator_registry::OperatorRegistry, vault::Vault, vault_coordinator::VaultCoordinator,
     },
-    db::{
-        self,
-        custody::{CustodyStore, DieselCustodyStore},
-    },
+    db,
 };
-
-use std::sync::Arc;
 
 use kameo::actor::{ActorRef, Spawn};
 use kameo_actors::{DeliveryStrategy, message_bus::MessageBus};
@@ -50,12 +45,10 @@ impl GlobalActors {
 
     pub async fn spawn(db: db::DatabasePool) -> Result<Self, SpawnError> {
         let events = Self::spawn_message_bus();
-        let custody: Arc<dyn CustodyStore> = Arc::new(DieselCustodyStore);
-        let vault =
-            Vault::spawn(Vault::new(db.clone(), events.clone(), Arc::clone(&custody)).await?);
+        let vault = Vault::spawn(Vault::new(db.clone(), events.clone()).await?);
         let bootstrapper = Bootstrapper::spawn(Bootstrapper::new(&db, events.clone()).await?);
         let vault_coordinator =
-            VaultCoordinator::spawn(VaultCoordinator::new(db.clone(), vault.clone(), custody));
+            VaultCoordinator::spawn(VaultCoordinator::new(db.clone(), vault.clone()));
         let operator_registry = OperatorRegistry::spawn(OperatorRegistry::default());
         Ok(Self {
             bootstrapper,
