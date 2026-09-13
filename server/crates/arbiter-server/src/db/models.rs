@@ -292,7 +292,7 @@ pub struct OperatorClient {
     pub updated_at: SqliteTimestamp,
 }
 
-#[derive(Queryable, Debug)]
+#[derive(Queryable, Debug, Selectable)]
 #[diesel(table_name = schema::operator, check_for_backend(Sqlite))]
 pub struct Operator {
     pub id: OperatorId,

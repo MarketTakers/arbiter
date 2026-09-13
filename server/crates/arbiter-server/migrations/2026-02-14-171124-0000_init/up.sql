@@ -53,7 +53,7 @@ create table if not exists operator_identity (
 create unique index if not exists uniq_operator_identity_public_key on operator_identity (public_key);
 
 create table if not exists operator (
-    id integer primary key references operator_identity(id) on delete restrict, -- same id as operator_identity
+    id integer not null primary key references operator_identity(id) on delete restrict, -- same id as operator_identity
 
     share blob not null,
     share_nonce blob not null,

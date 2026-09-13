@@ -1,18 +1,13 @@
 //! Storage for Shamir custody material: the reconstruction threshold and the
 //! per-operator encrypted shares of the vault seal key.
-//!
-//! Every query lives here so that the actors above hold no Diesel code of their
-//! own. The functions borrow the caller's connection instead of taking one from
-//! the pool, which lets the vault write custody material inside the same
-//! transaction that stores the root key.
 
 use std::collections::HashMap;
 
-use diesel::{ExpressionMethods as _, QueryDsl, sqlite::Sqlite};
+use diesel::{ExpressionMethods as _, QueryDsl, SelectableHelper as _, sqlite::Sqlite};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 
 use crate::db::{
-    models::{OperatorId, SqliteTimestamp},
+    models::{Operator, OperatorId, SqliteTimestamp},
     schema,
 };
 
@@ -55,7 +50,7 @@ pub async fn write_record(
     for (operator_id, share) in &record.shares {
         diesel::replace_into(schema::operator::table)
             .values((
-                schema::operator::id.eq(Some(*operator_id)),
+                schema::operator::id.eq(*operator_id),
                 schema::operator::share.eq(&share.ciphertext),
                 schema::operator::share_nonce.eq(&share.nonce),
                 schema::operator::share_salt.eq(&share.salt),
@@ -90,40 +85,28 @@ pub async fn threshold(conn: &mut impl AsyncConnection<Backend = Sqlite>) -> Res
         .ok_or(Error::BrokenThreshold)
 }
 
-/// One row of the share query: operator id, ciphertext, nonce, salt.
-type ShareRow = (Option<OperatorId>, Vec<u8>, Vec<u8>, Vec<u8>);
-
 /// Load the shares of `operators` in one query, in the order requested.
 pub async fn shares(
     conn: &mut impl AsyncConnection<Backend = Sqlite>,
     operators: &[OperatorId],
 ) -> Result<Vec<EncryptedShare>, Error> {
-    let wanted: Vec<Option<OperatorId>> = operators.iter().copied().map(Some).collect();
-
-    let rows: Vec<ShareRow> = schema::operator::table
-        .filter(schema::operator::id.eq_any(wanted))
-        .select((
-            schema::operator::id,
-            schema::operator::share,
-            schema::operator::share_nonce,
-            schema::operator::share_salt,
-        ))
+    let rows: Vec<Operator> = schema::operator::table
+        .filter(schema::operator::id.eq_any(operators))
+        .select(Operator::as_select())
         .load(conn)
         .await?;
 
     let mut found: HashMap<OperatorId, EncryptedShare> = rows
         .into_iter()
-        .filter_map(|(id, ciphertext, nonce, salt)| {
-            id.map(|id| {
-                (
-                    id,
-                    EncryptedShare {
-                        ciphertext,
-                        nonce,
-                        salt,
-                    },
-                )
-            })
+        .map(|row| {
+            (
+                row.id,
+                EncryptedShare {
+                    ciphertext: row.share,
+                    nonce: row.share_nonce,
+                    salt: row.share_salt,
+                },
+            )
         })
         .collect();
 
